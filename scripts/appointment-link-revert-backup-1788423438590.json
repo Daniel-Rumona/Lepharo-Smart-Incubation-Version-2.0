@@ -1,0 +1,2042 @@
+[
+  {
+    "appointmentId": "0XrrNXyiQO6t3h2uQoiG",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_0XrrNXyiQO6t3h2uQoiG",
+      "smeId": "MFhIYyvKWQStTUBIrdHk",
+      "smeName": "BAJAYJAY PROJECT & SERVICES (PTY) LTD",
+      "smeEmail": "bajayjay.clothing@gmail.com",
+      "interventionId": "ivHyCs412r35l3HbmLU4",
+      "interventionTitle": "Taxation & Compliance Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1780646420,
+        "_nanoseconds": 293000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_MFhIYyvKWQStTUBIrdHk_ivHyCs412r35l3HbmLU4_nosub_2026-06_1780646290309_t9912y",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 563000000
+      },
+      "assignedInterventionId": "ai_MFhIYyvKWQStTUBIrdHk_ivHyCs412r35l3HbmLU4_nosub_once_1778226956220",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 563000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_MFhIYyvKWQStTUBIrdHk_ivHyCs412r35l3HbmLU4_nosub_2026-06_1780646290309_t9912y"
+  },
+  {
+    "appointmentId": "1nUWhlTRBxPnvFst6KEy",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_1nUWhlTRBxPnvFst6KEy",
+      "smeId": "mhWWFobUXLwJHznAPkHe",
+      "smeName": "Botho Investment Group",
+      "smeEmail": "info@bothoinvestmentgroup.co.za",
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1784273807,
+        "_nanoseconds": 810000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_mhWWFobUXLwJHznAPkHe_260Hpvi2kFap9CQQnanj_nosub_2026-07_1784273387557_2hmizu",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 572000000
+      },
+      "assignedInterventionId": "ai_mhWWFobUXLwJHznAPkHe_260Hpvi2kFap9CQQnanj_nosub_2026-05_1778844306450_8v6kbi",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 572000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_mhWWFobUXLwJHznAPkHe_260Hpvi2kFap9CQQnanj_nosub_2026-07_1784273387557_2hmizu"
+  },
+  {
+    "appointmentId": "4f9e54LOLkTjnACc3AVl",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd59e2f63c1f5450cc66ea122408",
+      "smeId": "AEc1VR2MjffkJLgkyxvU",
+      "smeName": "DLISA HOLDING GROUP",
+      "smeEmail": "edwardmodise00@gmail.com",
+      "interventionId": "Iod2YQ13G1xQxHsKWQDI",
+      "interventionTitle": "Business Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-07",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "synthetic__qvzDY7YzW0MLWTJHjwZbF2rVHQE3__b3qe3WAMAVw3QU64CLIY__9bu8xeGsQu4O1NVV73Du__Iod2YQ13G1xQxHsKWQDI__2026-07",
+      "status": "completed",
+      "smeConfirmation": "pending",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1783509512,
+        "_nanoseconds": 68000000
+      },
+      "completedAt": {
+        "_seconds": 1783666911,
+        "_nanoseconds": 456000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_AEc1VR2MjffkJLgkyxvU_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783672186784_1q85hh",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 573000000
+      },
+      "assignedInterventionId": "ai_AEc1VR2MjffkJLgkyxvU_Iod2YQ13G1xQxHsKWQDI_nosub_2026-06_1781600000872_easi3j",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 573000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_AEc1VR2MjffkJLgkyxvU_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783672186784_1q85hh"
+  },
+  {
+    "appointmentId": "4uFLp9pIu4TRQZmTCp1j",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+      "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+      "smeId": "mzXXMPSAI1tgAWoJJsPs",
+      "smeName": "Ntlandlolo Kwamhlamnene Projects (PTY) LTD",
+      "smeEmail": null,
+      "interventionId": "tLJ9hAcchumhfoOdmuqn",
+      "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+      "assigneeName": "Nombuso Maseko",
+      "assigneeEmail": "qmsadmin@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+      "status": "completed",
+      "smeConfirmation": "pending",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1774606410,
+        "_nanoseconds": 567000000
+      },
+      "completedAt": {
+        "_seconds": 1779438274,
+        "_nanoseconds": 397000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_mzXXMPSAI1tgAWoJJsPs_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764663_w4mkxf",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 573000000
+      },
+      "assignedInterventionId": "ai_2T5vzgXLIJk4XdOKru3L_tLJ9hAcchumhfoOdmuqn_nosub_once_1772699044900",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 573000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_mzXXMPSAI1tgAWoJJsPs_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764663_w4mkxf"
+  },
+  {
+    "appointmentId": "5CwlbzFMfxI4eJZtvc6I",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_5CwlbzFMfxI4eJZtvc6I",
+      "smeId": "mI4MB3r7rySpZN4cKN0M",
+      "smeName": "Katlligan Projects",
+      "smeEmail": "morulekatlego87@gmail.com",
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1778580519,
+        "_nanoseconds": 847000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_mI4MB3r7rySpZN4cKN0M_260Hpvi2kFap9CQQnanj_nosub_once_1778580327574",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 573000000
+      },
+      "assignedInterventionId": "ai_mI4MB3r7rySpZN4cKN0M_260Hpvi2kFap9CQQnanj_nosub_once_1770628481636",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 573000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_mI4MB3r7rySpZN4cKN0M_260Hpvi2kFap9CQQnanj_nosub_once_1778580327574"
+  },
+  {
+    "appointmentId": "A7IVPXgrGIUTNiioX3IQ",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_A7IVPXgrGIUTNiioX3IQ",
+      "smeId": "w9wFeXJDBwpAV1Me14jO",
+      "smeName": "Molubi Industries Pty Ltd",
+      "smeEmail": "siyamolobi884@gmail.com",
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-07",
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1783504412,
+        "_nanoseconds": 465000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_w9wFeXJDBwpAV1Me14jO_260Hpvi2kFap9CQQnanj_nosub_2026-07_1783498341921_yr4wfk",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      },
+      "assignedInterventionId": "ai_w9wFeXJDBwpAV1Me14jO_260Hpvi2kFap9CQQnanj_nosub_2026-05_1779259705038_4et2sn",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_w9wFeXJDBwpAV1Me14jO_260Hpvi2kFap9CQQnanj_nosub_2026-07_1783498341921_yr4wfk"
+  },
+  {
+    "appointmentId": "BAagm73p34VhgNCqb36D",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_BAagm73p34VhgNCqb36D",
+      "smeId": "0EglDz7H64Oo6vSKSIis",
+      "smeName": "Makgatho Group of Companies",
+      "smeEmail": "kgathomakgatha@gmail.com",
+      "interventionId": "ivHyCs412r35l3HbmLU4",
+      "interventionTitle": "Taxation & Compliance Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "smeConfirmation": "pending",
+      "smeDeclineReason": null,
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1786004257,
+        "_nanoseconds": 689000000
+      },
+      "completedAt": {
+        "_seconds": 1786528812,
+        "_nanoseconds": 329000000
+      },
+      "attendance": {
+        "checkedInAt": null,
+        "checkedOutAt": null,
+        "status": "attended"
+      },
+      "status": "completed",
+      "assignmentLinkCorrectedFrom": "ai_0EglDz7H64Oo6vSKSIis_ivHyCs412r35l3HbmLU4_sub_1785745143886_5645b09b34368_2026-08_1786004134289_z5mpy4",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      },
+      "assignedInterventionId": "ai_0EglDz7H64Oo6vSKSIis_ivHyCs412r35l3HbmLU4_nosub_2026-07_1784615383105_ir0sbk",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_0EglDz7H64Oo6vSKSIis_ivHyCs412r35l3HbmLU4_sub_1785745143886_5645b09b34368_2026-08_1786004134289_z5mpy4"
+  },
+  {
+    "appointmentId": "CyvLnFEt6kYS0371BMQ6",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_CyvLnFEt6kYS0371BMQ6",
+      "smeId": "W146AJEgkoN28H974wFe",
+      "smeName": "lesedilebonwe projects",
+      "smeEmail": "gloria.palai@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781168139,
+        "_nanoseconds": 618000000
+      },
+      "completedAt": {
+        "_seconds": 1783426587,
+        "_nanoseconds": 308000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_W146AJEgkoN28H974wFe_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016912493_blxyzc",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      },
+      "assignedInterventionId": "ai_W146AJEgkoN28H974wFe_YfA7AY1oRVrPVldexezl_nosub_once_1776247209772",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_W146AJEgkoN28H974wFe_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016912493_blxyzc"
+  },
+  {
+    "appointmentId": "E1jhdPRRMayhveh3gy1H",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_E1jhdPRRMayhveh3gy1H",
+      "smeId": "Jza5P0ZM2vFEfeXkQ1jL",
+      "smeName": "Letsweletse Projects Enterprise pty ltd",
+      "smeEmail": "letsweletseprojectsenterprise@gmail.com",
+      "interventionId": "ivHyCs412r35l3HbmLU4",
+      "interventionTitle": "Taxation & Compliance Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "pending",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "attended",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1785835374,
+        "_nanoseconds": 339000000
+      },
+      "completedAt": {
+        "_seconds": 1786005013,
+        "_nanoseconds": 622000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_Jza5P0ZM2vFEfeXkQ1jL_ivHyCs412r35l3HbmLU4_sub_1785744002811_988a05c238047_2026-08_1785834790206_b2jhp4",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      },
+      "assignedInterventionId": "ai_Jza5P0ZM2vFEfeXkQ1jL_ivHyCs412r35l3HbmLU4_nosub_2026-07_1783498566961_24n916",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_Jza5P0ZM2vFEfeXkQ1jL_ivHyCs412r35l3HbmLU4_sub_1785744002811_988a05c238047_2026-08_1785834790206_b2jhp4"
+  },
+  {
+    "appointmentId": "Eo5GRSKgoTHnARfeB8xH",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_Eo5GRSKgoTHnARfeB8xH",
+      "smeId": "MFhIYyvKWQStTUBIrdHk",
+      "smeName": "BAJAYJAY PROJECT & SERVICES (PTY) LTD",
+      "smeEmail": "bajayjay.clothing@gmail.com",
+      "interventionId": "ivHyCs412r35l3HbmLU4",
+      "interventionTitle": "Taxation & Compliance Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1778227000,
+        "_nanoseconds": 538000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_MFhIYyvKWQStTUBIrdHk_ivHyCs412r35l3HbmLU4_nosub_once_1778226956220",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      },
+      "assignedInterventionId": "ai_MFhIYyvKWQStTUBIrdHk_ivHyCs412r35l3HbmLU4_nosub_once_1772529379593",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 575000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_MFhIYyvKWQStTUBIrdHk_ivHyCs412r35l3HbmLU4_nosub_once_1778226956220"
+  },
+  {
+    "appointmentId": "IBEkOGFfrxp3kd7xXl8W",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_IBEkOGFfrxp3kd7xXl8W",
+      "smeId": "RR28hbupjiCGOrBnYhyP",
+      "smeName": "Cornelli Holdings Pty Ltd",
+      "smeEmail": "cornelliholdings@gmail.com",
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1778146365,
+        "_nanoseconds": 313000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_RR28hbupjiCGOrBnYhyP_260Hpvi2kFap9CQQnanj_nosub_once_1778146292484",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      },
+      "assignedInterventionId": "ai_RR28hbupjiCGOrBnYhyP_260Hpvi2kFap9CQQnanj_nosub_once_1774869379067",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_RR28hbupjiCGOrBnYhyP_260Hpvi2kFap9CQQnanj_nosub_once_1778146292484"
+  },
+  {
+    "appointmentId": "IYfj26FWAHcWtxSYmkJn",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_IYfj26FWAHcWtxSYmkJn",
+      "smeId": "Jza5P0ZM2vFEfeXkQ1jL",
+      "smeName": "Letsweletse Projects Enterprise pty ltd",
+      "smeEmail": "letsweletseprojectsenterprise@gmail.com",
+      "interventionId": "ivHyCs412r35l3HbmLU4",
+      "interventionTitle": "Taxation & Compliance Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "pending",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1783503625,
+        "_nanoseconds": 456000000
+      },
+      "completedAt": {
+        "_seconds": 1783503685,
+        "_nanoseconds": 575000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_Jza5P0ZM2vFEfeXkQ1jL_ivHyCs412r35l3HbmLU4_sub_1785744002811_988a05c238047_2026-08_1785834790206_b2jhp4",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      },
+      "assignedInterventionId": "ai_Jza5P0ZM2vFEfeXkQ1jL_ivHyCs412r35l3HbmLU4_nosub_2026-06_1780318910979_e0znzu",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_Jza5P0ZM2vFEfeXkQ1jL_ivHyCs412r35l3HbmLU4_sub_1785744002811_988a05c238047_2026-08_1785834790206_b2jhp4"
+  },
+  {
+    "appointmentId": "IfwzwEqNou8SDmLepFBU",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_IfwzwEqNou8SDmLepFBU",
+      "smeId": "0ZqHgcchfsVjSfGviQfD",
+      "smeName": "MOGAMASE PTY LTD",
+      "smeEmail": null,
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1773324114,
+        "_nanoseconds": 119000000
+      },
+      "completedAt": {
+        "_seconds": 1773399218,
+        "_nanoseconds": 479000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017338598_ypmnao",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      },
+      "assignedInterventionId": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_nosub_once_1773322592328",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017338598_ypmnao"
+  },
+  {
+    "appointmentId": "IsuGkMiEbWIxrAuzCZlh",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "IWADWm3x3pMxvZbeH9af",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_IsuGkMiEbWIxrAuzCZlh",
+      "smeId": "1Yg9EAjYHlK2bwoiSvM7",
+      "smeName": "Flora Neo Transport and Trading",
+      "smeEmail": "motsepenf@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "SeF0c3PJXoYqVctyhtM5ChL86T52",
+      "assigneeName": "Refilwe Phologane",
+      "assigneeEmail": "hsear@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781081364,
+        "_nanoseconds": 181000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_1Yg9EAjYHlK2bwoiSvM7_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786008401778_yyscmr",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      },
+      "assignedInterventionId": "ai_1Yg9EAjYHlK2bwoiSvM7_YfA7AY1oRVrPVldexezl_nosub_once_1776158097083",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_1Yg9EAjYHlK2bwoiSvM7_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786008401778_yyscmr"
+  },
+  {
+    "appointmentId": "J3BLR617E4kNRbuS52Rm",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "TO648YOb5CN2e7pukkm7",
+      "smeName": "Sukude SM Holdings Pty Ltd",
+      "smeEmail": "sukudesmholdings@gmail.com",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600678,
+        "_nanoseconds": 214000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 10000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_TO648YOb5CN2e7pukkm7_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108888_s1dh8p",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      },
+      "assignedInterventionId": "ai_TO648YOb5CN2e7pukkm7_8plZb0CPdR3U11PAcBZN_nosub_once_1773719677364",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 576000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_TO648YOb5CN2e7pukkm7_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108888_s1dh8p"
+  },
+  {
+    "appointmentId": "Jbt3qzlxj6aOreroIOhk",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "IWADWm3x3pMxvZbeH9af",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_Jbt3qzlxj6aOreroIOhk",
+      "smeId": "33nWkwu0NmWU1fyXn2wd",
+      "smeName": "BOH Lesedi Services",
+      "smeEmail": "bohlesediservice@gmail.com",
+      "interventionId": "6a1wd1R4N510EdXLO9fM",
+      "interventionTitle": "COID Annual Renewal",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-07",
+      "assigneeId": "SeF0c3PJXoYqVctyhtM5ChL86T52",
+      "assigneeName": "Refilwe Phologane",
+      "assigneeEmail": "hsear@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1783068857,
+        "_nanoseconds": 356000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_33nWkwu0NmWU1fyXn2wd_6a1wd1R4N510EdXLO9fM_sub_1770021731085_20b549039ec3e_2026-07_1783067940598_ix5e56",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      },
+      "assignedInterventionId": "ai_33nWkwu0NmWU1fyXn2wd_6a1wd1R4N510EdXLO9fM_nosub_once_1775809971405",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_33nWkwu0NmWU1fyXn2wd_6a1wd1R4N510EdXLO9fM_sub_1770021731085_20b549039ec3e_2026-07_1783067940598_ix5e56"
+  },
+  {
+    "appointmentId": "JovXR499w53jZDZzJTJO",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_JovXR499w53jZDZzJTJO",
+      "smeId": "AUK2UabV4oDq8Cl2AcLm",
+      "smeName": "Maru and Rox Projects",
+      "smeEmail": "sabimarumo@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781165736,
+        "_nanoseconds": 419000000
+      },
+      "completedAt": {
+        "_seconds": 1783426759,
+        "_nanoseconds": 962000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_AUK2UabV4oDq8Cl2AcLm_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016839962_mm4ebb",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      },
+      "assignedInterventionId": "ai_AUK2UabV4oDq8Cl2AcLm_YfA7AY1oRVrPVldexezl_nosub_once_1776155822495",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_AUK2UabV4oDq8Cl2AcLm_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016839962_mm4ebb"
+  },
+  {
+    "appointmentId": "KO8J2EDQcIeAo4rGQDsF",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "0EglDz7H64Oo6vSKSIis",
+      "smeName": "Makgatho Group of Companies",
+      "smeEmail": "kgathomakgatha@gmail.com",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600663,
+        "_nanoseconds": 618000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 10000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_0EglDz7H64Oo6vSKSIis_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_4av8oc",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      },
+      "assignedInterventionId": "ai_0EglDz7H64Oo6vSKSIis_8plZb0CPdR3U11PAcBZN_nosub_once_1773719255829",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_0EglDz7H64Oo6vSKSIis_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_4av8oc"
+  },
+  {
+    "appointmentId": "La4BrlcV9AAzCx9Nf9Nz",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_La4BrlcV9AAzCx9Nf9Nz",
+      "smeId": "0ZqHgcchfsVjSfGviQfD",
+      "smeName": "MOGAMASE PTY LTD",
+      "smeEmail": "khupariwinny@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781168270,
+        "_nanoseconds": 157000000
+      },
+      "completedAt": {
+        "_seconds": 1783426830,
+        "_nanoseconds": 936000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017338598_ypmnao",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      },
+      "assignedInterventionId": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_nosub_once_1776247482629",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017338598_ypmnao"
+  },
+  {
+    "appointmentId": "MCWj8eLuUT9dyxIO1tGJ",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_MCWj8eLuUT9dyxIO1tGJ",
+      "smeId": "RR28hbupjiCGOrBnYhyP",
+      "smeName": "Cornelli Holdings Pty Ltd",
+      "smeEmail": "cornelliholdings@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781167851,
+        "_nanoseconds": 190000000
+      },
+      "completedAt": {
+        "_seconds": 1783426709,
+        "_nanoseconds": 748000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_RR28hbupjiCGOrBnYhyP_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017221234_r49cbd",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      },
+      "assignedInterventionId": "ai_RR28hbupjiCGOrBnYhyP_YfA7AY1oRVrPVldexezl_nosub_once_1776247343174",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 577000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_RR28hbupjiCGOrBnYhyP_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017221234_r49cbd"
+  },
+  {
+    "appointmentId": "PkdXmQQhlApss6Q853Zv",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_PkdXmQQhlApss6Q853Zv",
+      "smeId": "RR28hbupjiCGOrBnYhyP",
+      "smeName": "Cornelli Holdings Pty Ltd",
+      "smeEmail": "cornelliholdings@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1779191844,
+        "_nanoseconds": 355000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_RR28hbupjiCGOrBnYhyP_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017221234_r49cbd",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 578000000
+      },
+      "assignedInterventionId": "ai_RR28hbupjiCGOrBnYhyP_YfA7AY1oRVrPVldexezl_nosub_once_1776247343174",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 578000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_RR28hbupjiCGOrBnYhyP_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017221234_r49cbd"
+  },
+  {
+    "appointmentId": "Ruj4xHovUTxIzXu8LXYR",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_Ruj4xHovUTxIzXu8LXYR",
+      "smeId": "ctE6vFW44yTq0JcumXge",
+      "smeName": "GOBIZEN PTY LTD",
+      "smeEmail": "gobizembew@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781165536,
+        "_nanoseconds": 470000000
+      },
+      "completedAt": {
+        "_seconds": 1783426784,
+        "_nanoseconds": 359000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_ctE6vFW44yTq0JcumXge_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016969433_edp0x2",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 579000000
+      },
+      "assignedInterventionId": "ai_ctE6vFW44yTq0JcumXge_YfA7AY1oRVrPVldexezl_nosub_once_1776155922514",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 579000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_ctE6vFW44yTq0JcumXge_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016969433_edp0x2"
+  },
+  {
+    "appointmentId": "SXgCQzb9ld8vFw3WOC86",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "pZ9ifTCPvDV0HlBOf1t6",
+      "smeName": "MOJA PROJECTS PTY LTD",
+      "smeEmail": "mojapro.014@gmail.com",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600691,
+        "_nanoseconds": 771000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 10000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_pZ9ifTCPvDV0HlBOf1t6_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_zljf88",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 579000000
+      },
+      "assignedInterventionId": "ai_pZ9ifTCPvDV0HlBOf1t6_8plZb0CPdR3U11PAcBZN_nosub_once_1773718814748",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 579000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_pZ9ifTCPvDV0HlBOf1t6_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_zljf88"
+  },
+  {
+    "appointmentId": "T3vl1RsqcYcmTlh36Tb5",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_T3vl1RsqcYcmTlh36Tb5",
+      "smeId": "0ZqHgcchfsVjSfGviQfD",
+      "smeName": "MOGAMASE PTY LTD",
+      "smeEmail": "khupariwinny@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1776415929,
+        "_nanoseconds": 873000000
+      },
+      "completedAt": {
+        "_seconds": 1776765832,
+        "_nanoseconds": 661000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017338598_ypmnao",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 579000000
+      },
+      "assignedInterventionId": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_nosub_once_1776247482629",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 579000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017338598_ypmnao"
+  },
+  {
+    "appointmentId": "TSYHNI828fqD7J4PDiLE",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "mhWWFobUXLwJHznAPkHe",
+      "smeName": "Botho Investment Group",
+      "smeEmail": "info@bothoinvestmentgroup.co.za",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600689,
+        "_nanoseconds": 910000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 11000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_mhWWFobUXLwJHznAPkHe_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108888_dcxthe",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      },
+      "assignedInterventionId": "ai_mhWWFobUXLwJHznAPkHe_8plZb0CPdR3U11PAcBZN_nosub_once_1773719598621",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_mhWWFobUXLwJHznAPkHe_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108888_dcxthe"
+  },
+  {
+    "appointmentId": "TfAm72IhKqqiPid8N1ac",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_TfAm72IhKqqiPid8N1ac",
+      "smeId": "Us7CGscCvsWV9KMWwvHH",
+      "smeName": "Gabs and Maps Multi Purpose Pty, Ltd",
+      "smeEmail": null,
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1770192900,
+        "_nanoseconds": 506000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_Us7CGscCvsWV9KMWwvHH_AUiE43HHAiKbM7rJw7rL_nosub_once_1770192743572",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      },
+      "assignedInterventionId": "ai_Us7CGscCvsWV9KMWwvHH_AUiE43HHAiKbM7rJw7rL",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_Us7CGscCvsWV9KMWwvHH_AUiE43HHAiKbM7rJw7rL_nosub_once_1770192743572"
+  },
+  {
+    "appointmentId": "VuDInD6h6o18pB4Ih5O7",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_VuDInD6h6o18pB4Ih5O7",
+      "smeId": "AEc1VR2MjffkJLgkyxvU",
+      "smeName": "DLISA HOLDING GROUP",
+      "smeEmail": "edwardmodise00@gmail.com",
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-07",
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1783503824,
+        "_nanoseconds": 442000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_AEc1VR2MjffkJLgkyxvU_260Hpvi2kFap9CQQnanj_nosub_2026-07_1783498260957_1ll97g",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      },
+      "assignedInterventionId": "ai_AEc1VR2MjffkJLgkyxvU_260Hpvi2kFap9CQQnanj_nosub_2026-05_1779259442233_om0nx9",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_AEc1VR2MjffkJLgkyxvU_260Hpvi2kFap9CQQnanj_nosub_2026-07_1783498260957_1ll97g"
+  },
+  {
+    "appointmentId": "XsU8HW5VZCAcBumF4KCe",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_XsU8HW5VZCAcBumF4KCe",
+      "smeId": "C4DHbvDsougHsrSFA5N9",
+      "smeName": "KAISA ENGINEERING SOLUTIONS (PTY) LTD",
+      "smeEmail": null,
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1769426435,
+        "_nanoseconds": 671000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_C4DHbvDsougHsrSFA5N9_AUiE43HHAiKbM7rJw7rL_nosub_once_1769426213110",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      },
+      "assignedInterventionId": "ai_C4DHbvDsougHsrSFA5N9_AUiE43HHAiKbM7rJw7rL",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_C4DHbvDsougHsrSFA5N9_AUiE43HHAiKbM7rJw7rL_nosub_once_1769426213110"
+  },
+  {
+    "appointmentId": "baZDtCrZSdgnsCOARIfc",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "ZgQsxAc9o3mUPBg9nkQi",
+      "smeName": "Gontselife (Pty)LTD",
+      "smeEmail": "ofentsegaoboihe@gmail.com",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600682,
+        "_nanoseconds": 622000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 11000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_ZgQsxAc9o3mUPBg9nkQi_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_c95l0h",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      },
+      "assignedInterventionId": "ai_ZgQsxAc9o3mUPBg9nkQi_8plZb0CPdR3U11PAcBZN_nosub_once_1773718369567",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 580000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_ZgQsxAc9o3mUPBg9nkQi_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_c95l0h"
+  },
+  {
+    "appointmentId": "c2I5M2NqM2TcJKmScKmY",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "ZZvs0BwLQ5NrKe9d5TxR",
+      "smeName": "Astral Solutions",
+      "smeEmail": "nathilanziv@gmail.com",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600681,
+        "_nanoseconds": 642000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 11000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_ZZvs0BwLQ5NrKe9d5TxR_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_9n1uw7",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 581000000
+      },
+      "assignedInterventionId": "ai_3I0Qzhebpx52s03NoXPg_8plZb0CPdR3U11PAcBZN_nosub_once_1773719034517",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 581000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_ZZvs0BwLQ5NrKe9d5TxR_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_9n1uw7"
+  },
+  {
+    "appointmentId": "cnRLqjKBVJyT7s7Q7nKE",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_cnRLqjKBVJyT7s7Q7nKE",
+      "smeId": "AUK2UabV4oDq8Cl2AcLm",
+      "smeName": "Maru and Rox Projects",
+      "smeEmail": "sabimarumo@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1779192423,
+        "_nanoseconds": 464000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_AUK2UabV4oDq8Cl2AcLm_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016839962_mm4ebb",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 581000000
+      },
+      "assignedInterventionId": "ai_AUK2UabV4oDq8Cl2AcLm_YfA7AY1oRVrPVldexezl_nosub_once_1776155822495",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 581000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_AUK2UabV4oDq8Cl2AcLm_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016839962_mm4ebb"
+  },
+  {
+    "appointmentId": "dNCgrqbH8qrFyYuwh0UO",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_dNCgrqbH8qrFyYuwh0UO",
+      "smeId": "0ZqHgcchfsVjSfGviQfD",
+      "smeName": "MOGAMASE PTY LTD",
+      "smeEmail": "khupariwinny@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1779192547,
+        "_nanoseconds": 302000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017338598_ypmnao",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 581000000
+      },
+      "assignedInterventionId": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_nosub_once_1776247482629",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 581000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_0ZqHgcchfsVjSfGviQfD_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017338598_ypmnao"
+  },
+  {
+    "appointmentId": "gCBSPFJcclJAXc2D99ke",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_gCBSPFJcclJAXc2D99ke",
+      "smeId": "TO648YOb5CN2e7pukkm7",
+      "smeName": "Sukude SM Holdings Pty Ltd",
+      "smeEmail": "sukudesmholdings@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1779192805,
+        "_nanoseconds": 778000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_TO648YOb5CN2e7pukkm7_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017394171_ehmzgu",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 582000000
+      },
+      "assignedInterventionId": "ai_TO648YOb5CN2e7pukkm7_YfA7AY1oRVrPVldexezl_nosub_once_1776247634128",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 582000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_TO648YOb5CN2e7pukkm7_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017394171_ehmzgu"
+  },
+  {
+    "appointmentId": "itUVp1OoTR810lr76Vn2",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_itUVp1OoTR810lr76Vn2",
+      "smeId": "TO648YOb5CN2e7pukkm7",
+      "smeName": "Sukude SM Holdings Pty Ltd",
+      "smeEmail": "sukudesmholdings@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781168371,
+        "_nanoseconds": 746000000
+      },
+      "completedAt": {
+        "_seconds": 1783426547,
+        "_nanoseconds": 797000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_TO648YOb5CN2e7pukkm7_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017394171_ehmzgu",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 582000000
+      },
+      "assignedInterventionId": "ai_TO648YOb5CN2e7pukkm7_YfA7AY1oRVrPVldexezl_nosub_once_1776247634128",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 582000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_TO648YOb5CN2e7pukkm7_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786017394171_ehmzgu"
+  },
+  {
+    "appointmentId": "jC61salBiOZvNYpcu46z",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_jC61salBiOZvNYpcu46z",
+      "smeId": "w9wFeXJDBwpAV1Me14jO",
+      "smeName": "Molubi Industries Pty Ltd",
+      "smeEmail": null,
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1769427427,
+        "_nanoseconds": 537000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_w9wFeXJDBwpAV1Me14jO_AUiE43HHAiKbM7rJw7rL_nosub_once_1769426173705",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 582000000
+      },
+      "assignedInterventionId": "ai_w9wFeXJDBwpAV1Me14jO_AUiE43HHAiKbM7rJw7rL",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 582000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_w9wFeXJDBwpAV1Me14jO_AUiE43HHAiKbM7rJw7rL_nosub_once_1769426173705"
+  },
+  {
+    "appointmentId": "nLJVPrWz67N2l3i2DmRo",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "klqkzcMlRtDyiPvOdQa5",
+      "smeName": "Ndengezi-Nzima Holdings (Pty) Ltd",
+      "smeEmail": "jabuyende67@gmail.com",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600688,
+        "_nanoseconds": 624000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 12000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_klqkzcMlRtDyiPvOdQa5_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_8za3ye",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 583000000
+      },
+      "assignedInterventionId": "ai_klqkzcMlRtDyiPvOdQa5_8plZb0CPdR3U11PAcBZN_nosub_once_1778476504725",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 583000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_klqkzcMlRtDyiPvOdQa5_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_8za3ye"
+  },
+  {
+    "appointmentId": "tQ64vDaISww7z1BwPaSi",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_tQ64vDaISww7z1BwPaSi",
+      "smeId": "W146AJEgkoN28H974wFe",
+      "smeName": "lesedilebonwe projects",
+      "smeEmail": "gloria.palai@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1779192249,
+        "_nanoseconds": 547000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_W146AJEgkoN28H974wFe_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016912493_blxyzc",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 584000000
+      },
+      "assignedInterventionId": "ai_W146AJEgkoN28H974wFe_YfA7AY1oRVrPVldexezl_nosub_once_1776247209772",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 584000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_W146AJEgkoN28H974wFe_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016912493_blxyzc"
+  },
+  {
+    "appointmentId": "urGAZVd6Fi1e7EdB2b8f",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_urGAZVd6Fi1e7EdB2b8f",
+      "smeId": "Jza5P0ZM2vFEfeXkQ1jL",
+      "smeName": "Letsweletse Projects Enterprise pty ltd",
+      "smeEmail": "letsweletseprojectsenterprise@gmail.com",
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-05",
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1778143662,
+        "_nanoseconds": 937000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_Jza5P0ZM2vFEfeXkQ1jL_260Hpvi2kFap9CQQnanj_nosub_2026-05_1778852641992_8q3y01",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      },
+      "assignedInterventionId": "ai_Jza5P0ZM2vFEfeXkQ1jL_260Hpvi2kFap9CQQnanj_nosub_once_1770721012736",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_Jza5P0ZM2vFEfeXkQ1jL_260Hpvi2kFap9CQQnanj_nosub_2026-05_1778852641992_8q3y01"
+  },
+  {
+    "appointmentId": "vYVJTDvySwiNkHLJBkRx",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "3oeQlX2YjpPlZ3yeAB2m",
+      "appointmentSessionId": "apt_vYVJTDvySwiNkHLJBkRx",
+      "smeId": "ctE6vFW44yTq0JcumXge",
+      "smeName": "GOBIZEN PTY LTD",
+      "smeEmail": "gobizembew@gmail.com",
+      "interventionId": "YfA7AY1oRVrPVldexezl",
+      "interventionTitle": "HSE/Labour Compliance Workshop",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "xsq7ZpyJbZXnc0Vhh5vmL8lOBCv1",
+      "assigneeName": "Keamogetswe Manyaapelo",
+      "assigneeEmail": "hsertb@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1779192085,
+        "_nanoseconds": 806000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_ctE6vFW44yTq0JcumXge_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016969433_edp0x2",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      },
+      "assignedInterventionId": "ai_ctE6vFW44yTq0JcumXge_YfA7AY1oRVrPVldexezl_nosub_once_1776155922514",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_ctE6vFW44yTq0JcumXge_YfA7AY1oRVrPVldexezl_sub_1786004354422_b98a448dcc9dc8_2026-08_1786016969433_edp0x2"
+  },
+  {
+    "appointmentId": "vrFDgXyxNJQFkpQZk6zx",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "d9zlZyFCEa95v0hV2jjP",
+      "smeName": "Bagarona Enterprise",
+      "smeEmail": "pontshoidah7@gmail.com",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600685,
+        "_nanoseconds": 396000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 12000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_d9zlZyFCEa95v0hV2jjP_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_sgt4o7",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      },
+      "assignedInterventionId": "ai_d9zlZyFCEa95v0hV2jjP_8plZb0CPdR3U11PAcBZN_nosub_once_1778476436448",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_d9zlZyFCEa95v0hV2jjP_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_sgt4o7"
+  },
+  {
+    "appointmentId": "w7QgGv9pipZ1yl7GyDH0",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+      "appointmentSessionId": "apt_w7QgGv9pipZ1yl7GyDH0",
+      "smeId": "C4DHbvDsougHsrSFA5N9",
+      "smeName": "KAISA ENGINEERING SOLUTIONS (PTY) LTD",
+      "smeEmail": null,
+      "interventionId": "260Hpvi2kFap9CQQnanj",
+      "interventionTitle": "Bookkeeping & Accounting",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": null,
+      "assigneeId": "MpM3gPfUS3b1fcCHQUmfaOaeePD3",
+      "assigneeName": "Mpho Mkate",
+      "assigneeEmail": "finagri@lepharo.co.za",
+      "assigneeRole": "coordinator",
+      "groupKey": null,
+      "status": "scheduled",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1770879001,
+        "_nanoseconds": 752000000
+      },
+      "completedAt": null,
+      "assignmentLinkCorrectedFrom": "ai_C4DHbvDsougHsrSFA5N9_260Hpvi2kFap9CQQnanj_nosub_once_1770878792054",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      },
+      "assignedInterventionId": "ai_C4DHbvDsougHsrSFA5N9_AUiE43HHAiKbM7rJw7rL_nosub_once_1769426213110",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_C4DHbvDsougHsrSFA5N9_260Hpvi2kFap9CQQnanj_nosub_once_1770878792054"
+  },
+  {
+    "appointmentId": "w7aSe85XEZLx6M3ZIBe0",
+    "before": {
+      "schemaVersion": 5,
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "departmentId": "9bu8xeGsQu4O1NVV73Du",
+      "appointmentSessionId": "grp_cd715e708d1e508663700e5b0bb2",
+      "smeId": "MmgYFmbwPNCaqaTDtu36",
+      "smeName": "ProlificZoe Enterprise",
+      "smeEmail": "zoeyanta321@gmail.com",
+      "interventionId": "8plZb0CPdR3U11PAcBZN",
+      "interventionTitle": "Labour Law Advisory",
+      "subInterventionId": null,
+      "subInterventionTitle": null,
+      "cycleKey": "2026-06",
+      "assigneeId": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+      "assigneeName": "Maponya Marageni",
+      "assigneeEmail": "maponya@lepharo.co.za",
+      "assigneeRole": "operations",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "status": "completed",
+      "smeConfirmation": "confirmed",
+      "smeDeclineReason": null,
+      "attendance": {
+        "status": "expected",
+        "checkedInAt": null,
+        "checkedOutAt": null
+      },
+      "foodSelections": [],
+      "createdAt": {
+        "_seconds": 1781600675,
+        "_nanoseconds": 663000000
+      },
+      "completedAt": {
+        "_seconds": 1781765228,
+        "_nanoseconds": 12000000
+      },
+      "assignmentLinkCorrectedFrom": "ai_MmgYFmbwPNCaqaTDtu36_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_wws9gp",
+      "assignmentLinkCorrectedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      },
+      "assignedInterventionId": "ai_MmgYFmbwPNCaqaTDtu36_8plZb0CPdR3U11PAcBZN_nosub_once_1773719416168",
+      "updatedAt": {
+        "_seconds": 1788419080,
+        "_nanoseconds": 585000000
+      }
+    },
+    "restoredAssignedInterventionId": "ai_MmgYFmbwPNCaqaTDtu36_8plZb0CPdR3U11PAcBZN_nosub_2026-06_1781600108887_wws9gp"
+  }
+]

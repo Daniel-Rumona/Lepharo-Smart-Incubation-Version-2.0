@@ -1,0 +1,3030 @@
+{
+  "retrievedAt": "2026-09-07T08:14:36.629Z",
+  "counts": {
+    "Supported": 64,
+    "No participant link": 65,
+    "No programme": 6
+  },
+  "rows": [
+    {
+      "id": "bd275993-faa6-41b5-9808-4c68e434fb96",
+      "name": "Abel's Aluminium Designs ",
+      "email": "abelmogwase10@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "P3K7ydvi98cvVKxRNacw",
+          "name": "E Cruise Designs",
+          "email": "masingaellena17@gmail.com",
+          "score": 0.55,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "XVejrHiFsCyUZIn02SmV",
+          "name": "Emma Lee Designs and Co",
+          "email": "mahlatsiemmah1@gmail.com",
+          "score": 0.465,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "pRc98C8VTKrllJ3YntM1",
+          "name": "Emma Lee Designs and Co",
+          "email": "mahlatsiemmah1@gmail.com",
+          "score": 0.465,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "b3e8d0f9-d8a5-481b-bf60-20d419564b88",
+      "name": "ADELIA CREATIONS ENTERPRISE",
+      "email": "adelianqubuka@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "BLQ6kuFGukSKIvsobGCj",
+          "name": "Moleka Creation and Projects",
+          "email": "smikerledwaba@gmail.com",
+          "score": 0.71,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "N522osUAvVInuGE36Vj5",
+          "name": "Kopano cakes creations",
+          "email": "mmakgotso09mafora@gmail.com",
+          "score": 0.632,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "vKvTqcIHXZpzLzjLB5RX",
+          "name": "Kopano cakes creations",
+          "email": "mmakgotso09mafora@gmail.com",
+          "score": 0.632,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "98226cad-410e-4e00-b77d-bf5c1c5287b2",
+      "name": "Azania Woods",
+      "email": "katlehor@azaniawood.co.za",
+      "originalStatus": "No programme",
+      "currentStatus": "Supported",
+      "exactType": "Name",
+      "candidates": [
+        {
+          "id": "ARqZ8NvDDXvFGPh4GxRT",
+          "name": "Azania Woods",
+          "email": "katlehor@azaniawoods.co.za",
+          "score": 1.0,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "XQtRh3z0PlG0aDd3yWEA",
+          "name": "Langa Shona Holdings",
+          "email": "lesibanak2@gmail.com",
+          "score": 0.5,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "CjHx1liyIEerhLrVAKgc",
+          "name": "Global Sani Solutions",
+          "email": "jeanette@globalsani.co.za",
+          "score": 0.485,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "2a0d7558-09b9-4a27-8df7-24cb9c1f0864",
+      "name": "Bakau Trading",
+      "email": "lesedi@bakau.co.za",
+      "originalStatus": "No programme",
+      "currentStatus": "No programme",
+      "exactType": "Email",
+      "candidates": [
+        {
+          "id": "dNPVTJRh7V77k81ql4Sf",
+          "name": "Bakua Trading (Pty0Ltd",
+          "email": "lesedi@bakau.co.za",
+          "score": 0.686,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "b3fDo2Ml1ljrc31ox0dP",
+          "name": "Bani M Trading",
+          "email": "lizzylisbeth002@gmail.com",
+          "score": 0.741,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "EJg3Ldo7OW9M6dmbdbjf",
+          "name": "Tlhalefang Trading",
+          "email": "tlhalefangtumelo0@gmail.com",
+          "score": 0.645,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "f672cd50-5cb4-47af-8a7f-35fa377a6f53",
+      "name": "Best Enough Trading",
+      "email": "Nompie79@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "b3fDo2Ml1ljrc31ox0dP",
+          "name": "Bani M Trading",
+          "email": "lizzylisbeth002@gmail.com",
+          "score": 0.606,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "EJg3Ldo7OW9M6dmbdbjf",
+          "name": "Tlhalefang Trading",
+          "email": "tlhalefangtumelo0@gmail.com",
+          "score": 0.595,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "9U9KedL3uHpbAUqaJKz5",
+          "name": "Bophelo Bo Molemo trading",
+          "email": "bophelobmtrading@gmail.com",
+          "score": 0.591,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "d7a7cb39-e4ed-4561-ab1c-90a2fd83809c",
+      "name": "BILIMPILI MINING ENGINEERING S",
+      "email": "nditsheni.neludane@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "kehHztoFikK6qSU7YViO",
+          "name": "LMP Engineering & Projects Pty Ltd",
+          "email": "leephoza@icloud.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "nBiZLnBjbgXT8PGoScVr",
+          "name": "Nnona Engineering",
+          "email": "mfconstr.tebogom@gmail.com",
+          "score": 0.596,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "bN3jvvpDOibGow9cIJSW",
+          "name": "GS Engineering and Projects",
+          "email": "gisheprojects@gmail.com",
+          "score": 0.591,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "f4330b1c-8699-4d58-85cc-73bac877a588",
+      "name": "D BAAS TRADING (PTY) LTD",
+      "email": "moletidithipe@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "dNPVTJRh7V77k81ql4Sf",
+          "name": "Bakua Trading (Pty0Ltd",
+          "email": "lesedi@bakau.co.za",
+          "score": 0.826,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "7UpcZfgqewvG5uZinfNt",
+          "name": "Led-Mos Trading Pty Ltd",
+          "email": "info@ledmos.co.za",
+          "score": 0.809,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "URGhv9hgqwistDIlwCjd",
+          "name": "LDMK Trading (Pty)Ltd",
+          "email": "ldmk.ptytld@gmail.com",
+          "score": 0.8,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ac8ac300-4f38-46c3-88b1-d1d58bb578e1",
+      "name": "D Baas Trading (PTY)Ltd",
+      "email": "molefidithipe@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "dNPVTJRh7V77k81ql4Sf",
+          "name": "Bakua Trading (Pty0Ltd",
+          "email": "lesedi@bakau.co.za",
+          "score": 0.844,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "7UpcZfgqewvG5uZinfNt",
+          "name": "Led-Mos Trading Pty Ltd",
+          "email": "info@ledmos.co.za",
+          "score": 0.826,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "URGhv9hgqwistDIlwCjd",
+          "name": "LDMK Trading (Pty)Ltd",
+          "email": "ldmk.ptytld@gmail.com",
+          "score": 0.818,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "5bcdb686-329e-4a8e-b960-f27fcda3a56b",
+      "name": "Devini Intervention Construction and Cleaning ",
+      "email": "magwegwetankiec@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "FdCxYGh51naajo60kM5k",
+          "name": "Nomlomo Construction and Trading",
+          "email": "nomlomoconstruction@gmail.com",
+          "score": 0.623,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "mNY4KwXRUMdmE3t4kKUK",
+          "name": "Nomlomo Construction and trading",
+          "email": "mosenjemla@gmail.com",
+          "score": 0.623,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "NP3FhrV4wXXi1mEn4QCG",
+          "name": "Team T Construction and Supplier",
+          "email": "smavesh@gmail.com",
+          "score": 0.597,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "adbedff5-7f9b-4040-99b9-21e9959f232e",
+      "name": "Foxx Clan Africa",
+      "email": "foxxclanafrica@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "r8fYB577eXWVqCQ4LkHb",
+          "name": "Tsoane Electrical Enterprise Pty(LTD)",
+          "email": "lehokosam73@gmail.com",
+          "score": 0.485,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "noIwM8ZYGXs4C8ETTTnd",
+          "name": "Man Sadic (pty) ltd",
+          "email": "sadama.sherindi9@gmail.com",
+          "score": 0.48,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "yS9f0fjXC9nZ4epcmPZh",
+          "name": "Kwandumiso Projects & Cleaning Servics",
+          "email": "nondumisohlengiwem@gmail.com",
+          "score": 0.465,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "390b01a0-d96a-4cc9-a716-01608c91ea7f",
+      "name": "Green Movement Recycling (pty)ltd",
+      "email": "zethuk10@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "7s9WPQjC2D1Gp5PamNHb",
+          "name": "GREEN UNIVERSE PROJECTS (PTY) LTD",
+          "email": "tfmonyeki@outlook.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "Lob9nyvkrK1GV51XdoY2",
+          "name": "Refinement Engineering Pty Ltd",
+          "email": "info@refine-eng.co.za",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "ztRo7JlppljZ7Q0dzXe2",
+          "name": "Thekga Movement (Pty)Ltd",
+          "email": "tumi@thekga.co.za",
+          "score": 0.667,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "84e4dff6-cdc9-43ea-a262-a7908275e231",
+      "name": "Green Movement Recycling (pty)ltd",
+      "email": "sales@greenmovement.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "7s9WPQjC2D1Gp5PamNHb",
+          "name": "GREEN UNIVERSE PROJECTS (PTY) LTD",
+          "email": "tfmonyeki@outlook.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "Lob9nyvkrK1GV51XdoY2",
+          "name": "Refinement Engineering Pty Ltd",
+          "email": "info@refine-eng.co.za",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "ztRo7JlppljZ7Q0dzXe2",
+          "name": "Thekga Movement (Pty)Ltd",
+          "email": "tumi@thekga.co.za",
+          "score": 0.667,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2f47e023-9e0e-4102-926d-b64ae86bbf1d",
+      "name": "GREENMOVEMENT RECYCLING",
+      "email": "tmothibe933@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "Lob9nyvkrK1GV51XdoY2",
+          "name": "Refinement Engineering Pty Ltd",
+          "email": "info@refine-eng.co.za",
+          "score": 0.578,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "RkmfDga9PGAQtz75cxyb",
+          "name": "Sort It investment Holdings",
+          "email": "gerald@sortitpackaging.co.za",
+          "score": 0.52,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "ztRo7JlppljZ7Q0dzXe2",
+          "name": "Thekga Movement (Pty)Ltd",
+          "email": "tumi@thekga.co.za",
+          "score": 0.511,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "0630ff39-3aa3-4b28-9468-ac4b9047b27c",
+      "name": "Happy Homes Projects and Services",
+      "email": "happyhomespns95@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "SPoYsI6hdQ7yJzpxXELL",
+          "name": "Diama logistics projects and services",
+          "email": "tsholofelodiale@ymail.com",
+          "score": 0.743,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "7iZ6XKap6GxkdVeLKgmb",
+          "name": "Tlotlakgatontle projects and services",
+          "email": "tlotlaleoto@gmail.com",
+          "score": 0.714,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "NsftI44RiVwvEi1cLgch",
+          "name": "Mabothe Project and service (pty) ltd",
+          "email": "kgosimabothe03@gmail.com",
+          "score": 0.629,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4ae30d07-007c-488e-a2fe-38d39f735863",
+      "name": "HLONYANI TRADING AND PROJECTS",
+      "email": "info@hlonyaniprojects.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "25Z5rcZsSExv8f4aLpnS",
+          "name": "Ntsholo Trading and Projects",
+          "email": "kbaubrey51@gmail.com",
+          "score": 0.842,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "KxcMyC9hhHmHQBSYNvxm",
+          "name": "R And I Trading And Projects",
+          "email": "rangatainocent@gmail.com",
+          "score": 0.842,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "RfzhUhahOrLv1HpB2AiG",
+          "name": "Mcooy Trading and Projects",
+          "email": "mcooytrading85@gail.com",
+          "score": 0.836,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "29bfcd14-f9da-4226-b46c-52423199df59",
+      "name": "K Ntsako Project",
+      "email": "kedibonemogale@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "0woK8GpLjAZVBEmDgVof",
+          "name": "K Ntsako construction",
+          "email": "kedibonmogale@gmail.com",
+          "score": 1.0,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "NYmCrH6qZVJjeitQHRHP",
+          "name": "VUAKO PROJECTS",
+          "email": "vulani.siweya@gmail.com",
+          "score": 0.733,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        },
+        {
+          "id": "z435wbEHCaKPk9MKzSi1",
+          "name": "VUAKO PROJECTS",
+          "email": "vulani.siweya@gmail.com",
+          "score": 0.733,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "542b81f1-85d3-4217-abd2-1fa310569046",
+      "name": "Kathabo Solutions",
+      "email": "kathabo5446@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "ZZvs0BwLQ5NrKe9d5TxR",
+          "name": "Astral Solutions",
+          "email": "nathilanziv@gmail.com",
+          "score": 0.788,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "z8kwq0A2s9KsUofyaZkS",
+          "name": "Atarah Solutions",
+          "email": "lmpshe@atarahsolutions.africa",
+          "score": 0.788,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "DEUtpxuzY2uHrf4BQP80",
+          "name": "Paleo Solutions",
+          "email": "manyanekt@gmail.com",
+          "score": 0.75,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "5e879770-a652-40ce-b16e-63ad975b92be",
+      "name": "KHANTSANG BAHLAKOANA (PTY)LTD",
+      "email": "bokafrans@gmail.com",
+      "originalStatus": "No programme",
+      "currentStatus": "No programme",
+      "exactType": "Email",
+      "candidates": [
+        {
+          "id": "94Xru5ZDJY3trhlFNzFH",
+          "name": "Khantsang bahlakoana Pty ltd",
+          "email": "bokafrans@gmail.com",
+          "score": 1.0,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "GyexJdC2UCHzLEgzX62l",
+          "name": "Ratang Rori (pty) LTD",
+          "email": "g.goldwilson@gmail.com",
+          "score": 0.64,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "vENMeYz1jCoVV0l71YvV",
+          "name": "Khensa Vukona Trading Enterprises",
+          "email": "khensavukoni@gmail.com",
+          "score": 0.606,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "0224cda4-9f46-4e7e-a276-5d70bcf113f4",
+      "name": "Khutlisetso Project (PTY)Ltd",
+      "email": "khutlisetsoenterprise@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "9tJUBTE8vENyydC48JTR",
+          "name": "Sizo Projects (Pty)Ltd",
+          "email": "info@sizoprojects.co.za",
+          "score": 0.76,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "jh937XzrZogSVU0uOtzT",
+          "name": "Lehlabane Project (pty)ltd",
+          "email": "kjmolamo@gmail.com",
+          "score": 0.741,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "wwyw4gKyhiTzBwB80bgn",
+          "name": "JULIES EFFICIENT PROJECTS PTY LTD",
+          "email": "julie@julies-ep.co.za",
+          "score": 0.721,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "c9fa2200-d977-400f-9e95-16eb6be0385a",
+      "name": "Kini Consulting",
+      "email": "mlungiseleli@kini.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "QSaiT04ATMlMrqdIqflZ",
+          "name": "Nzima Consulting and Projects",
+          "email": "nolwazinzimande85@gmail.com",
+          "score": 0.774,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "ZllZ8I3xF3CnFrRBZe8h",
+          "name": "Simke Consulting",
+          "email": "vbmdluli@gmail.com",
+          "score": 0.774,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "mXXmbVRiU0Uu6nYsjuDM",
+          "name": "Sizanathi consultant pty  (Ltd)",
+          "email": "kgothatsojones0607@gmail.com",
+          "score": 0.686,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "a5bdeb2a-5f96-4385-9383-3750abf97323",
+      "name": "Konda Projects (PTY)Ltd",
+      "email": "bafanaabednico@icloud.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "pZ9ifTCPvDV0HlBOf1t6",
+          "name": "MOJA PROJECTS PTY LTD",
+          "email": "mojapro.014@gmail.com",
+          "score": 0.864,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "9tJUBTE8vENyydC48JTR",
+          "name": "Sizo Projects (Pty)Ltd",
+          "email": "info@sizoprojects.co.za",
+          "score": 0.844,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "viSCmQtFN7NDBStgoLu0",
+          "name": "nemoja projects pty ltd",
+          "email": "molotwanenp@gmail.com",
+          "score": 0.826,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b403b512-78b7-4b18-882d-188ef6dbb8db",
+      "name": "Kwena ya sebele Trading Enterprise CC",
+      "email": "israelputu@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "vENMeYz1jCoVV0l71YvV",
+          "name": "Khensa Vukona Trading Enterprises",
+          "email": "khensavukoni@gmail.com",
+          "score": 0.714,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "VP0oy4VgVT1RLhMpYwAl",
+          "name": "RWS Trading Enterprise",
+          "email": "lydiaramoroka65@gmail.com",
+          "score": 0.712,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "lz1QDGTLC2FxN4jQ8qpz",
+          "name": "Dukisa Trading Enterprise",
+          "email": "dukisawaste@icloud.com",
+          "score": 0.677,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "8a3f2f84-cbc9-44ab-8083-229a6cf29c26",
+      "name": "Lefa 4 me Trading Enterprises Pty Ltd",
+      "email": "lefa4me@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "1McSsYpIls61k1iJffm7",
+          "name": "TEFO TAU TRADING AND ENTERPRISE(pty) Ltd",
+          "email": "bb205hayman@gmail.com",
+          "score": 0.779,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "YNk8PZJPfq6O9t0Q1qxI",
+          "name": "Jehovha Jaira Trading Enterprise Pty Ltd",
+          "email": "info@jjtrading.co.za",
+          "score": 0.779,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "7qZms7lDEoX4GEFc0tf5",
+          "name": "Sekelisizwe Trading Enterprise (Pty)Ltd",
+          "email": "sekelisizwetrading@hotmail.com",
+          "score": 0.763,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "9d4abe7d-146b-4696-b6dd-441c43cccf76",
+      "name": "LEFALLO TRADING",
+      "email": "lefallo.beta@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "EJg3Ldo7OW9M6dmbdbjf",
+          "name": "Tlhalefang Trading",
+          "email": "tlhalefangtumelo0@gmail.com",
+          "score": 0.727,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "eXpVx0oi8xL5KPcEmS3O",
+          "name": "Mosedipaballo trading",
+          "email": "info.mosedipaballotrading@gmail.com",
+          "score": 0.722,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "9911csm1jjTbQaoJbTPB",
+          "name": "Kgotlakgolo Trading",
+          "email": "lightlekgari@gmail.com",
+          "score": 0.706,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "cc568110-53d4-409f-a00b-76f945c0f3c5",
+      "name": "Lonsek Holdings",
+      "email": "info@lonsek.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "g8XvykVi5Q6pO5HMSbOQ",
+          "name": "Lonsek Holdings (Pty)Ltd",
+          "email": "lona@sizapersonnel.co.za",
+          "score": 1.0,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "jIgut2vpZjByRodEsd9b",
+          "name": "SPMK HOLDINGS",
+          "email": "moatesimon4@gmail.com",
+          "score": 0.786,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "84YnSscFhZkJ6iSmTIDS",
+          "name": "Tefo Holdings",
+          "email": "tefosipho633@gmail.com",
+          "score": 0.714,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "78e1fba1-7106-4393-b4b8-874c97044be2",
+      "name": "Maanopele (Pty)Ltd",
+      "email": "eric.molokela@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "XSdPG7ZNWsYB3kRSrk49",
+          "name": "Maonno Pty LTD",
+          "email": "motshegwematlhogonolo@gmail.com",
+          "score": 0.75,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "hOtJ3TNRphPKsvg1LbUb",
+          "name": "Maonno Pty LTD",
+          "email": "motshegwematlhogonolo@gmail.com",
+          "score": 0.75,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "FLj9eLuqcLUF6N7et1lt",
+          "name": "Lesmacabel(pty ltd)",
+          "email": "lesmacabel@gmail.com",
+          "score": 0.703,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "11798ce7-7a78-48cf-b9a1-f179c2477166",
+      "name": "Masilo Mokoena Express\t\t1\tWelkom\t156 Block, Makhele ,Kutlwanong ,Odendaalsrus\t\tClient signed MOA\t\t\t\t",
+      "email": "masilomokoenaexpress@yahoo.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "8oIvmqbB38DOPjxeD7Mt",
+          "name": "Zac-Mokoena Trading and Investment",
+          "email": "zacmokoenatrading@gmail.com",
+          "score": 0.323,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "uBhrGnQxHwTZx1TW942g",
+          "name": "BAKGATLA BA MOLEFE MINING INDUSTRY(PTY)LTD",
+          "email": "kagiso98molefe@gmail.com",
+          "score": 0.319,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        },
+        {
+          "id": "Zdm1nqyCUaO5HKnd1cY2",
+          "name": "Morena Kgomo Construction",
+          "email": "maromuflorina@gmail.com",
+          "score": 0.314,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f82b9ca2-1819-441e-b539-5d1b16fd749b",
+      "name": "Matloshe Constructions & projects",
+      "email": "matloshe22@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "JHlHCw35DoKqTWYNrsu9",
+          "name": "Thero Construction Projects",
+          "email": "lesego.magano@gmail.com",
+          "score": 0.833,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "0avUoxmxitZUzn7uHdMp",
+          "name": "Fredmosconstruction and  projects",
+          "email": "molebatsijeanette5@gmail.com",
+          "score": 0.788,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "fEbasfPOJ2dbXP9wq7vT",
+          "name": "Kagoyaone construction and projects",
+          "email": "info@kagoyaone.co.za",
+          "score": 0.765,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "9fdc9a1e-e43e-451a-b5d0-a151ff4a63a8",
+      "name": "MGMA Enterprise (Pty)Ltd",
+      "email": "fortunemag@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "GjODfSL7hSjG9scmCV7m",
+          "name": "Gwenzi Enterprise (Pty)Ltd",
+          "email": "mmduedo01@gmail.com",
+          "score": 0.84,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "pending",
+            "accepted"
+          ]
+        },
+        {
+          "id": "KXy5eTswrcwC4fB3Dgt7",
+          "name": "TVL ENTERPRISE PTY LTD",
+          "email": "tvlenterprise2017@gmail.com",
+          "score": 0.826,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "ZAaJje7wa1CHWZqYHBEH",
+          "name": "Mokgobye Enterprise pty ltd",
+          "email": "nmokgobye@gmail.com",
+          "score": 0.824,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "ea103884-8aed-4dab-bb8e-688e67a608c6",
+      "name": "Minx Yogurt Pty Ltd",
+      "email": "minkymalete@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "9scidLoKlmjOfNEqPcDm",
+          "name": "NIA Group Pty Ltd",
+          "email": "niagroupsa@gmail.com",
+          "score": 0.667,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "XSdPG7ZNWsYB3kRSrk49",
+          "name": "Maonno Pty LTD",
+          "email": "motshegwematlhogonolo@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "hOtJ3TNRphPKsvg1LbUb",
+          "name": "Maonno Pty LTD",
+          "email": "motshegwematlhogonolo@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "3b01fb2c-36c3-4f7e-a236-80fd599e1fe7",
+      "name": "Moleka Creation and Projects ",
+      "email": "info@molekacreations.co.za",
+      "originalStatus": "No programme",
+      "currentStatus": "Supported",
+      "exactType": "Name",
+      "candidates": [
+        {
+          "id": "BLQ6kuFGukSKIvsobGCj",
+          "name": "Moleka Creation and Projects",
+          "email": "smikerledwaba@gmail.com",
+          "score": 1.0,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "DS7Euodpi3dgQD6b2S0r",
+          "name": "Lesike's Cleaning and Projects",
+          "email": "douglas.lesike@gmail.com",
+          "score": 0.759,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "f7xqwnhfypdNXwjDmcWi",
+          "name": "EDGAR traidin and projects",
+          "email": "ebmatlapeng@gmail.com",
+          "score": 0.741,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "9cdf54a6-545f-496f-86ed-7b64a4d5a1ff",
+      "name": "Morena Kgomo Construction",
+      "email": "kgomotlokoamaromu@gmail.com",
+      "originalStatus": "No programme",
+      "currentStatus": "Supported",
+      "exactType": "Name",
+      "candidates": [
+        {
+          "id": "Zdm1nqyCUaO5HKnd1cY2",
+          "name": "Morena Kgomo Construction",
+          "email": "maromuflorina@gmail.com",
+          "score": 1.0,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "uLjGzl7bOIIyeiGNXcVc",
+          "name": "REBAKGONE CONSTRUCTION",
+          "email": "smejelo@gmail.com",
+          "score": 0.809,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "0woK8GpLjAZVBEmDgVof",
+          "name": "K Ntsako construction",
+          "email": "kedibonmogale@gmail.com",
+          "score": 0.739,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bf254993-0bff-476b-96e6-1d5d0b6b8894",
+      "name": "Morena Kgomo Construction",
+      "email": "marumoflorina@gmail.com",
+      "originalStatus": "No programme",
+      "currentStatus": "Supported",
+      "exactType": "Name",
+      "candidates": [
+        {
+          "id": "Zdm1nqyCUaO5HKnd1cY2",
+          "name": "Morena Kgomo Construction",
+          "email": "maromuflorina@gmail.com",
+          "score": 1.0,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "uLjGzl7bOIIyeiGNXcVc",
+          "name": "REBAKGONE CONSTRUCTION",
+          "email": "smejelo@gmail.com",
+          "score": 0.809,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "0woK8GpLjAZVBEmDgVof",
+          "name": "K Ntsako construction",
+          "email": "kedibonmogale@gmail.com",
+          "score": 0.739,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ab8bc5e9-82e1-4023-b06d-4369a656cac4",
+      "name": "Ngest Construction and Projects (Pty) Ltd",
+      "email": "ngestconstruction@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "PFNpCDyv2NN8wJV5GHGu",
+          "name": "PP TM Construction And Projects (Pty) Ltd",
+          "email": "tmagagane64@gmail.com",
+          "score": 0.902,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "k6NSB5XYuRDaHIKCQBja",
+          "name": "Tsweletso Construction and Projects (PTY) LTD",
+          "email": "catekekana@gmail.com",
+          "score": 0.884,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "KlHrFAbrcNBeNLp4oVj9",
+          "name": "Mjsthemba construction and projects (Pty)ltd",
+          "email": "mothusisthemba@gmail.com",
+          "score": 0.871,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a2d26c35-62b8-4871-831a-c6339e0c0c6d",
+      "name": "Nkwenkwezana Holdings (Pty) Ltd",
+      "email": "tebogosotholashe@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "klqkzcMlRtDyiPvOdQa5",
+          "name": "Ndengezi-Nzima Holdings (Pty) Ltd",
+          "email": "jabuyende67@gmail.com",
+          "score": 0.812,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted",
+            "pending"
+          ]
+        },
+        {
+          "id": "oepd3VzjN1AidaDm8q5L",
+          "name": "Ngcamane Holdings (Pty) Ltd",
+          "email": "ngcamaneholdings@gmail.com",
+          "score": 0.759,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "kmcmQU05yBNThZ7MzajZ",
+          "name": "Abykhen Holdings pty -ltd",
+          "email": "priscillakomane5@gmail.com",
+          "score": 0.75,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "0acbf277-dc2c-42f7-9f96-d35414dbcf10",
+      "name": "NTHONGWA ARTZ",
+      "email": "info@nthongwaartz.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "25Z5rcZsSExv8f4aLpnS",
+          "name": "Ntsholo Trading and Projects",
+          "email": "kbaubrey51@gmail.com",
+          "score": 0.488,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "GUORQC1EqLlPrhaa9VPu",
+          "name": "Thamea Construction and Transport",
+          "email": "thameaconstra@gmail.com",
+          "score": 0.483,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "DghFleKsMLoaOKXjZj3p",
+          "name": "Tumelong Projects",
+          "email": "mashigomotshidisi@gmail.com",
+          "score": 0.467,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "6fd83b30-af9e-496a-8362-12fe8b03b408",
+      "name": "Ntshompe Constructions and Projects",
+      "email": "molote.ntshompe67@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "khnh8yCV6fZJDgpr5lRa",
+          "name": "H & M Construction and Projects",
+          "email": "h.mconstructionandprojects@gmail.com",
+          "score": 0.848,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "JHlHCw35DoKqTWYNrsu9",
+          "name": "Thero Construction Projects",
+          "email": "lesego.magano@gmail.com",
+          "score": 0.806,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "fEbasfPOJ2dbXP9wq7vT",
+          "name": "Kagoyaone construction and projects",
+          "email": "info@kagoyaone.co.za",
+          "score": 0.8,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "004b6001-6013-4c60-b80c-6d515ad2fd4e",
+      "name": "Nyosana 1 Holdings",
+      "email": "zukimakukule@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "IN3GYSkNONVvpWBk7o8M",
+          "name": "NomaJabu Holdings",
+          "email": "cindi.kgosiyagae@gmail.com",
+          "score": 0.743,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "QBCKO39Yi86GOXWW8aW4",
+          "name": "Rose and dan holdings",
+          "email": "mofokengvicky910215@gmail.com",
+          "score": 0.718,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "XQtRh3z0PlG0aDd3yWEA",
+          "name": "Langa Shona Holdings",
+          "email": "lesibanak2@gmail.com",
+          "score": 0.684,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bc76a410-102b-499d-ae55-31863a521eb0",
+      "name": "On The Go Engineering",
+      "email": "johannes@onthegoengineering.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "bN3jvvpDOibGow9cIJSW",
+          "name": "GS Engineering and Projects",
+          "email": "gisheprojects@gmail.com",
+          "score": 0.839,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "s7dvg5ZPIfMawqctxSVJ",
+          "name": "GS Engineering and Projects",
+          "email": "info@gsengineeringprojects.co.za",
+          "score": 0.839,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "nBiZLnBjbgXT8PGoScVr",
+          "name": "Nnona Engineering",
+          "email": "mfconstr.tebogom@gmail.com",
+          "score": 0.824,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f3dd4566-3689-4b6e-a0e6-496c9e7b9735",
+      "name": "Pasuma Genaral  Trading",
+      "email": "emasupa1@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "45ROZiQ30alfZm9EoSst",
+          "name": "Gadou Metal Trading",
+          "email": "info@gadoumetaltrading.co.za",
+          "score": 0.667,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "31qWZ9nRsmnNRTeG0ZGM",
+          "name": "Morwa Mokwakwa Trading",
+          "email": "morwa.mokwakwa1@gmail.com",
+          "score": 0.578,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "eXpVx0oi8xL5KPcEmS3O",
+          "name": "Mosedipaballo trading",
+          "email": "info.mosedipaballotrading@gmail.com",
+          "score": 0.545,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "fb3b24d2-6350-4520-8b2c-9dc40028dce1",
+      "name": "PG Infrastructure ",
+      "email": "zamani@phendukainvestments.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "4tSUEKQORdt8rNVosVAs",
+          "name": "Infrastructure Care Unit Pty Ltd",
+          "email": "sanqavalashiya@gmail.com",
+          "score": 0.683,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "RmQbcNeres3qDtg2qc06",
+          "name": "mp contruction",
+          "email": "mxolisimlotswa@gmail.com",
+          "score": 0.516,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "0woK8GpLjAZVBEmDgVof",
+          "name": "K Ntsako construction",
+          "email": "kedibonmogale@gmail.com",
+          "score": 0.474,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ac7c770c-c203-4d85-aa42-989c22bfe2b0",
+      "name": "Phaswin Holdings and Projects",
+      "email": "phaswinnhnp.sales@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "KZNKyQqCLcH7Sclu6YAD",
+          "name": "Lufontein Holding and Projects",
+          "email": "lufonteinholdings@gmail.com",
+          "score": 0.78,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "25Z5rcZsSExv8f4aLpnS",
+          "name": "Ntsholo Trading and Projects",
+          "email": "kbaubrey51@gmail.com",
+          "score": 0.737,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "krjVm10P9ega8xtO4ERz",
+          "name": "Machine Trading and Projects",
+          "email": "ayvannario659@gmail.com",
+          "score": 0.737,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c8af4e32-7bf4-47f3-b8f4-3eadbf9c7ef2",
+      "name": "Phaswin Holdings and Projects (PTY)Ltd",
+      "email": "phaswinhnp.sales@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "OlSXrtjCsxsy1UEZ6zLf",
+          "name": "Copex18 Trading and Project (pty) ltd",
+          "email": "tenza@copex18.co.za",
+          "score": 0.72,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "uIg07NXi8gDh95VppaYh",
+          "name": "Mash joint trading and projects pty",
+          "email": "leratomashishi@ymail.com",
+          "score": 0.712,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "9tJUBTE8vENyydC48JTR",
+          "name": "Sizo Projects (Pty)Ltd",
+          "email": "info@sizoprojects.co.za",
+          "score": 0.7,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ea083548-1219-45c0-b940-89f35b55001d",
+      "name": "PP TM Construction And Projects (Pty) Ltd",
+      "email": "info@pptmprojects.co.za",
+      "originalStatus": "No programme",
+      "currentStatus": "No programme",
+      "exactType": "Name",
+      "candidates": [
+        {
+          "id": "PFNpCDyv2NN8wJV5GHGu",
+          "name": "PP TM Construction And Projects (Pty) Ltd",
+          "email": "tmagagane64@gmail.com",
+          "score": 1.0,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "KlHrFAbrcNBeNLp4oVj9",
+          "name": "Mjsthemba construction and projects (Pty)ltd",
+          "email": "mothusisthemba@gmail.com",
+          "score": 0.871,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        },
+        {
+          "id": "hzCPjchtVg9JLOW7Uptf",
+          "name": "MjSthemba Construction and projects (pty)ltd",
+          "email": "mariasthemba@gmail.com",
+          "score": 0.871,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2e08c6c5-f901-43e7-9ffd-d73d843f1253",
+      "name": "QUVA TRADING",
+      "email": "quvasilulami@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "b3fDo2Ml1ljrc31ox0dP",
+          "name": "Bani M Trading",
+          "email": "lizzylisbeth002@gmail.com",
+          "score": 0.692,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "45ROZiQ30alfZm9EoSst",
+          "name": "Gadou Metal Trading",
+          "email": "info@gadoumetaltrading.co.za",
+          "score": 0.645,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "R4PkJqHK4xcW7r10Nca0",
+          "name": "VSA Trading Pty Ltd",
+          "email": "alton.vetho@proton.me",
+          "score": 0.645,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "465336a3-549c-4b52-94cf-4797d38b8bfa",
+      "name": "RADICAL3MINDS INTEGRATED SERVICES",
+      "email": "mnukwamafu@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "3WiIWrGJufqt74Hgd98U",
+          "name": "Ramokoka Engineering steel services",
+          "email": "enouseb@gmail.com",
+          "score": 0.559,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "t2TmiFfvN1MCqL24WLYy",
+          "name": "Dalmont TND services pty ltd",
+          "email": "imuhomba@gmail.com",
+          "score": 0.557,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "FJnA3fXURWoytB4bPyMq",
+          "name": "CART-IT DELIVERY SERVICES",
+          "email": "cartit.deliveryservice@gmail.com",
+          "score": 0.552,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a17be682-059b-42da-8bd5-d68b4313e96a",
+      "name": "Ramoreks pty ltd",
+      "email": "kkramorakane2@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "pZ9ifTCPvDV0HlBOf1t6",
+          "name": "MOJA PROJECTS PTY LTD",
+          "email": "mojapro.014@gmail.com",
+          "score": 0.703,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "0ZqHgcchfsVjSfGviQfD",
+          "name": "MOGAMASE PTY LTD",
+          "email": "khupariwinny@gmail.com",
+          "score": 0.688,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "aoOLqEvFeV1KOqKK64I1",
+          "name": "Bonram (PTY) LTD",
+          "email": "bonnywell@gmail.com",
+          "score": 0.688,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a446b586-84c7-47d5-8b3d-4906e6271cd0",
+      "name": "RefilweBophelo Trading & Projecta",
+      "email": "refilwe@refilwebophelo.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "0V6yajFhmIsIFtKchCNX",
+          "name": "O Re Femetse Trading And Projects",
+          "email": "michaelthakadu6@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "25Z5rcZsSExv8f4aLpnS",
+          "name": "Ntsholo Trading and Projects",
+          "email": "kbaubrey51@gmail.com",
+          "score": 0.656,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "8PllTsSnonsDXO3bKthH",
+          "name": "Genso trading and projects",
+          "email": "jensoprojects2@gmail.com",
+          "score": 0.644,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "72b8f422-ba7a-4ad4-b4f2-f93bb90f586c",
+      "name": "Roseline Investment Holdings",
+      "email": "botipem670@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "RkmfDga9PGAQtz75cxyb",
+          "name": "Sort It investment Holdings",
+          "email": "gerald@sortitpackaging.co.za",
+          "score": 0.8,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "tiCZdQDdRz8U6QGaefg5",
+          "name": "Loakantse Investments",
+          "email": "tsholanangmogotsi@gmail.com",
+          "score": 0.7,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "3T5hz0mdKWuJrXacmhuB",
+          "name": "Keorapetse Investments(Pty)Ltd",
+          "email": "keorapetseinvestments92@gmail.com",
+          "score": 0.683,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2f7f42d6-d265-47c2-b10c-202a217a8213",
+      "name": "Rotshepega Solutions",
+      "email": "rotshepegasolutions@gmail.com",
+      "originalStatus": "No programme",
+      "currentStatus": "No programme",
+      "exactType": "Email",
+      "candidates": [
+        {
+          "id": "6mxRw7pJYnofALx9lMRH",
+          "name": "Rotshepwga Solutions LTD(PRY)",
+          "email": "rotshepegasolutions@gmail.com",
+          "score": 0.776,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "iuFlP1TX9rai1w7huxFg",
+          "name": "Reagile Solutions",
+          "email": "selebanothato@gmail.com",
+          "score": 0.703,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "85idiF9lJMTEkMe7TAID",
+          "name": "Vas Total Solutions",
+          "email": "arusha@vastsolutions.co.za",
+          "score": 0.667,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f6153cad-36aa-42f5-9751-9362ffa04e62",
+      "name": "Royal On trading n Projects",
+      "email": "royalon2019@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "25Z5rcZsSExv8f4aLpnS",
+          "name": "Ntsholo Trading and Projects",
+          "email": "kbaubrey51@gmail.com",
+          "score": 0.8,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "KxcMyC9hhHmHQBSYNvxm",
+          "name": "R And I Trading And Projects",
+          "email": "rangatainocent@gmail.com",
+          "score": 0.8,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "RfzhUhahOrLv1HpB2AiG",
+          "name": "Mcooy Trading and Projects",
+          "email": "mcooytrading85@gail.com",
+          "score": 0.792,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "07125bbd-8c49-441e-a3eb-5427a3e46ab1",
+      "name": "Safe Lifestyle",
+      "email": "matsapa@safelifestyle.net.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "ZgQsxAc9o3mUPBg9nkQi",
+          "name": "Gontselife (Pty)LTD",
+          "email": "ofentsegaoboihe@gmail.com",
+          "score": 0.545,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted",
+            "pending"
+          ]
+        },
+        {
+          "id": "mi6BOd1jVITKkR0IbVNA",
+          "name": "PIGSTYLE(PTY)ltd",
+          "email": "admin@pigstyle.co.za",
+          "score": 0.545,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "kSNkDH7apmzjDXOhMRa0",
+          "name": "Sema Quality Solutions",
+          "email": "clement@semaq.co.za",
+          "score": 0.538,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "54a468bf-6cf4-4bd7-8891-221fa81947c7",
+      "name": "Sedise Engineering Services and Supplies",
+      "email": "ditebogom@sedise-eng.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "JUKbxb2M9BYTA4uTitHA",
+          "name": "Genesis General Supplies (PTY) LTD",
+          "email": "nmakgone@gmail.com",
+          "score": 0.667,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "sji33r1Ags5aah4y8M8z",
+          "name": "Astude engineering and construction",
+          "email": "astudeec@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "C4DHbvDsougHsrSFA5N9",
+          "name": "KAISA ENGINEERING SOLUTIONS (PTY) LTD",
+          "email": "kamomagale@gmail.com",
+          "score": 0.636,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "795448b2-0ca5-4618-9e94-0ed00a9ef9b3",
+      "name": "SELECT ME ENGINEEING",
+      "email": "selectmeengineering13@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "kehHztoFikK6qSU7YViO",
+          "name": "LMP Engineering & Projects Pty Ltd",
+          "email": "leephoza@icloud.com",
+          "score": 0.743,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "sji33r1Ags5aah4y8M8z",
+          "name": "Astude engineering and construction",
+          "email": "astudeec@gmail.com",
+          "score": 0.737,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "Lob9nyvkrK1GV51XdoY2",
+          "name": "Refinement Engineering Pty Ltd",
+          "email": "info@refine-eng.co.za",
+          "score": 0.714,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "0396e816-37a7-4da4-a15a-8e7c882b51e7",
+      "name": "Sengkhona Training & Development",
+      "email": "nthoko@sengkhonatraining.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "tsE6AXwKWMzR70feLMws",
+          "name": "Arasani Development",
+          "email": "arasanidevelopments@gmail.com",
+          "score": 0.694,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "x8wIcD2fGkwSbQidlEMq",
+          "name": "Sebata youth development PTY Ltd",
+          "email": "gaokaegaerekesibi@gmail.com",
+          "score": 0.63,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "WQd6uAcH68634YpqewwF",
+          "name": "DESERVE DEVELOPMENT PTY LTD",
+          "email": "ssekhurwane@gmail.com",
+          "score": 0.612,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "57f9b9ea-c0a9-46fe-ae4d-f72bcd85120d",
+      "name": "Shoki Phaladi Manufacturing",
+      "email": "reshoketswemph926@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "5kPDamXcVxRagpLVLey4",
+          "name": "Heli Manufacturing Services Pty Ltd",
+          "email": "moses@heli-engineering.co.za",
+          "score": 0.756,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "GVon0uUMgjhwIHbNFHC4",
+          "name": "Semphatleng cleaning Services and Projects",
+          "email": "thapedimolele9@gmail.com",
+          "score": 0.468,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "ZP6uwp42wQebuvNtw840",
+          "name": "Qadir Mining Solutions",
+          "email": "lr.moepya@gmail.com",
+          "score": 0.462,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "e9d4b858-75d7-4217-86c8-867b002e73ee",
+      "name": "Siza Bantu Construction",
+      "email": "mahlatsemapheto@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "ljXQ0Wg8P2TkCjuZm13q",
+          "name": "STMOL Construction",
+          "email": "stmolefe123@gmail.com",
+          "score": 0.732,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "0woK8GpLjAZVBEmDgVof",
+          "name": "K Ntsako construction",
+          "email": "kedibonmogale@gmail.com",
+          "score": 0.727,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "uLjGzl7bOIIyeiGNXcVc",
+          "name": "REBAKGONE CONSTRUCTION",
+          "email": "smejelo@gmail.com",
+          "score": 0.711,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "73076141-47e4-47f5-919f-6d5aa8a6f503",
+      "name": "Sncwabe (Pty) Ltd",
+      "email": "stherise@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "aoOLqEvFeV1KOqKK64I1",
+          "name": "Bonram (PTY) LTD",
+          "email": "bonnywell@gmail.com",
+          "score": 0.727,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "FLj9eLuqcLUF6N7et1lt",
+          "name": "Lesmacabel(pty ltd)",
+          "email": "lesmacabel@gmail.com",
+          "score": 0.722,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "YA4kCRJsMWSfzX4EpEQT",
+          "name": "TEEJOSE( PTY) LTD",
+          "email": "reginaldmabe567@gmail.com",
+          "score": 0.706,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "98f5e510-6f0f-4318-8891-c0fabcc73bf6",
+      "name": "SNR Dedicated Contracts",
+      "email": "james@snrdedicated.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "npQxT5gWP0yuCEKO6Shd",
+          "name": "Nasra Consultants (pty) Ltd",
+          "email": "info.nasraconsultants@gmail.com",
+          "score": 0.55,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "AZY7hjxfreZjqsOcuWH9",
+          "name": "JMZ Electrical contractor",
+          "email": "jabulaniramahali@gmail.com",
+          "score": 0.542,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "DbDY0UpKFIQRgy8oxnUU",
+          "name": "RusWes Constructions",
+          "email": "rremosekiagree@gmail.com",
+          "score": 0.512,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "632d6cda-0e37-497b-b1fb-b687b74f683a",
+      "name": "SORT IT INVESMENT HOLDINGS",
+      "email": "geralg@sortitpackaging.co.za",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "RkmfDga9PGAQtz75cxyb",
+          "name": "Sort It investment Holdings",
+          "email": "gerald@sortitpackaging.co.za",
+          "score": 0.981,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "3T5hz0mdKWuJrXacmhuB",
+          "name": "Keorapetse Investments(Pty)Ltd",
+          "email": "keorapetseinvestments92@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        },
+        {
+          "id": "WLUbiPA82jbEkbIGCUET",
+          "name": "KEORAPETSE INVESTMENTS(Pty)Ltd",
+          "email": "legodikeorapetse92@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "efddeeb6-6011-4625-8307-32ca4aac8e53",
+      "name": "Sukude SH Holdings",
+      "email": "siphelelemlahlwa06@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "TO648YOb5CN2e7pukkm7",
+          "name": "Sukude SM Holdings Pty Ltd",
+          "email": "sukudesmholdings@gmail.com",
+          "score": 0.889,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "jIgut2vpZjByRodEsd9b",
+          "name": "SPMK HOLDINGS",
+          "email": "moatesimon4@gmail.com",
+          "score": 0.71,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "GICoMgeuoP9pJhcPKysL",
+          "name": "Isibuko samanono holdings",
+          "email": "lindosiyabonga075@gmail.com",
+          "score": 0.651,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "824fcc26-4bc4-4d87-97a9-0e0d10139757",
+      "name": "Tabeta Construction (PTY)Ltd",
+      "email": "charliem.skhosana@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "BpqSpzw0ZyS8eEkiFiCq",
+          "name": "Majimbos Construction Pty Ltd",
+          "email": "tiisetso9810@gmail.com",
+          "score": 0.807,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "alctwVpJOj8qMnMLhiqo",
+          "name": "Makhube Inn Construction (Pty) Ltd",
+          "email": "khensiinnocentia14@gmail.com",
+          "score": 0.806,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "70MFTO5v7fGR8nY6qipB",
+          "name": "Likhusasa costruction(Pty)ltd",
+          "email": "nkosimpilemashele1108@gmail.com",
+          "score": 0.772,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "2c7ac2c6-0c84-4496-96db-be4129a3388d",
+      "name": "Tanani Packaging",
+      "email": "gerald.tanani@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "b3fDo2Ml1ljrc31ox0dP",
+          "name": "Bani M Trading",
+          "email": "lizzylisbeth002@gmail.com",
+          "score": 0.533,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "7LkmyCQcbeStgajcdGnT",
+          "name": "Nhanha Engineering",
+          "email": "okuhlebadli@gmail.com",
+          "score": 0.471,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "IOlUVyxeXHZeL1WjbKIM",
+          "name": "Nhanha Engineering",
+          "email": "okuhlebadli@nhanhaengineering.co.za",
+          "score": 0.471,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "pending",
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "9ae6dd99-c4f3-4c6b-a256-a31484bb8926",
+      "name": "Thatonic (PTY)Ltd",
+      "email": "thatonic@icloud.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "noIwM8ZYGXs4C8ETTTnd",
+          "name": "Man Sadic (pty) ltd",
+          "email": "sadama.sherindi9@gmail.com",
+          "score": 0.722,
+          "programmes": [
+            "Tharisa Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "XSdPG7ZNWsYB3kRSrk49",
+          "name": "Maonno Pty LTD",
+          "email": "motshegwematlhogonolo@gmail.com",
+          "score": 0.71,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "hOtJ3TNRphPKsvg1LbUb",
+          "name": "Maonno Pty LTD",
+          "email": "motshegwematlhogonolo@gmail.com",
+          "score": 0.71,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "680802e5-3965-43a8-9529-f32d21817614",
+      "name": "Thetso Projects And Trading (Pty) Ltd",
+      "email": "thetso.gubico@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "NsftI44RiVwvEi1cLgch",
+          "name": "Mabothe Project and service (pty) ltd",
+          "email": "kgosimabothe03@gmail.com",
+          "score": 0.757,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "JHlHCw35DoKqTWYNrsu9",
+          "name": "Thero Construction Projects",
+          "email": "lesego.magano@gmail.com",
+          "score": 0.727,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "9tJUBTE8vENyydC48JTR",
+          "name": "Sizo Projects (Pty)Ltd",
+          "email": "info@sizoprojects.co.za",
+          "score": 0.678,
+          "programmes": [
+            "Kriel ESD"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "437b0596-770a-4f47-92f1-b792820075ca",
+      "name": "Tshawekazi Projects",
+      "email": "nonyamakomagida@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "71SoBrXikuPaworCxrEX",
+          "name": "Tbatlala Projects",
+          "email": "ramadiarefilwe@gmail.com",
+          "score": 0.667,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "NYmCrH6qZVJjeitQHRHP",
+          "name": "VUAKO PROJECTS",
+          "email": "vulani.siweya@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        },
+        {
+          "id": "bC8BRDtKFs1GaNEoFdIG",
+          "name": "Js Sihle Projects",
+          "email": "apostlesingcokolo@gmail.com",
+          "score": 0.667,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cdcf6834-ae15-4808-8177-6ede8ce805a7",
+      "name": "Tshepang Tebatso Trading ",
+      "email": "thularedj@gmail.com",
+      "originalStatus": "No programme",
+      "currentStatus": "No programme",
+      "exactType": "Email",
+      "candidates": [
+        {
+          "id": "8vo3AlMFAC7xMhM4zNn2",
+          "name": "Tshephang Tebatso trading and projects",
+          "email": "thularedj@gmail.com",
+          "score": 0.97,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "EJg3Ldo7OW9M6dmbdbjf",
+          "name": "Tlhalefang Trading",
+          "email": "tlhalefangtumelo0@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "eXpVx0oi8xL5KPcEmS3O",
+          "name": "Mosedipaballo trading",
+          "email": "info.mosedipaballotrading@gmail.com",
+          "score": 0.667,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "4fd950a2-61e9-4eb0-90ed-a3355e3ee20c",
+      "name": "Tshwaranang Corrossion Protection",
+      "email": "bernard.baloi@tshwaranang-cor.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "JHlHCw35DoKqTWYNrsu9",
+          "name": "Thero Construction Projects",
+          "email": "lesego.magano@gmail.com",
+          "score": 0.567,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "25Z5rcZsSExv8f4aLpnS",
+          "name": "Ntsholo Trading and Projects",
+          "email": "kbaubrey51@gmail.com",
+          "score": 0.525,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "AUK2UabV4oDq8Cl2AcLm",
+          "name": "Maru and Rox Projects",
+          "email": "sabimarumo@gmail.com",
+          "score": 0.519,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "18dd6381-5f1f-4170-982d-8cc454271e9b",
+      "name": "Tsotello General and Projects (PTY) LTD",
+      "email": "tsotellognp@outlook.com",
+      "originalStatus": "No programme",
+      "currentStatus": "No programme",
+      "exactType": "Email",
+      "candidates": [
+        {
+          "id": "1ZhxhIQefxxd9XZB3gmX",
+          "name": "Tsotello General and Projects",
+          "email": "tsotellognp@outlook.com",
+          "score": 1.0,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "k6NSB5XYuRDaHIKCQBja",
+          "name": "Tsweletso Construction and Projects (PTY) LTD",
+          "email": "catekekana@gmail.com",
+          "score": 0.69,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "PFNpCDyv2NN8wJV5GHGu",
+          "name": "PP TM Construction And Projects (Pty) Ltd",
+          "email": "tmagagane64@gmail.com",
+          "score": 0.675,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "3823aa61-47ea-49f0-b8db-12760016af63",
+      "name": "Tsozama Engineering and Supply (Pty) Ltd",
+      "email": "kgomotsozwane882@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "C4DHbvDsougHsrSFA5N9",
+          "name": "KAISA ENGINEERING SOLUTIONS (PTY) LTD",
+          "email": "kamomagale@gmail.com",
+          "score": 0.701,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "3WiIWrGJufqt74Hgd98U",
+          "name": "Ramokoka Engineering steel services",
+          "email": "enouseb@gmail.com",
+          "score": 0.692,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "m2r2G2SwuqymzNenwtIZ",
+          "name": "MM ROYAL ENGINEERING AND SERVICES PTY LTD",
+          "email": "senwammroyal@gmail.com",
+          "score": 0.691,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "18def958-247f-4149-80b2-808ea3896fd1",
+      "name": "Tsweletso Construction and Projects (PTY) LTD",
+      "email": "catekekane@gmail.com",
+      "originalStatus": "No programme",
+      "currentStatus": "Supported",
+      "exactType": "Name",
+      "candidates": [
+        {
+          "id": "k6NSB5XYuRDaHIKCQBja",
+          "name": "Tsweletso Construction and Projects (PTY) LTD",
+          "email": "catekekana@gmail.com",
+          "score": 1.0,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "PFNpCDyv2NN8wJV5GHGu",
+          "name": "PP TM Construction And Projects (Pty) Ltd",
+          "email": "tmagagane64@gmail.com",
+          "score": 0.86,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "KlHrFAbrcNBeNLp4oVj9",
+          "name": "Mjsthemba construction and projects (Pty)ltd",
+          "email": "mothusisthemba@gmail.com",
+          "score": 0.831,
+          "programmes": [],
+          "applicationStatuses": [
+            "rejected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bfab818f-21a2-4e9e-8a5d-a5d578f246da",
+      "name": "Vilaphiwe Security System ",
+      "email": "systemsvilaphiwe@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "M8MbuGSVVWqx18b88TUa",
+          "name": "4Ladies Industries (Pty)Ltd",
+          "email": "thuladu.d@gmail.com",
+          "score": 0.462,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "rCAMHQi06UdEXSeFAQbM",
+          "name": "IMMACULATE MATRIX PTY.LTD",
+          "email": "immaculaterakuba@gmail.com",
+          "score": 0.44,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "wMPIViANN4wbmDdMyNCh",
+          "name": "Tsiane Executive Solutions",
+          "email": "tshirengwenya@gmail.com",
+          "score": 0.439,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "5402516b-44d4-43e5-909d-463ffa710173",
+      "name": "VILAPHIWE SECURITY SYSTEMS PTY LTD",
+      "email": "siphiwethegift@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "uP2gJMVfOmhx6iXTvi27",
+          "name": "Moano cleaning and security enterprise (PTY)LTD",
+          "email": "reginahkeitumetsemonnapula@gmail.com",
+          "score": 0.568,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "M8MbuGSVVWqx18b88TUa",
+          "name": "4Ladies Industries (Pty)Ltd",
+          "email": "thuladu.d@gmail.com",
+          "score": 0.557,
+          "programmes": [],
+          "applicationStatuses": [
+            "pending"
+          ]
+        },
+        {
+          "id": "lGkkCk4PTckuc0BXoWB1",
+          "name": "Moano cleaning and security enterprise (pty  )LTD)",
+          "email": "morero.km@gmail.com",
+          "score": 0.548,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "213a8277-9103-4aa7-9330-91e220b27ff1",
+      "name": "Wandiwami Consulting",
+      "email": "elizabethmatomela703@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "ZllZ8I3xF3CnFrRBZe8h",
+          "name": "Simke Consulting",
+          "email": "vbmdluli@gmail.com",
+          "score": 0.722,
+          "programmes": [],
+          "applicationStatuses": []
+        },
+        {
+          "id": "QSaiT04ATMlMrqdIqflZ",
+          "name": "Nzima Consulting and Projects",
+          "email": "nolwazinzimande85@gmail.com",
+          "score": 0.667,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "mXXmbVRiU0Uu6nYsjuDM",
+          "name": "Sizanathi consultant pty  (Ltd)",
+          "email": "kgothatsojones0607@gmail.com",
+          "score": 0.65,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "848b853d-8008-44ce-8d22-1079e4c539dc",
+      "name": "Xolelwa Communication & Products",
+      "email": "xolelwacommunication@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "BLQ6kuFGukSKIvsobGCj",
+          "name": "Moleka Creation and Projects",
+          "email": "smikerledwaba@gmail.com",
+          "score": 0.633,
+          "programmes": [
+            "Lephalale ESD Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "a83UnMZl2YSAV3yPAX2O",
+          "name": "Solofelang Basadi Construction and Projects",
+          "email": "solofelang.basadi@gmail.com",
+          "score": 0.587,
+          "programmes": [
+            "SRMCDT Project"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "JHlHCw35DoKqTWYNrsu9",
+          "name": "Thero Construction Projects",
+          "email": "lesego.magano@gmail.com",
+          "score": 0.576,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    },
+    {
+      "id": "beeeae6c-ec13-4aed-8d5e-6afabede9888",
+      "name": "Zone Water Bottled",
+      "email": "lloyd.moeketsi@gmail.com",
+      "originalStatus": "No participant link",
+      "currentStatus": "No participant link",
+      "exactType": "",
+      "candidates": [
+        {
+          "id": "8wwrCy1KmLf2dGF7oLAH",
+          "name": "Clear Hold (Pty)Ltd",
+          "email": "info@clearhold.co.za",
+          "score": 0.5,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "TA6hgPkLV9kLv2czLS5E",
+          "name": "clear hold pty ltd",
+          "email": "info@CLEARHOLD.co.za",
+          "score": 0.5,
+          "programmes": [
+            "SEDFA"
+          ],
+          "applicationStatuses": [
+            "accepted"
+          ]
+        },
+        {
+          "id": "mQhNzxLtypfPjr4KVvOm",
+          "name": "Thoriso ya Botlhale projects",
+          "email": "leratokomane67@gmail.com",
+          "score": 0.486,
+          "programmes": [],
+          "applicationStatuses": []
+        }
+      ]
+    }
+  ]
+}

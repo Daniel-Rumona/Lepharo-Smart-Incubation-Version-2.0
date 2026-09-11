@@ -1,0 +1,658 @@
+.workspace-shell {
+    background: #fff;
+}
+
+.workspace-header-wrap {
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(14px);
+}
+
+.workspace-topbar {
+    min-height: 48px;
+    display: grid;
+    grid-template-columns: minmax(82px, 112px) minmax(360px, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 8px;
+    border: 1px solid #eceef1;
+    border-radius: 26px;
+    background: #fff;
+    box-shadow: 0 7px 20px rgba(20, 29, 43, 0.07);
+}
+
+.workspace-brand {
+    height: 34px;
+    min-width: 0;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.workspace-brand:hover,
+.workspace-brand:focus-visible {
+    background: #f6f7f9;
+    outline: none;
+}
+
+.workspace-brand img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.workspace-primary-nav {
+    min-width: 0;
+    width: fit-content;
+    max-width: 100%;
+    display: flex;
+    justify-self: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
+    background: #f2f4f7;
+}
+
+.workspace-primary-segment {
+    min-width: 104px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 1 auto;
+    gap: 5px;
+    padding: 0 8px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 9px;
+    color: #4f5968;
+    background: transparent;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.workspace-primary-segment:hover,
+.workspace-primary-segment:focus-visible {
+    color: #1677ff;
+    background: rgba(255, 255, 255, 0.65);
+    outline: none;
+}
+
+.workspace-primary-segment-active,
+.workspace-primary-segment-active:hover,
+.workspace-primary-segment-active:focus-visible {
+    color: #1677ff;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(20, 37, 63, 0.12);
+}
+
+.workspace-segment-icon {
+    display: inline-flex;
+    font-size: 14px;
+}
+
+.workspace-segment-chevron {
+    margin-left: 1px;
+    color: #8b95a5;
+    font-size: 9px;
+}
+
+.workspace-primary-segment-active .workspace-segment-chevron {
+    color: #1677ff;
+}
+
+.workspace-topbar-actions {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.workspace-program-control {
+    height: 36px;
+    width: min(180px, 15vw);
+    min-width: 0;
+    max-width: 180px;
+    display: flex;
+    align-items: center;
+    flex: 0 1 180px;
+    gap: 7px;
+    padding: 0 8px;
+    overflow: hidden;
+    border: 1px solid #dfe3e8;
+    border-radius: 11px;
+    color: #344054;
+    background: #f9fafb;
+}
+
+.workspace-program-control-selectable:focus-within,
+.workspace-program-control-selectable:hover {
+    border-color: #91caff;
+    background: #fff;
+    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.08);
+}
+
+.workspace-program-icon {
+    flex: 0 0 auto;
+    color: #1677ff;
+    font-size: 15px;
+}
+
+.workspace-program-control .ant-select {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+.workspace-program-control .ant-select-selector {
+    min-width: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
+    background: transparent !important;
+}
+
+.workspace-program-control .ant-select-selection-wrap,
+.workspace-program-control .ant-select-selection-search,
+.workspace-program-control .ant-select-selection-item {
+    min-width: 0;
+}
+
+.workspace-program-control .ant-select-selection-wrap {
+    overflow: hidden;
+}
+
+.workspace-program-control .ant-select-selection-item,
+.workspace-program-control strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #253044;
+    font-size: 12px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-program-control strong {
+    flex: 1 1 auto;
+}
+
+.workspace-program-control-locked {
+    background: #f5f9ff;
+    border-color: #b7d7ff;
+}
+
+.workspace-program-lock {
+    flex: 0 0 auto;
+    color: #6b8fc7;
+    font-size: 11px;
+}
+
+.workspace-program-control-error {
+    color: #cf1322;
+    background: #fff5f5;
+    border-color: #ffccc7;
+}
+
+.workspace-program-control-error .workspace-program-icon,
+.workspace-program-control-error strong {
+    color: #cf1322;
+}
+
+.workspace-logout-button {
+    border: 1px solid #ffccc7 !important;
+    background: #fff !important;
+}
+
+.workspace-theme-toggle {
+    border: 1px solid #dfe3e8 !important;
+}
+
+.workspace-theme-toggle:hover,
+.workspace-theme-toggle:focus-visible {
+    border-color: #91caff !important;
+    color: #1677ff !important;
+    background: #f5f9ff !important;
+}
+
+.workspace-current-user-avatar {
+    color: #8f3038 !important;
+    background: #f7d9dc !important;
+    border: 1px solid #efb8bd !important;
+}
+
+.workspace-assistant-button {
+    border: 1px solid #cfe0ff !important;
+    color: #1677ff !important;
+    background: #f5f9ff !important;
+}
+
+.workspace-assistant-button:hover,
+.workspace-assistant-button:focus-visible,
+.workspace-assistant-button-active {
+    border-color: #69b1ff !important;
+    color: #0958d9 !important;
+    background: #e6f4ff !important;
+}
+
+.workspace-logout-button:hover,
+.workspace-logout-button:focus-visible {
+    border-color: #ff7875 !important;
+    background: #fff2f0 !important;
+}
+
+.workspace-more-modal .ant-modal-content {
+    overflow: hidden;
+    padding: 0;
+    border-radius: 22px;
+    box-shadow: 0 24px 70px rgba(18, 28, 45, 0.2);
+}
+
+.workspace-more-modal .ant-modal-header {
+    margin: 0;
+    padding: 22px 24px 16px;
+    border-bottom: 1px solid #eef0f3;
+}
+
+.workspace-more-modal .ant-modal-close {
+    top: 20px;
+    right: 20px;
+}
+
+.workspace-more-modal .ant-modal-body {
+    padding: 18px 24px 24px;
+}
+
+.workspace-more-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.workspace-more-heading-icon {
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border-radius: 12px;
+    color: #1677ff;
+    background: #eaf3ff;
+    font-size: 18px;
+}
+
+.workspace-more-heading>span:last-child {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.workspace-more-heading strong {
+    color: #182230;
+    font-size: 17px;
+}
+
+.workspace-more-heading small {
+    color: #667085;
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.workspace-more-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.workspace-more-segmented {
+    width: 100%;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 3px;
+    padding: 4px;
+    border-radius: 13px;
+    background: #f2f4f7;
+}
+
+.workspace-more-segment {
+    min-width: 0;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    padding: 4px 6px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 9px;
+    color: #4f5968;
+    background: transparent;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.15;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.workspace-more-segment:hover,
+.workspace-more-segment:focus-visible {
+    color: #1677ff;
+    background: rgba(255, 255, 255, 0.65);
+    outline: none;
+}
+
+.workspace-more-segment-active,
+.workspace-more-segment-active:hover,
+.workspace-more-segment-active:focus-visible {
+    color: #1677ff;
+    background: #fff;
+    box-shadow: 0 2px 7px rgba(20, 37, 63, 0.11);
+}
+
+.workspace-more-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.workspace-more-card {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #eaecf0;
+    border-radius: 13px;
+    color: inherit;
+    background: #fff;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.workspace-more-card:hover,
+.workspace-more-card:focus-visible {
+    border-color: #91caff;
+    box-shadow: 0 7px 18px rgba(22, 119, 255, 0.1);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.workspace-more-card-active {
+    border-color: #69b1ff;
+    background: #f6faff;
+}
+
+.workspace-more-card-icon {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    color: #1677ff;
+    background: #edf5ff;
+    font-size: 16px;
+}
+
+.workspace-more-card-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.workspace-more-card-copy strong {
+    overflow: hidden;
+    color: #253044;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-more-card-copy small {
+    display: -webkit-box;
+    overflow: hidden;
+    color: #7a8493;
+    font-size: 11px;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.workspace-more-card-arrow {
+    color: #a3aab5;
+    font-size: 10px;
+}
+
+.workspace-more-pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 14px;
+}
+
+@media (max-width: 1179px) {
+    .workspace-topbar {
+        grid-template-columns: 74px minmax(300px, 1fr) auto;
+        gap: 8px;
+    }
+
+    .workspace-topbar-actions .ant-select {
+        max-width: 150px;
+    }
+
+    .workspace-program-control {
+        width: min(160px, 14vw);
+        max-width: 160px;
+    }
+
+    .workspace-primary-segment {
+        min-width: 94px;
+        padding-inline: 7px;
+    }
+}
+
+@media (max-width: 767px) {
+    .workspace-header-wrap {
+        padding: 8px;
+    }
+
+    .workspace-topbar-mobile {
+        grid-template-columns: 72px minmax(0, 1fr);
+        grid-template-areas:
+            "brand actions"
+            "nav nav";
+        gap: 5px;
+        padding: 4px 5px;
+        border-radius: 14px;
+    }
+
+    .workspace-topbar-mobile .workspace-brand {
+        grid-area: brand;
+        height: 32px;
+        padding: 3px 5px;
+    }
+
+    .workspace-topbar-mobile .workspace-primary-nav {
+        grid-area: nav;
+        width: 100%;
+    }
+
+    .workspace-topbar-mobile .workspace-topbar-actions {
+        grid-area: actions;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .workspace-topbar-mobile .workspace-topbar-actions::-webkit-scrollbar {
+        display: none;
+    }
+
+    .workspace-topbar-mobile .workspace-program-control {
+        width: 142px;
+        min-width: 142px;
+        max-width: 142px;
+        flex-basis: 142px;
+        padding-inline: 7px;
+    }
+
+    .workspace-topbar-mobile .workspace-program-control .ant-select {
+        min-width: 92px;
+        max-width: 105px;
+    }
+
+    .workspace-primary-segment {
+        min-width: 0;
+        flex: 1 1 0;
+        min-height: 30px;
+        padding-inline: 5px;
+    }
+
+    .workspace-more-modal {
+        max-width: calc(100vw - 16px);
+        margin: 8px auto;
+    }
+
+    .workspace-more-modal .ant-modal-header {
+        padding: 18px 18px 14px;
+    }
+
+    .workspace-more-modal .ant-modal-body {
+        padding: 14px 16px 18px;
+    }
+
+    .workspace-more-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .workspace-more-segment {
+        min-width: 0;
+        flex-basis: 0;
+        min-height: 34px;
+        padding: 3px 4px;
+        font-size: 10px;
+    }
+}
+
+/* ---------- Mobile bottom navigation ----------
+   On phones the primary nav leaves the topbar and becomes a fixed bottom bar:
+   every destination is an icon, and the active one expands to show its label.
+   Shared by the staff workspace and the applicant portal. */
+
+.workspace-bottom-nav {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 120;
+    display: none;
+    align-items: center;
+    gap: 3px;
+    /* Floating pill, inset from the screen edges. */
+    margin: 0 12px calc(10px + env(safe-area-inset-bottom));
+    padding: 5px 6px;
+    border: 1px solid #eceef1;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 8px 26px rgba(20, 29, 43, 0.16);
+}
+
+.workspace-bottom-nav-item {
+    min-width: 44px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    gap: 0;
+    padding: 0 12px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 9999px;
+    color: #4f5968;
+    background: transparent;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: flex 220ms ease, color 160ms ease, background 160ms ease;
+}
+
+.workspace-bottom-nav-item:active {
+    background: #f2f4f7;
+}
+
+.workspace-bottom-nav-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 19px;
+}
+
+/* Collapsed by default; the active item animates its label open. */
+.workspace-bottom-nav-label {
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-width 220ms ease, margin-left 220ms ease, opacity 160ms ease;
+}
+
+.workspace-bottom-nav-item-active {
+    flex: 1 1 auto;
+    color: #1677ff;
+    background: #eaf3ff;
+}
+
+.workspace-bottom-nav-item-active .workspace-bottom-nav-label {
+    max-width: 150px;
+    margin-left: 8px;
+    opacity: 1;
+}
+
+.workspace-bottom-nav-item .ant-badge {
+    flex: 0 0 auto;
+    margin-left: 6px;
+}
+
+@media (max-width: 767px) {
+    .workspace-bottom-nav {
+        display: flex;
+    }
+
+    /* The nav row is gone from the topbar on mobile — brand and actions only. */
+    .workspace-topbar.workspace-topbar-nonav {
+        grid-template-columns: 72px minmax(0, 1fr);
+        grid-template-areas: "brand actions";
+    }
+
+    /* Keep floating launchers clear of the bottom bar. */
+    .workspace-shell .ant-float-btn {
+        bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .workspace-bottom-nav-item,
+    .workspace-bottom-nav-label {
+        transition: none;
+    }
+}

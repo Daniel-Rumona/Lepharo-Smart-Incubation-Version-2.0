@@ -1,0 +1,555 @@
+{
+  "generatedAt": "2026-08-13T12:17:38.863Z",
+  "mode": "write",
+  "scannedAssignments": 1702,
+  "affectedAssignments": 42,
+  "removedUpdates": 42,
+  "changes": [
+    {
+      "id": "ai_0EglDz7H64Oo6vSKSIis_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_eg2r3d",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 461000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_0ZqHgcchfsVjSfGviQfD_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_4w3glj",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_6pHAKE53K6QVvBeoKzPz_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_7nnt6y",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_71SoBrXikuPaworCxrEX_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_s1tvej",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_8WSaCzlIG4JDS6BHuib5_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_ff4ciu",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_AUK2UabV4oDq8Cl2AcLm_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_s8yiti",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_C4DHbvDsougHsrSFA5N9_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_dxwaz2",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_DE4IvxQldIc1RM12Tfkw_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_lb0e64",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_DWlPwrhvTUmqjvVcS4g2_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_cfsdw1",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_GdI4D0UosyREfprNNcqO_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_p29suf",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_GjODfSL7hSjG9scmCV7m_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_gg967y",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_Jza5P0ZM2vFEfeXkQ1jL_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_zb6nqi",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_MFhIYyvKWQStTUBIrdHk_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_pv5h11",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_MmgYFmbwPNCaqaTDtu36_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_ljg4ys",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_NsftI44RiVwvEi1cLgch_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_n5linu",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_RR28hbupjiCGOrBnYhyP_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_0hibj8",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_T0jpRVXwtuHSOegmXjd2_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_9i659n",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_TO648YOb5CN2e7pukkm7_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_4gqosg",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_Us7CGscCvsWV9KMWwvHH_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_5kfks2",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_W146AJEgkoN28H974wFe_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_ok3gac",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_WcVPEwN8NhChwhQBBG7Z_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_7jvrsb",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_YA4kCRJsMWSfzX4EpEQT_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_prtnz4",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_ZgQsxAc9o3mUPBg9nkQi_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_49lwbw",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_a83UnMZl2YSAV3yPAX2O_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_14gv5k",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_aWjaWnODReVA8cvTZ6kv_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_wsfgu3",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_d9zlZyFCEa95v0hV2jjP_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_ebvndf",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 461000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_dWqH8VC2VlAHuJcp7pPR_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572465_u9elo2",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_iiagdcWA5x1jZyHRISjF_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_vq7kgr",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_kCGqcV7tL89k9ixnyRus_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_petzir",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 461000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_klqkzcMlRtDyiPvOdQa5_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_3yzt9r",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_mI4MB3r7rySpZN4cKN0M_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_ipx582",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_mhWWFobUXLwJHznAPkHe_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_ytetvt",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_mzXXMPSAI1tgAWoJJsPs_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_qtai3q",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_nZPX0SWy16b7BW5vaP1B_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_uvl7w1",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_pZ9ifTCPvDV0HlBOf1t6_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_wxvle6",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_pt1LDQhX1TuGccpDYFkW_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_ue5fcp",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_rA8wK6GmgrGLXkLaq4LW_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_gnhmb6",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_uIg07NXi8gDh95VppaYh_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_0ed9h8",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_vxleNQJ879lZFZ5VuOsH_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_84umvl",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_w9wFeXJDBwpAV1Me14jO_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_1tuha8",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_wMPIViANN4wbmDdMyNCh_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_llwcpi",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai_x72SsMTQVef71X64Bg21_Iod2YQ13G1xQxHsKWQDI_nosub_2026-07_1783322572466_bd6tsd",
+      "removed": [
+        {
+          "note": "DONE\n\nSummary:\nSessions on Business Law",
+          "computedProgress": 100,
+          "createdAt": {
+            "_seconds": 1785396816,
+            "_nanoseconds": 462000000
+          }
+        }
+      ]
+    }
+  ]
+}

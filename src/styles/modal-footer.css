@@ -1,0 +1,114 @@
+/* Keep modal actions balanced and easy to tap at every screen size. */
+.ant-modal .ant-modal-title {
+  padding-inline: 36px;
+  text-align: center;
+}
+
+.ant-modal .ant-modal-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #ff4d4f;
+  border-radius: 999px;
+  color: #ff4d4f;
+  background: color-mix(in srgb, #ff4d4f 8%, transparent);
+  box-shadow: none;
+  transition: color 160ms ease, border-color 160ms ease,
+    background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.ant-modal .ant-modal-close:hover {
+  border-color: #ff7875;
+  color: #ff7875;
+  background: color-mix(in srgb, #ff4d4f 16%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ff4d4f 18%, transparent);
+  transform: scale(1.06);
+}
+
+.ant-modal .ant-modal-close:active {
+  transform: scale(0.96);
+}
+
+.ant-modal .ant-modal-close:focus-visible {
+  outline: 2px solid color-mix(in srgb, #ff4d4f 55%, transparent);
+  outline-offset: 2px;
+}
+
+.ant-modal-footer {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.ant-modal-footer > .ant-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-inline-start: 0 !important;
+}
+
+.ant-modal-footer > div {
+  width: 100%;
+}
+
+.ant-modal-footer > div:has(> .ant-btn) {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.ant-modal-footer > div:has(> .ant-btn) > .ant-btn,
+.contract-modal-footer-actions > .ant-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-inline-start: 0 !important;
+}
+
+/* Contract footers carry longer labels than a normal modal ("Confirm & Sign",
+   "Download"), and `flex: 1 1 0` with `min-width: 0` lets a button shrink below
+   its own label. Buttons are nowrap, so on a phone the label overflowed its
+   button and the primary action rendered clipped.
+
+   A floor plus wrapping keeps them equal width and side by side while they fit,
+   and drops them onto a second full-width row when they no longer do, rather
+   than squeezing them until the text breaks. */
+.contract-modal-footer-actions > .ant-btn {
+  min-width: 8.25rem;
+}
+
+.contract-modal-footer-actions > .ant-btn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Ant Design's standard two-button footer renders Cancel before the primary
+   action. Cancel is destructive relative to the primary, so it reads red rather
+   than sharing the primary's accent — including on hover, where the two would
+   otherwise be indistinguishable.
+
+   The `> div >` variant covers footers that wrap their buttons, which the
+   layout rules above already account for. */
+.ant-modal-footer > .ant-btn-default:first-child:has(+ .ant-btn-primary),
+.ant-modal-footer > div > .ant-btn-default:first-child:has(+ .ant-btn-primary) {
+  color: #ff4d4f;
+  border-color: #ff4d4f;
+}
+
+.ant-modal-footer
+  > .ant-btn-default:first-child:has(+ .ant-btn-primary):not(:disabled):hover,
+.ant-modal-footer
+  > div
+  > .ant-btn-default:first-child:has(+ .ant-btn-primary):not(:disabled):hover {
+  color: #ff7875;
+  border-color: #ff7875;
+  background: rgba(255, 77, 79, 0.06);
+}
+
+@media (max-width: 480px) {
+  .ant-modal-footer,
+  .contract-modal-footer-actions {
+    gap: 6px;
+  }
+
+  .ant-modal-footer .ant-btn {
+    padding-inline: 8px;
+  }
+}

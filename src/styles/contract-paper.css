@@ -1,0 +1,453 @@
+.contract-document-stage {
+  min-height: 100%;
+  padding: 24px;
+  background: radial-gradient(circle at 20% 0%, rgba(255, 255, 255, .9), transparent 34%), #e9edf2;
+}
+
+.contract-paper {
+  box-sizing: border-box;
+  width: min(100%, 794px);
+  min-height: 1040px;
+  margin: 0 auto;
+  padding: 54px 60px 64px;
+  overflow: hidden;
+  color: #17202a;
+  background: #fff;
+  border: 1px solid #d8dde5;
+  border-radius: 2px;
+  box-shadow: 0 14px 34px rgba(29, 43, 61, .14), 0 2px 5px rgba(29, 43, 61, .08);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.contract-paper img { max-width: 100%; }
+.contract-paper p, .contract-paper li { orphans: 3; widows: 3; }
+
+.contract-paper--page {
+  position: relative;
+  margin-bottom: 24px;
+  padding-top: 38px;
+  white-space: pre-wrap;
+}
+
+.contract-paper--page:last-child { margin-bottom: 0; }
+
+.contract-paper__header {
+  display: grid;
+  grid-template-columns: 132px minmax(250px, 1fr) 226px;
+  align-items: stretch;
+  margin: -18px 0 32px;
+  border: 1px solid #24364b;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10px;
+}
+
+.contract-paper__header > div { display: flex; align-items: center; padding: 8px 10px; }
+.contract-paper__header > div + div { border-left: 1px solid #24364b; }
+
+.contract-paper__header-title {
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+.contract-paper__header-meta {
+  flex-direction: column;
+  align-items: flex-start !important;
+  justify-content: center;
+  line-height: 1.45;
+}
+
+.contract-paper__header-meta span { white-space: nowrap; }
+
+.contract-paper__page-footer {
+  position: absolute;
+  right: 60px;
+  bottom: 24px;
+  left: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #667085;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10px;
+}
+
+.contract-paper__reference-label { font-weight: 700; }
+
+.contract-paper__text { margin: 0; color: #17202a; font: inherit; white-space: pre-wrap; }
+
+.moa-preview-cover {
+  display: flex;
+  min-height: 720px;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+
+.moa-preview-cover p {
+  margin: 5px 0;
+}
+
+.moa-preview-cover-title {
+  margin-bottom: 34px !important;
+  font-size: 20px;
+  letter-spacing: .025em;
+}
+
+.moa-preview-copy {
+  text-align: justify;
+}
+
+.moa-preview-spacer {
+  height: 12px;
+}
+
+.moa-preview-paragraph {
+  margin: 0 0 9px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.moa-preview-subclause {
+  padding-left: 56px;
+  text-indent: -56px;
+}
+
+.moa-preview-heading {
+  color: #101828;
+  font-weight: 700;
+  text-align: left;
+}
+
+.moa-preview-heading--1 {
+  margin: 22px 0 10px;
+  padding-left: 56px;
+  font-size: 14px;
+  line-height: 1.45;
+  text-indent: -56px;
+  text-transform: uppercase;
+}
+
+.moa-preview-heading--2 {
+  margin: 17px 0 8px;
+  font-size: 14px;
+}
+
+.moa-preview-heading--3,
+.moa-preview-heading--4 {
+  margin: 12px 0 6px;
+  padding-left: 14px;
+  font-size: 13px;
+}
+
+.contract-paper__signature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 48px;
+  margin-top: 56px;
+}
+
+.contract-paper__signature-block { min-width: 0; }
+.contract-paper__signature-block h3 { margin: 0 0 32px; font-size: 15px; }
+.contract-paper__signature-image { display: block; width: 220px; max-width: 100%; height: 78px; object-fit: contain; object-position: left center; }
+.contract-paper__signature-line { min-height: 78px; border-bottom: 1px solid #17202a; }
+.contract-paper__signature-name { margin: 8px 0 2px; font-weight: 700; }
+.contract-paper__signature-detail { margin: 2px 0; color: #475467; font-size: 12px; }
+
+.moa-preview-signatures { margin-top: 20px; }
+.moa-preview-signatures__title { margin: 0 0 18px; font-size: 14px; }
+.moa-preview-signatures__block { margin: 0 0 34px; }
+.moa-preview-signatures__block h3 { margin: 0 0 26px; font-size: 14px; }
+.moa-preview-signatures__row { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 12px 0; }
+.moa-preview-signatures__field { min-width: 220px; border-bottom: 1px solid #17202a; }
+.moa-preview-signatures__statement { margin: 16px 0; }
+.moa-preview-signatures__signature { width: 250px; max-width: 100%; }
+
+.popia-document-pages {
+  width: 100%;
+}
+
+.popia-paper {
+  position: relative;
+  min-height: 1123px;
+  padding: 42px 52px 68px;
+  color: #17202a;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12.5px;
+  line-height: 1.48;
+  white-space: normal;
+}
+
+.popia-document-header {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 150px;
+  min-height: 78px;
+  overflow: hidden;
+  border: 1px solid #9aa4b2;
+}
+
+.popia-document-header__logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.popia-document-header__logo img {
+  display: block;
+  width: 100%;
+  max-height: 46px;
+  object-fit: contain;
+}
+
+.popia-document-header__logo--quantilytix {
+  background: #24364b;
+}
+
+.popia-document-header__title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-right: 1px solid #9aa4b2;
+  border-left: 1px solid #9aa4b2;
+  text-align: center;
+}
+
+.popia-document-header__title strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.popia-document-header__title span {
+  margin-top: 5px;
+  color: #667085;
+  font-size: 10.5px;
+}
+
+.popia-document-meta {
+  display: grid;
+  grid-template-columns: 1.5fr .55fr 1fr;
+  gap: 10px;
+  padding: 7px 10px;
+  color: #475467;
+  background: #f5f7fa;
+  border: 1px solid #cfd5dd;
+  border-top: 0;
+  font-size: 9.5px;
+}
+
+.popia-document-meta span { white-space: nowrap; }
+
+.popia-document-intro {
+  margin: 24px 0 18px;
+  padding-left: 16px;
+  border-left: 4px solid #8d2638;
+}
+
+.popia-document-intro__eyebrow {
+  color: #8d2638;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.popia-document-intro h1 {
+  max-width: 590px;
+  margin: 4px 0 6px;
+  color: #17202a;
+  font-size: 21px;
+  line-height: 1.22;
+}
+
+.popia-document-intro p { margin: 0; color: #475467; }
+
+.popia-subject-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1px;
+  margin-bottom: 18px;
+  overflow: hidden;
+  background: #d5dbe3;
+  border: 1px solid #d5dbe3;
+  border-radius: 4px;
+}
+
+.popia-subject-card > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 9px 11px;
+  background: #fff;
+}
+
+.popia-subject-card span {
+  color: #667085;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.popia-subject-card strong {
+  overflow: hidden;
+  margin-top: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popia-section { margin: 0 0 14px; }
+.popia-section p { margin: 5px 0 0; text-align: justify; }
+
+.popia-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: #17202a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.popia-section h2 > span {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #8d2638;
+  border-radius: 50%;
+  font-size: 10px;
+}
+
+.popia-section ul {
+  margin: 6px 0 0;
+  padding-left: 42px;
+}
+
+.popia-section li { margin: 2px 0; padding-left: 2px; }
+
+.popia-consent-box {
+  margin-top: 16px;
+  padding: 13px 15px;
+  background: #f7f3f4;
+  border: 1px solid #d9bdc2;
+  border-left: 4px solid #8d2638;
+  border-radius: 3px;
+}
+
+.popia-consent-box h2 { margin: 0 0 4px; font-size: 13px; }
+.popia-consent-box p { margin: 0; }
+
+.popia-signature-block {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 34px;
+  align-items: end;
+  margin-top: 20px;
+}
+
+.popia-signature-block__details,
+.popia-signature-block__mark {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.popia-signature-block__details > span,
+.popia-signature-block__mark > span {
+  color: #667085;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.popia-signature-block__details strong { margin: 4px 0 2px; font-size: 13px; }
+.popia-signature-block__details small { color: #667085; }
+
+.popia-signature-block__mark img,
+.popia-signature-block__pending {
+  width: 100%;
+  height: 74px;
+  border-bottom: 1px solid #17202a;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.popia-signature-block__pending {
+  display: flex;
+  align-items: center;
+  color: #98a2b3;
+  font-size: 10px;
+}
+
+.popia-signature-block__mark > span { margin-top: 5px; }
+
+.popia-document-record {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 18px;
+  padding-top: 8px;
+  color: #667085;
+  border-top: 1px solid #d5dbe3;
+  font-size: 9px;
+}
+
+.popia-document-footer {
+  position: absolute;
+  right: 52px;
+  bottom: 24px;
+  left: 52px;
+  display: flex;
+  justify-content: space-between;
+  padding-top: 7px;
+  color: #667085;
+  border-top: 1px solid #cfd5dd;
+  font-size: 9px;
+}
+
+@media (max-width: 767px) {
+  .contract-document-stage { padding: 10px; }
+  .contract-paper { min-height: 0; padding: 28px 22px 42px; font-size: 12px; }
+  .contract-paper--page { padding-top: 24px; }
+  .contract-paper__header { grid-template-columns: 82px 1fr; margin: -8px 0 22px; }
+  .contract-paper__header-meta { display: none !important; }
+  .contract-paper__page-footer { right: 22px; bottom: 16px; left: 22px; }
+  .contract-paper__signature-grid { grid-template-columns: 1fr; gap: 36px; margin-top: 34px; }
+  .popia-paper { min-height: 0; padding: 24px 18px 54px; font-size: 11px; }
+  .popia-document-header { grid-template-columns: 72px minmax(0, 1fr) 86px; min-height: 62px; }
+  .popia-document-header__logo { padding: 7px; }
+  .popia-document-header__logo img { max-height: 34px; }
+  .popia-document-header__title { padding: 7px; }
+  .popia-document-header__title strong { font-size: 9px; }
+  .popia-document-header__title span { font-size: 8px; }
+  .popia-document-meta { grid-template-columns: 1fr; gap: 2px; }
+  .popia-document-meta span { white-space: normal; }
+  .popia-document-intro h1 { font-size: 17px; }
+  .popia-subject-card { grid-template-columns: 1fr; }
+  .popia-signature-block { grid-template-columns: 1fr; gap: 18px; }
+  .popia-document-footer { right: 18px; bottom: 18px; left: 18px; }
+}
+
+@media print {
+  .contract-document-stage { padding: 0; background: #fff; }
+  .contract-paper {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    padding: 18mm 16mm;
+    border: 0;
+    box-shadow: none;
+    page-break-after: always;
+  }
+}

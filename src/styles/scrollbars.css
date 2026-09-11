@@ -1,0 +1,179 @@
+/* ============================================================================
+   Scrollbars
+   ----------------------------------------------------------------------------
+   Applies to both colour modes, which is why this is not in dark-mode.css.
+
+   Two things worth knowing before editing:
+
+   1. In Chromium, styling ::-webkit-scrollbar AT ALL replaces the whole native
+      scrollbar, and the up/down arrow buttons disappear unless you also style
+      ::-webkit-scrollbar-button yourself. That is exactly why the buttons went
+      missing once dark mode styled the thumb.
+
+   2. Chromium exposes FOUR button slots per axis — a decrement and an increment
+      at each end. Leaving them all visible produces doubled arrows, so the two
+      nonsensical ones (increment-at-start, decrement-at-end) are hidden below.
+
+   Firefox has no equivalent of scrollbar-button and ignores it; it gets the
+   standard scrollbar-width / scrollbar-color treatment instead.
+
+   Mobile (<=900px) is deliberately excluded: src/index.css hides scrollbars
+   there on purpose, and these rules are more specific than that reset, so
+   without the media query they would drag them back into view.
+   ========================================================================== */
+
+:root {
+    --sb-size: 12px;
+    --sb-track: #f1f3f5;
+    --sb-thumb: #c4cad2;
+    --sb-thumb-hover: #aab2bd;
+    --sb-thumb-active: #8f99a8;
+    --sb-button-hover: rgba(0, 0, 0, 0.06);
+
+    --sb-arrow-up: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M3.5%207.25%206%204.75%208.5%207.25'%20fill='none'%20stroke='%236b7280'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+    --sb-arrow-down: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M3.5%204.75%206%207.25%208.5%204.75'%20fill='none'%20stroke='%236b7280'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+    --sb-arrow-left: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M7.25%203.5%204.75%206%207.25%208.5'%20fill='none'%20stroke='%236b7280'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+    --sb-arrow-right: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M4.75%203.5%207.25%206%204.75%208.5'%20fill='none'%20stroke='%236b7280'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+html[data-theme="dark"] {
+    --sb-track: #10141a;
+    --sb-thumb: #39424f;
+    --sb-thumb-hover: #4b5666;
+    --sb-thumb-active: #5d6a7c;
+    --sb-button-hover: rgba(255, 255, 255, 0.09);
+
+    /* Lighter stroke than the light-mode arrows. The mid-grey that reads fine on
+       #f1f3f5 all but vanishes on #10141a. */
+    --sb-arrow-up: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M3.5%207.25%206%204.75%208.5%207.25'%20fill='none'%20stroke='%23a3adbb'%20stroke-width='1.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+    --sb-arrow-down: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M3.5%204.75%206%207.25%208.5%204.75'%20fill='none'%20stroke='%23a3adbb'%20stroke-width='1.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+    --sb-arrow-left: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M7.25%203.5%204.75%206%207.25%208.5'%20fill='none'%20stroke='%23a3adbb'%20stroke-width='1.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+    --sb-arrow-right: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M4.75%203.5%207.25%206%204.75%208.5'%20fill='none'%20stroke='%23a3adbb'%20stroke-width='1.6'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+@media (min-width: 901px) {
+    /* --- Firefox only ---------------------------------------------------- */
+    /*
+       This MUST NOT reach Chromium. Chrome 121+ implements the standard
+       scrollbar-width / scrollbar-color, and once either is set it switches to
+       the standard scrollbar and ignores every ::-webkit-scrollbar-* rule —
+       which would silently throw away the arrow buttons below.
+
+       selector(::-webkit-scrollbar) is true in Chromium and false in Firefox,
+       so this gates cleanly on the engine rather than on a version.
+    */
+    @supports (scrollbar-width: thin) and (not selector(::-webkit-scrollbar)) {
+        html {
+            scrollbar-width: thin;
+            scrollbar-color: var(--sb-thumb) var(--sb-track);
+        }
+    }
+
+    /* --- Chromium / WebKit ---------------------------------------------- */
+    ::-webkit-scrollbar {
+        width: var(--sb-size);
+        height: var(--sb-size);
+    }
+
+    ::-webkit-scrollbar-track {
+        background: var(--sb-track);
+    }
+
+    ::-webkit-scrollbar-corner {
+        background: var(--sb-track);
+    }
+
+    /* The transparent border plus background-clip is what insets the thumb
+       inside the track — without it the thumb fills the full 12px and the
+       track is never visible. */
+    ::-webkit-scrollbar-thumb {
+        background: var(--sb-thumb);
+        border: 3px solid transparent;
+        background-clip: content-box;
+        border-radius: 999px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--sb-thumb-hover);
+        background-clip: content-box;
+    }
+
+    ::-webkit-scrollbar-thumb:active {
+        background: var(--sb-thumb-active);
+        background-clip: content-box;
+    }
+
+    /* --- Arrow buttons --------------------------------------------------- */
+
+    ::-webkit-scrollbar-button {
+        display: block;
+        background-color: var(--sb-track);
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: var(--sb-size) var(--sb-size);
+        height: var(--sb-size);
+        width: var(--sb-size);
+    }
+
+    ::-webkit-scrollbar-button:hover {
+        background-color: var(--sb-button-hover);
+    }
+
+    /* Chromium renders a decrement AND an increment at each end. Only one at
+       each end is meaningful; hiding the other two prevents doubled arrows. */
+    ::-webkit-scrollbar-button:vertical:start:increment,
+    ::-webkit-scrollbar-button:vertical:end:decrement,
+    ::-webkit-scrollbar-button:horizontal:start:increment,
+    ::-webkit-scrollbar-button:horizontal:end:decrement {
+        display: none;
+    }
+
+    ::-webkit-scrollbar-button:vertical:start:decrement {
+        background-image: var(--sb-arrow-up);
+    }
+
+    ::-webkit-scrollbar-button:vertical:end:increment {
+        background-image: var(--sb-arrow-down);
+    }
+
+    ::-webkit-scrollbar-button:horizontal:start:decrement {
+        background-image: var(--sb-arrow-left);
+    }
+
+    ::-webkit-scrollbar-button:horizontal:end:increment {
+        background-image: var(--sb-arrow-right);
+    }
+
+    /* Short scrollers do not have the room for buttons; below roughly 100px of
+       track the arrows would crowd out the thumb entirely. */
+    ::-webkit-scrollbar-button:disabled {
+        opacity: 0.35;
+    }
+
+    /* Overlay surfaces — dropdowns, popovers, table bodies — sit on a raised
+       panel, so a full-strength track cuts a visible stripe through them. */
+    .ant-select-dropdown ::-webkit-scrollbar-track,
+    .ant-dropdown ::-webkit-scrollbar-track,
+    .ant-picker-dropdown ::-webkit-scrollbar-track,
+    .ant-table-body::-webkit-scrollbar-track,
+    .ant-modal ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .ant-select-dropdown ::-webkit-scrollbar-button,
+    .ant-dropdown ::-webkit-scrollbar-button,
+    .ant-picker-dropdown ::-webkit-scrollbar-button {
+        display: none;
+    }
+}
+
+/* A light island keeps light scrollbars even while the app is dark. */
+html[data-theme="dark"] .keep-light {
+    --sb-track: #f1f3f5;
+    --sb-thumb: #c4cad2;
+    --sb-thumb-hover: #aab2bd;
+    --sb-thumb-active: #8f99a8;
+    --sb-button-hover: rgba(0, 0, 0, 0.06);
+    --sb-arrow-up: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M3.5%207.25%206%204.75%208.5%207.25'%20fill='none'%20stroke='%236b7280'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+    --sb-arrow-down: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2012%2012'%3E%3Cpath%20d='M3.5%204.75%206%207.25%208.5%204.75'%20fill='none'%20stroke='%236b7280'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}

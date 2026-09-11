@@ -1,0 +1,3400 @@
+[
+  {
+    "canonical": {
+      "id": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+      "session": {
+        "schemaVersion": 5,
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+        "interventionId": "tLJ9hAcchumhfoOdmuqn",
+        "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+        "cycleKey": null,
+        "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+        "sessionType": "group",
+        "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+        "assigneeName": "Nombuso Maseko",
+        "assigneeEmail": "qmsadmin@lepharo.co.za",
+        "assigneeRole": "coordinator",
+        "title": "Training Course: QMS (Quality Management Systems)",
+        "deliveryMethod": "in_person",
+        "location": "37 Benoni Street, Rustenburg",
+        "meetingLink": null,
+        "plannedCoverage": [],
+        "coverage": {
+          "held": true,
+          "outcomeSummary": null,
+          "coveredPoints": [
+            "Specific Outcome 2 of 3(Discuss the importance of Requirements standard and specification)"
+          ],
+          "reasonNotHeld": null,
+          "recordedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 395000000
+          },
+          "recordedById": null
+        },
+        "attendanceSession": null,
+        "attendanceSummary": {
+          "invitedCount": 23,
+          "attendedCount": 0,
+          "checkedInCount": 0,
+          "checkedOutCount": 0
+        },
+        "foodMenu": [],
+        "status": "completed",
+        "createdAt": {
+          "_seconds": 1774606410,
+          "_nanoseconds": 564000000
+        },
+        "completedAt": {
+          "_seconds": 1779438274,
+          "_nanoseconds": 397000000
+        },
+        "endAt": {
+          "_seconds": 1776942000,
+          "_nanoseconds": 0
+        },
+        "startAt": {
+          "_seconds": 1776931200,
+          "_nanoseconds": 0
+        },
+        "updatedAt": {
+          "_seconds": 1786449032,
+          "_nanoseconds": 62000000
+        }
+      }
+    },
+    "merged": [
+      {
+        "id": "grp_022817a2ed2951e828ba15806579",
+        "session": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "cycleKey": null,
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "sessionType": "individual",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "title": "Training Course: QMS (Quality Management Systems)",
+          "startAt": {
+            "_seconds": 1776931200,
+            "_nanoseconds": 0
+          },
+          "endAt": {
+            "_seconds": 1776942000,
+            "_nanoseconds": 0
+          },
+          "deliveryMethod": "in_person",
+          "location": "37 Benoni Street, Rustenburg",
+          "meetingLink": null,
+          "plannedCoverage": [],
+          "coverage": {
+            "held": true,
+            "outcomeSummary": null,
+            "coveredPoints": [
+              "Specific Outcome 2 of 3(Discuss the importance of Requirements standard and specification)"
+            ],
+            "reasonNotHeld": null,
+            "recordedAt": {
+              "_seconds": 1779438274,
+              "_nanoseconds": 395000000
+            },
+            "recordedById": null
+          },
+          "attendanceSession": {
+            "token": "34f638a0eab14d879aebd0e6d849ccc4",
+            "status": "active",
+            "startedAt": {
+              "_seconds": 1776936396,
+              "_nanoseconds": 286000000
+            },
+            "expiresAt": {
+              "_seconds": 1776941796,
+              "_nanoseconds": 285000000
+            },
+            "closedAt": null
+          },
+          "attendanceSummary": {
+            "invitedCount": 1,
+            "attendedCount": 0,
+            "checkedInCount": 0,
+            "checkedOutCount": 0
+          },
+          "foodMenu": [],
+          "status": "completed",
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 574000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 396000000
+          },
+          "updatedAt": {
+            "_seconds": 1786446474,
+            "_nanoseconds": 103000000
+          }
+        }
+      }
+    ],
+    "appointments": [
+      {
+        "id": "2n38gGBsksURrOwJmcXD",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_mI4MB3r7rySpZN4cKN0M_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214646",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "mI4MB3r7rySpZN4cKN0M",
+          "smeName": "Katlligan Projects",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 573000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 397000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "3K5zU7DO47heJ3YWt97T",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_pt1LDQhX1TuGccpDYFkW_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785156767113_5lo71x",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "pt1LDQhX1TuGccpDYFkW",
+          "smeName": "DEZWIL ENGINEERING CONSTRUCTION (PTY) LTD",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 574000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 397000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "4uFLp9pIu4TRQZmTCp1j",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_mzXXMPSAI1tgAWoJJsPs_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764663_w4mkxf",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "mzXXMPSAI1tgAWoJJsPs",
+          "smeName": "Ntlandlolo Kwamhlamnene Projects (PTY) LTD",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "pending",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 567000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 397000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "6QPPTZeMkZtlY6ep5boM",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_mhWWFobUXLwJHznAPkHe_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214669",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "mhWWFobUXLwJHznAPkHe",
+          "smeName": "Botho Investment Group",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 574000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 397000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "AbDtGjMMBG5hoR5SBHke",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_DE4IvxQldIc1RM12Tfkw_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764663_qneqda",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "DE4IvxQldIc1RM12Tfkw",
+          "smeName": "M DOUBLE T",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 569000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 398000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "CgCrlmojOYSN3nB2DRwZ",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_0MA6JXpOqsIQ1NRIDLk3_tLJ9hAcchumhfoOdmuqn_nosub_once_1773838170045",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "iiagdcWA5x1jZyHRISjF",
+          "smeName": "Mob printing",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 567000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 398000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "Ez7ASPWlrt4zgFe85kdN",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_C4DHbvDsougHsrSFA5N9_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764666_f6rlj6",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "C4DHbvDsougHsrSFA5N9",
+          "smeName": "KAISA ENGINEERING SOLUTIONS (PTY) LTD",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 568000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 398000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "J0QeOr6ZSATOHdScTpk4",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_uIg07NXi8gDh95VppaYh_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764663_o9pfvb",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "uIg07NXi8gDh95VppaYh",
+          "smeName": "Mash joint trading and projects pty",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 575000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 398000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "OaiCjjZrYEU2fiKaWCDa",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_NsftI44RiVwvEi1cLgch_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214654",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "NsftI44RiVwvEi1cLgch",
+          "smeName": "Mabothe Project and service (pty) ltd",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "pending",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 571000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 398000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "VJbHAvK5A0Kwit15bCbT",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_ctE6vFW44yTq0JcumXge_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214656",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "ctE6vFW44yTq0JcumXge",
+          "smeName": "GOBIZEN PTY LTD",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 573000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 398000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "X3Wa46ttsRsUdGvs9GEo",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_RR28hbupjiCGOrBnYhyP_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764666_o0li03",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "RR28hbupjiCGOrBnYhyP",
+          "smeName": "Cornelli Holdings Pty Ltd",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 571000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 398000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "an4tnnaZ1TSgKQc4RMtl",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_DWlPwrhvTUmqjvVcS4g2_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764660_0buw8g",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "DWlPwrhvTUmqjvVcS4g2",
+          "smeName": "SEMELO SA BASHA",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 569000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 398000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "crSkLaV4V4HMTbbSFTgR",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_s7dvg5ZPIfMawqctxSVJ_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214645",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "s7dvg5ZPIfMawqctxSVJ",
+          "smeName": "GS Engineering and Projects",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 575000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 399000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "dTqHud5hHlV43QoqyL2C",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_W146AJEgkoN28H974wFe_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764663_5tc0dd",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "W146AJEgkoN28H974wFe",
+          "smeName": "lesedilebonwe projects",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 573000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 399000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "eCLdhDfeWPYID3sNszyf",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_0EglDz7H64Oo6vSKSIis_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764662_b8r1f0",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "0EglDz7H64Oo6vSKSIis",
+          "smeName": "Makgatho Group of Companies",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 564000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 399000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "hkxdKKKosYUepJCj06zC",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_MmgYFmbwPNCaqaTDtu36_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764661_7ik9uv",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "MmgYFmbwPNCaqaTDtu36",
+          "smeName": "ProlificZoe Enterprise",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 570000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 399000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "jesAW1QY3qX31eNTPwIN",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_71SoBrXikuPaworCxrEX_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214667",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "71SoBrXikuPaworCxrEX",
+          "smeName": "Tbatlala Projects",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 568000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 399000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "lEp0HbzgSnjoYWRTXQSC",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_ZZvs0BwLQ5NrKe9d5TxR_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214650",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "ZZvs0BwLQ5NrKe9d5TxR",
+          "smeName": "Astral Solutions",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "pending",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 568000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 399000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "laBoenTwlssv2gKHZSis",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_Jza5P0ZM2vFEfeXkQ1jL_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214640",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "Jza5P0ZM2vFEfeXkQ1jL",
+          "smeName": "Letsweletse Projects Enterprise pty ltd",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 569000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 399000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "mlZMzjyABr4EEIpANkRM",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_ch613kSBiQvb7k7UaZzy_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214665",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "ch613kSBiQvb7k7UaZzy",
+          "smeName": "4CYT LYT",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 573000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 400000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "qfJehl29RRzLwE6S8WSn",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_MFhIYyvKWQStTUBIrdHk_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-08_1786012764661_lflnhc",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "MFhIYyvKWQStTUBIrdHk",
+          "smeName": "BAJAYJAY PROJECT & SERVICES (PTY) LTD",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 570000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 400000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "w2G0hUT65atyqzRIQh6O",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_TO648YOb5CN2e7pukkm7_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214669",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "TO648YOb5CN2e7pukkm7",
+          "smeName": "Sukude SM Holdings Pty Ltd",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 572000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 400000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "wNLEYVUCVQu8dJlDNkQw",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_Us7CGscCvsWV9KMWwvHH_tLJ9hAcchumhfoOdmuqn_nosub_once_1775729214655",
+          "appointmentSessionId": "grp_aeea62ba1c4ba6a76e437c90e8c1",
+          "smeId": "Us7CGscCvsWV9KMWwvHH",
+          "smeName": "Gabs and Maps Multi Purpose Pty, Ltd",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 572000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 400000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 62000000
+          }
+        }
+      },
+      {
+        "id": "1WwXTDEVR6AirZ1XdE3a",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_pZ9ifTCPvDV0HlBOf1t6_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785149452194_oog8fp",
+          "appointmentSessionId": "grp_022817a2ed2951e828ba15806579",
+          "smeId": "pZ9ifTCPvDV0HlBOf1t6",
+          "smeName": "MOJA PROJECTS PTY LTD",
+          "smeEmail": null,
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": null,
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1774606410564-1774606410575_1776933654085",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1774606410,
+            "_nanoseconds": 574000000
+          },
+          "updatedAt": {
+            "_seconds": 1786333267,
+            "_nanoseconds": 423000000
+          },
+          "completedAt": {
+            "_seconds": 1779438274,
+            "_nanoseconds": 396000000
+          }
+        }
+      }
+    ]
+  },
+  {
+    "canonical": {
+      "id": "repair_v5_3ed9030a9a6222ed6db3ce44",
+      "session": {
+        "schemaVersion": 5,
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+        "interventionId": "tLJ9hAcchumhfoOdmuqn",
+        "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+        "cycleKey": "2026-07",
+        "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+        "sessionType": "group",
+        "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+        "assigneeName": "Nombuso Maseko",
+        "assigneeEmail": "qmsadmin@lepharo.co.za",
+        "assigneeRole": "coordinator",
+        "title": "SPECIFIC OUTCOME 1 OF 5",
+        "startAt": {
+          "_seconds": 1785308400,
+          "_nanoseconds": 0
+        },
+        "endAt": {
+          "_seconds": 1785319200,
+          "_nanoseconds": 0
+        },
+        "deliveryMethod": "in_person",
+        "location": "37 Benoni Street Rustenburg North",
+        "meetingLink": null,
+        "plannedCoverage": [
+          "Describe the total of quality management"
+        ],
+        "coverage": {
+          "held": true,
+          "outcomeSummary": "completed",
+          "coveredPoints": [
+            "Introduction to Quality Control Supervisor"
+          ],
+          "reasonNotHeld": null,
+          "recordedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "recordedById": null
+        },
+        "attendanceSession": {
+          "status": "active",
+          "createdByEmail": "qmsadmin@lepharo.co.za",
+          "token": "e612acd3b328468f9cfc1954172e2223",
+          "startedAt": {
+            "type": "firestore/timestamp/1.0",
+            "seconds": 1785315981,
+            "nanoseconds": 326000000
+          },
+          "createdByName": "Nombuso Maseko",
+          "qrUrl": "https://lepharosmartinc.co.za/meeting-checkin?meetingId=JPDOyZwntaiYYdDdSYpp&token=e612acd3b328468f9cfc1954172e2223",
+          "expiresAt": {
+            "type": "firestore/timestamp/1.0",
+            "seconds": 1785321381,
+            "nanoseconds": 326000000
+          }
+        },
+        "attendanceSummary": {
+          "invitedCount": 18,
+          "attendedCount": 6,
+          "checkedInCount": 6,
+          "checkedOutCount": 6
+        },
+        "foodMenu": [
+          {
+            "name": "Chicken mayo sandwich",
+            "dietaryNote": "Contains mayo",
+            "id": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+            "quantityAvailable": 6,
+            "description": "",
+            "category": "meal"
+          },
+          {
+            "name": "Egg mayo sandwich",
+            "dietaryNote": "Contains mayo",
+            "id": "food-ba802b60c1194c57b3aa6ed5c3e59991",
+            "quantityAvailable": 6,
+            "description": "",
+            "category": "meal"
+          },
+          {
+            "name": "Polony, Cheese and lettuce sandwich",
+            "dietaryNote": "Contains dairy",
+            "id": "food-9eb5a628daa840bba9b5c50dc10ccf7d",
+            "quantityAvailable": 6,
+            "description": "",
+            "category": "meal"
+          }
+        ],
+        "status": "completed",
+        "createdAt": {
+          "_seconds": 1784812148,
+          "_nanoseconds": 281000000
+        },
+        "updatedAt": {
+          "_seconds": 1786449032,
+          "_nanoseconds": 64000000
+        },
+        "completedAt": null
+      }
+    },
+    "merged": [
+      {
+        "id": "repair_v5_b621c34d8efde31ad2b41bc9",
+        "session": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "cycleKey": "2026-07",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "sessionType": "group",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "title": "SPECIFIC OUTCOME 1 OF 5",
+          "startAt": {
+            "_seconds": 1785308400,
+            "_nanoseconds": 0
+          },
+          "endAt": {
+            "_seconds": 1785319200,
+            "_nanoseconds": 0
+          },
+          "deliveryMethod": "in_person",
+          "location": "37 Benoni Street Rustenburg North",
+          "meetingLink": null,
+          "plannedCoverage": [
+            "Describe the total of quality management"
+          ],
+          "coverage": {
+            "held": true,
+            "outcomeSummary": null,
+            "coveredPoints": [
+              "Introduction to Quality Control Supervisor"
+            ],
+            "reasonNotHeld": null,
+            "recordedAt": {
+              "_seconds": 1785323621,
+              "_nanoseconds": 364000000
+            },
+            "recordedById": null
+          },
+          "attendanceSession": {
+            "status": "active",
+            "createdByEmail": "qmsadmin@lepharo.co.za",
+            "token": "e612acd3b328468f9cfc1954172e2223",
+            "startedAt": {
+              "type": "firestore/timestamp/1.0",
+              "seconds": 1785315981,
+              "nanoseconds": 326000000
+            },
+            "createdByName": "Nombuso Maseko",
+            "qrUrl": "https://lepharosmartinc.co.za/meeting-checkin?meetingId=JPDOyZwntaiYYdDdSYpp&token=e612acd3b328468f9cfc1954172e2223",
+            "expiresAt": {
+              "type": "firestore/timestamp/1.0",
+              "seconds": 1785321381,
+              "nanoseconds": 326000000
+            }
+          },
+          "attendanceSummary": {
+            "invitedCount": 8,
+            "attendedCount": 0,
+            "checkedInCount": 0,
+            "checkedOutCount": 0
+          },
+          "foodMenu": [
+            {
+              "name": "Chicken mayo sandwich",
+              "dietaryNote": "Contains mayo",
+              "id": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "quantityAvailable": 6,
+              "description": "",
+              "category": "meal"
+            },
+            {
+              "name": "Egg mayo sandwich",
+              "dietaryNote": "Contains mayo",
+              "id": "food-ba802b60c1194c57b3aa6ed5c3e59991",
+              "quantityAvailable": 6,
+              "description": "",
+              "category": "meal"
+            },
+            {
+              "name": "Polony, Cheese and lettuce sandwich",
+              "dietaryNote": "Contains dairy",
+              "id": "food-9eb5a628daa840bba9b5c50dc10ccf7d",
+              "quantityAvailable": 6,
+              "description": "",
+              "category": "meal"
+            }
+          ],
+          "status": "completed",
+          "createdAt": {
+            "_seconds": 1784812148,
+            "_nanoseconds": 281000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 57000000
+          },
+          "completedAt": null
+        }
+      }
+    ],
+    "appointments": [
+      {
+        "id": "4BLclMyiUkSWxrKycFAj",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_VK0570MBdPx6Zpxy3MEI_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_qp1jba",
+          "smeId": "VK0570MBdPx6Zpxy3MEI",
+          "smeName": "Fetchhub",
+          "smeEmail": "ramatlakanaj@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [
+            {
+              "itemName": "Chicken mayo sandwich",
+              "selectedByName": "JACKSON RAMATLAKANA",
+              "selectedAt": {
+                "_seconds": 1784885368,
+                "_nanoseconds": 639000000
+              },
+              "participantName": "JACKSON RAMATLAKANA",
+              "selectedByEmail": "ramatlakanaj@gmail.com",
+              "category": "meal",
+              "participantEmail": "ramatlakanaj@gmail.com",
+              "participantId": "VK0570MBdPx6Zpxy3MEI",
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812150,
+            "_nanoseconds": 813000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "6IxFQj0RImzg7X4yi9qZ",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_mzXXMPSAI1tgAWoJJsPs_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_zvu44l",
+          "smeId": "mzXXMPSAI1tgAWoJJsPs",
+          "smeName": "Ntlandlolo Kwamhlamnene Projects (PTY) LTD",
+          "smeEmail": "siphokazinqeketo@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [
+            {
+              "participantId": "mzXXMPSAI1tgAWoJJsPs",
+              "participantName": "Siphokazi Nqeketo ",
+              "participantEmail": "siphokazinqeketo@gmail.com",
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "itemName": "Chicken mayo sandwich",
+              "category": "meal",
+              "selectedAt": {
+                "_seconds": 1785482825,
+                "_nanoseconds": 974000000
+              },
+              "selectedByEmail": "siphokazinqeketo@gmail.com",
+              "selectedByName": "Siphokazi Nqeketo "
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812153,
+            "_nanoseconds": 8000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1785309725,
+              "_nanoseconds": 348000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1785322492,
+              "_nanoseconds": 539000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "Fdd72JuSniRXLHPHukyu",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_JOka2s5osIqwg8xUDZzC_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_kgcfnk",
+          "smeId": "JOka2s5osIqwg8xUDZzC",
+          "smeName": "Lebo and Mpho construction Pty Ltd",
+          "smeEmail": "lenamphosekhurwane16@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1784812149,
+            "_nanoseconds": 516000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "JB2tq4YmBdUNPA30BEZF",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_lVf9IoVTkWdH1n9dFlKr_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_wz9cot",
+          "smeId": "lVf9IoVTkWdH1n9dFlKr",
+          "smeName": "Juste Tsheduke Holdings Pty Ltd",
+          "smeEmail": "deizenkwane@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [
+            {
+              "category": "meal",
+              "selectedByName": "deizenkwane@gmail.com",
+              "participantId": "lVf9IoVTkWdH1n9dFlKr",
+              "itemName": "Chicken mayo sandwich",
+              "selectedAt": {
+                "_seconds": 1785182615,
+                "_nanoseconds": 632000000
+              },
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "participantEmail": "deizenkwane@gmail.com",
+              "selectedByEmail": "deizenkwane@gmail.com",
+              "participantName": "deizenkwane@gmail.com"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812152,
+            "_nanoseconds": 711000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "JPDOyZwntaiYYdDdSYpp",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_MFhIYyvKWQStTUBIrdHk_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_pbx49d",
+          "smeId": "MFhIYyvKWQStTUBIrdHk",
+          "smeName": "BAJAYJAY PROJECT & SERVICES (PTY) LTD",
+          "smeEmail": "bajayjay.clothing@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [
+            {
+              "participantEmail": "bajayjay.clothing@gmail.com",
+              "selectedAt": {
+                "_seconds": 1785307596,
+                "_nanoseconds": 262000000
+              },
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "selectedByEmail": "bajayjay.clothing@gmail.com",
+              "selectedByName": "INTELLIGENT MASHELE",
+              "category": "meal",
+              "participantName": "INTELLIGENT MASHELE",
+              "itemName": "Chicken mayo sandwich",
+              "participantId": "MFhIYyvKWQStTUBIrdHk"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812149,
+            "_nanoseconds": 837000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1785311929,
+              "_nanoseconds": 509000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1785322475,
+              "_nanoseconds": 637000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "JT0tmhpyojNnQpfYWmh0",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_dWqH8VC2VlAHuJcp7pPR_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_bduweo",
+          "smeId": "dWqH8VC2VlAHuJcp7pPR",
+          "smeName": "Ortune Group",
+          "smeEmail": "katlegogaodigwe@outlook.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [
+            {
+              "selectedByName": "katlegogaodigwe@outlook.com",
+              "itemName": "Egg mayo sandwich",
+              "participantEmail": "katlegogaodigwe@outlook.com",
+              "category": "meal",
+              "itemId": "food-ba802b60c1194c57b3aa6ed5c3e59991",
+              "selectedByEmail": "katlegogaodigwe@outlook.com",
+              "participantName": "katlegogaodigwe@outlook.com",
+              "participantId": "dWqH8VC2VlAHuJcp7pPR",
+              "selectedAt": {
+                "_seconds": 1784889374,
+                "_nanoseconds": 839000000
+              }
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812152,
+            "_nanoseconds": 411000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1785310736,
+              "_nanoseconds": 397000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1785322497,
+              "_nanoseconds": 73000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "MzUkV1jOkV2Oi23hhLuk",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_RR28hbupjiCGOrBnYhyP_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_8e3qxu",
+          "smeId": "RR28hbupjiCGOrBnYhyP",
+          "smeName": "Cornelli Holdings Pty Ltd",
+          "smeEmail": "cornelliholdings@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [
+            {
+              "participantName": "cornelliholdings@gmail.com",
+              "participantId": "RR28hbupjiCGOrBnYhyP",
+              "selectedByEmail": "cornelliholdings@gmail.com",
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "selectedAt": {
+                "_seconds": 1784814529,
+                "_nanoseconds": 860000000
+              },
+              "category": "meal",
+              "participantEmail": "cornelliholdings@gmail.com",
+              "selectedByName": "cornelliholdings@gmail.com",
+              "itemName": "Chicken mayo sandwich"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812150,
+            "_nanoseconds": 507000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1785309048,
+              "_nanoseconds": 97000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1785322479,
+              "_nanoseconds": 21000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "OU2SngmgAlhbte0wrkws",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_8WSaCzlIG4JDS6BHuib5_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_14vc3s",
+          "smeId": "8WSaCzlIG4JDS6BHuib5",
+          "smeName": "MW MALATJI TRADING ENTERPRISE",
+          "smeEmail": "mwmalatji1@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "pending",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1784812148,
+            "_nanoseconds": 578000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "PqX6SKxqD2bwfguPShdz",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_W146AJEgkoN28H974wFe_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_knf3wp",
+          "smeId": "W146AJEgkoN28H974wFe",
+          "smeName": "lesedilebonwe projects",
+          "smeEmail": "gloria.palai@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [
+            {
+              "itemName": "Chicken mayo sandwich",
+              "selectedByEmail": "gloria.palai@gmail.com",
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "participantEmail": "gloria.palai@gmail.com",
+              "participantId": "W146AJEgkoN28H974wFe",
+              "participantName": "gloria.palai@gmail.com",
+              "selectedAt": {
+                "_seconds": 1785141851,
+                "_nanoseconds": 659000000
+              },
+              "category": "meal",
+              "selectedByName": "gloria.palai@gmail.com"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812151,
+            "_nanoseconds": 132000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1785311929,
+              "_nanoseconds": 509000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1785322792,
+              "_nanoseconds": 142000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "TVkcSM4WscwTUtggLvMq",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_YA4kCRJsMWSfzX4EpEQT_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_wryslt",
+          "smeId": "YA4kCRJsMWSfzX4EpEQT",
+          "smeName": "TEEJOSE( PTY) LTD",
+          "smeEmail": "reginaldmabe567@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [
+            {
+              "selectedByEmail": "reginaldmabe567@gmail.com",
+              "selectedAt": {
+                "_seconds": 1785226367,
+                "_nanoseconds": 527000000
+              },
+              "category": "meal",
+              "itemName": "Chicken mayo sandwich",
+              "participantId": "YA4kCRJsMWSfzX4EpEQT",
+              "participantEmail": "reginaldmabe567@gmail.com",
+              "selectedByName": "reginaldmabe567@gmail.com",
+              "participantName": "reginaldmabe567@gmail.com",
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812151,
+            "_nanoseconds": 772000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1785309062,
+              "_nanoseconds": 548000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1785322506,
+              "_nanoseconds": 418000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "Uy2iken3jBsSCfNB2o39",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_ZgQsxAc9o3mUPBg9nkQi_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_pu0nj0",
+          "smeId": "ZgQsxAc9o3mUPBg9nkQi",
+          "smeName": "Gontselife (Pty)LTD",
+          "smeEmail": "ofentsegaoboihe@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [
+            {
+              "participantName": "Ofentse Gaoboini ",
+              "participantId": "ZgQsxAc9o3mUPBg9nkQi",
+              "selectedByName": "Ofentse Gaoboini ",
+              "selectedAt": {
+                "_seconds": 1785163648,
+                "_nanoseconds": 638000000
+              },
+              "itemName": "Polony, Cheese and lettuce sandwich",
+              "selectedByEmail": "ofentsegaoboihe@gmail.com",
+              "category": "meal",
+              "itemId": "food-9eb5a628daa840bba9b5c50dc10ccf7d",
+              "participantEmail": "ofentsegaoboihe@gmail.com"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812152,
+            "_nanoseconds": 97000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "Ya6ebc9Lry78DxDkEecU",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_DWlPwrhvTUmqjvVcS4g2_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_d9dtz8",
+          "smeId": "DWlPwrhvTUmqjvVcS4g2",
+          "smeName": "SEMELO SA BASHA",
+          "smeEmail": "entle311@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "pending",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1784812148,
+            "_nanoseconds": 898000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "aP9uhAU1tsEhXUhakADL",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_MmgYFmbwPNCaqaTDtu36_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_mk7zt8",
+          "smeId": "MmgYFmbwPNCaqaTDtu36",
+          "smeName": "ProlificZoe Enterprise",
+          "smeEmail": "zoeyanta321@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [
+            {
+              "selectedAt": {
+                "_seconds": 1785084947,
+                "_nanoseconds": 621000000
+              },
+              "selectedByName": "zoeyanta321@gmail.com",
+              "selectedByEmail": "zoeyanta321@gmail.com",
+              "participantId": "MmgYFmbwPNCaqaTDtu36",
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "participantName": "zoeyanta321@gmail.com",
+              "participantEmail": "zoeyanta321@gmail.com",
+              "itemName": "Chicken mayo sandwich",
+              "category": "meal"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812150,
+            "_nanoseconds": 146000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "eJHrrG3PqTJpTquUof1j",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_GjODfSL7hSjG9scmCV7m_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_ta2ow3",
+          "smeId": "GjODfSL7hSjG9scmCV7m",
+          "smeName": "Gwenzi Enterprise (Pty)Ltd",
+          "smeEmail": "mmduedo01@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "pending",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1784812149,
+            "_nanoseconds": 205000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "hIpCTIGemrjf36DfFfNl",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_0EglDz7H64Oo6vSKSIis_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_h9e72i",
+          "smeId": "0EglDz7H64Oo6vSKSIis",
+          "smeName": "Makgatho Group of Companies",
+          "smeEmail": "kgathomakgatha@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [
+            {
+              "selectedByName": "Makgatho ",
+              "itemName": "Chicken mayo sandwich",
+              "participantEmail": "kgathomakgatha@gmail.com",
+              "selectedByEmail": "kgathomakgatha@gmail.com",
+              "participantId": "0EglDz7H64Oo6vSKSIis",
+              "selectedAt": {
+                "_seconds": 1785232539,
+                "_nanoseconds": 878000000
+              },
+              "category": "meal",
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "participantName": "Makgatho "
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812148,
+            "_nanoseconds": 281000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "kJCmY8bpx4e4Cb8H09Y3",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_w9wFeXJDBwpAV1Me14jO_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_gll1jb",
+          "smeId": "w9wFeXJDBwpAV1Me14jO",
+          "smeName": "Molubi Industries Pty Ltd",
+          "smeEmail": "siyamolobi884@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [
+            {
+              "participantName": "siyamolobi884@gmail.com",
+              "selectedByEmail": "siyamolobi884@gmail.com",
+              "category": "meal",
+              "selectedByName": "siyamolobi884@gmail.com",
+              "selectedAt": {
+                "_seconds": 1784892501,
+                "_nanoseconds": 803000000
+              },
+              "participantEmail": "siyamolobi884@gmail.com",
+              "participantId": "w9wFeXJDBwpAV1Me14jO",
+              "itemName": "Chicken mayo sandwich",
+              "itemId": "food-6d856232118f4b1691b4ddaf3fbd38e8"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812153,
+            "_nanoseconds": 321000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "wBMSVrtqOawdTqSnXpe6",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_WcVPEwN8NhChwhQBBG7Z_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_117254",
+          "smeId": "WcVPEwN8NhChwhQBBG7Z",
+          "smeName": "Elegant printworks",
+          "smeEmail": "elegantprintworks111@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [
+            {
+              "participantId": "WcVPEwN8NhChwhQBBG7Z",
+              "selectedAt": {
+                "_seconds": 1785145181,
+                "_nanoseconds": 194000000
+              },
+              "participantEmail": "elegantprintworks111@gmail.com",
+              "selectedByName": "elegantprintworks111@gmail.com",
+              "selectedByEmail": "elegantprintworks111@gmail.com",
+              "itemName": "Polony, Cheese and lettuce sandwich",
+              "category": "meal",
+              "itemId": "food-9eb5a628daa840bba9b5c50dc10ccf7d",
+              "participantName": "elegantprintworks111@gmail.com"
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812151,
+            "_nanoseconds": 451000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "zwlAO5A37OcPEEaBUtLN",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_x72SsMTQVef71X64Bg21_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1784720620651_mkr9uv",
+          "smeId": "x72SsMTQVef71X64Bg21",
+          "smeName": "Doctor T Plumbing Services Pty Ltd",
+          "smeEmail": "doctortplumbingservices@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "completed",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [
+            {
+              "selectedByEmail": "doctortplumbingservices@gmail.com",
+              "participantName": "Doctor T Plumbing Services Pty Ltd",
+              "participantId": "x72SsMTQVef71X64Bg21",
+              "selectedByName": "Doctor T Plumbing Services Pty Ltd",
+              "category": "meal",
+              "participantEmail": "doctortplumbingservices@gmail.com",
+              "itemName": "Polony, Cheese and lettuce sandwich",
+              "itemId": "food-9eb5a628daa840bba9b5c50dc10ccf7d",
+              "selectedAt": {
+                "_seconds": 1785134243,
+                "_nanoseconds": 282000000
+              }
+            }
+          ],
+          "createdAt": {
+            "_seconds": 1784812153,
+            "_nanoseconds": 616000000
+          },
+          "completedAt": {
+            "_seconds": 1785323621,
+            "_nanoseconds": 364000000
+          },
+          "appointmentSessionId": "repair_v5_3ed9030a9a6222ed6db3ce44",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 64000000
+          }
+        }
+      },
+      {
+        "id": "1CDc8PLDMclEcJv6ICXR",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_klqkzcMlRtDyiPvOdQa5_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785146894917_90pel1",
+          "smeId": "klqkzcMlRtDyiPvOdQa5",
+          "smeName": "Ndengezi-Nzima Holdings (Pty) Ltd",
+          "smeEmail": "jabuyende67@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "createdAt": {
+            "_seconds": 1785146896,
+            "_nanoseconds": 194000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_b621c34d8efde31ad2b41bc9",
+          "foodSelections": [
+            {
+              "menuItemId": "food-ba802b60c1194c57b3aa6ed5c3e59991",
+              "quantity": 1
+            }
+          ],
+          "updatedAt": {
+            "_seconds": 1786751817,
+            "_nanoseconds": 139000000
+          }
+        }
+      },
+      {
+        "id": "1D9Xx5JlOluPitJsHSi7",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_a83UnMZl2YSAV3yPAX2O_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785146894918_ns5bxw",
+          "smeId": "a83UnMZl2YSAV3yPAX2O",
+          "smeName": "Solofelang Basadi Construction and Projects",
+          "smeEmail": "solofelang.basadi@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1785146896,
+            "_nanoseconds": 679000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_b621c34d8efde31ad2b41bc9",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 57000000
+          }
+        }
+      },
+      {
+        "id": "WzaaWzy9WfCeD0u0FzQz",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_pt1LDQhX1TuGccpDYFkW_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785156767113_5lo71x",
+          "smeId": "pt1LDQhX1TuGccpDYFkW",
+          "smeName": "DEZWIL ENGINEERING CONSTRUCTION (PTY) LTD",
+          "smeEmail": "wilson.dezwil@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "scheduled",
+          "smeConfirmation": "pending",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1785156770,
+            "_nanoseconds": 565000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_b621c34d8efde31ad2b41bc9",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 57000000
+          }
+        }
+      },
+      {
+        "id": "YNkD6ewDrfsZNXdqMcmh",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_DEUtpxuzY2uHrf4BQP80_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785156767113_ey3ohg",
+          "smeId": "DEUtpxuzY2uHrf4BQP80",
+          "smeName": "Paleo Solutions",
+          "smeEmail": "manyanekt@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1785156769,
+            "_nanoseconds": 890000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_b621c34d8efde31ad2b41bc9",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 57000000
+          }
+        }
+      },
+      {
+        "id": "berREnHrgEtpm4xHqqKu",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_I7g7kyiP6fDw9qYD26WH_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785156767113_x6i7s1",
+          "smeId": "I7g7kyiP6fDw9qYD26WH",
+          "smeName": "Katlego innovation group",
+          "smeEmail": "katlegomororo@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1785156770,
+            "_nanoseconds": 229000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_b621c34d8efde31ad2b41bc9",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 57000000
+          }
+        }
+      },
+      {
+        "id": "e9P2cmMA1ip0omZf5SqR",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_pZ9ifTCPvDV0HlBOf1t6_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785149452194_oog8fp",
+          "smeId": "pZ9ifTCPvDV0HlBOf1t6",
+          "smeName": "MOJA PROJECTS PTY LTD",
+          "smeEmail": "mojapro.014@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1785149453,
+            "_nanoseconds": 616000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_b621c34d8efde31ad2b41bc9",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 57000000
+          }
+        }
+      },
+      {
+        "id": "qB8EQ2DNYT3UvOlScMmi",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_nZPX0SWy16b7BW5vaP1B_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785147184639_3af6op",
+          "smeId": "nZPX0SWy16b7BW5vaP1B",
+          "smeName": "HH Mining Projects",
+          "smeEmail": "hhmining38@gmail.com",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1785147186,
+            "_nanoseconds": 423000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_b621c34d8efde31ad2b41bc9",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 57000000
+          }
+        }
+      },
+      {
+        "id": "ykblKD9Y7L0JvgoxpvVU",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "b3qe3WAMAVw3QU64CLIY",
+          "departmentId": "VXdZeFT8SUcAjyMCG4e2",
+          "assignedInterventionId": "ai_IOlUVyxeXHZeL1WjbKIM_tLJ9hAcchumhfoOdmuqn_sub_1775728698329_de871de2aa3dd_2026-07_1785147184640_ro5n11",
+          "smeId": "IOlUVyxeXHZeL1WjbKIM",
+          "smeName": "Nhanha Engineering",
+          "smeEmail": "okuhlebadli@nhanhaengineering.co.za",
+          "interventionId": "tLJ9hAcchumhfoOdmuqn",
+          "interventionTitle": "Training Course: QMS (Quality Management Systems)",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "2026-07",
+          "assigneeId": "itoEJLHLLhRdVkx4wEdtF8YcMRK2",
+          "assigneeName": "Nombuso Maseko",
+          "assigneeEmail": "qmsadmin@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "createdAt": {
+            "_seconds": 1785147186,
+            "_nanoseconds": 750000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_b621c34d8efde31ad2b41bc9",
+          "foodSelections": [
+            {
+              "menuItemId": "food-6d856232118f4b1691b4ddaf3fbd38e8",
+              "quantity": 1
+            }
+          ],
+          "updatedAt": {
+            "_seconds": 1786699843,
+            "_nanoseconds": 733000000
+          }
+        }
+      }
+    ]
+  },
+  {
+    "canonical": {
+      "id": "repair_v5_cf59a74d9f6d54968df5ae05",
+      "session": {
+        "schemaVersion": 5,
+        "programId": "e57CZklrSHksJtIjwujM",
+        "departmentId": "eLGbkupHGI2QPtSWZVq3",
+        "interventionId": "CyVqHJB87fMLTZQHOheZ",
+        "interventionTitle": "Maths in Business Module",
+        "cycleKey": "once",
+        "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+        "sessionType": "group",
+        "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+        "assigneeName": "Mahlodi Makoko",
+        "assigneeEmail": "admin.nvc@lepharo.co.za",
+        "assigneeRole": "coordinator",
+        "title": "Maths in Business",
+        "startAt": {
+          "_seconds": 1782284400,
+          "_nanoseconds": 0
+        },
+        "endAt": {
+          "_seconds": 1782298800,
+          "_nanoseconds": 0
+        },
+        "deliveryMethod": "in_person",
+        "location": null,
+        "meetingLink": "https://us02web.zoom.us/j/85645758914?pwd=vKxGY9aAA67edBPd459U5DXOdtTu0B.1",
+        "plannedCoverage": [
+          "Apply knowledge of statistics and probability to critically interrogate and effectively communication findings on the life related problems and Represent analyse and calculate shape and motions in 2 -3  dimensional space to different context"
+        ],
+        "coverage": {
+          "held": null,
+          "outcomeSummary": null,
+          "coveredPoints": [],
+          "reasonNotHeld": null,
+          "recordedAt": null,
+          "recordedById": null
+        },
+        "attendanceSession": {
+          "token": "666ff3aa4c5e4dd384c0c248aaa4d4e9",
+          "status": "active",
+          "startedAt": {
+            "_seconds": 1782290661,
+            "_nanoseconds": 568000000
+          },
+          "expiresAt": {
+            "_seconds": 1782296061,
+            "_nanoseconds": 567000000
+          },
+          "createdByEmail": "admin.nvc@lepharo.co.za",
+          "createdByName": "Mahlodi Makoko",
+          "qrUrl": "https://lepharosmartinc.co.za/meeting-checkin?meetingId=DxSDT7bpCbVPuORrmZNk&token=666ff3aa4c5e4dd384c0c248aaa4d4e9"
+        },
+        "attendanceSummary": {
+          "invitedCount": 9,
+          "attendedCount": 7,
+          "checkedInCount": 7,
+          "checkedOutCount": 7
+        },
+        "foodMenu": [],
+        "status": "in_progress",
+        "createdAt": {
+          "_seconds": 1782242088,
+          "_nanoseconds": 58000000
+        },
+        "updatedAt": {
+          "_seconds": 1786449032,
+          "_nanoseconds": 66000000
+        },
+        "completedAt": null
+      }
+    },
+    "merged": [
+      {
+        "id": "repair_v5_a85ccfa3ae6715ae148e7de6",
+        "session": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "cycleKey": "once",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "sessionType": "group",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "title": "Maths in Business",
+          "startAt": {
+            "_seconds": 1782284400,
+            "_nanoseconds": 0
+          },
+          "endAt": {
+            "_seconds": 1782298800,
+            "_nanoseconds": 0
+          },
+          "deliveryMethod": "in_person",
+          "location": null,
+          "meetingLink": "https://us02web.zoom.us/j/85645758914?pwd=vKxGY9aAA67edBPd459U5DXOdtTu0B.1",
+          "plannedCoverage": [
+            "Apply knowledge of statistics and probability to critically interrogate and effectively communication findings on the life related problems and Represent analyse and calculate shape and motions in 2 -3  dimensional space to different context"
+          ],
+          "coverage": {
+            "held": null,
+            "outcomeSummary": null,
+            "coveredPoints": [],
+            "reasonNotHeld": null,
+            "recordedAt": null,
+            "recordedById": null
+          },
+          "attendanceSession": {
+            "token": "666ff3aa4c5e4dd384c0c248aaa4d4e9",
+            "status": "active",
+            "startedAt": {
+              "_seconds": 1782290661,
+              "_nanoseconds": 568000000
+            },
+            "expiresAt": {
+              "_seconds": 1782296061,
+              "_nanoseconds": 567000000
+            },
+            "closedAt": null
+          },
+          "attendanceSummary": {
+            "invitedCount": 1,
+            "attendedCount": 1,
+            "checkedInCount": 1,
+            "checkedOutCount": 1
+          },
+          "foodMenu": [],
+          "status": "in_progress",
+          "createdAt": {
+            "_seconds": 1782242088,
+            "_nanoseconds": 58000000
+          },
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 69000000
+          },
+          "completedAt": null
+        }
+      }
+    ],
+    "appointments": [
+      {
+        "id": "DxSDT7bpCbVPuORrmZNk",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_k6NSB5XYuRDaHIKCQBja_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383336_d7cguo",
+          "smeId": "k6NSB5XYuRDaHIKCQBja",
+          "smeName": "Tsweletso Construction and Projects (PTY) LTD",
+          "smeEmail": "catekekana@gmail.com",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "in_progress",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242090,
+            "_nanoseconds": 865000000
+          },
+          "completedAt": null,
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1782291144,
+              "_nanoseconds": 725000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1782307486,
+              "_nanoseconds": 964000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "Gr0la8yHHWjdOmTl4Mbp",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_b3fDo2Ml1ljrc31ox0dP_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383336_oco3p4",
+          "smeId": "b3fDo2Ml1ljrc31ox0dP",
+          "smeName": "Bani M Trading",
+          "smeEmail": "lizzylisbeth002@gmail.com",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242090,
+            "_nanoseconds": 89000000
+          },
+          "completedAt": null,
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1782291144,
+              "_nanoseconds": 725000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1782307489,
+              "_nanoseconds": 495000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "MXSRv7ewaQwKISHmbUde",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_31qWZ9nRsmnNRTeG0ZGM_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383334_hqh5gp",
+          "smeId": "31qWZ9nRsmnNRTeG0ZGM",
+          "smeName": "Morwa Mokwakwa Trading",
+          "smeEmail": "morwa.mokwakwa1@gmail.com",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242088,
+            "_nanoseconds": 58000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "PCT63iwbIBJtYBNdiO78",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_KxcMyC9hhHmHQBSYNvxm_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383335_6eqztt",
+          "smeId": "KxcMyC9hhHmHQBSYNvxm",
+          "smeName": "R And I Trading And Projects",
+          "smeEmail": "rangatainocent@gmail.com",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242089,
+            "_nanoseconds": 13000000
+          },
+          "completedAt": null,
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1782289489,
+              "_nanoseconds": 127000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1782307492,
+              "_nanoseconds": 438000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "U4eoHwdDmspX0Dop3YYM",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_F9M7lTVQEkpi9C0fFjg0_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383336_le4d37",
+          "smeId": "F9M7lTVQEkpi9C0fFjg0",
+          "smeName": "Boitlamo Construction And Development",
+          "smeEmail": "boitlamoconstruction@gmail.com",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242088,
+            "_nanoseconds": 598000000
+          },
+          "completedAt": null,
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1782291034,
+              "_nanoseconds": 998000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1782307495,
+              "_nanoseconds": 728000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "aZz6RGF7FSwVwQacRcmx",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_uUVkx5Qt7wPR43UfBquQ_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383335_wlawqa",
+          "smeId": "uUVkx5Qt7wPR43UfBquQ",
+          "smeName": "Mike Katlego Makhumisana Logistics Suppliers (PTY) LTD",
+          "smeEmail": "ephia2@gmail.com",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242091,
+            "_nanoseconds": 252000000
+          },
+          "completedAt": null,
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1782289077,
+              "_nanoseconds": 489000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1782307502,
+              "_nanoseconds": 842000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "b1U9qaLQ5WhdyehtpwSL",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_XQtRh3z0PlG0aDd3yWEA_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383336_jgaf1c",
+          "smeId": "XQtRh3z0PlG0aDd3yWEA",
+          "smeName": "Langa Shona Holdings",
+          "smeEmail": "lesibanak2@gmail.com",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242089,
+            "_nanoseconds": 402000000
+          },
+          "completedAt": null,
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1782288811,
+              "_nanoseconds": 953000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1782307505,
+              "_nanoseconds": 407000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "dFRHZnX5fcdAWH3g8hJr",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_vrTmGh4LGJeytLmMzGg1_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383336_cnnqya",
+          "smeId": "vrTmGh4LGJeytLmMzGg1",
+          "smeName": "Mathowa Leitsibolo Trading",
+          "smeEmail": "mathowaleitsibolo@gmail.com",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242091,
+            "_nanoseconds": 685000000
+          },
+          "completedAt": null,
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1782288106,
+              "_nanoseconds": 205000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1782307513,
+              "_nanoseconds": 175000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "nTo2NaP3ESvRLIO2SlHP",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_imC1pcfC1fEpX9AnNhzk_CyVqHJB87fMLTZQHOheZ_nosub_once_1781169383336_40nqpg",
+          "smeId": "imC1pcfC1fEpX9AnNhzk",
+          "smeName": "Futuristic (PTY) LTD",
+          "smeEmail": "khutso@futuristic1.co.za",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "pending",
+          "smeDeclineReason": null,
+          "attendance": {
+            "status": "expected",
+            "checkedInAt": null,
+            "checkedOutAt": null
+          },
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782242090,
+            "_nanoseconds": 487000000
+          },
+          "completedAt": null,
+          "appointmentSessionId": "repair_v5_cf59a74d9f6d54968df5ae05",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 66000000
+          }
+        }
+      },
+      {
+        "id": "boE5Sc3gXWGcepgHZLv1",
+        "data": {
+          "schemaVersion": 5,
+          "programId": "e57CZklrSHksJtIjwujM",
+          "departmentId": "eLGbkupHGI2QPtSWZVq3",
+          "assignedInterventionId": "ai_45ROZiQ30alfZm9EoSst_CyVqHJB87fMLTZQHOheZ_nosub_once_1782281916160_s1h3ta",
+          "smeId": "45ROZiQ30alfZm9EoSst",
+          "smeName": "Gadou Metal Trading",
+          "smeEmail": "info@gadoumetaltrading.co.za",
+          "interventionId": "CyVqHJB87fMLTZQHOheZ",
+          "interventionTitle": "Maths in Business Module",
+          "subInterventionId": null,
+          "subInterventionTitle": null,
+          "cycleKey": "once",
+          "assigneeId": "ftXdFW68mXhnGWUX2iM01pgFGVv2",
+          "assigneeName": "Mahlodi Makoko",
+          "assigneeEmail": "admin.nvc@lepharo.co.za",
+          "assigneeRole": "coordinator",
+          "groupKey": "grp_CyVqHJB87fMLTZQHOheZ_Yvly1mFAlc9lSgEvwIml_e57CZklrSHksJtIjwujM_once_1781169383336",
+          "status": "scheduled",
+          "smeConfirmation": "confirmed",
+          "smeDeclineReason": null,
+          "foodSelections": [],
+          "createdAt": {
+            "_seconds": 1782281917,
+            "_nanoseconds": 429000000
+          },
+          "completedAt": null,
+          "attendance": {
+            "status": "attended",
+            "checkedInAt": {
+              "_seconds": 1782291009,
+              "_nanoseconds": 590000000
+            },
+            "checkedOutAt": {
+              "_seconds": 1782307508,
+              "_nanoseconds": 939000000
+            }
+          },
+          "appointmentSessionId": "repair_v5_a85ccfa3ae6715ae148e7de6",
+          "updatedAt": {
+            "_seconds": 1786449032,
+            "_nanoseconds": 69000000
+          }
+        }
+      }
+    ]
+  }
+]

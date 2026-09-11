@@ -1,0 +1,213 @@
+.clock-panel .ant-card-body {
+    padding: 28px;
+}
+
+.timesheet-metrics {
+    margin-bottom: 16px;
+}
+
+.timesheet-metrics .ant-card,
+.clock-panel,
+.timesheet-chart-card {
+    height: 100%;
+}
+
+.timesheet-chart-card__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.timesheet-chart-card__controls {
+    justify-content: flex-end;
+}
+
+.clock-panel__topline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.clock-panel__status {
+    margin-left: auto;
+}
+
+.clock-panel__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #bfbfbf;
+    box-shadow: 0 0 0 4px rgba(191, 191, 191, .16);
+}
+
+.clock-panel__dot--checked_in {
+    background: #22a06b;
+    box-shadow: 0 0 0 4px rgba(34, 160, 107, .14);
+}
+
+.clock-panel__dot--on_break {
+    background: #e59a16;
+    box-shadow: 0 0 0 4px rgba(229, 154, 22, .14);
+}
+
+.clock-panel__time {
+    margin-top: 24px;
+    color: #17233c;
+    font-size: clamp(40px, 5vw, 58px);
+    font-weight: 750;
+    letter-spacing: -2px;
+    line-height: 1;
+}
+
+.location-check {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 26px 0 16px;
+    padding: 14px;
+    border: 1px solid #e8edf3;
+    border-radius: 14px;
+    background: #f8fafc;
+}
+
+.location-check--ready {
+    border-color: #b7ebc9;
+    background: #f2fbf6;
+}
+
+.location-check--denied,
+.location-check--error,
+.location-check--unsupported {
+    border-color: #ffd591;
+    background: #fffaf0;
+}
+
+.location-check__icon {
+    flex: 0 0 auto;
+    color: #1677ff;
+    font-size: 21px;
+}
+
+.location-check__copy {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.clock-panel__actions {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.clock-panel__actions > .ant-btn {
+    max-width: 220px;
+}
+
+.clock-orb {
+    position: relative;
+    display: flex;
+    width: 172px;
+    height: 172px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    border: 0;
+    border-radius: 50%;
+    background: linear-gradient(145deg, #2787ff, #075dcc);
+    box-shadow: 0 18px 38px rgba(22, 119, 255, .30), inset 0 1px 1px rgba(255,255,255,.35);
+    color: #fff;
+    cursor: pointer;
+    isolation: isolate;
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.clock-orb::before,
+.clock-orb::after {
+    position: absolute;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    border: 2px solid rgba(22, 119, 255, .35);
+    border-radius: 50%;
+    content: '';
+    animation: clock-orb-pulse 2.4s ease-out infinite;
+}
+
+.clock-orb::after {
+    animation-delay: 1.2s;
+}
+
+.clock-orb:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 22px 44px rgba(22, 119, 255, .38), inset 0 1px 1px rgba(255,255,255,.35);
+}
+
+.clock-orb:active:not(:disabled) {
+    transform: scale(.97);
+}
+
+.clock-orb--active {
+    background: linear-gradient(145deg, #ff6b6b, #cf2f3c);
+    box-shadow: 0 18px 38px rgba(207, 47, 60, .28), inset 0 1px 1px rgba(255,255,255,.35);
+}
+
+.clock-orb--active::before,
+.clock-orb--active::after {
+    border-color: rgba(207, 47, 60, .32);
+}
+
+.clock-orb:disabled {
+    background: #d8dee8;
+    box-shadow: none;
+    color: #718096;
+    cursor: not-allowed;
+}
+
+.clock-orb:disabled::before,
+.clock-orb:disabled::after {
+    display: none;
+}
+
+.clock-orb__icon {
+    margin-bottom: 8px;
+    font-size: 30px;
+    line-height: 1;
+}
+
+.clock-orb__label {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.clock-orb__hint {
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: .82;
+}
+
+@keyframes clock-orb-pulse {
+    0% { opacity: .65; transform: scale(1); }
+    75%, 100% { opacity: 0; transform: scale(1.22); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .clock-orb::before,
+    .clock-orb::after { animation: none; }
+}
+
+@media (max-width: 575px) {
+    .clock-panel .ant-card-body { padding: 20px; }
+    .location-check { align-items: flex-start; flex-wrap: wrap; }
+    .location-check .ant-btn { margin-left: 33px; }
+    .clock-orb { width: 154px; height: 154px; }
+    .timesheet-chart-card__controls,
+    .timesheet-chart-card__controls .ant-picker { width: 100%; }
+}

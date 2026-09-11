@@ -1,0 +1,584 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Global super-admin escape hatch for collection-wide admin tooling.
+    // Prefer the custom claim when present; fall back to the users/{uid} role.
+    function isSuperAdmin() {
+      return request.auth != null && (
+        request.auth.token.role in ['admin', 'system_admin', 'superadmin'] ||
+        currentUser().role in ['admin', 'system_admin', 'superadmin']
+      );
+    }
+
+    function isHrManager() {
+      return request.auth != null &&
+        (
+          currentUser().role == 'hr' ||
+          (
+            currentUser().role == 'operations' &&
+            (
+              currentUser().departmentName.matches('^HRM.*') ||
+              currentUser().departmentName.matches('.*Human Resources.*')
+            )
+          )
+        );
+    }
+
+    // Coverage is recorded by the session facilitator or a delivery manager.
+    // This is deliberately narrower than general appointment editing.
+    function canRecordAppointmentCoverage(data) {
+      return request.auth != null &&
+        (
+          (data.keys().hasAny(['assigneeId']) && data.assigneeId == request.auth.uid) ||
+          currentUser().role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin', 'coordinator']
+        );
+    }
+
+    // Users collection - enhanced with branch assignment support
+    match /users/{userId} {
+      allow read, write: if isSuperAdmin();
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin'];
+      allow read: if isHrManager();
+      allow update: if isHrManager() &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'position',
+          'jobTitle',
+          'workerType',
+          'employmentType',
+          'startDate',
+          'endDate',
+          'internEndDate',
+          'department',
+          'departmentName',
+          'departmentId',
+          'status',
+          'updatedAt'
+        ]);
+    }
+
+    // Branches collection - directors can manage, others can read within company
+    match /branches/{branchId} {
+      allow read: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin', 'receptionist'];
+      allow create: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director';
+      allow update, delete: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director';
+    }
+
+    // Branch assignment audit - read only for directors and admins
+    match /branchAssignmentAudit/{auditId} {
+      allow read: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin'];
+      allow write: if false; // Only system/server can write audit logs
+    }
+
+    // Departments collection - directors can manage, operations can read their assigned department
+    match /departments/{departmentId} {
+      allow read: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin'];
+      allow create: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director';
+      allow update, delete: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director';
+    }
+
+    // Quality Objectives (LEP-QMS 024 F) - directors manage all departments'
+    // objectives; HR (role 'hr', or operations scoped to an HR department)
+    // can also manage them. Everyone else with company-wide read access can
+    // view, scoped to their own company.
+    match /qualityObjectives/{qualityObjectiveId} {
+      allow read, write: if isSuperAdmin();
+      allow read: if request.auth != null &&
+        (
+          currentUser().role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin'] ||
+          isHrManager()
+        );
+      allow create: if request.auth != null &&
+        (currentUser().role == 'director' || isHrManager());
+      allow update, delete: if request.auth != null &&
+        (currentUser().role == 'director' || isHrManager());
+    }
+
+    // Leave requests - the requester can create/read their own and edit it
+    // while still pending (fixing a mistake); HR/director can manage every
+    // request within their company regardless of status.
+    match /leaveRequests/{requestId} {
+      allow read, write: if isSuperAdmin();
+      allow read: if request.auth != null &&
+        (
+          resource.data.employeeId == request.auth.uid ||
+          (
+            resource.data.keys().hasAny(['employeeEmail']) &&
+            currentUser().keys().hasAny(['email']) &&
+            resource.data.employeeEmail == currentUser().email
+          ) ||
+          (
+            (currentUser().role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin'] || isHrManager())
+          )
+        );
+      allow create: if request.auth != null &&
+        (
+          request.resource.data.employeeId == request.auth.uid ||
+          (
+            (currentUser().role == 'director' || isHrManager())
+          )
+        );
+      allow update: if request.auth != null &&
+        (
+          (
+            resource.data.employeeId == request.auth.uid &&
+            resource.data.status == 'pending' &&
+            request.resource.data.employeeId == resource.data.employeeId &&
+            request.resource.data.status == 'pending'
+          ) ||
+          (
+            (currentUser().role == 'director' || isHrManager())
+          )
+        );
+      allow delete: if request.auth != null &&
+        (currentUser().role == 'director' || isHrManager());
+    }
+
+    // Department reading library. Operations publish only for their assigned
+    // department; SMEs can browse material from every department.
+    match /libraryMaterials/{materialId} {
+      function libraryUser() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      }
+      function isSme() {
+        return libraryUser().role in ['incubatee', 'participant'];
+      }
+      function isOperations() {
+        return libraryUser().role == 'operations';
+      }
+      function isOwnDepartment(data) {
+        return (libraryUser().departmentId != null && data.departmentId == libraryUser().departmentId) ||
+               (libraryUser().departmentName != null && data.departmentName == libraryUser().departmentName);
+      }
+
+      allow read: if request.auth != null && (isSme() || (isOperations() && isOwnDepartment(resource.data)));
+      allow create: if request.auth != null && isOperations() &&
+        request.resource.data.uploadedBy == request.auth.uid &&
+        isOwnDepartment(request.resource.data);
+      allow update, delete: if request.auth != null && isOperations() &&
+        resource.data.uploadedBy == request.auth.uid && isOwnDepartment(resource.data);
+    }
+
+    match /dataExportSettings/{departmentId} {
+      function exportSettingsUser() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      }
+      allow read: if request.auth != null && (
+        exportSettingsUser().role == 'admin' ||
+        (exportSettingsUser().departmentId != null && exportSettingsUser().departmentId == departmentId)
+      );
+      allow create, update, delete: if request.auth != null && exportSettingsUser().role == 'admin';
+    }
+
+    // Canonical v5 appointment model: one invitation per SME, linked to one
+    // real session and one current assigned intervention.
+    match /appointments/{appointmentId} {
+      allow read, write: if isSuperAdmin();
+      function linkedSessionIsValid(data) {
+        return data.appointmentSessionId is string && data.appointmentSessionId.size() > 0 &&
+          getAfter(/databases/$(database)/documents/appointmentSessions/$(data.appointmentSessionId)).data.programId == data.programId &&
+          getAfter(/databases/$(database)/documents/appointmentSessions/$(data.appointmentSessionId)).data.departmentId == data.departmentId &&
+          getAfter(/databases/$(database)/documents/appointmentSessions/$(data.appointmentSessionId)).data.interventionId == data.interventionId;
+      }
+      function canonicalAppointment(data) {
+        return data.schemaVersion == 5 &&
+          data.keys().hasOnly(['schemaVersion','programId','departmentId','assignedInterventionId','appointmentSessionId','smeId','smeName','smeEmail','interventionId','interventionTitle','subInterventionId','subInterventionTitle','cycleKey','assigneeId','assigneeName','assigneeEmail','assigneeRole','groupKey','status','smeConfirmation','smeDeclineReason','smeRescheduleRequest','attendance','foodSelections','createdAt','updatedAt','completedAt']) &&
+          data.smeId is string && data.interventionId is string &&
+          data.status in ['scheduled','in_progress','completed','cancelled','postponed'] &&
+          data.smeConfirmation in ['pending','confirmed','declined'];
+      }
+      // QR start only moves an existing invitation into the in-progress state.
+      // Keep this deliberately narrow so legacy invitations with additional
+      // historical fields can still participate without permitting general
+      // edits outside the canonical schema.
+      function isQrInvitationStart() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt']) &&
+          request.resource.data.status == 'in_progress';
+      }
+      // A signed-in SME can confirm their own attendance through the active
+      // QR session. This also works for historic invitations that have fields
+      // outside the strict v5 schema.
+      function isQrInvitationCheckIn() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['attendance', 'smeConfirmation', 'updatedAt']) &&
+          request.resource.data.attendance.status == 'attended' &&
+          request.resource.data.smeConfirmation == 'confirmed' &&
+          getAfter(/databases/$(database)/documents/appointmentSessions/$(resource.data.appointmentSessionId)).data.attendanceSession.status == 'active';
+      }
+      // Incubatee responses must also work on historic appointment documents
+      // that contain fields outside the strict v5 schema. The SME may only
+      // change their own response fields, never the schedule or linkage.
+      function isOwnSmeResponse() {
+        return request.auth != null &&
+          (
+            (resource.data.keys().hasAny(['smeId']) && resource.data.smeId == request.auth.uid) ||
+            (resource.data.keys().hasAny(['smeId']) &&
+              currentUser().keys().hasAny(['participantId']) &&
+              resource.data.smeId == currentUser().participantId) ||
+            (resource.data.keys().hasAny(['smeEmail']) &&
+              currentUser().keys().hasAny(['email']) &&
+              resource.data.smeEmail == currentUser().email)
+          ) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'smeConfirmation',
+            'smeDeclineReason',
+            'smeRescheduleRequest',
+            'foodSelections',
+            'updatedAt'
+          ]) &&
+          request.resource.data.smeConfirmation in ['pending', 'confirmed', 'declined'];
+      }
+      // Coverage updates must support legacy invitation records, which may
+      // have fields outside the strict v5 schema. Only the delivery outcome,
+      // attendance and the audit timestamps may change here.
+      function isCoverageInvitationPatch() {
+        return canRecordAppointmentCoverage(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'attendance', 'status', 'completedAt', 'updatedAt',
+            'assignedInterventionId', 'assignmentLinkRepairedAt'
+          ]) &&
+          request.resource.data.status in ['scheduled', 'completed'];
+      }
+      allow read: if request.auth != null;
+      // A grouped session can create many invitations in one transaction.
+      // Do not read every assigned intervention from a rule: Firestore caps
+      // rule reads in atomic operations, which otherwise rejects valid groups
+      // as a permission error. The shared session link remains validated with
+      // one getAfter lookup, while the client transaction uses deterministic
+      // session and invitation IDs to prevent duplicate scheduling.
+      allow create: if request.auth != null &&
+        canonicalAppointment(request.resource.data) &&
+        linkedSessionIsValid(request.resource.data);
+      // A linked appointment cannot be repointed. Do not require the
+      // assignment to remain open here: historic declines may have cancelled
+      // it, while the appointment still needs an SME confirmation or a new
+      // proposed time.
+      allow update: if request.auth != null &&
+        (
+          (
+            canonicalAppointment(request.resource.data) &&
+            request.resource.data.assignedInterventionId == resource.data.assignedInterventionId &&
+            request.resource.data.appointmentSessionId == resource.data.appointmentSessionId &&
+            request.resource.data.smeId == resource.data.smeId && linkedSessionIsValid(request.resource.data)
+          ) ||
+          isOwnSmeResponse() ||
+          isQrInvitationStart() ||
+          isQrInvitationCheckIn() ||
+          isCoverageInvitationPatch()
+        );
+      allow delete: if request.auth != null;
+    }
+
+    match /appointmentSessions/{sessionId} {
+      allow read, write: if isSuperAdmin();
+      function canonicalSession(data) {
+        return data.schemaVersion == 5 &&
+          data.keys().hasOnly(['schemaVersion','programId','departmentId','interventionId','interventionTitle','cycleKey','groupKey','sessionType','assigneeId','assigneeName','assigneeEmail','assigneeRole','title','startAt','endAt','deliveryMethod','location','meetingLink','plannedTopics','plannedCoverage','coverage','attendanceSession','attendanceSummary','foodMenu','scheduleHistory','status','createdAt','updatedAt','completedAt']) &&
+          data.sessionType in ['individual','group'] &&
+          data.status in ['scheduled','in_progress','completed','cancelled','postponed'];
+      }
+      // QR start/close and attendee check-in change only attendance state.
+      // This supports historical sessions that predate the strict v5 field set.
+      function isQrAttendancePatch() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['attendanceSession', 'attendanceSummary', 'status', 'updatedAt']) &&
+          request.resource.data.status in ['scheduled', 'in_progress'];
+      }
+      // Like invitations, older session records are valid operational data but
+      // do not satisfy the strict v5 shape. Permit only the coverage outcome
+      // patch made by the assigned facilitator or a delivery manager.
+      function isCoverageSessionPatch() {
+        return canRecordAppointmentCoverage(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'plannedCoverage', 'coverage', 'status', 'completedAt', 'updatedAt'
+          ]) &&
+          request.resource.data.coverage.recordedById == request.auth.uid &&
+          request.resource.data.status in ['scheduled', 'completed'];
+      }
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && canonicalSession(request.resource.data);
+      allow update: if request.auth != null &&
+        (canonicalSession(request.resource.data) || isQrAttendancePatch() || isCoverageSessionPatch());
+      allow delete: if request.auth != null;
+    }
+
+    // Explicit rather than relying on the broad legacy matcher below. The
+    // appointments screen needs these records to resolve its linked delivery
+    // state for every authenticated role.
+    match /assignedInterventions/{assignmentId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Shared delivery state for a grouped intervention. Individual assignment
+    // records still hold each SME's attendance and MOV eligibility.
+    match /groupInterventionDeliveries/{deliveryId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /agreementTemplates/{templateId} {
+      allow read, write: if isSuperAdmin();
+      function agreementTemplateUser() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      }
+      function isAgreementTemplateAdmin() {
+        return agreementTemplateUser().role in ['admin', 'system admin', 'system_admin'];
+      }
+
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        isAgreementTemplateAdmin();
+      allow update, delete: if request.auth != null &&
+        isAgreementTemplateAdmin();
+    }
+
+    // Proposal access is shared by all authenticated non-incubatee roles.
+    // Many consultants/coordinators/operationsStaff have no mirrored
+    // users/{uid} doc, and currentUser() throws (permission denied) when that
+    // doc doesn't exist - so check existence first, and treat being known in
+    // one of those staff-only collections as sufficient proof of not being an
+    // incubatee (incubatees are never recorded there).
+    function canAccessProposals() {
+      return request.auth != null && (
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          currentUser().role is string &&
+          currentUser().role.lower().trim() != 'incubatee'
+        ) ||
+        exists(/databases/$(database)/documents/consultants/$(request.auth.uid)) ||
+        exists(/databases/$(database)/documents/coordinators/$(request.auth.uid)) ||
+        exists(/databases/$(database)/documents/operationsStaff/$(request.auth.uid))
+      );
+    }
+
+    match /projectProposals/{proposalId} {
+      allow read, create, update, delete: if canAccessProposals();
+
+      match /{subcollection}/{entryId} {
+        allow read, create, update, delete: if canAccessProposals();
+      }
+    }
+
+    match /proposalCounters/{counterId} {
+      allow read, create, update: if canAccessProposals();
+      allow delete: if false;
+    }
+
+    // Digital notice board. Authenticated users can read current notices;
+    // only branch-scoped receptionists and center coordinators can manage them.
+    match /noticeBoard/{noticeId} {
+      allow read, write: if isSuperAdmin();
+      function noticeUser() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      }
+      function isNoticeManager() {
+        return noticeUser().role in ['receptionist', 'projectadmin'];
+      }
+      function isOwnNoticeBranch(data) {
+        return noticeUser().assignedBranch != null &&
+               data.branchId == noticeUser().assignedBranch;
+      }
+
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null &&
+        isNoticeManager() &&
+        isOwnNoticeBranch(request.resource.data) &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if request.auth != null &&
+        isNoticeManager() &&
+        isOwnNoticeBranch(resource.data) &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.createdBy == resource.data.createdBy;
+
+      allow delete: if request.auth != null &&
+        isNoticeManager() &&
+        isOwnNoticeBranch(resource.data);
+    }
+
+    // Inquiry collection - branch scoped with role-based access
+    match /inquiries/{inquiryId} {
+      allow read, write: if isSuperAdmin();
+      function getUserData() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      }
+
+      function isValidBranchAccess() {
+        return request.auth != null && (
+          // Receptionists can access their assigned branch
+          (getUserData().role == 'receptionist' &&
+           getUserData().assignedBranch != null) ||
+          // Center coordinators can access their assigned branch
+          (getUserData().role == 'projectadmin' &&
+           getUserData().assignedBranch != null) ||
+          // Directors can access all inquiries
+          (getUserData().role == 'director') ||
+          // Admins can access all inquiries
+          (getUserData().role == 'admin')
+        );
+      }
+
+      // Allow list/query operations for authorized users (they will be filtered by the client)
+      allow list: if isValidBranchAccess();
+
+      // Allow get operations with branch verification for non-directors/admins
+      allow get: if request.auth != null && (
+        (getUserData().role in ['receptionist', 'projectadmin'] &&
+         getUserData().assignedBranch == resource.data.branchId) ||
+        (getUserData().role == 'director') ||
+        (getUserData().role == 'admin')
+      );
+
+      // Create permissions
+      allow create: if request.auth != null && (
+        (getUserData().role == 'receptionist' &&
+         getUserData().assignedBranch == request.resource.data.branchId) ||
+        (getUserData().role == 'projectadmin' &&
+         getUserData().assignedBranch == request.resource.data.branchId) ||
+        (getUserData().role == 'director') ||
+        (getUserData().role == 'admin')
+      );
+
+      // Update permissions
+      allow update: if request.auth != null && (
+        // Receptionists can update any inquiry in their assigned branch
+        (getUserData().role == 'receptionist' &&
+         getUserData().assignedBranch == resource.data.branchId) ||
+        // Center coordinators can update any inquiry in their branch
+        (getUserData().role == 'projectadmin' &&
+         getUserData().assignedBranch == resource.data.branchId) ||
+        // Directors can update all inquiries
+        (getUserData().role == 'director') ||
+        // Admins can update all inquiries
+        (getUserData().role == 'admin') ||
+        // Soft delete permission for directors and admins
+        ((getUserData().role == 'director' || getUserData().role == 'admin') &&
+         request.resource.data.keys().hasOnly(['isActive', 'updatedAt']) &&
+         request.resource.data.isActive == false)
+      );
+    }
+
+    // Follow-ups collection - branch scoped with role-based access
+    match /followUps/{followUpId} {
+      allow read, write: if isSuperAdmin();
+      function getUserData() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      }
+
+      function isValidBranchAccess() {
+        return request.auth != null && (
+          // Receptionists can access their assigned branch
+          (getUserData().role == 'receptionist' &&
+           getUserData().assignedBranch != null) ||
+          // Center coordinators can access their assigned branch
+          (getUserData().role == 'projectadmin' &&
+           getUserData().assignedBranch != null) ||
+          // Directors can access all follow-ups
+          (getUserData().role == 'director') ||
+          // Admins can access all follow-ups
+          (getUserData().role == 'admin')
+        );
+      }
+
+      // Allow list/query operations for authorized users (they will be filtered by the client)
+      allow list: if isValidBranchAccess();
+
+      // Allow get operations with branch verification for non-directors/admins
+      allow get: if request.auth != null && (
+        (getUserData().role in ['receptionist', 'projectadmin'] &&
+         getUserData().assignedBranch == resource.data.branchId) ||
+        (getUserData().role == 'director') ||
+        (getUserData().role == 'admin')
+      );
+
+      // Create permissions
+      allow create: if request.auth != null && (
+        (getUserData().role == 'receptionist' &&
+         getUserData().assignedBranch == request.resource.data.branchId) ||
+        (getUserData().role == 'projectadmin' &&
+         getUserData().assignedBranch == request.resource.data.branchId) ||
+        (getUserData().role == 'director') ||
+        (getUserData().role == 'admin')
+      );
+
+      // Update permissions
+      allow update: if request.auth != null && (
+        // Receptionists can update follow-ups in their assigned branch
+        (getUserData().role == 'receptionist' &&
+         getUserData().assignedBranch == resource.data.branchId) ||
+        // Center coordinators can update any follow-up in their branch
+        (getUserData().role == 'projectadmin' &&
+         getUserData().assignedBranch == resource.data.branchId) ||
+        // Directors can update all follow-ups
+        (getUserData().role == 'director') ||
+        // Admins can update all follow-ups
+        (getUserData().role == 'admin')
+      );
+    }
+
+    // KPI targets are performance commitments. New targets must be committed
+    // before their reporting period begins; after that only an immutable
+    // revision record may be added.
+    match /kpiTargets/{targetId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.resource.data.keys().hasAll(['companyCode', 'kpiId', 'periodType', 'periodKey', 'periodStartAt', 'target']) &&
+        request.resource.data.periodStartAt > request.time;
+      allow update: if request.auth != null &&
+        (
+          // Existing records created before periodStartAt was introduced stay
+          // manageable through the application-level compatibility guard.
+          !resource.data.keys().hasAll(['periodStartAt']) ||
+          (
+            resource.data.companyCode == request.resource.data.companyCode &&
+            resource.data.kpiId == request.resource.data.kpiId &&
+            resource.data.periodStartAt > request.time &&
+            request.resource.data.periodStartAt > request.time
+          )
+        );
+      allow delete: if request.auth != null &&
+        (!resource.data.keys().hasAll(['periodStartAt']) || resource.data.periodStartAt > request.time);
+    }
+
+    match /kpiTargetRevisions/{revisionId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.resource.data.status == 'approved' &&
+        request.resource.data.approvedBy == request.auth.uid &&
+        request.resource.data.targetDocId is string &&
+        request.resource.data.kpiId is string;
+      allow update, delete: if false;
+    }
+
+    match /kpiTargetAuditLogs/{auditId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.changedBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Default rule for other collections - temporary, should be made more specific.
+    // Super-admins can access every collection, including the explicitly restricted
+    // collections above. Other authenticated users retain the previous fallback.
+    match /{collectionId}/{document=**} {
+      allow read, write: if isSuperAdmin();
+      allow read, write: if request.auth != null &&
+        !(collectionId in ['noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions']);
+    }
+  }
+}

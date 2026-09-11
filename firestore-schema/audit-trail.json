@@ -1,0 +1,172 @@
+{
+  "collection": "branchAssignmentAudit",
+  "description": "Audit trail for all branch assignment changes",
+  "schema": {
+    "id": {
+      "type": "string",
+      "description": "Auto-generated document ID",
+      "required": true
+    },
+    "userId": {
+      "type": "string",
+      "description": "User ID who was assigned/unassigned",
+      "required": true,
+      "example": "user_123"
+    },
+    "userEmail": {
+      "type": "string",
+      "description": "Email of user for easier tracking",
+      "required": true,
+      "example": "jane.doe@lph.co.za"
+    },
+    "userName": {
+      "type": "string",
+      "description": "Name of user for easier tracking",
+      "required": true,
+      "example": "Jane Doe"
+    },
+    "userRole": {
+      "type": "string",
+      "description": "Role of the user being assigned",
+      "required": true,
+      "example": "receptionist"
+    },
+    "branchId": {
+      "type": "string",
+      "description": "Branch ID involved in the assignment",
+      "required": false,
+      "example": "branch_001"
+    },
+    "branchName": {
+      "type": "string",
+      "description": "Branch name for easier tracking",
+      "required": false,
+      "example": "Johannesburg Central"
+    },
+    "previousBranchId": {
+      "type": "string",
+      "description": "Previous branch assignment (null for first assignment)",
+      "required": false,
+      "example": "branch_002"
+    },
+    "action": {
+      "type": "string",
+      "description": "Type of assignment action",
+      "required": true,
+      "enum": ["assigned", "unassigned", "reassigned"],
+      "example": "assigned"
+    },
+    "performedBy": {
+      "type": "string",
+      "description": "User ID who performed the assignment",
+      "required": true,
+      "example": "director_001"
+    },
+    "performedByEmail": {
+      "type": "string",
+      "description": "Email of user who performed action",
+      "required": true,
+      "example": "director@lph.co.za"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Reason for the assignment change",
+      "required": false,
+      "example": "New branch opening"
+    },
+    "companyCode": {
+      "type": "string",
+      "description": "Company code for multi-tenant support",
+      "required": true,
+      "example": "LPH_001"
+    },
+    "timestamp": {
+      "type": "timestamp",
+      "description": "When the assignment change occurred",
+      "required": true,
+      "serverValue": "timestamp"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata about the assignment",
+      "required": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "How the assignment was made",
+          "enum": ["manual", "bulk_import", "migration", "automated"],
+          "example": "manual"
+        },
+        "ipAddress": {
+          "type": "string",
+          "description": "IP address of performing user",
+          "example": "192.168.1.100"
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "Browser/client information",
+          "example": "Mozilla/5.0..."
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "Session identifier",
+          "example": "session_abc123"
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "description": "Permissions assigned with the branch",
+      "required": false,
+      "properties": {
+        "canViewAllInquiries": {
+          "type": "boolean",
+          "example": true
+        },
+        "canCreateInquiries": {
+          "type": "boolean",
+          "example": true
+        },
+        "canEditInquiries": {
+          "type": "boolean",
+          "example": false
+        },
+        "canViewAnalytics": {
+          "type": "boolean",
+          "example": false
+        }
+      }
+    }
+  },
+  "indexes": [
+    {
+      "fields": ["userId", "timestamp"],
+      "description": "Query assignment history for specific user"
+    },
+    {
+      "fields": ["branchId", "timestamp"],
+      "description": "Query assignment history for specific branch"
+    },
+    {
+      "fields": ["companyCode", "timestamp"],
+      "description": "Query all assignments within company by date"
+    },
+    {
+      "fields": ["performedBy", "timestamp"],
+      "description": "Query assignments made by specific director"
+    },
+    {
+      "fields": ["action", "timestamp"],
+      "description": "Query specific types of assignment actions"
+    }
+  ],
+  "retention": {
+    "policy": "Retain for 7 years for compliance",
+    "archival": "Archive after 2 years to cold storage"
+  },
+  "security": {
+    "read": ["director", "admin"],
+    "write": ["system"],
+    "rules": "Only directors and admins can view audit logs, only system can write"
+  }
+} 

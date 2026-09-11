@@ -1,0 +1,180 @@
+{
+  "generatedAt": "2026-09-08T07:18:34.308Z",
+  "mode": "commit",
+  "scannedMovs": 1562,
+  "mismatchedDepartmentName": 10,
+  "autoFixed": 10,
+  "needsManualReview": 0,
+  "changes": [
+    {
+      "id": "4n07xzzEX7X3fllfGzAM",
+      "smmeCompanyName": null,
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "AR1KCwN4UyCCT0WaV6F4",
+      "smmeCompanyName": "Ditsogo Group",
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "FVKD6J50x6UEWWmSWftS",
+      "smmeCompanyName": "Ntshidi Building Cleaning service",
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "SezVJfu0WIxVXjHys7H9",
+      "smmeCompanyName": null,
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "SrWZt2bCigqZEM6vp41R",
+      "smmeCompanyName": null,
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "TdyzgB3PGyNJXBlTYTI9",
+      "smmeCompanyName": "Global Sani Solution (pty) ltd",
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "X3FHLVkhtoHiDeegvcXA",
+      "smmeCompanyName": "Lehlabane Project (pty)ltd",
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "sG6PM25phop9yqEoIvBH",
+      "smmeCompanyName": "Flora Neo Transport and Trading",
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "yaJ5KeXnjwbL59BaM7Us",
+      "smmeCompanyName": "BOH Lesedi Services",
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    },
+    {
+      "id": "zBI5qFk7sJGrmig5NejG",
+      "smmeCompanyName": "Mohgibs Group (pty) ltd",
+      "interventionTitle": "Marketing Skills Module",
+      "createdByName": "Lungile Ngobeni",
+      "facilitatorName": "Mahlodi Makoko",
+      "departmentId": "eLGbkupHGI2QPtSWZVq3",
+      "from": {
+        "departmentName": "Training Academy",
+        "areaOfSupport": "NVC (New Venture Creation)"
+      },
+      "to": {
+        "departmentName": "NVC (New Venture Creation)",
+        "areaOfSupport": "Training Academy"
+      },
+      "action": "swap"
+    }
+  ]
+}

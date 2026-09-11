@@ -1,0 +1,82 @@
+{
+  "generatedAt": "2026-08-12T09:34:26.516Z",
+  "mode": "write",
+  "sourceAssignmentCount": 1592,
+  "groupedAssignmentCount": 605,
+  "groupDeliveryCount": 34,
+  "completedDeliveries": 24,
+  "deliveriesWithEvidence": 19,
+  "backupDir": "C:\\Users\\danie\\Downloads\\LPH-Smart-Inc-main\\backups\\group-delivery-pre-migration-2026-08-12_09-34-26-516",
+  "samples": [
+    {
+      "id": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "groupKey": "grp_8plZb0CPdR3U11PAcBZN_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600108888",
+      "memberCount": 42,
+      "progress": 100,
+      "deliveryStatus": "completed"
+    },
+    {
+      "id": "grp_Iod2YQ13G1xQxHsKWQDI_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600000873",
+      "groupKey": "grp_Iod2YQ13G1xQxHsKWQDI_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-06_1781600000873",
+      "memberCount": 42,
+      "progress": 100,
+      "deliveryStatus": "completed"
+    },
+    {
+      "id": "grp_Iod2YQ13G1xQxHsKWQDI_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-07_1783322572466",
+      "groupKey": "grp_Iod2YQ13G1xQxHsKWQDI_qvzDY7YzW0MLWTJHjwZbF2rVHQE3_b3qe3WAMAVw3QU64CLIY_2026-07_1783322572466",
+      "memberCount": 44,
+      "progress": 100,
+      "deliveryStatus": "completed"
+    },
+    {
+      "id": "synthetic__qvzDY7YzW0MLWTJHjwZbF2rVHQE3__b3qe3WAMAVw3QU64CLIY__9bu8xeGsQu4O1NVV73Du__Iod2YQ13G1xQxHsKWQDI__2026-08",
+      "groupKey": "synthetic__qvzDY7YzW0MLWTJHjwZbF2rVHQE3__b3qe3WAMAVw3QU64CLIY__9bu8xeGsQu4O1NVV73Du__Iod2YQ13G1xQxHsKWQDI__2026-08",
+      "memberCount": 48,
+      "progress": 0,
+      "deliveryStatus": "not_started"
+    },
+    {
+      "id": "grp_tLJ9hAcchumhfoOdmuqn_itoEJLHLLhRdVkx4wEdtF8YcMRK2_b3qe3WAMAVw3QU64CLIY_once_1774527779898",
+      "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_itoEJLHLLhRdVkx4wEdtF8YcMRK2_b3qe3WAMAVw3QU64CLIY_once_1774527779898",
+      "memberCount": 25,
+      "progress": 100,
+      "deliveryStatus": "completed"
+    },
+    {
+      "id": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange%3A1775729214641-1775729214669%7Cdue%3A1776895200000_1776323460346",
+      "groupKey": "grp_tLJ9hAcchumhfoOdmuqn_ufRKz4MZNRTV8LAlCfv5_b3qe3WAMAVw3QU64CLIY_createdRange:1775729214641-1775729214669|due:1776895200000_1776323460346",
+      "memberCount": 28,
+      "progress": 100,
+      "deliveryStatus": "completed"
+    },
+    {
+      "id": "grp_LPH__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__ufRKz4MZNRTV8LAlCfv5__once__1778058784",
+      "groupKey": "grp_LPH__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__ufRKz4MZNRTV8LAlCfv5__once__1778058784",
+      "memberCount": 28,
+      "progress": 100,
+      "deliveryStatus": "completed"
+    },
+    {
+      "id": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+      "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-07",
+      "memberCount": 26,
+      "progress": 100,
+      "deliveryStatus": "completed"
+    },
+    {
+      "id": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-08",
+      "groupKey": "synthetic__itoEJLHLLhRdVkx4wEdtF8YcMRK2__b3qe3WAMAVw3QU64CLIY__VXdZeFT8SUcAjyMCG4e2__tLJ9hAcchumhfoOdmuqn__2026-08",
+      "memberCount": 29,
+      "progress": 0,
+      "deliveryStatus": "not_started"
+    },
+    {
+      "id": "grp__LPH__b3qe3WAMAVw3QU64CLIY__eLGbkupHGI2QPtSWZVq3__TDrA5C5nay6Qb6JnDKSm__nosub__Yvly1mFAlc9lSgEvwIml__other__2026-03",
+      "groupKey": "grp__LPH__b3qe3WAMAVw3QU64CLIY__eLGbkupHGI2QPtSWZVq3__TDrA5C5nay6Qb6JnDKSm__nosub__Yvly1mFAlc9lSgEvwIml__other__2026-03",
+      "memberCount": 14,
+      "progress": 100,
+      "deliveryStatus": "completed"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script&family=Great+Vibes&family=Satisfy&family=Pacifico&family=Roboto&family=Caveat&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Incubation, compliance and reporting platform for Lepharo participants and coordinators." />
+    <!-- Installed-app chrome. theme_color in the web manifest covers Android; iOS reads these. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#1677ff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1117" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Smart Inc" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180x180.png" />
+    <title>Lepharo Smart Incubation Platform</title>
+    <!--
+      Paint the saved colour mode before first render. Without this the page
+      flashes white on every load for dark-mode users, because React only gets
+      to set data-theme after the bundle has parsed. Must stay in sync with
+      src/contexts/ThemeContext.tsx.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = window.localStorage.getItem("lph-color-mode");
+          var mode =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.setAttribute("data-theme", mode);
+          document.documentElement.style.colorScheme = mode;
+          if (mode === "dark") document.documentElement.style.background = "#0e1117";
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

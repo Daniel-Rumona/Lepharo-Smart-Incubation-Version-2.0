@@ -1,0 +1,32 @@
+const fs=require('fs'),assert=require('node:assert/strict');
+const ts=require(require('node:module').createRequire(process.cwd()+'/package.json').resolve('typescript'));
+const s=fs.readFileSync('src/routes/operations/assignments/index.tsx','utf8');
+const h=s.slice(s.indexOf('    const isConfirmedValue ='),s.indexOf('    const isMonitoringDepartment ='));
+const check=new Function(ts.transpile(h+'\nreturn hasBothConfirmationsForDept;',{target:ts.ScriptTarget.ES2020}))();
+const id='Gyx2pYnOPZZ2DlGPRkZd',name='Financial Compliance';
+const dept={confirmedByDeptId:{[id]:{confirmed:true}}};
+assert.equal(check({...dept,smmeConfirmedByDeptId:{},incubateeDepartmentConfirmationsByDeptId:{[id]:{confirmed:true}}},id,name),true);
+assert.equal(check({...dept,smmeConfirmedByDeptId:{other:true},incubateeDepartmentConfirmationsByDeptId:{[id]:true}},id,name),true);
+assert.equal(check({...dept,smmeConfirmedByDept:{},incubateeConfirmedByDept:{[name]:true}},id,name),true);
+assert.equal(check({...dept,smmeConfirmedByDeptId:{[id]:true}},id,name),true);
+assert.equal(check({...dept,incubateeDepartmentConfirmationsByDeptId:{other:true}},id,name),false);
+assert.equal(check({incubateeDepartmentConfirmationsByDeptId:{[id]:true}},id,name),false);
+assert.equal(check({...dept,incubateeDepartmentConfirmationsByDeptId:{[id]:{confirmed:false}}},id,name),false);
+assert.equal(check(undefined,id,name),false);
+const d=JSON.parse(fs.readFileSync('outputs/finance-email-review/dp-source.json'));
+const p=d.diagnosticPlans.filter(p=>p.participantId==='mzXXMPSAI1tgAWoJJsPs').sort((a,b)=>b.createdAt._seconds-a.createdAt._seconds)[0];
+assert.equal(check(p,id,name),true);
+assert.ok(d.applications.some(a=>a.participantId===p.participantId&&a.programId===p.programId&&a.applicationStatus==='accepted'));
+assert.ok(p.interventions.some(i=>i.departmentId===id&&i.area===name));
+const old=(p)=>{
+const yes=v=>v===true||v?.confirmed===true;
+const byId=p.smmeConfirmedByDeptId||p.incubateeDepartmentConfirmationsByDeptId||{};
+const byName=p.smmeConfirmedByDept||p.incubateeConfirmedByDept||p.incubateeDepartmentConfirmations||p.smmeConfirmedMap||{};
+return (yes(p.confirmedByDeptId?.[id])||yes(p.confirmed?.[name]))&&(yes(byId[id])||yes(byName[name]));
+};
+assert.equal(old(p),false);
+const latest=new Map();
+for(const p of d.diagnosticPlans){const key=p.participantId+'|'+p.programId;const prev=latest.get(key);if(!prev||(p.createdAt?._seconds||0)>=(prev.createdAt?._seconds||0))latest.set(key,p);}
+const restored=[...latest.values()].filter(p=>!old(p)&&check(p,id,name)&&d.applications.some(a=>a.participantId===p.participantId&&a.programId===p.programId&&a.applicationStatus==='accepted')&&p.interventions?.some(i=>i.departmentId===id));
+assert.equal(ts.transpileModule(s,{fileName:'index.tsx',reportDiagnostics:true,compilerOptions:{jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).diagnostics.length,0);
+console.log(JSON.stringify({regressionCases:8,reportedSme:{oldGate:old(p),newGate:check(p,id,name),departmentInterventions:p.interventions.filter(i=>i.departmentId===id).length},restoredFinancialComplianceParticipants:restored.length,tsx:'passed'}));

@@ -1,0 +1,1 @@
+export { useFullIdentity } from '../useFullIdentity'

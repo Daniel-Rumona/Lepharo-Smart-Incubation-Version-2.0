@@ -1,0 +1,183 @@
+{
+  "generatedAt": "2026-09-09T07:59:38.344Z",
+  "projectId": "lph-smart-inc",
+  "scannedPacks": 59,
+  "scannedQueries": 260,
+  "duplicateGroupCount": 5,
+  "duplicateDocumentCount": 10,
+  "groupsWithLinkedQueriesOnNonOriginal": 1,
+  "duplicateGroups": [
+    {
+      "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+      "month": "2026-03",
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "count": 2,
+      "identicalInterventions": true,
+      "copies": [
+        {
+          "id": "pKzKMEQv9DfowuxWpaLw",
+          "createdAt": "2026-03-27T07:55:35.497Z",
+          "status": "confirmed",
+          "totalItems": 26,
+          "approvalsCount": 2,
+          "hasInvoiceAttachment": true,
+          "linkedWorkflowQueries": [
+            "5qvSSoUIcil8EDrAK4uS",
+            "ADseVlmXeMDurgHRH0Yk",
+            "CfIYfMNQ7ocjSemY4Ygg",
+            "EBAWDJa3Z0upiiZBQEyV",
+            "JWeDvqaJTtMcd9SQcJ7C",
+            "NQFqEU2pW5HnAYXuF1Gc",
+            "OtXv8R3QZqoy2UqdqNhC",
+            "RCDx5L6iNtoVM774oxy6",
+            "TRpbKise0ZQk5yw3GeyL",
+            "Tig5mUctnasG2Mr2ueR3",
+            "cHzQ11Jro2BPfkWia685",
+            "pSKffp0bMtzt28PcMQ7E",
+            "qf57LX2c9ayKQZY0XP45",
+            "rYr165wgmoPhhYyhCCIF"
+          ],
+          "likelyOriginal": true
+        },
+        {
+          "id": "EZGcbICoN0chhSvHf3iL",
+          "createdAt": "2026-03-27T07:55:37.848Z",
+          "status": "confirmed",
+          "totalItems": 26,
+          "approvalsCount": 2,
+          "hasInvoiceAttachment": true,
+          "linkedWorkflowQueries": [
+            "0vamGWzXh7OQQMuw6F13",
+            "3dghZWjm63G9ShXjpHEN",
+            "5QqT0rkSdCMPjNmR2mlS",
+            "95LvhcfJJmThtk5gMOOQ",
+            "9fRmZyv3KBkNBfIhE9AI",
+            "AOx6wlNwiqnodLlVnA2x",
+            "OjSkjDfUoSFu6BqLNGfv",
+            "fFqxFADXUohAiMYyORZ7",
+            "hDmpwBD3m1NxWH1r5dIk",
+            "n4xGXxj7ccfMQB2zJOA2",
+            "ziXnTjwPjblNegqm06jO"
+          ],
+          "likelyOriginal": false
+        }
+      ]
+    },
+    {
+      "department": "ROM (Recruitment, Onboarding and Maintenance)",
+      "month": "2026-08",
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "count": 2,
+      "identicalInterventions": true,
+      "copies": [
+        {
+          "id": "ampc4FFUNqqU8UK2zjVz",
+          "createdAt": "2026-09-08T14:06:52.730Z",
+          "status": "submitted_to_me",
+          "totalItems": 1,
+          "approvalsCount": 1,
+          "hasInvoiceAttachment": true,
+          "linkedWorkflowQueries": [],
+          "likelyOriginal": true
+        },
+        {
+          "id": "HQ3J3YhWjwKCaXsWhIFh",
+          "createdAt": "2026-09-08T14:06:55.397Z",
+          "status": "submitted_to_me",
+          "totalItems": 1,
+          "approvalsCount": 1,
+          "hasInvoiceAttachment": true,
+          "linkedWorkflowQueries": [],
+          "likelyOriginal": false
+        }
+      ]
+    },
+    {
+      "department": "QMS (Quality Management System)",
+      "month": "2026-04",
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "count": 2,
+      "identicalInterventions": true,
+      "copies": [
+        {
+          "id": "N5uoGPzwRdVLZkaFJSWx",
+          "createdAt": "2026-05-06T08:57:12.973Z",
+          "status": "confirmed",
+          "totalItems": 17,
+          "approvalsCount": 2,
+          "hasInvoiceAttachment": false,
+          "linkedWorkflowQueries": [],
+          "likelyOriginal": true
+        },
+        {
+          "id": "gCr9Oxv26L90PlpQDy4I",
+          "createdAt": "2026-05-06T08:57:12.992Z",
+          "status": "confirmed",
+          "totalItems": 17,
+          "approvalsCount": 2,
+          "hasInvoiceAttachment": false,
+          "linkedWorkflowQueries": [],
+          "likelyOriginal": false
+        }
+      ]
+    },
+    {
+      "department": "NVC (New Venture Creation)",
+      "month": "2026-06",
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "count": 2,
+      "identicalInterventions": true,
+      "copies": [
+        {
+          "id": "hr0FZUgzjcHCiuDjr6N2",
+          "createdAt": "2026-07-06T08:51:06.332Z",
+          "status": "confirmed",
+          "totalItems": 16,
+          "approvalsCount": 2,
+          "hasInvoiceAttachment": false,
+          "linkedWorkflowQueries": [],
+          "likelyOriginal": true
+        },
+        {
+          "id": "UlmaekViwU5jpU8tAJo3",
+          "createdAt": "2026-07-06T08:51:06.351Z",
+          "status": "confirmed",
+          "totalItems": 16,
+          "approvalsCount": 2,
+          "hasInvoiceAttachment": false,
+          "linkedWorkflowQueries": [],
+          "likelyOriginal": false
+        }
+      ]
+    },
+    {
+      "department": "QMS (Quality Management System)",
+      "month": "2026-06",
+      "programId": "e57CZklrSHksJtIjwujM",
+      "count": 2,
+      "identicalInterventions": true,
+      "copies": [
+        {
+          "id": "nfc1AodnY0hf1lpGza2Z",
+          "createdAt": "2026-07-03T11:01:01.010Z",
+          "status": "confirmed",
+          "totalItems": 10,
+          "approvalsCount": 2,
+          "hasInvoiceAttachment": false,
+          "linkedWorkflowQueries": [],
+          "likelyOriginal": true
+        },
+        {
+          "id": "X5RzBF4diM1KlJwpiuFo",
+          "createdAt": "2026-07-03T11:01:01.023Z",
+          "status": "confirmed",
+          "totalItems": 10,
+          "approvalsCount": 2,
+          "hasInvoiceAttachment": false,
+          "linkedWorkflowQueries": [],
+          "likelyOriginal": false
+        }
+      ]
+    }
+  ]
+}

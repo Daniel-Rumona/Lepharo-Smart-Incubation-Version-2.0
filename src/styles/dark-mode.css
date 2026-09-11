@@ -1,0 +1,1066 @@
+/* ============================================================================
+   Dark mode
+   ----------------------------------------------------------------------------
+   Everything here is scoped to html[data-theme="dark"], so light mode renders
+   exactly as it did before this file existed.
+
+   The app is themed from three places and this file is the third:
+     1. Ant Design components   -> src/config/antdTheme.ts (darkAlgorithm + tokens)
+     2. Hand-written CSS        -> the overrides in sections 2 and 3 below
+     3. Hardcoded inline styles -> the remediation layer in section 4 below
+
+   Section 4 exists because ~300 components set colours inline (background of
+   #fff, color of #666, and so on). Rewriting all of them is not realistic, so
+   instead we match on the serialised style attribute. React writes inline styles
+   through the CSSOM, which normalises hex to rgb() and keeps the property name:
+       style="background: rgb(255, 255, 255); color: rgb(102, 102, 102);"
+   That makes property-anchored substring selectors both possible and precise.
+
+   OPT OUT: add class="keep-light" to any subtree that must stay light regardless
+   of theme (document/contract previews, print surfaces, brand lockups).
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   0. Tokens
+   ------------------------------------------------------------------------- */
+
+:root {
+    --app-bg: #f5f7fa;
+    --app-surface: #ffffff;
+    --app-surface-raised: #ffffff;
+    --app-surface-sunken: #f5f7fa;
+    --app-border: #eceef1;
+    --app-border-strong: #dfe3e8;
+    --app-text: #182230;
+    --app-text-muted: #667085;
+    --app-text-subtle: #98a2b3;
+    --app-accent: #1677ff;
+    --app-accent-soft: #eaf3ff;
+    --app-shadow: 0 7px 20px rgba(20, 29, 43, 0.07);
+
+    --app-wash-info: #e6f4ff;
+    --app-wash-success: #f6ffed;
+    --app-wash-warning: #fff7e6;
+    --app-wash-error: #fff2f0;
+}
+
+html[data-theme="dark"] {
+    --app-bg: #0e1117;
+    --app-surface: #171b22;
+    --app-surface-raised: #1f242d;
+    --app-surface-sunken: #12161c;
+    --app-border: #2a313c;
+    --app-border-strong: #39424f;
+    --app-text: rgba(255, 255, 255, 0.88);
+    --app-text-muted: rgba(255, 255, 255, 0.62);
+    --app-text-subtle: rgba(255, 255, 255, 0.42);
+    --app-accent: #4a9bff;
+    --app-accent-soft: rgba(74, 155, 255, 0.14);
+    --app-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+
+    /* Status washes. Kept translucent so they composite over whichever surface
+       they land on instead of punching a flat block into it. */
+    --app-wash-info: rgba(74, 155, 255, 0.14);
+    --app-wash-success: rgba(91, 200, 91, 0.14);
+    --app-wash-warning: rgba(245, 185, 66, 0.14);
+    --app-wash-error: rgba(255, 107, 107, 0.14);
+}
+
+/* ---------------------------------------------------------------------------
+   1. Document
+   ------------------------------------------------------------------------- */
+
+html[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+html[data-theme="dark"] body {
+    background: var(--app-bg);
+    color: var(--app-text);
+}
+
+/* Only the shell animates on mode swap. Transitioning everything makes tables
+   and charts strobe as they re-render. */
+html[data-theme="dark"] body,
+html[data-theme="dark"] .workspace-shell,
+html[data-theme="dark"] .workspace-topbar {
+    transition: background-color 180ms ease, color 180ms ease;
+}
+
+html[data-theme="dark"] ::selection {
+    background: rgba(74, 155, 255, 0.35);
+    color: #fff;
+}
+
+/* Scrollbars live in styles/scrollbars.css — they are themed for both modes,
+   including the arrow buttons, which styling ::-webkit-scrollbar here used to
+   silently remove. */
+
+/* Chrome paints autofilled inputs a hardcoded pale yellow; the inset shadow
+   trick is the only way to repaint them.
+
+   The :not(.keep-light *) guard is load-bearing. The inset shadow is 1000px, so
+   it floods the entire field — without the guard, an autofilled input inside a
+   light island renders as a dark block with light text on a white card. */
+html[data-theme="dark"] input:-webkit-autofill:not(.keep-light *),
+html[data-theme="dark"] input:-webkit-autofill:hover:not(.keep-light *),
+html[data-theme="dark"] input:-webkit-autofill:focus:not(.keep-light *),
+html[data-theme="dark"] textarea:-webkit-autofill:not(.keep-light *) {
+    -webkit-text-fill-color: var(--app-text);
+    -webkit-box-shadow: 0 0 0 1000px var(--app-surface-raised) inset;
+    caret-color: var(--app-text);
+    transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Inside a light island the autofill wash has to be repainted light, because
+   Chrome's own pale yellow is still wrong against a white card. */
+html[data-theme="dark"] .keep-light input:-webkit-autofill,
+html[data-theme="dark"] .keep-light input:-webkit-autofill:hover,
+html[data-theme="dark"] .keep-light input:-webkit-autofill:focus,
+html[data-theme="dark"] .keep-light textarea:-webkit-autofill {
+    -webkit-text-fill-color: #182230;
+    -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+    caret-color: #182230;
+}
+
+/* ---------------------------------------------------------------------------
+   2. App shell — components/layout/layout.css
+   ------------------------------------------------------------------------- */
+
+html[data-theme="dark"] .workspace-shell {
+    background: var(--app-bg);
+}
+
+/* The sticky strip the topbar pill floats in.
+   Fully opaque and exactly the page colour, for two reasons:
+     - at 82% alpha, content scrolling underneath bled through and shifted the
+       strip's tone, so the header read as a second, slightly different shade
+     - once it is opaque, the backdrop blur has nothing left to do but cost a
+       compositing layer, so it comes off
+   The result is that the pill is the only thing in the header carrying a
+   distinct surface colour, while scrolled content stays completely hidden. */
+html[data-theme="dark"] .workspace-header-wrap {
+    background: var(--app-bg);
+    backdrop-filter: none;
+}
+
+/* The topbar pill is a raised surface, exactly like a card — same rung, same
+   colour. The app only has two planes in dark mode and everything belongs to one
+   of them:
+
+     --app-bg       the plane        page background, and this header strip
+     --app-surface  things on it     the topbar pill, cards, metric tiles
+
+   Keeping the pill on the same rung as the cards is what makes the header read
+   as part of the page rather than a separate band. */
+html[data-theme="dark"] .workspace-topbar {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: var(--app-surface);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .workspace-brand:hover,
+html[data-theme="dark"] .workspace-brand:focus-visible {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .workspace-primary-nav,
+html[data-theme="dark"] .workspace-more-segmented {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .workspace-primary-segment,
+html[data-theme="dark"] .workspace-more-segment {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .workspace-primary-segment:hover,
+html[data-theme="dark"] .workspace-primary-segment:focus-visible,
+html[data-theme="dark"] .workspace-more-segment:hover,
+html[data-theme="dark"] .workspace-more-segment:focus-visible {
+    color: var(--app-accent);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .workspace-primary-segment-active,
+html[data-theme="dark"] .workspace-primary-segment-active:hover,
+html[data-theme="dark"] .workspace-primary-segment-active:focus-visible,
+html[data-theme="dark"] .workspace-more-segment-active,
+html[data-theme="dark"] .workspace-more-segment-active:hover,
+html[data-theme="dark"] .workspace-more-segment-active:focus-visible {
+    color: #ffffff;
+    background: rgba(74, 155, 255, 0.22);
+}
+
+html[data-theme="dark"] .workspace-program-control {
+    border-color: var(--app-border);
+    color: var(--app-text);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="dark"] .workspace-program-control-selectable:focus-within,
+html[data-theme="dark"] .workspace-program-control-selectable:hover {
+    border-color: rgba(74, 155, 255, 0.55);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+html[data-theme="dark"] .workspace-program-icon {
+    color: var(--app-accent);
+}
+
+html[data-theme="dark"] .workspace-program-control .ant-select-selection-item,
+html[data-theme="dark"] .workspace-program-control strong {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .workspace-program-control-locked {
+    background: var(--app-wash-info);
+    border-color: rgba(74, 155, 255, 0.35);
+}
+
+html[data-theme="dark"] .workspace-program-lock {
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .workspace-program-control-error {
+    color: #ff8f8a;
+    background: var(--app-wash-error);
+    border-color: rgba(255, 107, 107, 0.35);
+}
+
+html[data-theme="dark"] .workspace-program-control-error .workspace-program-icon,
+html[data-theme="dark"] .workspace-program-control-error strong {
+    color: #ff8f8a;
+}
+
+html[data-theme="dark"] .workspace-logout-button {
+    border-color: rgba(255, 107, 107, 0.35) !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+html[data-theme="dark"] .workspace-logout-button:hover,
+html[data-theme="dark"] .workspace-logout-button:focus-visible {
+    border-color: rgba(255, 107, 107, 0.6) !important;
+    background: var(--app-wash-error) !important;
+}
+
+html[data-theme="dark"] .workspace-assistant-button {
+    border-color: rgba(74, 155, 255, 0.32) !important;
+    color: var(--app-accent) !important;
+    background: rgba(74, 155, 255, 0.1) !important;
+}
+
+html[data-theme="dark"] .workspace-assistant-button:hover,
+html[data-theme="dark"] .workspace-assistant-button:focus-visible,
+html[data-theme="dark"] .workspace-assistant-button-active {
+    border-color: rgba(74, 155, 255, 0.6) !important;
+    color: #7db4ff !important;
+    background: rgba(74, 155, 255, 0.22) !important;
+}
+
+html[data-theme="dark"] .workspace-more-modal .ant-modal-header {
+    border-bottom-color: var(--app-border);
+}
+
+html[data-theme="dark"] .workspace-more-heading-icon {
+    color: var(--app-accent);
+    background: var(--app-accent-soft);
+}
+
+html[data-theme="dark"] .workspace-more-heading strong,
+html[data-theme="dark"] .workspace-more-card-copy strong {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .workspace-more-heading small,
+html[data-theme="dark"] .workspace-more-card-copy small {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .workspace-more-card {
+    border-color: var(--app-border);
+    background: var(--app-surface-raised);
+}
+
+html[data-theme="dark"] .workspace-more-card:hover,
+html[data-theme="dark"] .workspace-more-card:focus-visible {
+    border-color: rgba(74, 155, 255, 0.5);
+}
+
+html[data-theme="dark"] .workspace-more-card-active {
+    border-color: rgba(74, 155, 255, 0.65);
+    background: rgba(74, 155, 255, 0.12);
+}
+
+html[data-theme="dark"] .workspace-more-card-icon {
+    color: var(--app-accent);
+    background: var(--app-accent-soft);
+}
+
+html[data-theme="dark"] .workspace-more-card-arrow {
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .workspace-bottom-nav {
+    border-top-color: var(--app-border);
+    background: rgba(20, 24, 31, 0.94);
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .workspace-bottom-nav-item {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .workspace-bottom-nav-item:active {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .workspace-bottom-nav-item-active {
+    color: var(--app-accent);
+    background: var(--app-accent-soft);
+}
+
+/* ---------------------------------------------------------------------------
+   3. Rescues for the remaining hand-written and third-party stylesheets
+   ------------------------------------------------------------------------- */
+
+html[data-theme="dark"] .ant-layout,
+html[data-theme="dark"] .ant-layout-content {
+    background: var(--app-bg);
+}
+
+/* FullCalendar ships its own white grid and near-black text. */
+html[data-theme="dark"] .fc {
+    --fc-page-bg-color: var(--app-surface);
+    --fc-neutral-bg-color: var(--app-surface-raised);
+    --fc-border-color: var(--app-border);
+    --fc-today-bg-color: rgba(74, 155, 255, 0.12);
+    --fc-neutral-text-color: var(--app-text-muted);
+    --fc-list-event-hover-bg-color: rgba(255, 255, 255, 0.06);
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .fc .fc-col-header-cell-cushion,
+html[data-theme="dark"] .fc .fc-daygrid-day-number,
+html[data-theme="dark"] .fc .fc-list-day-text,
+html[data-theme="dark"] .fc .fc-list-day-side-text,
+html[data-theme="dark"] .fc .fc-timegrid-axis-cushion,
+html[data-theme="dark"] .fc .fc-timegrid-slot-label-cushion {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .fc .fc-day-other .fc-daygrid-day-top {
+    opacity: 0.45;
+}
+
+/* Markdown editor / preview. */
+html[data-theme="dark"] .w-md-editor,
+html[data-theme="dark"] .wmde-markdown {
+    --color-canvas-default: var(--app-surface);
+    --color-border-default: var(--app-border);
+    background-color: var(--app-surface);
+    color: var(--app-text);
+}
+
+/* The guided-tour popover (driver.js) ships its own white card. */
+html[data-theme="dark"] .driver-popover.lph-guide-popover {
+    background: rgba(31, 36, 45, 0.98) !important;
+    color: var(--app-text) !important;
+}
+
+html[data-theme="dark"] .driver-popover.lph-guide-popover .driver-popover-prev-btn {
+    background: var(--app-surface) !important;
+    color: var(--app-text) !important;
+    border-color: var(--app-border) !important;
+}
+
+html[data-theme="dark"] .driver-popover.lph-guide-popover .driver-popover-arrow-side-top {
+    border-top-color: rgba(31, 36, 45, 0.98) !important;
+}
+
+html[data-theme="dark"] .driver-popover.lph-guide-popover .driver-popover-arrow-side-bottom {
+    border-bottom-color: rgba(31, 36, 45, 0.98) !important;
+}
+
+/* Calendar chrome (styles/calender.css). The FullCalendar variables above cover
+   the grid itself; these are the toolbar and lane surfaces it paints directly. */
+html[data-theme="dark"] .smart-calendar-segmented {
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+html[data-theme="dark"] .smart-calendar-shell .fc .fc-button {
+    background: var(--app-surface-raised) !important;
+    border-color: var(--app-border) !important;
+    color: var(--app-text) !important;
+}
+
+html[data-theme="dark"] .smart-calendar-shell .fc .fc-button:hover {
+    background: rgba(255, 255, 255, 0.09) !important;
+}
+
+html[data-theme="dark"] .smart-calendar-shell .fc .fc-timegrid-slot-lane {
+    background: var(--app-surface) !important;
+}
+
+html[data-theme="dark"] .smart-pill-gold {
+    background: var(--app-wash-warning) !important;
+    color: #ffc95c !important;
+}
+
+html[data-theme="dark"] .notice-card--important .notice-card__pin {
+    background: var(--app-wash-warning) !important;
+}
+
+/* Panels and cards in the remaining feature stylesheets. */
+/* .section-detection-card, .workspace-panel and .template-block-row belong to
+   the collaborative reports module and are themed in its own stylesheet
+   (routes/operations/reports/collaborative/reportPhaseTwo.css), next to the
+   light rules they override. */
+/* .appointment-mobile-card is themed in styles/incubatee-appointments.css,
+   alongside the rest of that page's surfaces. */
+html[data-theme="dark"] .financial-documents-layout,
+html[data-theme="dark"] .metrics-mobile-card,
+html[data-theme="dark"] .compliance-agreement-list .ant-list-item,
+html[data-theme="dark"] .incubatee-dashboard-mobile-list .ant-list-item {
+    background: var(--app-surface) !important;
+    border-color: var(--app-border);
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .activation-modal-summary,
+html[data-theme="dark"] .location-check,
+html[data-theme="dark"] .compliance-agreement-segmented {
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+html[data-theme="dark"] .location-check--denied,
+html[data-theme="dark"] .location-check--error,
+html[data-theme="dark"] .location-check--unsupported {
+    background: var(--app-wash-warning) !important;
+}
+
+/* .report-paper, .template-preview-paper and styles/contract-paper.css are
+   deliberately left light: they are document previews of something that will be
+   printed, and their own stylesheets already set dark text on them. */
+
+/* Charting libraries paint an opaque white plot background. Their canvas rect is
+   the reliable hook, and clearing it is safe because the panel underneath is
+   already themed. */
+/* lib/highchartsTheme.ts is the real fix for Highcharts. These rules only cover
+   the gap between a chart mounting and the theme chunk resolving, hence
+   !important — Highcharts writes fills as inline attributes. */
+html[data-theme="dark"] .highcharts-background,
+html[data-theme="dark"] .recharts-surface > rect:first-child {
+    fill: transparent !important;
+}
+
+html[data-theme="dark"] .highcharts-axis-labels text,
+html[data-theme="dark"] .highcharts-legend-item text,
+html[data-theme="dark"] .highcharts-axis-title,
+html[data-theme="dark"] .highcharts-title,
+html[data-theme="dark"] .highcharts-subtitle {
+    fill: var(--app-text-muted) !important;
+    color: var(--app-text-muted) !important;
+}
+
+html[data-theme="dark"] .highcharts-grid-line {
+    stroke: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Nivo and Ant Design Plots draw their tooltips as HTML, not SVG. */
+html[data-theme="dark"] .g2-tooltip,
+html[data-theme="dark"] [class*="nivo"] [style*="background: rgb(255, 255, 255)"] {
+    background: var(--app-surface-raised) !important;
+    color: var(--app-text) !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   4. Inline-style remediation
+   ---------------------------------------------------------------------------
+   Matches the normalised style attribute React writes. Every rule is anchored to
+   a property name, so a value can never be applied to the wrong property — i.e.
+   "background: rgb(255,255,255)" and "color: rgb(255,255,255)" never collide.
+
+   !important is required here: inline styles outrank stylesheet rules.
+   ------------------------------------------------------------------------- */
+
+/* --- 4a. Near-white surfaces -> the standard panel ----------------------- */
+
+html[data-theme="dark"] [style*="background: rgb(255, 255, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 255, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: white"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: white"]:not(.keep-light):not(.keep-light *) {
+    background-color: var(--app-surface) !important;
+    background-image: none !important;
+}
+
+/* --- 4b. Light greys -> a slightly raised inset -------------------------- */
+/* In light mode these read as "recessed against white". Mapping them one step
+   lighter than the panel preserves that separation once the panel is dark. */
+
+html[data-theme="dark"] [style*="background: rgb(250, 250, 250)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(250, 250, 250)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(249, 250, 251)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(249, 250, 251)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(248, 250, 252)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(248, 250, 252)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(247, 248, 252)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(245, 245, 245)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(245, 245, 245)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(245, 247, 251)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(246, 247, 249)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(242, 244, 247)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(240, 240, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(240, 240, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(240, 244, 248)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(240, 244, 248)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(238, 238, 238)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(233, 236, 239)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(223, 227, 232)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(217, 217, 217)"]:not(.keep-light):not(.keep-light *) {
+    background-color: #1e232b !important;
+    background-image: none !important;
+}
+
+/* --- 4c. Tinted surfaces ------------------------------------------------- */
+/*
+   Two conventions for the same thing coexist in this codebase:
+
+     iconBg="rgba(22,119,255,.12)"   translucent — already correct on dark
+     iconBg="#e6f7ff"                opaque pale — a flat light block on dark
+
+   Roughly 150 call sites use the first and 130 use the second, often side by
+   side in the same row of cards, which is what makes the icon chips look
+   inconsistent. Mapping each opaque tint to the translucent form of *its own
+   hue* at the same .12–.16 alpha makes the two families render identically.
+
+   Hue matters here: these are semantic (blue = info, green = healthy, amber =
+   attention, red = risk), so collapsing them all onto one accent would lose the
+   meaning the colour is carrying.
+*/
+
+/* blue — info */
+html[data-theme="dark"] [style*="background: rgb(230, 244, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(230, 244, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(239, 246, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(239, 246, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(240, 245, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(240, 245, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(214, 228, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(214, 228, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(238, 244, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(238, 245, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(237, 245, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(234, 243, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(230, 239, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(219, 234, 254)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(217, 232, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(248, 251, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(250, 252, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(249, 251, 255)"]:not(.keep-light):not(.keep-light *) {
+    background-color: rgba(22, 119, 255, 0.16) !important;
+    background-image: none !important;
+}
+
+/* cyan — the lighter blue AntD uses for "in progress" */
+html[data-theme="dark"] [style*="background: rgb(230, 247, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(230, 247, 255)"]:not(.keep-light):not(.keep-light *) {
+    background-color: rgba(24, 144, 255, 0.16) !important;
+    background-image: none !important;
+}
+
+/* teal */
+html[data-theme="dark"] [style*="background: rgb(230, 255, 251)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(230, 255, 251)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(181, 245, 236)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(181, 245, 236)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(240, 253, 250)"]:not(.keep-light):not(.keep-light *) {
+    background-color: rgba(19, 194, 194, 0.10) !important;
+    background-image: none !important;
+}
+
+/* green — success */
+html[data-theme="dark"] [style*="background: rgb(246, 255, 237)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(246, 255, 237)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(217, 247, 190)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(217, 247, 190)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(240, 253, 244)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(240, 253, 244)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(236, 253, 245)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(251, 255, 251)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(251, 255, 251)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(220, 252, 231)"]:not(.keep-light):not(.keep-light *) {
+    background-color: rgba(82, 196, 26, 0.11) !important;
+    background-image: none !important;
+}
+
+/* amber — attention */
+html[data-theme="dark"] [style*="background: rgb(255, 247, 230)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 247, 230)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 231, 186)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 231, 186)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(254, 243, 199)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(254, 243, 199)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 250, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 251, 230)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(254, 249, 195)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(252, 255, 230)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 244, 206)"]:not(.keep-light):not(.keep-light *) {
+    background-color: rgba(250, 173, 20, 0.10) !important;
+    background-image: none !important;
+}
+
+/* red — risk */
+html[data-theme="dark"] [style*="background: rgb(255, 242, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 242, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 241, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 241, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 204, 199)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 204, 199)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(254, 226, 226)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 245, 245)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 236, 232)"]:not(.keep-light):not(.keep-light *) {
+    background-color: rgba(255, 77, 79, 0.16) !important;
+    background-image: none !important;
+}
+
+/* purple */
+html[data-theme="dark"] [style*="background: rgb(249, 240, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(249, 240, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(239, 219, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(239, 219, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(245, 243, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(243, 232, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(237, 233, 254)"]:not(.keep-light):not(.keep-light *) {
+    background-color: rgba(114, 46, 209, 0.20) !important;
+    background-image: none !important;
+}
+
+/* magenta */
+html[data-theme="dark"] [style*="background: rgb(255, 240, 246)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 240, 246)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 214, 231)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(253, 242, 248)"]:not(.keep-light):not(.keep-light *) {
+    background-color: rgba(235, 47, 150, 0.14) !important;
+    background-image: none !important;
+}
+
+/* --- 4d. Dark text -> light text ---------------------------------------- */
+/* Safe because every light surface these sit on is repainted above. */
+
+html[data-theme="dark"] [style*="color: rgb(0, 0, 0)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(51, 51, 51)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(38, 38, 38)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(24, 34, 48)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(37, 48, 68)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(30, 41, 59)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(17, 24, 39)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(52, 64, 84)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(28, 37, 65)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(45, 55, 72)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(31, 41, 55)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(15, 23, 42)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: black"]:not(.keep-light):not(.keep-light *) {
+    color: var(--app-text) !important;
+}
+
+html[data-theme="dark"] [style*="color: rgb(102, 102, 102)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(89, 89, 89)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(136, 136, 136)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(140, 140, 140)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(153, 153, 153)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(102, 112, 133)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(79, 89, 104)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(100, 116, 139)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(107, 114, 128)"]:not(.keep-light):not(.keep-light *) {
+    color: var(--app-text-muted) !important;
+}
+
+html[data-theme="dark"] [style*="color: rgb(163, 170, 181)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(152, 162, 179)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(191, 191, 191)"]:not(.keep-light):not(.keep-light *) {
+    color: var(--app-text-subtle) !important;
+}
+
+/* Translucent black text — rgba(0,0,0,.45) is Ant Design's own secondary-text
+   recipe and is all over the dashboards. On a dark panel it renders as almost
+   nothing, which is what makes card titles look like they failed to load. */
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.88)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.85)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.9)"]:not(.keep-light):not(.keep-light *) {
+    color: var(--app-text) !important;
+}
+
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.65)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.6)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.58)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.55)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.5)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.45)"]:not(.keep-light):not(.keep-light *) {
+    color: var(--app-text-muted) !important;
+}
+
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.38)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.35)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.3)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.25)"]:not(.keep-light):not(.keep-light *) {
+    color: var(--app-text-subtle) !important;
+}
+
+/* --- 4g. Brand and status text, lifted for contrast --------------------- */
+/* Mid-tone hues that clear 4.5:1 against white do not clear it against a dark
+   panel — #1677ff manages only ~3:1 on #171b22. These keep their hue and gain
+   lightness. Colours that already pass (#52c41a, #faad14, #fa8c16, #ff4d4f,
+   #13c2c2) are deliberately left alone. */
+
+/* blue */
+html[data-theme="dark"] [style*="color: rgb(22, 119, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(24, 144, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(9, 88, 217)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(37, 99, 235)"]:not(.keep-light):not(.keep-light *),
+/* Deep navy-blues used for icon glyphs sitting on a pale blue chip. Against the
+   dark wash that chip becomes, they drop to roughly 1.5:1. */
+html[data-theme="dark"] [style*="color: rgb(23, 91, 156)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(22, 93, 159)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(14, 87, 163)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(21, 69, 123)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(18, 61, 112)"]:not(.keep-light):not(.keep-light *) {
+    color: #6aa9ff !important;
+}
+
+/* purple */
+html[data-theme="dark"] [style*="color: rgb(114, 46, 209)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(124, 58, 237)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(83, 29, 171)"]:not(.keep-light):not(.keep-light *) {
+    color: #b18aff !important;
+}
+
+/* red */
+html[data-theme="dark"] [style*="color: rgb(207, 19, 34)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(220, 38, 38)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(245, 34, 45)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(168, 7, 26)"]:not(.keep-light):not(.keep-light *) {
+    color: #ff7875 !important;
+}
+
+/* amber */
+html[data-theme="dark"] [style*="color: rgb(212, 107, 8)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(173, 78, 0)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(135, 77, 0)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(180, 83, 9)"]:not(.keep-light):not(.keep-light *) {
+    color: #ffa940 !important;
+}
+
+/* magenta */
+html[data-theme="dark"] [style*="color: rgb(235, 47, 150)"]:not(.keep-light):not(.keep-light *) {
+    color: #ff85c0 !important;
+}
+
+/* teal / green that sit just under the threshold */
+html[data-theme="dark"] [style*="color: rgb(15, 118, 110)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(0, 128, 0)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(56, 158, 13)"]:not(.keep-light):not(.keep-light *),
+/* #16a34a measures exactly 4.50 on its own tinted chip — passing, but with no
+   margin for the rounding. */
+html[data-theme="dark"] [style*="color: rgb(22, 163, 74)"]:not(.keep-light):not(.keep-light *) {
+    color: #6ddc8b !important;
+}
+
+/* cyan — #0891b2 only reaches 4.07 against the wash its icon chip becomes */
+html[data-theme="dark"] [style*="color: rgb(8, 145, 178)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="color: rgb(14, 116, 144)"]:not(.keep-light):not(.keep-light *) {
+    color: #38bdd8 !important;
+}
+
+/* --- 4e. Hairlines ------------------------------------------------------- */
+
+html[data-theme="dark"] [style*="border: 1px solid rgb(240, 240, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border: 1px solid rgb(238, 238, 238)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border: 1px solid rgb(217, 217, 217)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border: 1px solid rgb(229, 231, 235)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border: 1px solid rgb(236, 238, 241)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border: 1px solid rgb(223, 227, 232)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border: 1px solid rgb(234, 236, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(240, 240, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(238, 238, 238)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(217, 217, 217)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(229, 231, 235)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-bottom: 1px solid rgb(240, 240, 240)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-top: 1px solid rgb(240, 240, 240)"]:not(.keep-light):not(.keep-light *) {
+    border-color: var(--app-border) !important;
+}
+
+/* Pale blue card outlines. This is the dominant card border in the app — #d6e4ff
+   alone appears 124 times — and left alone it draws a bright ring round every
+   dark card. It keeps a hint of the blue so cards still read as related.
+   Anchored on "solid"/"dashed"/"border-color" so the same value used as a
+   background still goes through the wash rules above instead. */
+html[data-theme="dark"] [style*="solid rgb(214, 228, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="dashed rgb(214, 228, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(214, 228, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(230, 239, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(230, 239, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(207, 224, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(207, 224, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(217, 232, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(219, 234, 254)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(230, 244, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(186, 224, 255)"]:not(.keep-light):not(.keep-light *) {
+    border-color: rgba(74, 155, 255, 0.22) !important;
+}
+
+/* The hover partners of the same family — brighter, so the lift still reads. */
+html[data-theme="dark"] [style*="solid rgb(145, 202, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(145, 202, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(105, 177, 255)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(105, 177, 255)"]:not(.keep-light):not(.keep-light *) {
+    border-color: rgba(74, 155, 255, 0.45) !important;
+}
+
+/* `dodgerblue` is written as the CSS keyword in 20-odd places, mostly as a
+   button outline. The CSSOM keeps keywords verbatim rather than normalising
+   them to rgb(), so it needs matching by name. */
+html[data-theme="dark"] [style*="solid dodgerblue"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: dodgerblue"]:not(.keep-light):not(.keep-light *) {
+    border-color: rgba(74, 155, 255, 0.45) !important;
+}
+
+/* Tinted hairlines in the other status hues. These pair with the wash rules in
+   4c — a panel whose fill becomes a green wash should not keep a near-white
+   green outline. */
+html[data-theme="dark"] [style*="solid rgb(230, 244, 234)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(183, 235, 143)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(183, 235, 143)"]:not(.keep-light):not(.keep-light *) {
+    border-color: rgba(82, 196, 26, 0.28) !important;
+}
+
+html[data-theme="dark"] [style*="solid rgb(255, 231, 186)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(255, 231, 186)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(255, 213, 145)"]:not(.keep-light):not(.keep-light *) {
+    border-color: rgba(250, 173, 20, 0.28) !important;
+}
+
+html[data-theme="dark"] [style*="solid rgb(255, 204, 199)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="border-color: rgb(255, 204, 199)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="solid rgb(255, 163, 158)"]:not(.keep-light):not(.keep-light *) {
+    border-color: rgba(255, 77, 79, 0.32) !important;
+}
+
+/* --- 4f. Shadows --------------------------------------------------------- */
+/* Light-mode shadows are near-invisible against a dark surface and leave cards
+   looking flat and unseparated. */
+
+html[data-theme="dark"] [style*="box-shadow: rgba"]:not(.keep-light):not(.keep-light *) {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   5. Buttons
+   ---------------------------------------------------------------------------
+   Dark mode only. Ant Design's dark buttons are flat and a little lifeless, so
+   these add a light source: a gradient top-to-bottom, a 1px inner highlight on
+   the top edge, and a coloured glow that only appears on hover. The glow alphas
+   are deliberately low — a strong halo reads as cheap rather than sharp.
+
+   Everything here is :not(.keep-light *) scoped so the sign-in and landing
+   buttons keep their existing look.
+   ------------------------------------------------------------------------- */
+
+html[data-theme="dark"] .ant-btn:not(.keep-light *) {
+    transition:
+        background 180ms ease,
+        border-color 180ms ease,
+        box-shadow 220ms ease,
+        transform 140ms ease;
+}
+
+/* --- Default / outlined -------------------------------------------------- */
+
+html[data-theme="dark"] .ant-btn-default:not(.keep-light *) {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .ant-btn-default:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    background: linear-gradient(180deg, rgba(74, 155, 255, 0.18), rgba(74, 155, 255, 0.08));
+    border-color: rgba(74, 155, 255, 0.55);
+    color: #9cc6ff;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.10),
+        0 0 0 1px rgba(74, 155, 255, 0.12),
+        0 4px 16px rgba(74, 155, 255, 0.18);
+    transform: translateY(-1px);
+}
+
+/* --- Primary -------------------------------------------------------------- */
+
+/*
+   :not(.ant-btn-background-ghost) is load-bearing. A ghost primary
+   (<Button type="primary" ghost>) is meant to be transparent with a coloured
+   border and coloured label — filling it with the primary gradient left blue
+   text on a blue field, which is what made "View calendar" unreadable.
+*/
+html[data-theme="dark"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
+    background: linear-gradient(180deg, #59a6ff, #2f7fe0);
+    border-color: rgba(140, 194, 255, 0.45);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 2px 10px rgba(47, 127, 224, 0.35);
+}
+
+html[data-theme="dark"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    background: linear-gradient(180deg, #6fb3ff, #3d8bec);
+    border-color: rgba(170, 212, 255, 0.7);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.3),
+        0 0 0 1px rgba(120, 180, 255, 0.2),
+        0 6px 22px rgba(74, 155, 255, 0.42);
+    transform: translateY(-1px);
+}
+
+/* --- Ghost --------------------------------------------------------------- */
+/* Outline-style buttons: the accent belongs on the border and the label, never
+   on the fill. */
+
+html[data-theme="dark"] .ant-btn-background-ghost:not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
+    background: transparent;
+    box-shadow: none;
+}
+
+html[data-theme="dark"] .ant-btn-background-ghost.ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
+    border-color: rgba(74, 155, 255, 0.55);
+    color: #7db4ff;
+}
+
+html[data-theme="dark"] .ant-btn-background-ghost.ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    border-color: #7db4ff;
+    color: #9cc6ff;
+    background: rgba(74, 155, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(74, 155, 255, 0.18);
+    transform: translateY(-1px);
+}
+
+/* --- Danger --------------------------------------------------------------- */
+
+html[data-theme="dark"] .ant-btn-dangerous.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
+    background: linear-gradient(180deg, #ff7875, #e04a49);
+    border-color: rgba(255, 160, 158, 0.45);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 2px 10px rgba(224, 74, 73, 0.35);
+}
+
+html[data-theme="dark"] .ant-btn-dangerous.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    background: linear-gradient(180deg, #ff9997, #ef5f5d);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.28),
+        0 6px 22px rgba(255, 107, 107, 0.42);
+    transform: translateY(-1px);
+}
+
+html[data-theme="dark"] .ant-btn-dangerous:not(.ant-btn-primary):not(.ant-btn-text):not(.ant-btn-link):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    border-color: rgba(255, 107, 107, 0.6);
+    background: rgba(255, 107, 107, 0.14);
+    box-shadow: 0 4px 16px rgba(255, 107, 107, 0.22);
+    transform: translateY(-1px);
+}
+
+/* --- Text and link -------------------------------------------------------- */
+/* Kept quiet: these appear inside tables and toolbars, where a glow on every row
+   would be noise. */
+
+html[data-theme="dark"] .ant-btn-text:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    background: rgba(255, 255, 255, 0.09);
+}
+
+html[data-theme="dark"] .ant-btn-dangerous.ant-btn-text:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    background: rgba(255, 107, 107, 0.16);
+}
+
+html[data-theme="dark"] .ant-btn-link:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    color: #9cc6ff;
+    text-shadow: 0 0 12px rgba(74, 155, 255, 0.45);
+}
+
+/* --- Modal cancel --------------------------------------------------------- */
+/*
+   styles/modal-footer.css already paints the cancel button red, but the generic
+   .ant-btn-default hover above is more specific and was repainting it blue —
+   making Cancel hover identically to the primary action beside it. These
+   restate the red at a specificity that wins.
+
+   The second selector covers footers that wrap their buttons in a div, which
+   modal-footer.css also accounts for.
+*/
+html[data-theme="dark"] .ant-modal-footer > .ant-btn-default:first-child:has(+ .ant-btn-primary):not(:disabled):hover:not(.keep-light *),
+html[data-theme="dark"] .ant-modal-footer > div > .ant-btn-default:first-child:has(+ .ant-btn-primary):not(:disabled):hover:not(.keep-light *) {
+    color: #ff7875;
+    border-color: #ff7875;
+    background: rgba(255, 77, 79, 0.14);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 4px 16px rgba(255, 77, 79, 0.22);
+}
+
+/* --- Pressed and focus ---------------------------------------------------- */
+
+html[data-theme="dark"] .ant-btn:not(:disabled):not(.ant-btn-disabled):active:not(.keep-light *) {
+    transform: translateY(0);
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* Keyboard focus stays a visible ring rather than a glow — a glow alone is not a
+   reliable focus indicator. */
+html[data-theme="dark"] .ant-btn:focus-visible:not(.keep-light *) {
+    outline: 2px solid rgba(122, 184, 255, 0.9);
+    outline-offset: 2px;
+}
+
+html[data-theme="dark"] .ant-btn:disabled:not(.keep-light *),
+html[data-theme="dark"] .ant-btn-disabled:not(.keep-light *) {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.09);
+    box-shadow: none;
+    transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-theme="dark"] .ant-btn:not(.keep-light *) {
+        transition: none;
+    }
+
+    html[data-theme="dark"] .ant-btn:not(:disabled):hover:not(.keep-light *) {
+        transform: none;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+   6. Escape hatch + print
+   ------------------------------------------------------------------------- */
+
+/* A light island inside a dark document.
+   Used for branded surfaces that ship their own art direction (the landing page,
+   the sign-in and registration split screens) and for anything that must read as
+   paper — contract and document previews. Section 4's remediation already skips
+   `.keep-light` and its descendants; this restores the inherited text colour and
+   tells the browser to draw native controls, scrollbars and form widgets light. */
+html[data-theme="dark"] .keep-light {
+    color-scheme: light;
+    color: #182230;
+}
+
+html[data-theme="dark"] .keep-light ::selection {
+    background: rgba(22, 119, 255, 0.28);
+    color: #182230;
+}
+
+@media print {
+    html[data-theme="dark"] body {
+        background: #ffffff;
+        color: #000000;
+    }
+}

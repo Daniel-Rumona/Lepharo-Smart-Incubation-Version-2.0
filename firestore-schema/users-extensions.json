@@ -1,0 +1,147 @@
+{
+  "collection": "users",
+  "description": "Extensions to existing users collection for branch assignment support",
+  "newFields": {
+    "assignedBranch": {
+      "type": "string",
+      "description": "Branch ID for branch-scoped roles (receptionist, projectadmin)",
+      "required": false,
+      "validation": "Must be valid branch document ID",
+      "example": "branch_001",
+      "applicableRoles": ["receptionist", "projectadmin"]
+    },
+    "branchAssignmentHistory": {
+      "type": "array",
+      "description": "Historical record of branch assignments",
+      "required": false,
+      "items": {
+        "type": "object",
+        "properties": {
+          "branchId": {
+            "type": "string",
+            "description": "Branch ID that was assigned"
+          },
+          "assignedAt": {
+            "type": "timestamp",
+            "description": "When the assignment was made"
+          },
+          "assignedBy": {
+            "type": "string",
+            "description": "User ID who made the assignment"
+          },
+          "unassignedAt": {
+            "type": "timestamp",
+            "description": "When the assignment was removed (null if current)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for assignment change"
+          }
+        }
+      }
+    },
+    "branchPermissions": {
+      "type": "object",
+      "description": "Branch-specific permissions and access levels",
+      "required": false,
+      "properties": {
+        "canViewAllInquiries": {
+          "type": "boolean",
+          "description": "Can view all inquiries in assigned branch",
+          "default": true
+        },
+        "canCreateInquiries": {
+          "type": "boolean", 
+          "description": "Can create new inquiries",
+          "default": true
+        },
+        "canEditInquiries": {
+          "type": "boolean",
+          "description": "Can edit existing inquiries",
+          "default": false
+        },
+        "canViewAnalytics": {
+          "type": "boolean",
+          "description": "Can access branch analytics",
+          "default": false
+        }
+      }
+    }
+  },
+  "existingFields": {
+    "role": {
+      "newValues": ["receptionist"],
+      "description": "Added receptionist role to existing enum"
+    },
+    "department": {
+      "note": "ONLY for operations users - operations are department-scoped, NOT branch-scoped",
+      "applicableRoles": ["operations"],
+      "incompatibleWith": "assignedBranch"
+    }
+  },
+  "scopingRules": {
+    "branchScoped": {
+      "roles": ["receptionist", "projectadmin"],
+      "description": "These roles are tied to specific branches, NOT departments",
+      "requiredField": "assignedBranch",
+      "prohibitedField": "department"
+    },
+    "departmentScoped": {
+      "roles": ["operations"],
+      "description": "Operations users are tied to departments, NOT branches",
+      "requiredField": "department", 
+      "prohibitedField": "assignedBranch"
+    },
+    "companyScoped": {
+      "roles": ["director", "admin"],
+      "description": "These roles have company-wide access",
+      "requiredField": "companyCode",
+      "optionalFields": ["department", "assignedBranch"]
+    },
+    "globalScoped": {
+      "roles": ["consultant", "incubatee", "funder", "government"],
+      "description": "These roles operate across organizational boundaries",
+      "requiredField": "companyCode"
+    }
+  },
+  "dataIntegrity": {
+    "rules": [
+      "assignedBranch is REQUIRED for receptionist and projectadmin roles ONLY",
+      "assignedBranch must be NULL for ALL other roles (operations, director, consultant, etc.)",
+      "department is REQUIRED for operations role ONLY", 
+      "department must be NULL for receptionist and projectadmin roles",
+      "assignedBranch and department are MUTUALLY EXCLUSIVE - a user cannot have both",
+      "assignedBranch must reference valid branch document",
+      "branchAssignmentHistory must be updated whenever assignedBranch changes",
+      "CENTER COORDINATORS (projectadmin) = BRANCH-scoped, NOT department-scoped",
+      "RECEPTIONISTS = BRANCH-scoped, NOT department-scoped",
+      "OPERATIONS = DEPARTMENT-scoped, NOT branch-scoped"
+    ]
+  },
+  "migrationStrategy": {
+    "existingUsers": {
+      "projectadmin": "Assign to default branch or require manual assignment",
+      "other_roles": "No changes needed"
+    },
+    "steps": [
+      "1. Add new fields to user documents",
+      "2. Migrate existing projectadmin users",
+      "3. Update application code to use new fields",
+      "4. Test branch-based access control"
+    ]
+  },
+  "indexes": [
+    {
+      "fields": ["assignedBranch", "role"],
+      "description": "Query users by branch and role"
+    },
+    {
+      "fields": ["companyCode", "assignedBranch"],
+      "description": "Query branch assignments within company"
+    },
+    {
+      "fields": ["role", "assignedBranch"],
+      "description": "Query specific role assignments to branches"
+    }
+  ]
+} 

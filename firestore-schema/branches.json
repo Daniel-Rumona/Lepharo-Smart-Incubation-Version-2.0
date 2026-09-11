@@ -1,0 +1,147 @@
+{
+  "collection": "branches",
+  "description": "Branch management collection for organizational structure",
+  "schema": {
+    "id": {
+      "type": "string",
+      "description": "Auto-generated document ID",
+      "required": true,
+      "example": "branch_001"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable branch name",
+      "required": true,
+      "validation": "1-100 characters",
+      "example": "Johannesburg Central"
+    },
+    "code": {
+      "type": "string",
+      "description": "Unique branch identifier code",
+      "required": true,
+      "validation": "uppercase, 2-10 characters, unique within company",
+      "example": "JHB_CENTRAL"
+    },
+    "companyCode": {
+      "type": "string",
+      "description": "Associated company code for multi-tenant support",
+      "required": true,
+      "example": "LPH_001"
+    },
+    "location": {
+      "type": "object",
+      "description": "Physical location details",
+      "required": true,
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Street address",
+          "example": "123 Main Street, Johannesburg"
+        },
+        "city": {
+          "type": "string",
+          "description": "City name",
+          "example": "Johannesburg"
+        },
+        "province": {
+          "type": "string",
+          "description": "Province/State",
+          "example": "Gauteng"
+        },
+        "postalCode": {
+          "type": "string",
+          "description": "Postal/ZIP code",
+          "example": "2000"
+        },
+        "country": {
+          "type": "string",
+          "description": "Country code",
+          "example": "ZA"
+        }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "description": "Contact information for the branch",
+      "required": true,
+      "properties": {
+        "phone": {
+          "type": "string",
+          "description": "Primary phone number",
+          "example": "+27 11 123 4567"
+        },
+        "email": {
+          "type": "string",
+          "description": "Primary email address",
+          "example": "jhb.central@lph.co.za"
+        },
+        "manager": {
+          "type": "string",
+          "description": "Branch manager name",
+          "example": "John Doe"
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "description": "Branch operational status",
+      "required": true,
+      "enum": ["active", "inactive", "pending"],
+      "default": "active",
+      "example": "active"
+    },
+    "capacity": {
+      "type": "object",
+      "description": "Branch capacity information",
+      "properties": {
+        "maxIncubatees": {
+          "type": "number",
+          "description": "Maximum number of incubatees",
+          "example": 50
+        },
+        "currentIncubatees": {
+          "type": "number",
+          "description": "Current number of incubatees",
+          "example": 25
+        }
+      }
+    },
+    "createdAt": {
+      "type": "timestamp",
+      "description": "Branch creation timestamp",
+      "required": true,
+      "serverValue": "timestamp"
+    },
+    "updatedAt": {
+      "type": "timestamp",
+      "description": "Last update timestamp",
+      "required": true,
+      "serverValue": "timestamp"
+    },
+    "createdBy": {
+      "type": "string",
+      "description": "User ID who created the branch",
+      "required": true,
+      "example": "user_director_001"
+    }
+  },
+  "indexes": [
+    {
+      "fields": ["companyCode", "status"],
+      "description": "Query active branches by company"
+    },
+    {
+      "fields": ["companyCode", "code"],
+      "description": "Unique branch code within company"
+    },
+    {
+      "fields": ["createdAt"],
+      "description": "Sort branches by creation date"
+    }
+  ],
+  "security": {
+    "read": ["director", "projectadmin", "receptionist"],
+    "write": ["director"],
+    "rules": "Users can only access branches within their company scope"
+  }
+} 

@@ -1,0 +1,44 @@
+# Generated migration audit output
+scripts/assigned-interventions-*-report.json
+backups/
+
+# Local Firebase Admin credentials used by guarded maintenance scripts
+scripts/serviceAccountKey.json
+
+
+#Ignore cursor AI rules
+.cursor\rules\codacy.mdc
+
+# Dependencies
+node_modules/
+
+# Vite build
+dist/
+
+# Environment/secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Temporary files
+tmp/
+*.log
+
+# Local Claude settings
+.claude/settings.local.json
+
+# OS/editor
+.DS_Store
+Thumbs.db
+
+# Secrets
+src/serviceAccountKey.json
+**/SECRETS.md
+*.zip
+smart-inc-whatsapp-work/

@@ -1,0 +1,155 @@
+{
+  "collection": "departments",
+  "description": "Department management for Operations users - only Operations users are assigned to departments",
+  "document_structure": {
+    "id": {
+      "type": "string",
+      "description": "Auto-generated department ID",
+      "required": true,
+      "example": "dept-hse-001"
+    },
+    "name": {
+      "type": "string",
+      "description": "Full department name",
+      "required": true,
+      "validation": {
+        "min_length": 2,
+        "max_length": 100
+      },
+      "example": "HSE (Health, Safety & Environment) and Labour Compliance"
+    },
+    "code": {
+      "type": "string",
+      "description": "Department code (auto-generated from name)",
+      "required": true,
+      "format": "lowercase-hyphenated",
+      "example": "hse-labour-compliance"
+    },
+    "description": {
+      "type": "string",
+      "description": "Department description and responsibilities",
+      "required": true,
+      "validation": {
+        "min_length": 10,
+        "max_length": 500
+      },
+      "example": "Health, Safety, Environment and Labour Compliance management"
+    },
+    "companyCode": {
+      "type": "string",
+      "description": "Company code this department belongs to",
+      "required": true,
+      "example": "LEPHARO"
+    },
+    "manager": {
+      "type": "string",
+      "description": "Department manager name (optional)",
+      "required": false,
+      "example": "John Smith"
+    },
+    "contactEmail": {
+      "type": "string",
+      "description": "Department contact email",
+      "required": true,
+      "format": "email",
+      "example": "hse@lepharo.co.za"
+    },
+    "isActive": {
+      "type": "boolean",
+      "description": "Department status for soft delete",
+      "required": false,
+      "default": true,
+      "example": true
+    },
+    "createdAt": {
+      "type": "timestamp",
+      "description": "Department creation timestamp",
+      "required": true,
+      "server_timestamp": true
+    },
+    "updatedAt": {
+      "type": "timestamp", 
+      "description": "Last update timestamp",
+      "required": true,
+      "server_timestamp": true
+    },
+    "createdBy": {
+      "type": "string",
+      "description": "User who created the department",
+      "required": true,
+      "example": "director"
+    },
+    "deletedAt": {
+      "type": "timestamp",
+      "description": "Soft delete timestamp",
+      "required": false
+    }
+  },
+  "indexes": [
+    {
+      "fields": ["companyCode", "isActive"],
+      "description": "Query departments by company and active status"
+    },
+    {
+      "fields": ["name", "companyCode"],
+      "description": "Ensure unique department names within company"
+    }
+  ],
+  "security_rules": {
+    "read": [
+      "directors",
+      "admins", 
+      "operations (all departments)"
+    ],
+    "create": [
+      "directors"
+    ],
+    "update": [
+      "directors"
+    ],
+    "delete": [
+      "directors (soft delete only)"
+    ]
+  },
+  "relationships": {
+    "users": {
+      "field": "department",
+      "description": "Operations users are assigned to departments via user.department field",
+      "constraint": "Only operations role users can have department assignments"
+    }
+  },
+  "business_rules": [
+    "Only Operations users are assigned to departments",
+    "Branch-scoped roles (Receptionist, Center Coordinator) cannot have department assignments",
+    "Other roles (Director, Admin, etc.) are not assigned to departments",
+    "Department names must be unique within a company",
+    "Departments cannot be hard deleted if users are assigned to them",
+    "Department assignments are mutually exclusive with branch assignments"
+  ],
+  "default_lepharo_departments": [
+    {
+      "name": "HSE (Health, Safety & Environment) and Labour Compliance",
+      "code": "hse-labour-compliance",
+      "description": "Health, Safety, Environment and Labour Compliance management",
+      "contactEmail": "hse@lepharo.co.za"
+    },
+    {
+      "name": "ROM (Recruitment, Onboarding and Maintenance)",
+      "code": "rom", 
+      "description": "Recruitment, Onboarding and Maintenance of participants",
+      "contactEmail": "rom@lepharo.co.za"
+    },
+    {
+      "name": "Financial Compliance",
+      "code": "financial-compliance",
+      "description": "Financial compliance and regulatory management", 
+      "contactEmail": "finance@lepharo.co.za"
+    },
+    {
+      "name": "Personal Development Services (PDS)",
+      "code": "pds",
+      "description": "Personal development and skills training services",
+      "contactEmail": "pds@lepharo.co.za"
+    }
+  ]
+} 

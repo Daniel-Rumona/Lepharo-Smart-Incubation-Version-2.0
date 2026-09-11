@@ -1,0 +1,310 @@
+{
+  "collection": "inquiries",
+  "description": "Inquiry management system for receptionists to capture and track leads at branch level",
+  "document_structure": {
+    "id": {
+      "type": "string",
+      "description": "Auto-generated inquiry ID",
+      "required": true,
+      "example": "inq-2025-001"
+    },
+    "branchId": {
+      "type": "string",
+      "description": "ID of the branch where inquiry was received",
+      "required": true,
+      "reference": "branches/{branchId}",
+      "example": "branch-springs-hq"
+    },
+    "submittedBy": {
+      "type": "string",
+      "description": "User ID of receptionist who submitted the inquiry",
+      "required": true,
+      "reference": "users/{userId}",
+      "example": "user-rec-001"
+    },
+    "submittedAt": {
+      "type": "timestamp",
+      "description": "When the inquiry was submitted",
+      "required": true,
+      "server_timestamp": true
+    },
+    "status": {
+      "type": "string",
+      "description": "Current status of the inquiry",
+      "required": true,
+      "enum": ["New", "In Progress", "Contacted", "Converted", "Closed", "Lost"],
+      "default": "New",
+      "example": "New"
+    },
+    "priority": {
+      "type": "string",
+      "description": "Priority level of the inquiry",
+      "required": true,
+      "enum": ["Low", "Medium", "High", "Urgent"],
+      "default": "Medium",
+      "example": "High"
+    },
+    "source": {
+      "type": "string",
+      "description": "How the inquiry was received",
+      "required": true,
+      "enum": ["Walk-in", "Phone", "Email", "Website", "Referral", "Social Media", "Event", "Other"],
+      "example": "Walk-in"
+    },
+    "contactInfo": {
+      "type": "object",
+      "description": "Contact information for the inquirer",
+      "required": true,
+      "properties": {
+        "firstName": {
+          "type": "string",
+          "required": true,
+          "max_length": 50,
+          "example": "John"
+        },
+        "lastName": {
+          "type": "string",
+          "required": true,
+          "max_length": 50,
+          "example": "Smith"
+        },
+        "email": {
+          "type": "string",
+          "required": false,
+          "format": "email",
+          "example": "john.smith@example.com"
+        },
+        "phone": {
+          "type": "string",
+          "required": false,
+          "pattern": "^[0-9+\\-\\s\\(\\)]+$",
+          "example": "+27 11 123 4567"
+        },
+        "company": {
+          "type": "string",
+          "required": false,
+          "max_length": 100,
+          "example": "Smith Enterprises"
+        },
+        "position": {
+          "type": "string",
+          "required": false,
+          "max_length": 100,
+          "example": "CEO"
+        }
+      }
+    },
+    "inquiryDetails": {
+      "type": "object",
+      "description": "Details about the inquiry and business interest",
+      "required": true,
+      "properties": {
+        "inquiryType": {
+          "type": "string",
+          "required": true,
+          "enum": ["General Information", "Incubation Program", "Funding", "Mentorship", "Office Space", "Training", "Networking", "Partnership", "Other"],
+          "example": "Incubation Program"
+        },
+        "businessStage": {
+          "type": "string",
+          "required": false,
+          "enum": ["Idea Stage", "Startup", "Early Stage", "Growth Stage", "Established", "Not Applicable"],
+          "example": "Startup"
+        },
+        "industry": {
+          "type": "string",
+          "required": false,
+          "max_length": 100,
+          "example": "FinTech"
+        },
+        "servicesOfInterest": {
+          "type": "array",
+          "description": "List of services the inquirer is interested in",
+          "required": false,
+          "items": {
+            "type": "string",
+            "enum": ["Business Incubation", "Funding Support", "Mentorship", "Office Space", "Legal Support", "Marketing Support", "Technical Support", "Networking", "Training Programs"]
+          },
+          "example": ["Business Incubation", "Mentorship", "Funding Support"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the inquiry",
+          "required": true,
+          "max_length": 2000,
+          "example": "Looking for support to develop my fintech startup idea into a viable business."
+        },
+        "budget": {
+          "type": "string",
+          "required": false,
+          "enum": ["Under R10k", "R10k - R50k", "R50k - R100k", "R100k - R500k", "R500k - R1M", "Over R1M", "To be discussed"],
+          "example": "R50k - R100k"
+        },
+        "timeline": {
+          "type": "string",
+          "required": false,
+          "enum": ["Immediate", "Within 1 month", "1-3 months", "3-6 months", "6-12 months", "Over 1 year", "Flexible"],
+          "example": "1-3 months"
+        }
+      }
+    },
+    "followUp": {
+      "type": "object",
+      "description": "Follow-up tracking information",
+      "required": false,
+      "properties": {
+        "nextFollowUpDate": {
+          "type": "timestamp",
+          "required": false,
+          "description": "When the next follow-up should occur"
+        },
+        "followUpMethod": {
+          "type": "string",
+          "required": false,
+          "enum": ["Phone", "Email", "In-person", "Video Call"],
+          "example": "Phone"
+        },
+        "assignedTo": {
+          "type": "string",
+          "required": false,
+          "reference": "users/{userId}",
+          "description": "User ID of person assigned to follow up"
+        },
+        "notes": {
+          "type": "string",
+          "required": false,
+          "max_length": 1000,
+          "description": "Follow-up notes and instructions"
+        }
+      }
+    },
+    "statusHistory": {
+      "type": "array",
+      "description": "History of status changes for audit trail",
+      "required": false,
+      "items": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "required": true
+          },
+          "changedAt": {
+            "type": "timestamp",
+            "required": true
+          },
+          "changedBy": {
+            "type": "string",
+            "required": true,
+            "reference": "users/{userId}"
+          },
+          "notes": {
+            "type": "string",
+            "required": false,
+            "max_length": 500
+          }
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "description": "Custom tags for categorization",
+      "required": false,
+      "items": {
+        "type": "string",
+        "max_length": 50
+      },
+      "example": ["high-potential", "tech-startup", "funding-ready"]
+    },
+    "companyCode": {
+      "type": "string",
+      "description": "Company code for multi-tenant support",
+      "required": true,
+      "example": "LEPHARO"
+    },
+    "updatedAt": {
+      "type": "timestamp",
+      "description": "Last update timestamp",
+      "required": true,
+      "server_timestamp": true
+    },
+    "isActive": {
+      "type": "boolean",
+      "description": "Whether inquiry is active (not deleted)",
+      "required": false,
+      "default": true
+    }
+  },
+  "indexes": [
+    {
+      "fields": ["branchId", "status", "submittedAt"],
+      "description": "Query inquiries by branch, status, and date"
+    },
+    {
+      "fields": ["companyCode", "status", "priority"],
+      "description": "Query inquiries by company, status, and priority"
+    },
+    {
+      "fields": ["submittedBy", "submittedAt"],
+      "description": "Query inquiries by receptionist and date"
+    },
+    {
+      "fields": ["branchId", "inquiryDetails.inquiryType"],
+      "description": "Query inquiries by branch and type"
+    },
+    {
+      "fields": ["status", "followUp.nextFollowUpDate"],
+      "description": "Query for follow-up scheduling"
+    }
+  ],
+  "security_rules": {
+    "read": [
+      "receptionists (branch-scoped)",
+      "center coordinators (branch-scoped)",
+      "directors (company-scoped)",
+      "admins (all)"
+    ],
+    "create": [
+      "receptionists (branch-scoped)",
+      "center coordinators (branch-scoped)"
+    ],
+    "update": [
+      "receptionists (branch-scoped)",
+      "center coordinators (branch-scoped)",
+      "directors (company-scoped)"
+    ],
+    "delete": [
+      "directors (soft delete only)",
+      "admins (soft delete only)"
+    ]
+  },
+  "relationships": {
+    "branches": {
+      "field": "branchId",
+      "description": "Each inquiry belongs to a specific branch",
+      "constraint": "Must be a valid branch ID"
+    },
+    "users": {
+      "fields": ["submittedBy", "followUp.assignedTo"],
+      "description": "Inquiries are submitted by receptionists and can be assigned for follow-up",
+      "constraint": "submittedBy must be receptionist or center coordinator role"
+    }
+  },
+  "business_rules": [
+    "Receptionists can only create/edit inquiries for their assigned branch",
+    "Center coordinators can view/edit inquiries for their assigned branch",
+    "Directors can view/edit all inquiries for their company",
+    "Inquiry status must follow valid progression: New → In Progress → (Contacted/Converted/Lost) → Closed",
+    "All status changes must be logged in statusHistory",
+    "Email and phone are optional but at least one contact method should be provided",
+    "High/Urgent priority inquiries should trigger notifications",
+    "Soft delete only - inquiries are never permanently deleted"
+  ],
+  "validation_rules": {
+    "required_contact_info": "Either email or phone must be provided",
+    "status_progression": "Status changes must follow logical progression",
+    "branch_scope_validation": "User can only create inquiries for their assigned branch",
+    "future_follow_up": "Follow-up dates must be in the future",
+    "service_interest_limit": "Maximum 5 services of interest can be selected"
+  }
+} 

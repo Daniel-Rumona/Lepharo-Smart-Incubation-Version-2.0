@@ -1,0 +1,47 @@
+.documents-hub-mobile-list .ant-list-item {
+    padding: 0 0 10px;
+    border-block-end: 0;
+}
+
+.documents-hub-mobile-card {
+    width: 100%;
+    border: 1px solid #dbe7f5;
+    border-radius: 12px;
+}
+
+.documents-hub-card-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.documents-hub-card-heading .ant-space {
+    min-width: 0;
+}
+
+.documents-hub-card-heading .ant-typography {
+    overflow-wrap: anywhere;
+}
+
+.documents-hub-card-description {
+    display: block;
+    margin-top: 8px;
+}
+
+.documents-hub-card-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 10px 0;
+}
+
+.documents-hub-card-action {
+    width: 100%;
+    margin-top: 12px;
+}
+
+.documents-hub-mobile-list .ant-pagination {
+    justify-content: center;
+    margin-top: 6px;
+}

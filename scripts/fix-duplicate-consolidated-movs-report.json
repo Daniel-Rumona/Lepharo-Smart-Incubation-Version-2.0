@@ -1,0 +1,54 @@
+{
+  "generatedAt": "2026-09-09T08:46:51.451Z",
+  "mode": "commit",
+  "scannedPacks": 59,
+  "duplicatesResolved": 4,
+  "queriesRepointed": 0,
+  "skippedForManualReview": 1,
+  "plan": [
+    {
+      "department": "ROM (Recruitment, Onboarding and Maintenance)",
+      "month": "2026-08",
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "keepId": "ampc4FFUNqqU8UK2zjVz",
+      "deleteId": "HQ3J3YhWjwKCaXsWhIFh",
+      "queriesToRepoint": []
+    },
+    {
+      "department": "QMS (Quality Management System)",
+      "month": "2026-04",
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "keepId": "N5uoGPzwRdVLZkaFJSWx",
+      "deleteId": "gCr9Oxv26L90PlpQDy4I",
+      "queriesToRepoint": []
+    },
+    {
+      "department": "NVC (New Venture Creation)",
+      "month": "2026-06",
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "keepId": "hr0FZUgzjcHCiuDjr6N2",
+      "deleteId": "UlmaekViwU5jpU8tAJo3",
+      "queriesToRepoint": []
+    },
+    {
+      "department": "QMS (Quality Management System)",
+      "month": "2026-06",
+      "programId": "e57CZklrSHksJtIjwujM",
+      "keepId": "nfc1AodnY0hf1lpGza2Z",
+      "deleteId": "X5RzBF4diM1KlJwpiuFo",
+      "queriesToRepoint": []
+    }
+  ],
+  "skipped": [
+    {
+      "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+      "month": "2026-03",
+      "programId": "b3qe3WAMAVw3QU64CLIY",
+      "reason": "--only-clean: needs query re-pointing, deferred",
+      "memberIds": [
+        "pKzKMEQv9DfowuxWpaLw",
+        "EZGcbICoN0chhSvHf3iL"
+      ]
+    }
+  ]
+}

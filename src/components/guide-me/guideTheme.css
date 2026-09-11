@@ -1,0 +1,415 @@
+.driver-popover.lph-guide-popover {
+    --driver-popover-font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        Roboto,
+        'Helvetica Neue',
+        Arial,
+        sans-serif;
+
+    min-width: 290px;
+    max-width: 380px;
+    padding: 16px;
+
+    border: 1px solid #e6efff;
+    border-radius: 14px;
+
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-title {
+    margin-bottom: 6px;
+
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 1.35;
+
+    color: rgba(0, 0, 0, 0.88);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-description {
+    font-size: 13px;
+    line-height: 1.55;
+
+    color: rgba(0, 0, 0, 0.62);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-progress-text {
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.45);
+}
+
+.driver-popover.lph-guide-popover button {
+    min-height: 32px;
+    padding: 4px 12px;
+
+    border-radius: 8px;
+
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+
+    text-shadow: none;
+}
+
+.driver-popover.lph-guide-popover .driver-popover-next-btn {
+    border-color: #1677ff;
+    background: #1677ff;
+    color: #fff;
+}
+
+.driver-popover.lph-guide-popover .driver-popover-next-btn:hover {
+    border-color: #4096ff;
+    background: #4096ff;
+    color: #fff;
+}
+
+.driver-popover.lph-guide-popover .driver-popover-prev-btn {
+    border-color: #d9d9d9;
+    background: #fff;
+    color: rgba(0, 0, 0, 0.88);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-close-btn {
+    color: rgba(0, 0, 0, 0.45);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-close-btn:hover {
+    color: rgba(0, 0, 0, 0.88);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-arrow-side-left {
+    border-left-color: rgba(255, 255, 255, 0.98);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-arrow-side-right {
+    border-right-color: rgba(255, 255, 255, 0.98);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-arrow-side-top {
+    border-top-color: rgba(255, 255, 255, 0.98);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-arrow-side-bottom {
+    border-bottom-color: rgba(255, 255, 255, 0.98);
+}
+
+
+/* ------------------------------------------------------------------
+   Guide Me + Ant Design portal interaction
+
+   Driver.js marks the document with `.driver-active` while a tour is
+   running. AntD popup content is often rendered in portals, so temporarily
+   raise those popup layers above Driver's overlay. Keep the Guide Me popover
+   above both.
+------------------------------------------------------------------- */
+
+.driver-active .driver-popover.lph-guide-popover {
+    z-index: 2147483600 !important;
+}
+
+.driver-active .ant-select-dropdown,
+.driver-active .ant-picker-dropdown,
+.driver-active .ant-dropdown,
+.driver-active .ant-cascader-dropdown,
+.driver-active .ant-tree-select-dropdown,
+.driver-active .ant-popover,
+.driver-active .ant-tooltip {
+    z-index: 2147483000 !important;
+}
+
+/*
+ * Driver.js applies `pointer-events: none` to every element while a tour is
+ * active. AntD popup panels are portal-mounted outside the highlighted field,
+ * so both the popup root AND its descendants must be explicitly interactive.
+ */
+.driver-active .ant-select-dropdown,
+.driver-active .ant-select-dropdown *,
+.driver-active .ant-picker-dropdown,
+.driver-active .ant-picker-dropdown *,
+.driver-active .ant-dropdown,
+.driver-active .ant-dropdown *,
+.driver-active .ant-cascader-dropdown,
+.driver-active .ant-cascader-dropdown *,
+.driver-active .ant-tree-select-dropdown,
+.driver-active .ant-tree-select-dropdown *,
+.driver-active .ant-popover,
+.driver-active .ant-popover *,
+.driver-active .ant-tooltip,
+.driver-active .ant-tooltip * {
+    pointer-events: auto !important;
+}
+
+/* Make the active target explicit rather than relying only on the overlay
+   cut-out, which is difficult to distinguish on similarly toned surfaces. */
+.driver-active .driver-active-element {
+    outline: 2px solid #1677ff !important;
+    outline-offset: 4px;
+}
+
+
+/* ------------------------------------------------------------------
+   Guide Me launcher
+------------------------------------------------------------------- */
+
+.guide-launcher-button.ant-btn {
+    min-height: 34px;
+    padding-inline: 14px;
+
+    border: 1px solid #69b1ff;
+    border-radius: 999px;
+
+    background: #e6f4ff;
+    color: #0958d9;
+
+    font-weight: 600;
+
+    box-shadow:
+        0 3px 10px rgba(22, 119, 255, 0.10),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        background 160ms ease;
+}
+
+.guide-launcher-button.ant-btn .anticon {
+    color: #1677ff;
+    font-size: 15px;
+}
+
+.guide-launcher-button.ant-btn:hover,
+.guide-launcher-button.ant-btn:focus-visible {
+    border-color: #1677ff !important;
+    background: #dbeeff !important;
+    color: #0958d9 !important;
+
+    transform: translateY(-1px);
+
+    box-shadow:
+        0 6px 16px rgba(22, 119, 255, 0.18),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.guide-launcher-button.ant-btn:active {
+    transform: translateY(0);
+}
+
+.guide-launcher-fab.ant-float-btn {
+    border: 1px solid #69b1ff;
+
+    background: #e6f4ff;
+
+    box-shadow:
+        0 8px 22px rgba(22, 119, 255, 0.20),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.40);
+
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease;
+}
+
+.guide-launcher-fab.ant-float-btn .ant-float-btn-body {
+    background: #e6f4ff;
+}
+
+.guide-launcher-fab.ant-float-btn:hover {
+    border-color: #1677ff;
+
+    transform: translateY(-2px);
+
+    box-shadow:
+        0 12px 28px rgba(22, 119, 255, 0.28),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.guide-launcher-fab.ant-float-btn:hover .ant-float-btn-body {
+    background: #dbeeff;
+}
+
+
+/* Strong launcher overrides: keep the Guide Me outline even if a parent
+   passes AntD text/variant props. */
+.guide-launcher-button.ant-btn {
+    border: 1px solid #69b1ff !important;
+    background: #e6f4ff !important;
+    color: #0958d9 !important;
+}
+
+.guide-launcher-button.ant-btn:hover,
+.guide-launcher-button.ant-btn:focus-visible {
+    border-color: #1677ff !important;
+    background: #d6eaff !important;
+    color: #003eb3 !important;
+
+    box-shadow:
+        0 7px 18px rgba(22, 119, 255, 0.22),
+        0 0 0 2px rgba(22, 119, 255, 0.08) !important;
+}
+
+.guide-launcher-button.ant-btn .anticon {
+    color: #1677ff !important;
+    filter: drop-shadow(0 0 3px rgba(22, 119, 255, 0.70));
+}
+
+.guide-launcher-button.ant-btn:hover .anticon {
+    filter:
+        drop-shadow(0 0 4px rgba(22, 119, 255, 0.90)) drop-shadow(0 0 8px rgba(22, 119, 255, 0.28));
+}
+
+.guide-launcher-fab.ant-float-btn {
+    border: 1px solid #69b1ff !important;
+}
+
+.guide-launcher-fab.ant-float-btn .anticon {
+    color: #1677ff !important;
+    filter: drop-shadow(0 0 4px rgba(22, 119, 255, 0.72));
+}
+
+
+/* Keep Driver responsible for popover positioning. Avoid accidental CSS
+   transitions causing a second visible move when the target changes. */
+.driver-popover.lph-guide-popover {
+    transition: none !important;
+}
+
+
+/* ------------------------------------------------------------------
+   Dark mode
+------------------------------------------------------------------- */
+
+html[data-theme='dark'] .guide-launcher-button.ant-btn {
+    border-color: rgba(74, 155, 255, 0.62) !important;
+    background: rgba(74, 155, 255, 0.14) !important;
+    color: #91caff !important;
+    box-shadow:
+        0 4px 14px rgba(0, 0, 0, 0.32),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
+}
+
+html[data-theme='dark'] .guide-launcher-button.ant-btn .anticon {
+    color: #69b1ff !important;
+    filter: drop-shadow(0 0 4px rgba(74, 155, 255, 0.42));
+}
+
+html[data-theme='dark'] .guide-launcher-button.ant-btn:hover,
+html[data-theme='dark'] .guide-launcher-button.ant-btn:focus-visible {
+    border-color: #69b1ff !important;
+    background: rgba(74, 155, 255, 0.22) !important;
+    color: #bae0ff !important;
+    box-shadow:
+        0 7px 18px rgba(0, 0, 0, 0.42),
+        0 0 0 2px rgba(74, 155, 255, 0.12) !important;
+}
+
+html[data-theme='dark'] .guide-launcher-fab.ant-float-btn,
+html[data-theme='dark'] .guide-launcher-fab.ant-float-btn .ant-float-btn-body {
+    border-color: rgba(74, 155, 255, 0.62) !important;
+    background: #1c2b3f !important;
+}
+
+html[data-theme='dark'] .guide-launcher-fab.ant-float-btn:hover,
+html[data-theme='dark'] .guide-launcher-fab.ant-float-btn:hover .ant-float-btn-body {
+    border-color: #69b1ff !important;
+    background: #223a59 !important;
+}
+
+html[data-theme='dark'] .guide-launcher-fab.ant-float-btn .anticon {
+    color: #69b1ff !important;
+}
+
+html[data-theme='dark'] .guide-selection-modal .ant-modal-content,
+html[data-theme='dark'] .guide-selection-modal .ant-modal-header {
+    border-color: #39424f;
+    background: #1f242d;
+}
+
+html[data-theme='dark'] .guide-selection-modal .ant-modal-title,
+html[data-theme='dark'] .guide-selection-modal .ant-modal-close {
+    color: rgba(255, 255, 255, 0.88);
+}
+
+html[data-theme='dark'] .guide-selection-card.ant-btn {
+    border-color: #39424f !important;
+    background: #171b22 !important;
+}
+
+html[data-theme='dark'] .guide-selection-card.ant-btn:not(:disabled):hover,
+html[data-theme='dark'] .guide-selection-card.ant-btn:not(:disabled):focus-visible {
+    border-color: rgba(74, 155, 255, 0.62) !important;
+    background: rgba(74, 155, 255, 0.10) !important;
+}
+
+html[data-theme='dark'] .guide-selection-card.ant-btn:disabled {
+    border-color: #2a313c !important;
+    background: #14181e !important;
+}
+
+html[data-theme='dark'] .guide-selection-arrow {
+    color: rgba(255, 255, 255, 0.42) !important;
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover {
+    border-color: #39424f;
+    background: rgba(31, 36, 45, 0.99);
+    box-shadow: 0 20px 54px rgba(0, 0, 0, 0.58);
+}
+
+html[data-theme='dark'] .driver-active .driver-active-element {
+    outline: 3px solid #69b1ff !important;
+    outline-offset: 5px;
+    filter: brightness(1.22) saturate(1.08);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-title {
+    color: rgba(255, 255, 255, 0.88);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-description {
+    color: rgba(255, 255, 255, 0.64);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-progress-text {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-prev-btn {
+    border-color: #4a5565;
+    background: #171b22;
+    color: rgba(255, 255, 255, 0.86);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-prev-btn:hover {
+    border-color: #69b1ff;
+    background: #222832;
+    color: #fff;
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-close-btn {
+    color: rgba(255, 255, 255, 0.48);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-close-btn:hover {
+    color: rgba(255, 255, 255, 0.88);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-arrow-side-left {
+    border-left-color: rgba(31, 36, 45, 0.99);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-arrow-side-right {
+    border-right-color: rgba(31, 36, 45, 0.99);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-arrow-side-top {
+    border-top-color: rgba(31, 36, 45, 0.99);
+}
+
+html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-arrow-side-bottom {
+    border-bottom-color: rgba(31, 36, 45, 0.99);
+}

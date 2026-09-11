@@ -1,0 +1,490 @@
+.landing-page {
+  --accent-red: #f5532e;
+  --accent-red-dark: #d9431f;
+
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #fff7f5 0%, #ffe9e2 45%, #fdf2f8 100%);
+}
+
+/* --- Background blobs --- */
+.landing-blob {
+  position: fixed;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  animation: blobMove 7s ease-in-out infinite alternate;
+}
+.blob-a {
+  bottom: -160px;
+  left: -160px;
+  width: 420px;
+  height: 420px;
+}
+.blob-b {
+  top: -130px;
+  right: -130px;
+  width: 340px;
+  height: 340px;
+  animation-delay: 2s;
+}
+@keyframes blobMove {
+  0% { transform: scale(1) translateY(0); }
+  100% { transform: scale(1.08) translateY(-20px); }
+}
+
+/* --- Top pill bar --- */
+.landing-topbar {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 auto;
+  margin: clamp(10px, 2vh, 18px) auto 0;
+  width: min(94%, 1100px);
+  min-height: clamp(56px, 7vh, 68px);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 30px rgba(217, 67, 31, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 8px 20px;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: clamp(13px, 1.6vw, 16px);
+  color: #1c2541;
+  white-space: nowrap;
+}
+.topbar-brand img {
+  height: clamp(22px, 3vw, 28px);
+  width: auto;
+  object-fit: contain;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-link {
+  background: none;
+  border: none;
+  font-weight: 600;
+  color: #1c2541;
+  cursor: pointer;
+  font-size: clamp(12px, 1.4vw, 14px);
+  padding: 8px 6px;
+  transition: color 0.2s ease;
+}
+.topbar-link:hover {
+  color: var(--accent-red);
+}
+
+.topbar-divider {
+  color: #d0d0d6;
+  font-weight: 300;
+}
+
+.topbar-btn-primary {
+  background: var(--accent-red);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  padding: 9px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: clamp(12px, 1.4vw, 14px);
+  box-shadow: 0 6px 18px rgba(245, 83, 46, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.topbar-btn-primary:hover {
+  background: var(--accent-red-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(245, 83, 46, 0.45);
+}
+
+/* --- Main split area --- */
+.landing-main {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: clamp(16px, 4vw, 56px);
+  padding: clamp(8px, 2vh, 24px) clamp(16px, 4vw, 48px) clamp(10px, 2vh, 20px);
+}
+
+.landing-left,
+.landing-right {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.landing-title {
+  margin: 0 0 6px;
+  font-size: clamp(20px, 2.6vw, 32px);
+  font-weight: 700;
+  color: #1c2541;
+  line-height: 1.2;
+  max-width: 460px;
+}
+
+.landing-intro {
+  margin: 0 0 clamp(14px, 3vh, 28px);
+  font-size: clamp(13px, 1.3vw, 16px);
+  color: #55607a;
+  max-width: 420px;
+}
+
+/* --- Orbit animation --- */
+.orbit-field {
+  /* Single source of truth for the ring. Everything inside sizes off this
+     variable rather than off the viewport, so shrinking the ring in a media
+     query can never leave oversized icons crowding a small orbit. */
+  --orbit-size: clamp(150px, min(24vw, 30vh), 300px);
+
+  position: relative;
+  width: var(--orbit-size);
+  height: var(--orbit-size);
+}
+
+.orbit-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 34%;
+  height: 34%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, #ff8a65, var(--accent-red));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: max(14px, calc(var(--orbit-size) * 0.087));
+  animation: pulseGlow 3.6s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 8px rgba(245, 83, 46, 0.1), 0 10px 26px rgba(245, 83, 46, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 16px rgba(245, 83, 46, 0.05), 0 14px 34px rgba(245, 83, 46, 0.4);
+  }
+}
+
+.orbit-ring {
+  position: absolute;
+  inset: 0;
+  animation: orbitSpin 20s linear infinite;
+}
+
+.orbit-holder {
+  position: absolute;
+  top: -2%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.orbit-icon-inner {
+  width: max(30px, calc(var(--orbit-size) * 0.18));
+  height: max(30px, calc(var(--orbit-size) * 0.18));
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-red);
+  font-size: max(13px, calc(var(--orbit-size) * 0.068));
+  box-shadow: 0 8px 20px rgba(28, 37, 65, 0.15);
+  animation: orbitSpinReverse 20s linear infinite;
+}
+
+@keyframes orbitSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes orbitSpinReverse {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+/* --- Role carousel --- */
+.role-carousel-wrap {
+  width: min(420px, 100%);
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 28px;
+  padding: clamp(16px, 2.6vh, 26px) clamp(16px, 2.6vw, 26px) clamp(20px, 3vh, 30px);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 10px 40px rgba(31, 38, 135, 0.1);
+}
+
+.role-carousel-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-red);
+  margin-bottom: 10px;
+}
+
+.role-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 2px 4px 6px;
+}
+
+.role-slide-img {
+  width: clamp(72px, 10vw, 104px);
+  height: clamp(72px, 10vw, 104px);
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid #fff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+}
+
+.role-slide-title {
+  font-weight: 700;
+  font-size: clamp(14px, 1.6vw, 17px);
+  color: #1c2541;
+  margin-top: 2px;
+}
+
+.role-slide-desc {
+  font-size: clamp(12px, 1.2vw, 13px);
+  color: #5a6178;
+  max-width: 300px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.role-perks {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 290px;
+}
+.role-perks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: clamp(11px, 1.2vw, 13px);
+  color: #333;
+  background: rgba(245, 83, 46, 0.07);
+  padding: 6px 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+.role-perks .perk-dot {
+  color: var(--accent-red);
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+
+.role-carousel-wrap .slick-dots {
+  bottom: -26px;
+}
+.role-carousel-wrap .slick-dots li button {
+  background: rgba(28, 37, 65, 0.25);
+}
+.role-carousel-wrap .slick-dots li.slick-active button {
+  background: var(--accent-red);
+}
+
+/* --- Footer logo --- */
+.landing-logo {
+  position: fixed;
+  bottom: 14px;
+  right: 16px;
+  height: 38px;
+  background-color: rgba(0, 0, 0, 0.65);
+  padding: 6px 8px;
+  border-radius: 6px;
+  z-index: 6;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* --- Responsive --- */
+@media (max-width: 900px) {
+  .landing-main {
+    flex-direction: column;
+    justify-content: space-evenly;
+    gap: clamp(10px, 3vh, 26px);
+    padding-top: 4px;
+  }
+  .landing-left,
+  .landing-right {
+    flex: 0 1 auto;
+  }
+  .landing-title {
+    font-size: clamp(17px, 4.4vw, 22px);
+    margin-bottom: clamp(6px, 1.6vh, 12px);
+  }
+  .landing-intro {
+    margin-bottom: clamp(10px, 2.4vh, 18px);
+  }
+  .orbit-field {
+    --orbit-size: clamp(120px, min(34vw, 26vh), 190px);
+    margin-top: clamp(2px, 1vh, 10px);
+  }
+  .role-carousel-wrap {
+    padding: clamp(14px, 2.6vh, 20px) 16px clamp(18px, 3vh, 24px);
+  }
+  .role-slide-img {
+    width: 64px;
+    height: 64px;
+  }
+  .topbar-brand span {
+    display: none;
+  }
+}
+
+/* Short viewports (a 150%-scaled 1080p laptop lands here at 100% browser zoom).
+   Tighten the copy instead of dropping it — the intro line is the only place
+   the page says what it actually is. The orbit already tracks viewport height
+   through --orbit-size, so it needs no override here. */
+@media (max-height: 700px) {
+  .landing-title {
+    font-size: clamp(18px, 2.2vw, 26px);
+    margin-bottom: 4px;
+  }
+  .landing-intro {
+    font-size: clamp(12px, 1.15vw, 14px);
+    margin-bottom: clamp(8px, 1.6vh, 14px);
+  }
+}
+
+/* Below this there genuinely is not room for the supporting line. */
+@media (max-height: 480px) {
+  .landing-intro {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-blob,
+  .orbit-ring,
+  .orbit-icon-inner,
+  .orbit-center {
+    animation: none;
+  }
+}
+
+/* ============================================================================
+   Dark mode
+   ----------------------------------------------------------------------------
+   Scoped to html[data-theme="dark"], so the light rules above are untouched.
+
+   The page keeps its warm coral identity rather than being neutralised to grey:
+   --accent-red stays, the gradient wash keeps a red cast, and the blobs keep
+   their hue. What changes is lightness — the near-white surfaces become dark,
+   and the near-black text becomes light.
+
+   These rules live here, next to what they override, because the page is styled
+   almost entirely from this file rather than from inline styles, so the global
+   remediation layer in styles/dark-mode.css has nothing to grip.
+   ========================================================================== */
+
+html[data-theme="dark"] .landing-page {
+    background: linear-gradient(135deg, #14100f 0%, #1c1512 45%, #171018 100%);
+}
+
+html[data-theme="dark"] .landing-blob {
+    opacity: 0.22;
+}
+
+/* --- Top pill bar --- */
+
+html[data-theme="dark"] .landing-topbar {
+    background: rgba(28, 22, 20, 0.72);
+    border-color: rgba(255, 255, 255, 0.10);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .topbar-brand,
+html[data-theme="dark"] .topbar-link {
+    color: rgba(255, 255, 255, 0.88);
+}
+
+html[data-theme="dark"] .topbar-divider {
+    color: rgba(255, 255, 255, 0.22);
+}
+
+/* --- Headline --- */
+
+html[data-theme="dark"] .landing-title,
+html[data-theme="dark"] .role-slide-title {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+html[data-theme="dark"] .landing-intro,
+html[data-theme="dark"] .role-slide-desc {
+    color: rgba(255, 255, 255, 0.62);
+}
+
+/* --- Orbit --- */
+
+/* The orbiting chips are small white discs carrying a coral glyph. Left white
+   they read as bright dots punched out of the page; a dark disc keeps the
+   coral legible while sitting in the background where it belongs. */
+html[data-theme="dark"] .orbit-icon-inner {
+    background: #241a17;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* --- Role carousel --- */
+
+html[data-theme="dark"] .role-carousel-wrap {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.09);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .role-slide-img {
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+html[data-theme="dark"] .role-perks li {
+    color: rgba(255, 255, 255, 0.80);
+    background: rgba(245, 83, 46, 0.14);
+}
+
+html[data-theme="dark"] .role-carousel-wrap .slick-dots li button {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+/* --- Logo plate --- */
+
+html[data-theme="dark"] .landing-logo {
+    background-color: rgba(0, 0, 0, 0.45);
+}

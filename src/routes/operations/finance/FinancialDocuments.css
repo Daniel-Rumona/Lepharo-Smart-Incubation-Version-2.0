@@ -1,0 +1,111 @@
+/* Layout styles */
+.financial-documents-layout {
+    min-height: 100vh;
+    background: #fff; /* Removed quotes */
+  }
+
+  .financial-documents-content {
+    padding: 24px;
+    background: #fff; /* Added white background to content area */
+  }
+
+  .financial-documents-container {
+    /* max-width: 1200px; */
+    margin: 0 auto;
+    background: #fff; /* Removed quotes */
+  }
+
+  /* The rest of your CSS remains the same */
+  .financial-documents-header {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 24px;
+  }
+
+  .header-text {
+    margin-bottom: 16px;
+  }
+
+  .header-title {
+    margin-bottom: 8px !important;
+  }
+
+  .header-description {
+    color: var(--muted-foreground);
+    margin: 0;
+  }
+
+  @media (min-width: 992px) {
+    .financial-documents-header {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-text {
+      margin-bottom: 0;
+    }
+  }
+
+  /* Document title styles */
+  .document-title-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .document-title {
+    font-weight: 500;
+    color: var(--foreground);
+  }
+
+  .document-type {
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+  }
+
+  /* Owner styles */
+  .owner-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .owner-name {
+    font-weight: 500;
+  }
+
+  /* Amount styles */
+  .amount-text {
+    font-weight: 500;
+    color: var(--success);
+  }
+
+  /* Filters card styles */
+  .filters-card {
+    margin-bottom: 24px;
+  }
+
+  .filters-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .documents-count {
+    color: var(--muted-foreground);
+  }
+
+  /* Table card styles */
+  .documents-table-card {
+    margin-bottom: 24px;
+  }
+
+  /* Table styles */
+  .financial-documents-table {
+    width: 100%;
+  }
+
+  .financial-documents-table .ant-table-thead > tr > th {
+    font-weight: 600;
+    background-color: var(--table-header-bg);
+  }

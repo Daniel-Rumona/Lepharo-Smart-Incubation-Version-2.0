@@ -1,0 +1,145 @@
+{
+  "generatedAt": "2026-08-13T10:54:18.760Z",
+  "mode": "dry-run",
+  "scannedAssignments": 1702,
+  "scannedDeliveryRecords": 1217,
+  "changedAssignments": 0,
+  "changedDeliveryRecords": 0,
+  "createdDeliveryRecords": 0,
+  "duplicateDeliveryLinks": 5,
+  "errors": [],
+  "changes": [
+    {
+      "assignedInterventionId": "ai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY",
+      "databaseInterventionId": null,
+      "assignmentChanges": {
+        "resources": {
+          "before": [
+            {
+              "type": "document",
+              "id": "doc-1771316090688-viji3",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY%2F1771316085272_COIDA_application_form.pdf?alt=media&token=04a8dfda-3a12-4e3d-a97a-934bacd0431d",
+              "label": "COIDA application form.pdf"
+            },
+            {
+              "type": "document",
+              "id": "doc-1771316093213-0ioff",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY%2F1771316090688_CoR15_1_A_9421560239.pdf?alt=media&token=9600420d-194c-4fde-ba34-3c97d160a4a8",
+              "label": "CoR15_1_A_9421560239.pdf"
+            },
+            {
+              "type": "document",
+              "label": "Nkosinathi Milanzi Certified ID.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY%2F1771316093213_Nkosinathi_Milanzi_Certified_ID.pdf?alt=media&token=cb56d8bf-2194-47f3-bd79-520af7aa85fb",
+              "id": "doc-1771316097770-01s9f"
+            },
+            {
+              "type": "document",
+              "label": "Nkosinathi Milanzi Lekwalo La Kgosana.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY%2F1771316097770_Nkosinathi_Milanzi_Lekwalo_La_Kgosana.pdf?alt=media&token=b60cc465-f72f-4d67-a451-21642abeed22",
+              "id": "doc-1771316102439-o6sh4"
+            }
+          ],
+          "after": [
+            {
+              "type": "document",
+              "label": "COIDA application form.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY%2F1771316085272_COIDA_application_form.pdf?alt=media&token=04a8dfda-3a12-4e3d-a97a-934bacd0431d",
+              "id": "doc-1771316090688-viji3"
+            },
+            {
+              "type": "document",
+              "label": "CoR15_1_A_9421560239.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY%2F1771316090688_CoR15_1_A_9421560239.pdf?alt=media&token=9600420d-194c-4fde-ba34-3c97d160a4a8",
+              "id": "doc-1771316093213-0ioff"
+            },
+            {
+              "type": "document",
+              "label": "Nkosinathi Milanzi Certified ID.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY%2F1771316093213_Nkosinathi_Milanzi_Certified_ID.pdf?alt=media&token=cb56d8bf-2194-47f3-bd79-520af7aa85fb",
+              "id": "doc-1771316097770-01s9f"
+            },
+            {
+              "type": "document",
+              "label": "Nkosinathi Milanzi Lekwalo La Kgosana.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_3I0Qzhebpx52s03NoXPg_Wivve10R4WhFDyuzzpwY%2F1771316097770_Nkosinathi_Milanzi_Lekwalo_La_Kgosana.pdf?alt=media&token=b60cc465-f72f-4d67-a451-21642abeed22",
+              "id": "doc-1771316102439-o6sh4"
+            }
+          ]
+        }
+      },
+      "sourceDeliveryRecord": null
+    },
+    {
+      "assignedInterventionId": "ai_nZPX0SWy16b7BW5vaP1B_260Hpvi2kFap9CQQnanj_nosub_2026-07_1784273635504_ej1pu7",
+      "databaseInterventionId": "sAcTb6Agym3wox6M8IIG",
+      "assignmentChanges": {
+        "resources": {
+          "before": [
+            {
+              "type": "document",
+              "id": "doc-1785141559030-mebsn",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_nZPX0SWy16b7BW5vaP1B_260Hpvi2kFap9CQQnanj_nosub_2026-07_1784273635504_ej1pu7%2F1785141552224_HH_Mining-_hermina_MOV_-_JULY_2026.pdf?alt=media&token=f4c4d295-08d8-4f97-9190-227c16a29ff9",
+              "label": "HH Mining- hermina MOV - JULY 2026.pdf"
+            },
+            {
+              "type": "poe",
+              "label": "HH Mining- hermina MOV - JULY 2026 final.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/workflowQueries%2Fb3qe3WAMAVw3QU64CLIY%2FondzAuKslFfuQ7sUJ7t4%2FCQR5CCLVGN6HJP605jRe%2F1786610361705_HH_Mining-_hermina_MOV_-_JULY_2026_final.pdf?alt=media&token=e85ec929-17c4-4d7e-a044-7a62af413d11"
+            }
+          ],
+          "after": [
+            {
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_nZPX0SWy16b7BW5vaP1B_260Hpvi2kFap9CQQnanj_nosub_2026-07_1784273635504_ej1pu7%2F1785141552224_HH_Mining-_hermina_MOV_-_JULY_2026.pdf?alt=media&token=f4c4d295-08d8-4f97-9190-227c16a29ff9",
+              "type": "document",
+              "label": "HH Mining- hermina MOV - JULY 2026.pdf",
+              "id": "doc-1785141559030-mebsn"
+            },
+            {
+              "type": "poe",
+              "label": "HH Mining- hermina MOV - JULY 2026 final.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/workflowQueries%2Fb3qe3WAMAVw3QU64CLIY%2FondzAuKslFfuQ7sUJ7t4%2FCQR5CCLVGN6HJP605jRe%2F1786610361705_HH_Mining-_hermina_MOV_-_JULY_2026_final.pdf?alt=media&token=e85ec929-17c4-4d7e-a044-7a62af413d11"
+            }
+          ]
+        }
+      },
+      "sourceDeliveryRecord": "sAcTb6Agym3wox6M8IIG"
+    },
+    {
+      "assignedInterventionId": "ai_w9wFeXJDBwpAV1Me14jO_260Hpvi2kFap9CQQnanj_nosub_2026-07_1783498341921_yr4wfk",
+      "databaseInterventionId": "6GSLPfmAyarQeXFDcc4T",
+      "assignmentChanges": {
+        "resources": {
+          "before": [
+            {
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_w9wFeXJDBwpAV1Me14jO_260Hpvi2kFap9CQQnanj_nosub_2026-07_1783498341921_yr4wfk%2F1784715918909_Molubi_Industries_MOV_-_July_2026.pdf?alt=media&token=5b5a2997-8b12-4de3-874d-cbf2c58b1fa0",
+              "label": "Molubi Industries MOV - July 2026.pdf",
+              "id": "doc-1784715924178-7ui63",
+              "type": "document"
+            },
+            {
+              "type": "poe",
+              "label": "Molubi Industries MOV - July 2026_ final.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/workflowQueries%2Fb3qe3WAMAVw3QU64CLIY%2FaZgWPawlcdGSlshbJo9y%2FAFxcpcxeKOllNEgM54I7%2F1786610505565_Molubi_Industries_MOV_-_July_2026__final.pdf?alt=media&token=444a4f17-cd85-4ded-9058-0e7472b328de"
+            }
+          ],
+          "after": [
+            {
+              "id": "doc-1784715924178-7ui63",
+              "type": "document",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/interventions%2Fai_w9wFeXJDBwpAV1Me14jO_260Hpvi2kFap9CQQnanj_nosub_2026-07_1783498341921_yr4wfk%2F1784715918909_Molubi_Industries_MOV_-_July_2026.pdf?alt=media&token=5b5a2997-8b12-4de3-874d-cbf2c58b1fa0",
+              "label": "Molubi Industries MOV - July 2026.pdf"
+            },
+            {
+              "type": "poe",
+              "label": "Molubi Industries MOV - July 2026_ final.pdf",
+              "link": "https://firebasestorage.googleapis.com/v0/b/lph-smart-inc.firebasestorage.app/o/workflowQueries%2Fb3qe3WAMAVw3QU64CLIY%2FaZgWPawlcdGSlshbJo9y%2FAFxcpcxeKOllNEgM54I7%2F1786610505565_Molubi_Industries_MOV_-_July_2026__final.pdf?alt=media&token=444a4f17-cd85-4ded-9058-0e7472b328de"
+            }
+          ]
+        }
+      },
+      "sourceDeliveryRecord": "6GSLPfmAyarQeXFDcc4T"
+    }
+  ],
+  "plannedChanges": 3
+}
