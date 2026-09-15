@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { App, Button, Modal, Typography } from 'antd'
+import { App, Button, Modal, Typography, theme } from 'antd'
 import { ReloadOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 
@@ -12,6 +12,7 @@ const { Text } = Typography
  * until the user chooses to reload.
  */
 export const UpdatePrompt = () => {
+    const { token } = theme.useToken()
     const { message } = App.useApp()
 
     const announced = useRef(false)
@@ -83,6 +84,11 @@ export const UpdatePrompt = () => {
                         icon={<ClockCircleOutlined />}
                         disabled={updating}
                         onClick={handleLater}
+                        style={{
+                            color: token.colorWarningText,
+                            background: token.colorWarningBg,
+                            borderColor: token.colorWarningBorder,
+                        }}
                     >
                         Later
                     </Button>
