@@ -316,6 +316,43 @@ const ApplicantInquiries: React.FC = () => {
     const [editSaving, setEditSaving] =
         useState(false)
 
+    // Snapshot of the values a section opened with, so "Save Changes" can
+    // stay disabled until something in it actually differs.
+    const [
+        editSectionSnapshot,
+        setEditSectionSnapshot
+    ] = useState<Record<string, any>>({})
+
+    const [editSectionDirty, setEditSectionDirty] =
+        useState(false)
+
+    const normalizeForCompare = (
+        values: Record<string, any>
+    ) => {
+        const normalized: Record<string, any> = {}
+
+        Object.keys(values).forEach(key => {
+            const value = values[key]
+
+            normalized[key] = dayjs.isDayjs(value)
+                ? value.valueOf()
+                : value ?? null
+        })
+
+        return JSON.stringify(normalized)
+    }
+
+    const handleEditFormValuesChange = () => {
+        const current = editForm.getFieldsValue(
+            Object.keys(editSectionSnapshot)
+        )
+
+        setEditSectionDirty(
+            normalizeForCompare(current) !==
+            normalizeForCompare(editSectionSnapshot)
+        )
+    }
+
     const {
         user,
         loading: identityLoading
@@ -903,9 +940,11 @@ const ApplicantInquiries: React.FC = () => {
             (inquiry as any)
                 .followUp
 
+        let values: Record<string, any> = {}
+
         switch (section) {
             case 'details':
-                editForm.setFieldsValue({
+                values = {
                     inquiryType:
                         inquiry
                             .inquiryDetails
@@ -914,20 +953,20 @@ const ApplicantInquiries: React.FC = () => {
                         parsedOther.otherType,
                     description:
                         parsedOther.description
-                })
+                }
                 break
 
             case 'routing':
-                editForm.setFieldsValue({
+                values = {
                     priority:
                         inquiry.priority,
                     branchId:
                         inquiry.branchId
-                })
+                }
                 break
 
             case 'contact':
-                editForm.setFieldsValue({
+                values = {
                     firstName:
                         inquiry.contactInfo
                             .firstName,
@@ -940,22 +979,22 @@ const ApplicantInquiries: React.FC = () => {
                     phone:
                         inquiry.contactInfo
                             .phone
-                })
+                }
                 break
 
             case 'business':
-                editForm.setFieldsValue({
+                values = {
                     company:
                         inquiry.contactInfo
                             .company,
                     position:
                         inquiry.contactInfo
                             .position
-                })
+                }
                 break
 
             case 'followup':
-                editForm.setFieldsValue({
+                values = {
                     nextFollowUpDate:
                         followUp
                             ?.nextFollowUpDate
@@ -966,9 +1005,13 @@ const ApplicantInquiries: React.FC = () => {
                     followUpMethod:
                         followUp
                             ?.followUpMethod
-                })
+                }
                 break
         }
+
+        editForm.setFieldsValue(values)
+        setEditSectionSnapshot(values)
+        setEditSectionDirty(false)
 
         setEditSection(
             section
@@ -3240,6 +3283,9 @@ const ApplicantInquiries: React.FC = () => {
                                         form={editForm}
                                         layout="vertical"
                                         requiredMark={false}
+                                        onValuesChange={
+                                            handleEditFormValuesChange
+                                        }
                                     >
                                         {renderEditFields()}
                                     </Form>
@@ -3272,6 +3318,7 @@ const ApplicantInquiries: React.FC = () => {
                                         type="primary"
                                         shape="round"
                                         loading={editSaving}
+                                        disabled={!editSectionDirty}
                                         onClick={saveEditSection}
                                         style={{ flex: 1 }}
                                     >
@@ -3329,6 +3376,9 @@ const ApplicantInquiries: React.FC = () => {
                                     loading={
                                         editSaving
                                     }
+                                    disabled={
+                                        !editSectionDirty
+                                    }
                                     onClick={
                                         saveEditSection
                                     }
@@ -3361,6 +3411,9 @@ const ApplicantInquiries: React.FC = () => {
                             layout="vertical"
                             requiredMark={
                                 false
+                            }
+                            onValuesChange={
+                                handleEditFormValuesChange
                             }
                             style={{
                                 marginTop: 4

@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { App, Button, Space } from 'antd'
+import { App } from 'antd'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-
-const UPDATE_KEY = 'pwa-update-available'
 
 /**
  * Registers the service worker and asks before applying an update.
@@ -14,9 +12,9 @@ const UPDATE_KEY = 'pwa-update-available'
  * discards anything half-typed on screen.
  */
 export const UpdatePrompt = () => {
-    const { notification, message } = App.useApp()
-    // Notifications are dismissible; without this a re-render would re-open one
-    // the user just closed.
+    const { modal, message } = App.useApp()
+    // A corner notification is easy to miss; a centered modal forces the
+    // choice. Guard against re-announcing one the user already dismissed.
     const announced = useRef(false)
 
     const {
@@ -33,23 +31,15 @@ export const UpdatePrompt = () => {
         if (!needRefresh || announced.current) return
         announced.current = true
 
-        notification.info({
-            key: UPDATE_KEY,
-            message: 'A new version is available',
-            description: 'Reload to pick up the latest changes. Anything unsaved on screen will be lost.',
-            duration: 0,
-            btn: (
-                <Space>
-                    <Button size="small" onClick={() => notification.destroy(UPDATE_KEY)}>
-                        Later
-                    </Button>
-                    <Button size="small" type="primary" onClick={() => updateServiceWorker(true)}>
-                        Reload
-                    </Button>
-                </Space>
-            ),
+        modal.confirm({
+            title: 'A new version is available',
+            content: 'Reload to pick up the latest changes. Anything unsaved on screen will be lost.',
+            centered: true,
+            okText: 'Reload',
+            cancelText: 'Later',
+            onOk: () => updateServiceWorker(true),
         })
-    }, [needRefresh, notification, updateServiceWorker])
+    }, [needRefresh, modal, updateServiceWorker])
 
     useEffect(() => {
         if (!offlineReady) return

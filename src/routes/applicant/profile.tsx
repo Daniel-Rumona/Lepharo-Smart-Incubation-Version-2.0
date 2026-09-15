@@ -20,6 +20,7 @@ import {
     Divider,
     Tooltip,
     Skeleton,
+    Modal,
     theme
 } from 'antd'
 import {
@@ -31,6 +32,7 @@ import {
     EnvironmentOutlined,
     LineChartOutlined,
     CameraOutlined,
+    DeleteOutlined,
     UserOutlined,
     MailOutlined,
     PhoneOutlined,
@@ -333,6 +335,7 @@ const IdentityPanel: React.FC<{
     avatarUrl: string | null
     uploading: boolean
     onUpload: (file: File) => Promise<boolean> | boolean
+    onRemove: () => void
     ownerName?: string
     businessName?: string
     email?: string
@@ -344,6 +347,7 @@ const IdentityPanel: React.FC<{
     avatarUrl,
     uploading,
     onUpload,
+    onRemove,
     ownerName,
     businessName,
     email,
@@ -363,86 +367,152 @@ const IdentityPanel: React.FC<{
                     position: isMobile ? 'static' : 'sticky',
                     top: isMobile ? undefined : 16
                 }}
-                styles={{ body: { padding: isMobile ? 18 : 24, textAlign: 'center' } }}
+                styles={{
+                    body: {
+                        padding: isMobile ? 18 : 24,
+                        textAlign: isMobile ? 'left' : 'center'
+                    }
+                }}
             >
                 <div
                     style={{
-                        position: 'relative',
-                        width: avatarSize,
-                        height: avatarSize,
-                        margin: '0 auto'
+                        display: isMobile ? 'flex' : 'block',
+                        alignItems: isMobile ? 'center' : undefined,
+                        gap: isMobile ? 14 : 0
                     }}
                 >
-                    <Avatar
-                        size={avatarSize}
-                        src={avatarUrl || undefined}
-                        icon={!avatarUrl ? <UserOutlined /> : undefined}
-                        style={{
-                            background: avatarUrl
-                                ? undefined
-                                : 'linear-gradient(135deg,#1677ff,#69b1ff)',
-                            border: `3px solid ${token.colorBgContainer}`,
-                            boxShadow: '0 8px 24px rgba(22,119,255,0.20)',
-                            fontSize: avatarSize / 3
-                        }}
-                    />
-                    <Upload
-                        showUploadList={false}
-                        accept='image/*'
-                        beforeUpload={onUpload}
-                        disabled={uploading}
-                    >
-                        <Tooltip title={avatarUrl ? 'Change photo' : 'Upload a photo'}>
-                            <Button
-                                shape='circle'
-                                type='primary'
-                                icon={<CameraOutlined />}
-                                loading={uploading}
-                                aria-label={avatarUrl ? 'Change photo' : 'Upload a photo'}
-                                style={{
-                                    position: 'absolute',
-                                    right: 0,
-                                    bottom: 4,
-                                    boxShadow: '0 4px 12px rgba(15,23,42,0.20)'
-                                }}
-                            />
-                        </Tooltip>
-                    </Upload>
-                </div>
-
-                <Title
-                    level={isMobile ? 5 : 4}
-                    ellipsis
-                    style={{ margin: '16px 0 2px', lineHeight: 1.3 }}
-                >
-                    {ownerName || 'Your name'}
-                </Title>
-                <Text
-                    type='secondary'
-                    ellipsis
-                    style={{ display: 'block', fontSize: 13.5, fontWeight: 500 }}
-                >
-                    {businessName || 'Your company'}
-                </Text>
-                {!isInitialSetup && (
                     <div
                         style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            marginTop: 12,
-                            padding: '4px 12px',
-                            borderRadius: 20,
-                            background: '#f6ffed',
-                            border: '1px solid #b7eb8f'
+                            position: 'relative',
+                            width: avatarSize,
+                            height: avatarSize,
+                            margin: isMobile ? 0 : '0 auto',
+                            flexShrink: 0
                         }}
                     >
-                        <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} />
-                        <Text style={{ fontSize: 12, color: '#389e0d', fontWeight: 500 }}>
-                            Active
-                        </Text>
+                        <Avatar
+                            size={avatarSize}
+                            src={avatarUrl || undefined}
+                            icon={!avatarUrl ? <UserOutlined /> : undefined}
+                            style={{
+                                background: avatarUrl
+                                    ? undefined
+                                    : 'linear-gradient(135deg,#1677ff,#69b1ff)',
+                                border: `3px solid ${token.colorBgContainer}`,
+                                boxShadow: '0 8px 24px rgba(22,119,255,0.20)',
+                                fontSize: avatarSize / 3
+                            }}
+                        />
+                        <Upload
+                            showUploadList={false}
+                            accept='image/*'
+                            beforeUpload={onUpload}
+                            disabled={uploading}
+                        >
+                            <Tooltip title={avatarUrl ? 'Change photo' : 'Upload a photo'}>
+                                <Button
+                                    shape='circle'
+                                    type='primary'
+                                    icon={<CameraOutlined />}
+                                    loading={uploading}
+                                    aria-label={avatarUrl ? 'Change photo' : 'Upload a photo'}
+                                    style={{
+                                        position: 'absolute',
+                                        right: 0,
+                                        bottom: 4,
+                                        boxShadow: '0 4px 12px rgba(15,23,42,0.20)'
+                                    }}
+                                />
+                            </Tooltip>
+                        </Upload>
+
+                        {avatarUrl && (
+                            <Tooltip title='Remove photo'>
+                                <Button
+                                    shape='circle'
+                                    size='small'
+                                    danger
+                                    type='default'
+                                    icon={<DeleteOutlined />}
+                                    disabled={uploading}
+                                    onClick={onRemove}
+                                    aria-label='Remove photo'
+                                    style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        right: 0,
+                                        background: token.colorBgContainer,
+                                        boxShadow: '0 4px 12px rgba(15,23,42,0.20)'
+                                    }}
+                                />
+                            </Tooltip>
+                        )}
                     </div>
-                )}
+
+                    <div
+                        style={{
+                            flex: isMobile ? '1 1 auto' : undefined,
+                            minWidth: 0,
+                            // Centre this as a tight group against the taller
+                            // avatar instead of stretching name/company/badge
+                            // apart to fill the row.
+                            display: isMobile ? 'flex' : undefined,
+                            flexDirection: isMobile ? 'column' : undefined,
+                            justifyContent: isMobile ? 'center' : undefined,
+                            gap: isMobile ? 6 : undefined
+                        }}
+                    >
+                        <Title
+                            level={isMobile ? 5 : 4}
+                            ellipsis
+                            style={{
+                                margin: isMobile ? 0 : '16px 0 2px',
+                                lineHeight: 1.3,
+                                textAlign: isMobile ? 'center' : undefined
+                            }}
+                        >
+                            {ownerName || 'Your name'}
+                        </Title>
+                        <Text
+                            type='secondary'
+                            ellipsis
+                            style={{
+                                display: 'block',
+                                fontSize: 13.5,
+                                fontWeight: 500,
+                                textAlign: isMobile ? 'center' : undefined
+                            }}
+                        >
+                            {businessName || 'Your company'}
+                        </Text>
+                        {!isInitialSetup && (
+                            <div
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    // In the mobile column layout this is a
+                                    // flex item too — without an explicit
+                                    // alignSelf it stretches to the column's
+                                    // full width by default, turning the pill
+                                    // into a long bar. Centred to match the
+                                    // (also centred) name/company text above.
+                                    alignSelf: isMobile ? 'center' : undefined,
+                                    gap: 6,
+                                    marginTop: isMobile ? 0 : 12,
+                                    padding: '4px 12px',
+                                    borderRadius: 20,
+                                    background: '#f6ffed',
+                                    border: '1px solid #b7eb8f'
+                                }}
+                            >
+                                <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 12 }} />
+                                <Text style={{ fontSize: 12, color: '#389e0d', fontWeight: 500 }}>
+                                    Active
+                                </Text>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
                 {(email || phone) && (
                     <>
@@ -756,13 +826,13 @@ const ActionBar: React.FC<{
         >
             <Button
                 type='primary'
+                shape='round'
                 size='large'
                 block
                 icon={isInitialSetup ? <RocketOutlined /> : <SaveOutlined />}
                 onClick={onSave}
                 style={{
                     height: 46,
-                    borderRadius: 10,
                     fontWeight: 600,
                     background: isInitialSetup
                         ? 'linear-gradient(90deg,#1677ff,#3f93ff)'
@@ -1106,6 +1176,47 @@ const ApplicantProfileForm: React.FC = () => {
         }
 
         return false
+    }
+
+    const handleAvatarRemove = () => {
+        if (!avatarUrl) return
+
+        Modal.confirm({
+            title: 'Remove profile photo?',
+            content: 'This removes your current photo. You can upload a new one anytime.',
+            centered: true,
+            okText: 'Remove',
+            okButtonProps: { danger: true },
+            cancelText: 'Cancel',
+            onOk: async () => {
+                const user = auth.currentUser
+                if (!user) {
+                    message.error('You need to be signed in to update your photo.')
+                    return
+                }
+
+                try {
+                    setUploadingAvatar(true)
+                    setAvatarUrl(null)
+
+                    if (participantDocId) {
+                        await setDoc(
+                            doc(db, 'participants', participantDocId),
+                            { logoUrl: null, updatedAt: serverTimestamp() },
+                            { merge: true }
+                        )
+                    }
+                    await updateProfile(user, { photoURL: null })
+
+                    message.success('Profile photo removed.')
+                } catch (e) {
+                    console.error(e)
+                    message.error('Failed to remove photo.')
+                } finally {
+                    setUploadingAvatar(false)
+                }
+            }
+        })
     }
 
     const onSave = async () => {
@@ -1464,20 +1575,26 @@ const ApplicantProfileForm: React.FC = () => {
                             gutter={[isMobile ? 12 : 20, isMobile ? 12 : 20]}
                             style={{ display: loading ? 'none' : undefined }}
                         >
-                            <Col xs={24} lg={7} xl={6}>
-                                <IdentityPanel
-                                    isMobile={isMobile}
-                                    isInitialSetup={isInitialSetup}
-                                    avatarUrl={avatarUrl}
-                                    uploading={uploadingAvatar}
-                                    onUpload={handleAvatarUpload}
-                                    ownerName={ownerName}
-                                    businessName={businessName}
-                                    email={emailValue}
-                                    phone={phoneValue}
-                                    progress={progress}
-                                />
-                            </Col>
+                            {/* On mobile, editing a section takes over the whole
+                                card — the identity header would just eat space
+                                that the form fields need. */}
+                            {(!isMobile || showingMenu) && (
+                                <Col xs={24} lg={7} xl={6}>
+                                    <IdentityPanel
+                                        isMobile={isMobile}
+                                        isInitialSetup={isInitialSetup}
+                                        avatarUrl={avatarUrl}
+                                        uploading={uploadingAvatar}
+                                        onUpload={handleAvatarUpload}
+                                        onRemove={handleAvatarRemove}
+                                        ownerName={ownerName}
+                                        businessName={businessName}
+                                        email={emailValue}
+                                        phone={phoneValue}
+                                        progress={progress}
+                                    />
+                                </Col>
+                            )}
 
                             <Col xs={24} lg={17} xl={18}>
                                 <Card
@@ -1496,19 +1613,38 @@ const ApplicantProfileForm: React.FC = () => {
                                                 onOpen={openSection}
                                             />
                                         ) : (
-                                            <Button
-                                                type='text'
-                                                size='small'
-                                                icon={<ArrowLeftOutlined />}
-                                                onClick={() => setShowSectionList(true)}
+                                            <div
                                                 style={{
-                                                    marginBottom: 12,
-                                                    paddingInline: 4,
-                                                    fontWeight: 600
+                                                    position: 'relative',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    minHeight: 32,
+                                                    marginBottom: 16
                                                 }}
                                             >
-                                                All sections
-                                            </Button>
+                                                <Button
+                                                    type='default'
+                                                    shape='circle'
+                                                    icon={<ArrowLeftOutlined />}
+                                                    onClick={() => setShowSectionList(true)}
+                                                    aria-label='Back to all sections'
+                                                    style={{
+                                                        position: 'absolute',
+                                                        left: 0,
+                                                        borderColor: token.colorBorderSecondary
+                                                    }}
+                                                />
+
+                                                <Text
+                                                    strong
+                                                    style={{ fontSize: 15, textAlign: 'center' }}
+                                                >
+                                                    {PROFILE_SECTIONS.find(
+                                                        section => section.key === activeSection
+                                                    )?.title || 'Section'}
+                                                </Text>
+                                            </div>
                                         )
                                     ) : (
                                         <Segmented
@@ -1950,11 +2086,17 @@ const ApplicantProfileForm: React.FC = () => {
                                         ))}
                                     </div>
 
-                                    <ActionBar
-                                        isMobile={isMobile}
-                                        isInitialSetup={isInitialSetup}
-                                        onSave={onSave}
-                                    />
+                                    {/* On mobile the card list stands in for the
+                                        form until a section is opened — saving
+                                        the whole form from there reads as
+                                        premature, so the bar waits until then. */}
+                                    {!showingMenu && (
+                                        <ActionBar
+                                            isMobile={isMobile}
+                                            isInitialSetup={isInitialSetup}
+                                            onSave={onSave}
+                                        />
+                                    )}
                                 </Card>
                             </Col>
                         </Row>
