@@ -340,568 +340,568 @@ const App = () => {
                                                 nearer boundary around each layout's <Outlet />, so their
                                                 shell stays on screen while the chunk loads. */}
                                             <Suspense fallback={<RouteFallback />}>
-                                            <Routes>
-                                                <Route
-                                                    element={
-                                                        <Authenticated fallback={<CatchAllNavigate to="/" />}>
-                                                            <ChatSessionProvider>
-                                                                <CustomLayout />
-                                                            </ChatSessionProvider>
-                                                        </Authenticated>
-                                                    }
-                                                >
-                                                    <Route path="academy" element={<AcademyCatalog />} />
-                                                    <Route path="academy/:id" element={<LearnerCoursePage />} />
-                                                    {/* System Admin Routes */}
-                                                    <Route path="admin" element={<AdminOnlyRoute />}>
-                                                        <Route index element={<UserManagement />} />
-                                                        <Route path="console" element={<AdminConsole />} />
-                                                        <Route path="email" element={<AdminEmailMonitor />} />
-                                                        <Route
-                                                            path="features"
-                                                            element={<FeatureGovernancePage />}
-                                                        />
-                                                        <Route
-                                                            path="data-export-settings"
-                                                            element={<DataExportSettingsPage />}
-                                                        />
-                                                    </Route>
-                                                    {/* Project Admin Routes */}
-                                                    <Route path="projectadmin">
-                                                        <Route
-                                                            index
-                                                            element={<CenterCoordinatorDashboard />}
-                                                        />
-                                                        <Route
-                                                            path="inquiries"
-                                                            element={<ProjectAdminInquiryDetailPage />}
-                                                        />
-                                                        <Route
-                                                            path="inquiries/:id"
-                                                            element={<ProjectAdminInquiryDetailPage />}
-                                                        />
-                                                        <Route
-                                                            path="inquiries/:id/edit"
-                                                            element={<ProjectAdminEditInquiryPage />}
-                                                        />
-                                                        <Route
-                                                            path="follow-ups"
-                                                            element={<CenterCoordinatorFollowUps />}
-                                                        />
-                                                        <Route
-                                                            path="movs"
-                                                            element={<CoordinatorMOVApprovals />}
-                                                        />
-                                                        <Route
-                                                            path="reports"
-                                                            element={<ProjectAdminReports />}
-                                                        />
-                                                        <Route
-                                                            path="success-challenges"
-                                                            element={<SuccessChallengesPage />}
-                                                        />
-                                                    </Route>
-                                                    {/* Director Routes */}
-                                                    <Route path="director">
-                                                        <Route index element={<DirectorDashboard />} />
-                                                        <Route
-                                                            path="operators"
-                                                            element={<OperationsOnboardingDashboard />}
-                                                        />
-                                                        <Route
-                                                            path="branches"
-                                                            element={<BranchManagement />}
-                                                        />
-                                                        <Route
-                                                            path="departments"
-                                                            element={<DepartmentManagement />}
-                                                        />
-                                                        <Route
-                                                            path="strategic"
-                                                            element={<StrategicDashboard />}
-                                                        />
-                                                        <Route
-                                                            path="reports"
-                                                            element={<BeneficiariesOverview />}
-                                                        />
-                                                        <Route
-                                                            path="hr/performance"
-                                                            element={<EmployeePerformancePage />}
-                                                        />
-                                                        <Route
-                                                            path="hr/quality-objectives"
-                                                            element={<QualityObjectiveManagement />}
-                                                        />
-                                                    </Route>
-                                                    {/* Funder Routes */}
-                                                    <Route path="funder">
-                                                        <Route index element={<FunderDashboard />} />
-                                                        <Route path="smes" element={<IncubateesOverview />} />
-                                                        <Route
-                                                            path="analytics"
-                                                            element={<FunderAnalytics />}
-                                                        />
-                                                        <Route path="tasks" element={<TasksModule />} />
-                                                    </Route>
-                                                    {/* Project Manager Routes */}
-                                                    <Route path="projectmanager">
-                                                        <Route
-                                                            path="inhouse/requests"
-                                                            element={<PurchaseRequestProcessor />}
-                                                        />
-                                                    </Route>
-                                                    {/* Incubatee Routes */}
-                                                    <Route path="incubatee">
-                                                        <Route index element={<IncubateeDashboard />} />
-                                                        <Route
-                                                            path="interventions"
-                                                            element={<InterventionsTrackingView />}
-                                                        />
-                                                        <Route path="group" element={<GroupProgressForm />} />
-                                                        <Route path="roadmap" element={<RoadmapFlow />} />
-                                                        <Route
-                                                            path="appointments"
-                                                            element={<UserAppointments />}
-                                                        />
-                                                        <Route
-                                                            path="feedback"
-                                                            element={<SmeFeedbackPage />}
-                                                        />
-                                                        <Route
-                                                            path="metrics"
-                                                            element={<MonthlyPerformanceForm />}
-                                                        />
-                                                        <Route
-                                                            path="analytics"
-                                                            element={<IncubateeAnalytics />}
-                                                        />
-                                                        <Route
-                                                            path="resources"
-                                                            element={<ResourceRequestForm />}
-                                                        />
-                                                        <Route path="library" element={<LibraryPage />} />
-                                                        <Route
-                                                            path="documents/compliance"
-                                                            element={<ComplianceDocuments />}
-                                                        />
-                                                        <Route
-                                                            path="documents/hub"
-                                                            element={<DocumentsHub />}
-                                                        />
-                                                        <Route
-                                                            path="surveys/respond/:surveyId"
-                                                            element={<RespondSurvey />}
-                                                        />
-                                                    </Route>
-
-                                                    {/* Coordinator Routes */}
-                                                    <Route path="coordinator">
-                                                        <Route index element={<CoordinatorDashboard />} />
-                                                        <Route
-                                                            path="feedback"
-                                                            element={<FeedbackWorkspace />}
-                                                        />
-                                                        <Route
-                                                            path="interventions/Linkages"
-                                                            element={<MarketLinkageManager />}
-                                                        />
-                                                        <Route
-                                                            path="interventions/wellness"
-                                                            element={<WellnessResponsesPage />}
-                                                        />
-                                                        <Route
-                                                            path="tasks"
-                                                            element={<CoordinatorTasksAndAppointments />}
-                                                        />
-                                                        <Route
-                                                            path="analytics"
-                                                            element={<CoordinatorAnalytics />}
-                                                        />
-                                                        <Route
-                                                            path="allocated/history"
-                                                            element={
-                                                                <Navigate to="/coordinator/allocated" replace />
-                                                            }
-                                                        />
-                                                        <Route path="movs" element={<CoordinatorMOVs />} />
-                                                        <Route path="allocated">
+                                                <Routes>
+                                                    <Route
+                                                        element={
+                                                            <Authenticated fallback={<CatchAllNavigate to="/" />}>
+                                                                <ChatSessionProvider>
+                                                                    <CustomLayout />
+                                                                </ChatSessionProvider>
+                                                            </Authenticated>
+                                                        }
+                                                    >
+                                                        <Route path="academy" element={<AcademyCatalog />} />
+                                                        <Route path="academy/:id" element={<LearnerCoursePage />} />
+                                                        {/* System Admin Routes */}
+                                                        <Route path="admin" element={<AdminOnlyRoute />}>
+                                                            <Route index element={<UserManagement />} />
+                                                            <Route path="console" element={<AdminConsole />} />
+                                                            <Route path="email" element={<AdminEmailMonitor />} />
                                                             <Route
-                                                                index
-                                                                element={<AllocatedInterventions />}
+                                                                path="features"
+                                                                element={<FeatureGovernancePage />}
+                                                            />
+                                                            <Route
+                                                                path="data-export-settings"
+                                                                element={<DataExportSettingsPage />}
                                                             />
                                                         </Route>
-                                                    </Route>
-
-                                                    {/* Operations Routes */}
-                                                    <Route path="operations">
-                                                        <Route index element={<DashboardSwitcher />} />
-                                                        <Route path="library" element={<LibraryPage />} />
-                                                        <Route path="participants">
+                                                        {/* Project Admin Routes */}
+                                                        <Route path="projectadmin">
                                                             <Route
-                                                                path="new/:id"
-                                                                element={<ParticipantOnboardingForm />}
+                                                                index
+                                                                element={<CenterCoordinatorDashboard />}
                                                             />
                                                             <Route
-                                                                path="participants/risk"
+                                                                path="inquiries"
+                                                                element={<ProjectAdminInquiryDetailPage />}
+                                                            />
+                                                            <Route
+                                                                path="inquiries/:id"
+                                                                element={<ProjectAdminInquiryDetailPage />}
+                                                            />
+                                                            <Route
+                                                                path="inquiries/:id/edit"
+                                                                element={<ProjectAdminEditInquiryPage />}
+                                                            />
+                                                            <Route
+                                                                path="follow-ups"
+                                                                element={<CenterCoordinatorFollowUps />}
+                                                            />
+                                                            <Route
+                                                                path="movs"
+                                                                element={<CoordinatorMOVApprovals />}
+                                                            />
+                                                            <Route
+                                                                path="reports"
+                                                                element={<ProjectAdminReports />}
+                                                            />
+                                                            <Route
+                                                                path="success-challenges"
+                                                                element={<SuccessChallengesPage />}
+                                                            />
+                                                        </Route>
+                                                        {/* Director Routes */}
+                                                        <Route path="director">
+                                                            <Route index element={<DirectorDashboard />} />
+                                                            <Route
+                                                                path="operators"
+                                                                element={<OperationsOnboardingDashboard />}
+                                                            />
+                                                            <Route
+                                                                path="branches"
+                                                                element={<BranchManagement />}
+                                                            />
+                                                            <Route
+                                                                path="departments"
+                                                                element={<DepartmentManagement />}
+                                                            />
+                                                            <Route
+                                                                path="strategic"
+                                                                element={<StrategicDashboard />}
+                                                            />
+                                                            <Route
+                                                                path="reports"
+                                                                element={<BeneficiariesOverview />}
+                                                            />
+                                                            <Route
+                                                                path="hr/performance"
+                                                                element={<EmployeePerformancePage />}
+                                                            />
+                                                            <Route
+                                                                path="hr/quality-objectives"
+                                                                element={<QualityObjectiveManagement />}
+                                                            />
+                                                        </Route>
+                                                        {/* Funder Routes */}
+                                                        <Route path="funder">
+                                                            <Route index element={<FunderDashboard />} />
+                                                            <Route path="smes" element={<IncubateesOverview />} />
+                                                            <Route
+                                                                path="analytics"
+                                                                element={<FunderAnalytics />}
+                                                            />
+                                                            <Route path="tasks" element={<TasksModule />} />
+                                                        </Route>
+                                                        {/* Project Manager Routes */}
+                                                        <Route path="projectmanager">
+                                                            <Route
+                                                                path="inhouse/requests"
+                                                                element={<PurchaseRequestProcessor />}
+                                                            />
+                                                        </Route>
+                                                        {/* Incubatee Routes */}
+                                                        <Route path="incubatee">
+                                                            <Route index element={<IncubateeDashboard />} />
+                                                            <Route
+                                                                path="interventions"
+                                                                element={<InterventionsTrackingView />}
+                                                            />
+                                                            <Route path="group" element={<GroupProgressForm />} />
+                                                            <Route path="roadmap" element={<RoadmapFlow />} />
+                                                            <Route
+                                                                path="appointments"
+                                                                element={<UserAppointments />}
+                                                            />
+                                                            <Route
+                                                                path="feedback"
+                                                                element={<SmeFeedbackPage />}
+                                                            />
+                                                            <Route
+                                                                path="metrics"
+                                                                element={<MonthlyPerformanceForm />}
+                                                            />
+                                                            <Route
+                                                                path="analytics"
+                                                                element={<IncubateeAnalytics />}
+                                                            />
+                                                            <Route
+                                                                path="resources"
+                                                                element={<ResourceRequestForm />}
+                                                            />
+                                                            <Route path="library" element={<LibraryPage />} />
+                                                            <Route
+                                                                path="compliance"
+                                                                element={<ComplianceDocuments />}
+                                                            />
+                                                            <Route
+                                                                path="documents/hub"
+                                                                element={<DocumentsHub />}
+                                                            />
+                                                            <Route
+                                                                path="surveys/respond/:surveyId"
+                                                                element={<RespondSurvey />}
+                                                            />
+                                                        </Route>
+
+                                                        {/* Coordinator Routes */}
+                                                        <Route path="coordinator">
+                                                            <Route index element={<CoordinatorDashboard />} />
+                                                            <Route
+                                                                path="feedback"
+                                                                element={<FeedbackWorkspace />}
+                                                            />
+                                                            <Route
+                                                                path="interventions/Linkages"
+                                                                element={<MarketLinkageManager />}
+                                                            />
+                                                            <Route
+                                                                path="interventions/wellness"
+                                                                element={<WellnessResponsesPage />}
+                                                            />
+                                                            <Route
+                                                                path="tasks"
+                                                                element={<CoordinatorTasksAndAppointments />}
+                                                            />
+                                                            <Route
+                                                                path="analytics"
+                                                                element={<CoordinatorAnalytics />}
+                                                            />
+                                                            <Route
+                                                                path="allocated/history"
+                                                                element={
+                                                                    <Navigate to="/coordinator/allocated" replace />
+                                                                }
+                                                            />
+                                                            <Route path="movs" element={<CoordinatorMOVs />} />
+                                                            <Route path="allocated">
+                                                                <Route
+                                                                    index
+                                                                    element={<AllocatedInterventions />}
+                                                                />
+                                                            </Route>
+                                                        </Route>
+
+                                                        {/* Operations Routes */}
+                                                        <Route path="operations">
+                                                            <Route index element={<DashboardSwitcher />} />
+                                                            <Route path="library" element={<LibraryPage />} />
+                                                            <Route path="participants">
+                                                                <Route
+                                                                    path="new/:id"
+                                                                    element={<ParticipantOnboardingForm />}
+                                                                />
+                                                                <Route
+                                                                    path="participants/risk"
+                                                                    element={
+                                                                        <SMECoverageRegisterPage parentPadding={24} />
+                                                                    }
+                                                                />
+                                                                <Route
+                                                                    path="success"
+                                                                    element={<ParticipantSuccess />}
+                                                                />
+                                                            </Route>
+                                                            <Route
+                                                                path="stakeholder"
+                                                                element={<StakeholderEngagementPage />}
+                                                            />
+                                                            <Route
+                                                                path="hr/leave"
+                                                                element={<AdminLeaveManagement />}
+                                                            />
+                                                            <Route
+                                                                path="hr/leave/calendar"
+                                                                element={<LeaveCalendar />}
+                                                            />
+                                                            <Route path="tasks" element={<TasksModule />} />
+                                                            <Route
+                                                                path="documentation"
+                                                                element={<DocumentationHub />}
+                                                            />
+                                                            <Route
+                                                                path="success-challenges"
+                                                                element={<SuccessChallengesPage />}
+                                                            />
+                                                            <Route
+                                                                path="hr/employees"
+                                                                element={<EmployeesPage />}
+                                                            />
+                                                            <Route
+                                                                path="hr/performance"
+                                                                element={<EmployeePerformancePage />}
+                                                            />
+                                                            <Route
+                                                                path="hr/quality-objectives"
+                                                                element={<QualityObjectiveManagement />}
+                                                            />
+                                                            <Route
+                                                                path="surveys"
+                                                                element={<SurveysDetailsPage />}
+                                                            />
+                                                            <Route
+                                                                path="surveys/builder"
+                                                                element={<SurveyBuilder />}
+                                                            />
+                                                            <Route
+                                                                path="surveys/builder/:id"
+                                                                element={<SurveyBuilder />}
+                                                            />
+                                                            <Route
+                                                                path="impact"
+                                                                element={<ImpactAnalysisForm />}
+                                                            />
+                                                            <Route
+                                                                path="inhouse/requested"
+                                                                element={<FinanceRequests />}
+                                                            />
+                                                            <Route
+                                                                path="inhouse/verification"
+                                                                element={<InvoicesView />}
+                                                            />
+                                                            <Route
+                                                                path="inhouse/reported"
+                                                                element={<FinanceReports />}
+                                                            />
+                                                            <Route
+                                                                path="inhouse/payments"
+                                                                element={<FinancePayments />}
+                                                            />
+                                                            <Route
+                                                                path="inhouse/invoices"
+                                                                element={<ConsolidatedInvoicePacks />}
+                                                            />
+                                                            <Route
+                                                                path="monitoring/movs"
+                                                                element={<MonitoringMOVApprovals />}
+                                                            />
+                                                            <Route
+                                                                path="monitoring/activity"
+                                                                element={<MonitoringActivity />}
+                                                            />
+                                                            <Route
+                                                                path="training"
+                                                                element={<TrainingDashboard />}
+                                                            />
+                                                            <Route path="training/courses/builder" element={<CourseBuilder />} />
+                                                            <Route path="training/courses/builder/:id" element={<CourseBuilder />} />
+                                                            <Route path="training/courses" element={<CoursesRepository />} />
+                                                            <Route
+                                                                path="requests"
+                                                                element={<InterventionsRequests />}
+                                                            />
+                                                            <Route
+                                                                path="plan"
+                                                                element={<DiagnosticPlanConfirmations />}
+                                                            />
+                                                            <Route
+                                                                path="diagnostic-plan"
+                                                                element={<DiagnosticPlanBuilder />}
+                                                            />
+                                                            <Route
+                                                                path="plan/confirmed/:participantId/:department"
+                                                                element={<ConfirmedInterventionsWrapper />}
+                                                            />
+                                                            <Route
+                                                                path="assignments"
+                                                                element={<InterventionsAssignments />}
+                                                            />
+                                                            <Route
+                                                                path="/operations/participants/risk"
                                                                 element={
                                                                     <SMECoverageRegisterPage parentPadding={24} />
                                                                 }
                                                             />
                                                             <Route
-                                                                path="success"
-                                                                element={<ParticipantSuccess />}
+                                                                path="interventions"
+                                                                element={<InterventionsManager />}
+                                                            />
+                                                            <Route
+                                                                path="finance"
+                                                                element={<ParticipantsFinancialView />}
+                                                            />
+                                                            <Route
+                                                                path="groups"
+                                                                element={<GroupMovementTimeline />}
+                                                            />
+                                                            <Route path="gap">
+                                                                <Route index element={<GAPAnalysisTable />} />
+                                                                {/* This is for adding new */}
+                                                                <Route
+                                                                    path="new"
+                                                                    element={<GAPAnalysisForm mode="rom" />}
+                                                                />
+                                                                <Route
+                                                                    path=":id"
+                                                                    element={<GAPAnalysisDetailView />}
+                                                                />
+                                                            </Route>
+                                                            <Route path="coordinators">
+                                                                <Route index element={<CoordinatorsPage />} />
+                                                                <Route
+                                                                    path=":id/performance"
+                                                                    element={<CoordinatorPerformance />}
+                                                                />
+                                                            </Route>
+                                                            <Route
+                                                                path="resources"
+                                                                element={<OperationsResourceManagement />}
+                                                            />
+                                                            <Route path="movs" element={<MOVApprovalsForm />} />
+                                                            <Route
+                                                                path="inquiries"
+                                                                element={<OperationsInquiriesPage />}
+                                                            />
+                                                            <Route path="reports" element={<ReportSwitcher />} />
+                                                            <Route
+                                                                path="reports/collaborative/*"
+                                                                element={<CollaborativeReportsModule />}
                                                             />
                                                         </Route>
-                                                        <Route
-                                                            path="stakeholder"
-                                                            element={<StakeholderEngagementPage />}
-                                                        />
-                                                        <Route
-                                                            path="hr/leave"
-                                                            element={<AdminLeaveManagement />}
-                                                        />
-                                                        <Route
-                                                            path="hr/leave/calendar"
-                                                            element={<LeaveCalendar />}
-                                                        />
-                                                        <Route path="tasks" element={<TasksModule />} />
-                                                        <Route
-                                                            path="documentation"
-                                                            element={<DocumentationHub />}
-                                                        />
-                                                        <Route
-                                                            path="success-challenges"
-                                                            element={<SuccessChallengesPage />}
-                                                        />
-                                                        <Route
-                                                            path="hr/employees"
-                                                            element={<EmployeesPage />}
-                                                        />
-                                                        <Route
-                                                            path="hr/performance"
-                                                            element={<EmployeePerformancePage />}
-                                                        />
-                                                        <Route
-                                                            path="hr/quality-objectives"
-                                                            element={<QualityObjectiveManagement />}
-                                                        />
-                                                        <Route
-                                                            path="surveys"
-                                                            element={<SurveysDetailsPage />}
-                                                        />
-                                                        <Route
-                                                            path="surveys/builder"
-                                                            element={<SurveyBuilder />}
-                                                        />
-                                                        <Route
-                                                            path="surveys/builder/:id"
-                                                            element={<SurveyBuilder />}
-                                                        />
-                                                        <Route
-                                                            path="impact"
-                                                            element={<ImpactAnalysisForm />}
-                                                        />
-                                                        <Route
-                                                            path="inhouse/requested"
-                                                            element={<FinanceRequests />}
-                                                        />
-                                                        <Route
-                                                            path="inhouse/verification"
-                                                            element={<InvoicesView />}
-                                                        />
-                                                        <Route
-                                                            path="inhouse/reported"
-                                                            element={<FinanceReports />}
-                                                        />
-                                                        <Route
-                                                            path="inhouse/payments"
-                                                            element={<FinancePayments />}
-                                                        />
-                                                        <Route
-                                                            path="inhouse/invoices"
-                                                            element={<ConsolidatedInvoicePacks />}
-                                                        />
-                                                        <Route
-                                                            path="monitoring/movs"
-                                                            element={<MonitoringMOVApprovals />}
-                                                        />
-                                                        <Route
-                                                            path="monitoring/activity"
-                                                            element={<MonitoringActivity />}
-                                                        />
-                                                        <Route
-                                                            path="training"
-                                                            element={<TrainingDashboard />}
-                                                        />
-                                                        <Route path="training/courses/builder" element={<CourseBuilder />} />
-                                                        <Route path="training/courses/builder/:id" element={<CourseBuilder />} />
-                                                        <Route path="training/courses" element={<CoursesRepository />} />
-                                                        <Route
-                                                            path="requests"
-                                                            element={<InterventionsRequests />}
-                                                        />
-                                                        <Route
-                                                            path="plan"
-                                                            element={<DiagnosticPlanConfirmations />}
-                                                        />
-                                                        <Route
-                                                            path="diagnostic-plan"
-                                                            element={<DiagnosticPlanBuilder />}
-                                                        />
-                                                        <Route
-                                                            path="plan/confirmed/:participantId/:department"
-                                                            element={<ConfirmedInterventionsWrapper />}
-                                                        />
-                                                        <Route
-                                                            path="assignments"
-                                                            element={<InterventionsAssignments />}
-                                                        />
-                                                        <Route
-                                                            path="/operations/participants/risk"
-                                                            element={
-                                                                <SMECoverageRegisterPage parentPadding={24} />
-                                                            }
-                                                        />
+
+                                                        {/* Receptionist Routes */}
+                                                        <Route path="receptionist">
+                                                            <Route
+                                                                index
+                                                                element={<ReceptionistDashboardPage />}
+                                                            />
+                                                            <Route path="inquiries" element={<InquiriesList />} />
+                                                            <Route
+                                                                path="inquiries/new"
+                                                                element={<NewInquiry />}
+                                                            />
+                                                            <Route
+                                                                path="inquiries/:id"
+                                                                element={<InquiryDetailPage />}
+                                                            />
+                                                            <Route
+                                                                path="inquiries/:id/edit"
+                                                                element={<EditInquiry />}
+                                                            />
+                                                            <Route path="contacts" element={<ContactsList />} />
+                                                            <Route
+                                                                path="follow-ups"
+                                                                element={<FollowUpsList />}
+                                                            />
+                                                            <Route
+                                                                path="reports"
+                                                                element={<ReceptionistReports />}
+                                                            />
+                                                        </Route>
+
+                                                        {/* Shared Routes */}
                                                         <Route
                                                             path="interventions"
-                                                            element={<InterventionsManager />}
+                                                            element={<InterventionDatabaseView />}
                                                         />
+
                                                         <Route
-                                                            path="finance"
-                                                            element={<ParticipantsFinancialView />}
+                                                            path="interventions/appointments"
+                                                            element={<Appointments />}
                                                         />
+
                                                         <Route
-                                                            path="groups"
-                                                            element={<GroupMovementTimeline />}
+                                                            path="interventions/assignments"
+                                                            element={<InterventionsAssignments />}
                                                         />
-                                                        <Route path="gap">
-                                                            <Route index element={<GAPAnalysisTable />} />
-                                                            {/* This is for adding new */}
-                                                            <Route
-                                                                path="new"
-                                                                element={<GAPAnalysisForm mode="rom" />}
-                                                            />
-                                                            <Route
-                                                                path=":id"
-                                                                element={<GAPAnalysisDetailView />}
-                                                            />
+                                                        <Route path="kpis">
+                                                            <Route path="setup" element={<KPIManager />} />
+                                                            <Route path="track" element={<KPITrackerView />} />
                                                         </Route>
-                                                        <Route path="coordinators">
-                                                            <Route index element={<CoordinatorsPage />} />
+                                                        <Route path="participants" element={<SMEOverview />} />
+                                                        <Route path="team" element={<UserManagement />} />
+                                                        <Route
+                                                            path="participants/new/:id"
+                                                            element={<ParticipantOnboardingForm />}
+                                                        />
+                                                        <Route
+                                                            path="compliance"
+                                                            element={<ComplianceTrackingPage />}
+                                                        />
+                                                        <Route
+                                                            path="metrics/jobs"
+                                                            element={<JobsManagementPage />}
+                                                        />
+                                                        <Route path="calendar" element={<MyCalendarPage />} />
+                                                        <Route path="timesheet" element={<ClockinPage />} />
+                                                        <Route path="leave" element={<EmployeeLeave />} />
+                                                        <Route
+                                                            path="data-export"
+                                                            element={<DataExportPage />}
+                                                        />
+                                                        <Route path="tutorials" element={<TutorialsPage />} />
+                                                        <Route path="chat" element={<Chat />} />
+                                                        <Route path="system" element={<SystemSetupForm />} />
+
+                                                        <Route
+                                                            path="applications"
+                                                            element={<ApplicationsPage />}
+                                                        />
+                                                        <Route path="resources">
+                                                            <Route index element={<Resources />} />
                                                             <Route
-                                                                path=":id/performance"
-                                                                element={<CoordinatorPerformance />}
+                                                                path="requests"
+                                                                element={<RequestedResources />}
                                                             />
+                                                            <Route
+                                                                path="internal"
+                                                                element={<InternalResourceRequestView />}
+                                                            />
+                                                            <Route path="allocations" element={<Allocations />} />
                                                         </Route>
+                                                        <Route path="programs" element={<ProgramManager />} />
                                                         <Route
-                                                            path="resources"
-                                                            element={<OperationsResourceManagement />}
-                                                        />
-                                                        <Route path="movs" element={<MOVApprovalsForm />} />
-                                                        <Route
-                                                            path="inquiries"
-                                                            element={<OperationsInquiriesPage />}
-                                                        />
-                                                        <Route path="reports" element={<ReportSwitcher />} />
-                                                        <Route
-                                                            path="reports/collaborative/*"
-                                                            element={<CollaborativeReportsModule />}
+                                                            path="proposals"
+                                                            element={<ProposalPipeline />}
                                                         />
                                                     </Route>
-
-                                                    {/* Receptionist Routes */}
-                                                    <Route path="receptionist">
-                                                        <Route
-                                                            index
-                                                            element={<ReceptionistDashboardPage />}
-                                                        />
-                                                        <Route path="inquiries" element={<InquiriesList />} />
-                                                        <Route
-                                                            path="inquiries/new"
-                                                            element={<NewInquiry />}
-                                                        />
-                                                        <Route
-                                                            path="inquiries/:id"
-                                                            element={<InquiryDetailPage />}
-                                                        />
-                                                        <Route
-                                                            path="inquiries/:id/edit"
-                                                            element={<EditInquiry />}
-                                                        />
-                                                        <Route path="contacts" element={<ContactsList />} />
-                                                        <Route
-                                                            path="follow-ups"
-                                                            element={<FollowUpsList />}
-                                                        />
-                                                        <Route
-                                                            path="reports"
-                                                            element={<ReceptionistReports />}
-                                                        />
-                                                    </Route>
-
-                                                    {/* Shared Routes */}
-                                                    <Route
-                                                        path="interventions"
-                                                        element={<InterventionDatabaseView />}
-                                                    />
-
-                                                    <Route
-                                                        path="interventions/appointments"
-                                                        element={<Appointments />}
-                                                    />
-
-                                                    <Route
-                                                        path="interventions/assignments"
-                                                        element={<InterventionsAssignments />}
-                                                    />
-                                                    <Route path="kpis">
-                                                        <Route path="setup" element={<KPIManager />} />
-                                                        <Route path="track" element={<KPITrackerView />} />
-                                                    </Route>
-                                                    <Route path="participants" element={<SMEOverview />} />
-                                                    <Route path="team" element={<UserManagement />} />
-                                                    <Route
-                                                        path="participants/new/:id"
-                                                        element={<ParticipantOnboardingForm />}
-                                                    />
-                                                    <Route
-                                                        path="compliance"
-                                                        element={<ComplianceTrackingPage />}
-                                                    />
-                                                    <Route
-                                                        path="metrics/jobs"
-                                                        element={<JobsManagementPage />}
-                                                    />
-                                                    <Route path="calendar" element={<MyCalendarPage />} />
-                                                    <Route path="timesheet" element={<ClockinPage />} />
-                                                    <Route path="leave" element={<EmployeeLeave />} />
-                                                    <Route
-                                                        path="data-export"
-                                                        element={<DataExportPage />}
-                                                    />
-                                                    <Route path="tutorials" element={<TutorialsPage />} />
-                                                    <Route path="chat" element={<Chat />} />
-                                                    <Route path="system" element={<SystemSetupForm />} />
-
-                                                    <Route
-                                                        path="applications"
-                                                        element={<ApplicationsPage />}
-                                                    />
-                                                    <Route path="resources">
-                                                        <Route index element={<Resources />} />
-                                                        <Route
-                                                            path="requests"
-                                                            element={<RequestedResources />}
-                                                        />
-                                                        <Route
-                                                            path="internal"
-                                                            element={<InternalResourceRequestView />}
-                                                        />
-                                                        <Route path="allocations" element={<Allocations />} />
-                                                    </Route>
-                                                    <Route path="programs" element={<ProgramManager />} />
-                                                    <Route
-                                                        path="proposals"
-                                                        element={<ProposalPipeline />}
-                                                    />
-                                                </Route>
-                                                {/* Applicant portal routes. The user remains an "incubatee" in
+                                                    {/* Applicant portal routes. The user remains an "incubatee" in
                                                 Firestore; applicant is a journey stage, not a role. */}
-                                                <Route
-                                                    element={
-                                                        <Authenticated
-                                                            fallback={<CatchAllNavigate to="/login" />}
-                                                        >
-                                                            <ApplicantLayout />
-                                                        </Authenticated>
-                                                    }
-                                                >
-                                                    <Route path="applicant" element={<ApplicantLandingPage />} />
                                                     <Route
-                                                        path="applicant/submit-inquiry"
-                                                        element={<ApplicantInquirySubmission />}
-                                                    />
-                                                    <Route
-                                                        path="applicant/inquiries"
-                                                        element={<ApplicantInquiriesPage />}
-                                                    />
-                                                    <Route path="applicant/tracker" element={<ApplicationTracker />} />
-                                                    <Route path="applicant/profile" element={<ApplicantProfileForm />} />
-                                                </Route>
-
-                                                {/* Preserve existing applicant bookmarks and email links. */}
-                                                <Route
-                                                    path="applicant/sme"
-                                                    element={<Navigate to="/applicant" replace />}
-                                                />
-                                                <Route
-                                                    path="applicant/sme/submit-inquiry"
-                                                    element={<Navigate to="/applicant/submit-inquiry" replace />}
-                                                />
-                                                <Route
-                                                    path="applicant/sme/inquiries"
-                                                    element={<Navigate to="/applicant/inquiries" replace />}
-                                                />
-                                                <Route
-                                                    path="incubatee/sme"
-                                                    element={<Navigate to="/applicant" replace />}
-                                                />
-                                                <Route
-                                                    path="incubatee/sme/submit-inquiry"
-                                                    element={
-                                                        <Navigate
-                                                            to="/applicant/submit-inquiry"
-                                                            replace
+                                                        element={
+                                                            <Authenticated
+                                                                fallback={<CatchAllNavigate to="/login" />}
+                                                            >
+                                                                <ApplicantLayout />
+                                                            </Authenticated>
+                                                        }
+                                                    >
+                                                        <Route path="applicant" element={<ApplicantLandingPage />} />
+                                                        <Route
+                                                            path="applicant/submit-inquiry"
+                                                            element={<ApplicantInquirySubmission />}
                                                         />
-                                                    }
-                                                />
-                                                <Route
-                                                    path="incubatee/sme/inquiries"
-                                                    element={
-                                                        <Navigate to="/applicant/inquiries" replace />
-                                                    }
-                                                />
-                                                <Route
-                                                    path="incubatee/tracker"
-                                                    element={<Navigate to="/applicant/tracker" replace />}
-                                                />
-                                                <Route
-                                                    path="incubatee/profile"
-                                                    element={<Navigate to="/applicant/profile" replace />}
-                                                />
+                                                        <Route
+                                                            path="applicant/inquiries"
+                                                            element={<ApplicantInquiriesPage />}
+                                                        />
+                                                        <Route path="applicant/tracker" element={<ApplicationTracker />} />
+                                                        <Route path="applicant/profile" element={<ApplicantProfileForm />} />
+                                                    </Route>
 
-                                                <Route path="/" element={<LandingPage />} />
-                                                <Route path="/landing/sme" element={<ApplicantLandingPage />} />
-                                                <Route path="/login" element={<LoginPage />} />
-                                                <Route
-                                                    path="/reset-password"
-                                                    element={<ResetPasswordPage />}
-                                                />
-                                                <Route path="/welcome" element={<WelcomeWizard />} />
-                                                <Route path="/incubatee/moa" element={<MOAForm />} />
-                                                <Route
-                                                    path="/incubatee/gap-analysis"
-                                                    element={<GAPAnalysisFormWrapper />}
-                                                />
-
-                                                <Route
-                                                    path="/director/onboarding"
-                                                    element={<DirectorOnboardingPage />}
-                                                />
-                                                <Route path="/registration">
-                                                    <Route index element={<RegisterPage />} />
+                                                    {/* Preserve existing applicant bookmarks and email links. */}
                                                     <Route
-                                                        path="/registration/onboarding"
-                                                        element={<ParticipantFormalRegistration />}
+                                                        path="applicant/sme"
+                                                        element={<Navigate to="/applicant" replace />}
                                                     />
-                                                </Route>
+                                                    <Route
+                                                        path="applicant/sme/submit-inquiry"
+                                                        element={<Navigate to="/applicant/submit-inquiry" replace />}
+                                                    />
+                                                    <Route
+                                                        path="applicant/sme/inquiries"
+                                                        element={<Navigate to="/applicant/inquiries" replace />}
+                                                    />
+                                                    <Route
+                                                        path="incubatee/sme"
+                                                        element={<Navigate to="/applicant" replace />}
+                                                    />
+                                                    <Route
+                                                        path="incubatee/sme/submit-inquiry"
+                                                        element={
+                                                            <Navigate
+                                                                to="/applicant/submit-inquiry"
+                                                                replace
+                                                            />
+                                                        }
+                                                    />
+                                                    <Route
+                                                        path="incubatee/sme/inquiries"
+                                                        element={
+                                                            <Navigate to="/applicant/inquiries" replace />
+                                                        }
+                                                    />
+                                                    <Route
+                                                        path="incubatee/tracker"
+                                                        element={<Navigate to="/applicant/tracker" replace />}
+                                                    />
+                                                    <Route
+                                                        path="incubatee/profile"
+                                                        element={<Navigate to="/applicant/profile" replace />}
+                                                    />
 
-                                                <Route path="*" element={<NotFoundPage />} />
-                                                <Route
-                                                    path="meeting-checkin"
-                                                    element={<MeetingCheckInPage />}
-                                                />
-                                            </Routes>
+                                                    <Route path="/" element={<LandingPage />} />
+                                                    <Route path="/landing/sme" element={<ApplicantLandingPage />} />
+                                                    <Route path="/login" element={<LoginPage />} />
+                                                    <Route
+                                                        path="/reset-password"
+                                                        element={<ResetPasswordPage />}
+                                                    />
+                                                    <Route path="/welcome" element={<WelcomeWizard />} />
+                                                    <Route path="/incubatee/moa" element={<MOAForm />} />
+                                                    <Route
+                                                        path="/incubatee/gap-analysis"
+                                                        element={<GAPAnalysisFormWrapper />}
+                                                    />
+
+                                                    <Route
+                                                        path="/director/onboarding"
+                                                        element={<DirectorOnboardingPage />}
+                                                    />
+                                                    <Route path="/registration">
+                                                        <Route index element={<RegisterPage />} />
+                                                        <Route
+                                                            path="/registration/onboarding"
+                                                            element={<ParticipantFormalRegistration />}
+                                                        />
+                                                    </Route>
+
+                                                    <Route path="*" element={<NotFoundPage />} />
+                                                    <Route
+                                                        path="meeting-checkin"
+                                                        element={<MeetingCheckInPage />}
+                                                    />
+                                                </Routes>
                                             </Suspense>
 
                                             <UnsavedChangesNotifier />

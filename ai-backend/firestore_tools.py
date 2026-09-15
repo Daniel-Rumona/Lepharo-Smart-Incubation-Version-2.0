@@ -1,7 +1,7 @@
 import os
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from firestore_transport import (
     configure_firestore_grpc_transport,
@@ -927,6 +927,71 @@ def get_interventions_catalog(max_results: int = 100):
 
 def get_interventions_by_department(department_id: str, max_results: int = 100):
     return query_collection("interventions", "departmentId", department_id, max_results)
+
+
+# -------------------------
+# Recent activity (on-demand catch-up, not a pushed digest)
+# -------------------------
+# (counterKey, collectionName, candidate date fields checked in order)
+RECENT_ACTIVITY_SOURCES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("newApplications", "applications", ("submittedAt", "createdAt")),
+    ("completedInterventions", "assignedInterventions", ("completedAt",)),
+    ("movsUploaded", "movDocuments", ("uploadedAt", "createdAt")),
+    ("appointmentsHeld", "appointments", ("startAt", "scheduledDate", "date")),
+    ("complianceUpdates", "participantComplianceTimeline", ("updatedAt", "createdAt")),
+)
+
+# (windowLabel, windowDays)
+RECENT_ACTIVITY_WINDOWS: tuple[tuple[str, int], ...] = (
+    ("today", 1),
+    ("week", 7),
+    ("month", 30),
+)
+
+
+def get_recent_activity_summary() -> dict:
+    """
+    Exact, organisation-wide activity counts for a director's on-demand
+    catch-up ("what happened today / this week / this month") — this is
+    answered only when asked, never pushed. Streams each source collection
+    once (same exactness guarantee as summarize_collection(): no max_results
+    cap) and buckets each record into every window it falls within, so a
+    record dated 2 days ago counts toward "week" and "month" but not "today".
+    """
+    now = datetime.now(timezone.utc)
+    cutoffs = {label: now - timedelta(days=days) for label, days in RECENT_ACTIVITY_WINDOWS}
+    counts: dict[str, dict[str, int]] = {
+        label: {key: 0 for key, _, _ in RECENT_ACTIVITY_SOURCES}
+        for label, _ in RECENT_ACTIVITY_WINDOWS
+    }
+
+    for key, collection_name, date_fields in RECENT_ACTIVITY_SOURCES:
+        try:
+            stream = db.collection(collection_name).stream()
+        except Exception:
+            continue
+
+        for doc in stream:
+            data = doc.to_dict() or {}
+
+            record_date = None
+            for field in date_fields:
+                record_date = _parse_date_like(data.get(field))
+                if record_date:
+                    break
+
+            if not record_date:
+                continue
+
+            for label, cutoff in cutoffs.items():
+                if record_date >= cutoff:
+                    counts[label][key] += 1
+
+    return {
+        "generatedAt": now.isoformat(),
+        "windows": counts,
+        "complete": True,
+    }
 
 
 # -------------------------

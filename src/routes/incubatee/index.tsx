@@ -95,6 +95,7 @@ import {
     type PageGuideRegistration
 } from '@/components/guide-me'
 import '@/styles/incubatee-dashboard.css'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 
 /** AntD shorthands */
 const { Text } = Typography
@@ -336,6 +337,7 @@ async function getTemplateById(templateId?: string | null) {
 export const IncubateeDashboard: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
     const screens = useBreakpoint()
+    const isMobile = !screens.md
     const navigate = useNavigate()
     const { activeProgramId } = useActiveProgramId()
 
@@ -1918,7 +1920,7 @@ export const IncubateeDashboard: React.FC = () => {
                 complianceUnavailable ? 'View compliance document status' : outstandingDocs > 0
                     ? 'View outstanding compliance documents'
                     : 'Required compliance documents are up to date',
-            mobileSubtitle: complianceUnavailable ? 'View status' : outstandingDocs > 0 ? 'View documents' : 'Up to date'
+            mobileSubtitle: complianceUnavailable ? 'View status' : outstandingDocs > 0 ? 'View all' : 'Up to date'
         },
         {
             key: 'interventions-distribution',
@@ -2091,10 +2093,8 @@ export const IncubateeDashboard: React.FC = () => {
                                             {/* Urgent documents sit beside confirmations on desktop. */}
                                             {hasUrgentAction && (
                                                 <div>
-                                                    <Card
+                                                    <MotionCard
                                                         data-guide="incubatee-urgent-action"
-                                                        size="small"
-                                                        hoverable
                                                         title="Urgent Action"
                                                         extra={
                                                             <Space>
@@ -2120,6 +2120,7 @@ export const IncubateeDashboard: React.FC = () => {
                                                         <List
                                                             className='incubatee-urgent-list'
                                                             itemLayout="horizontal"
+                                                            split={false}
                                                             dataSource={urgentItems.slice(0, 3)}
                                                             renderItem={(it: UrgentItem) => (
                                                                 <List.Item
@@ -2143,7 +2144,7 @@ export const IncubateeDashboard: React.FC = () => {
                                                                 </List.Item>
                                                             )}
                                                         />
-                                                    </Card>
+                                                    </MotionCard>
                                                 </div>
                                             )}
 
@@ -2221,14 +2222,19 @@ export const IncubateeDashboard: React.FC = () => {
 
                         </Row>
 
-                        <Modal okButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }} cancelButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }} title="Outstanding Compliance Documents" open={complianceModalOpen}
+                        <Modal
+                            centered
+                            okButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }}
+                            cancelButtonProps={{ shape: 'round', variant: 'filled', color: 'red', style: { border: '1px solid red' } }}
+                            title="Outstanding Compliance Documents"
+                            open={complianceModalOpen}
                             onCancel={() => setComplianceModalOpen(false)}
                             footer={[
-                                <Button key="close" onClick={() => setComplianceModalOpen(false)}>Close</Button>,
+                                <Button danger key="close" onClick={() => setComplianceModalOpen(false)}>Close</Button>,
                                 <Button key="manage" type="primary" onClick={() => {
                                     setComplianceModalOpen(false)
                                     navigate('/incubatee/documents/compliance')
-                                }}>Manage compliance documents</Button>
+                                }}>{isMobile ? 'Manage' : 'Manage compliance documents'}</Button>
                             ]}>
                             {complianceError || requirementsError ? <Alert type="error" showIcon message={complianceError || requirementsError} /> :
                                 <List loading={complianceLoading || requirementsLoading}

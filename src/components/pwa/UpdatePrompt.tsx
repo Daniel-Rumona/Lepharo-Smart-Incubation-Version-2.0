@@ -1,21 +1,23 @@
-import { useEffect, useRef } from 'react'
-import { App } from 'antd'
+import { useEffect, useRef, useState } from 'react'
+import { App, Button, Modal, Typography } from 'antd'
+import { ReloadOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 
+const { Text } = Typography
+
 /**
- * Registers the service worker and asks before applying an update.
+ * Registers the service worker and prompts before applying an update.
  *
- * A cached SPA will otherwise serve a stale build indefinitely, which shows up
- * as bug reports for bugs that were already fixed. The worker is registered with
- * registerType: "prompt", so a new version installs and then waits -- this is
- * what lets it through, and only when the user says so, since reloading
- * discards anything half-typed on screen.
+ * The worker uses registerType: "prompt", so a new version installs and waits
+ * until the user chooses to reload.
  */
 export const UpdatePrompt = () => {
-    const { modal, message } = App.useApp()
-    // A corner notification is easy to miss; a centered modal forces the
-    // choice. Guard against re-announcing one the user already dismissed.
+    const { message } = App.useApp()
+
     const announced = useRef(false)
+
+    const [updateModalOpen, setUpdateModalOpen] = useState(false)
+    const [updating, setUpdating] = useState(false)
 
     const {
         needRefresh: [needRefresh],
@@ -29,25 +31,90 @@ export const UpdatePrompt = () => {
 
     useEffect(() => {
         if (!needRefresh || announced.current) return
-        announced.current = true
 
-        modal.confirm({
-            title: 'A new version is available',
-            content: 'Reload to pick up the latest changes. Anything unsaved on screen will be lost.',
-            centered: true,
-            okText: 'Reload',
-            cancelText: 'Later',
-            onOk: () => updateServiceWorker(true),
-        })
-    }, [needRefresh, modal, updateServiceWorker])
+        announced.current = true
+        setUpdateModalOpen(true)
+    }, [needRefresh])
 
     useEffect(() => {
         if (!offlineReady) return
+
         message.success('Ready to work offline')
         setOfflineReady(false)
     }, [offlineReady, setOfflineReady, message])
 
-    return null
+    const handleReload = async () => {
+        try {
+            setUpdating(true)
+            await updateServiceWorker(true)
+        } catch (error) {
+            console.error('Failed to apply application update', error)
+            message.error('Could not apply the update. Please try again.')
+            setUpdating(false)
+        }
+    }
+
+    const handleLater = () => {
+        setUpdateModalOpen(false)
+    }
+
+    return (
+        <Modal
+            open={updateModalOpen}
+            centered
+            closable={false}
+            keyboard={false}
+            mask={{ closable: false }}
+            width={460}
+            title="A new version is available"
+            onCancel={handleLater}
+            footer={
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: 10,
+                        width: '100%',
+                    }}
+                >
+                    <Button
+                        block
+                        shape="round"
+                        icon={<ClockCircleOutlined />}
+                        disabled={updating}
+                        onClick={handleLater}
+                    >
+                        Later
+                    </Button>
+
+                    <Button
+                        block
+                        type="primary"
+                        shape="round"
+                        icon={<ReloadOutlined />}
+                        loading={updating}
+                        onClick={handleReload}
+                    >
+                        Reload
+                    </Button>
+                </div>
+            }
+            styles={{
+                body: {
+                    paddingTop: 4,
+                    paddingBottom: 8,
+                },
+                footer: {
+                    marginTop: 20,
+                },
+            }}
+        >
+            <Text type="secondary">
+                Reload to pick up the latest changes. Anything unsaved on
+                screen will be lost.
+            </Text>
+        </Modal>
+    )
 }
 
 export default UpdatePrompt

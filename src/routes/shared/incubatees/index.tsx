@@ -64,6 +64,7 @@ import { getDownloadURL, getStorage, ref as storageRef } from 'firebase/storage'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
+import { hasSmeGapSubmission } from '@/utils/agreementStatus'
 import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import Highcharts from 'highcharts'
@@ -275,6 +276,7 @@ type SmeRow = {
     recruitedAt?: any
     onboardedAt?: any
     manuallyCreated?: boolean
+    gapCompleted: boolean
     ownership: OwnershipSummary
     metrics: {
         totalRevenue: number
@@ -1348,6 +1350,11 @@ const SMEOverview: React.FC = () => {
                         recruitedAt: app.acceptedAt || app.updatedAt || null,
                         onboardedAt: getOnboardedAt(app),
                         manuallyCreated: (app as any).manuallyCreated === true,
+                        gapCompleted: hasSmeGapSubmission({
+                            application: app,
+                            participant,
+                            agreement: (app as any).signedAgreements?.['gap-analysis']
+                        }),
                         ownership,
                         metrics: {
                             totalRevenue,
@@ -2094,8 +2101,18 @@ const SMEOverview: React.FC = () => {
                 title: 'Company',
                 dataIndex: 'companyName',
                 key: 'companyName',
-                render: (text: string) => <Text strong>{text}</Text>,
-                ellipsis: true
+                render: (text: string, record: SmeRow) => (
+                    <Space size={6} wrap>
+                        <Text strong ellipsis={{ tooltip: text }} style={{ maxWidth: 220 }}>
+                            {text}
+                        </Text>
+                        {!record.gapCompleted && (
+                            <Tag color="gold" style={{ marginInlineEnd: 0 }}>
+                                Awaiting GAP
+                            </Tag>
+                        )}
+                    </Space>
+                )
             }
         ]
 

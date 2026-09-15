@@ -69,6 +69,8 @@ from firestore_tools import (
     get_time_records_by_user,
     get_timesheets_by_program,
     get_timesheets_by_department,
+
+    get_recent_activity_summary,
 )
 
 SUMMARY_TOOL_SPECS: dict[str, tuple[str, list[tuple[str, str, Any]]]] = {
@@ -202,6 +204,8 @@ TOOL_MAP: dict[str, Callable[..., Any]] = {
     "get_time_records_by_user": get_time_records_by_user,
     "get_timesheets_by_program": get_timesheets_by_program,
     "get_timesheets_by_department": get_timesheets_by_department,
+
+    "get_recent_activity_summary": get_recent_activity_summary,
 }
 
 
@@ -543,6 +547,7 @@ def run_page_tools(
             "get_inquiries",
             "get_intake_submissions",
             "get_monthly_participants_serviced",
+            "get_recent_activity_summary",
         }:
             results[tool_name] = _safe_run(
                 tool_name,

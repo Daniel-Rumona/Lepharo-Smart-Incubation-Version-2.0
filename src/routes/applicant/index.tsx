@@ -31,6 +31,7 @@ import {
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
+import LoadingOverlay from '@/components/shared/LoadingOverlay'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -376,6 +377,7 @@ const ApplicantLandingPage = () => {
                             <Button
                                 type='primary'
                                 block
+                                shape='round'
                                 icon={<FileTextOutlined />}
                                 onClick={() => openProgramModal(program)}
                             >
@@ -449,15 +451,12 @@ const ApplicantLandingPage = () => {
 
             <div
                 style={{
-                    padding: 24,
-                    background: '#fff',
-                    minHeight: '100vh',
-                    boxSizing: 'border-box'
+                    padding: '10px 24px',
                 }}
             >
                 {loading ? (
                     <div style={{ padding: '48px 0', textAlign: 'center' }}>
-                        <Spin size='large' />
+                        <LoadingOverlay tip='Loading programs...' />
                     </div>
                 ) : allPrograms.length > 0 ? (
                     <Row gutter={[16, 16]}>

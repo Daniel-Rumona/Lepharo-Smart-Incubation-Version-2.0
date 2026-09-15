@@ -17,6 +17,7 @@ import {
 } from 'antd'
 import {
     AppstoreOutlined,
+    ArrowRightOutlined,
     ClockCircleOutlined,
     CloseCircleOutlined,
     FileTextOutlined,
@@ -37,12 +38,14 @@ import {
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
+import { hasSmeGapSubmission } from '@/utils/agreementStatus'
 
 const { Text } = Typography
 const { useBreakpoint } = Grid
 
 type ApplicationRecord = {
     id: string
+    participantId?: string
     programName?: string
     applicationStatus?: string
     complianceScore?: number
@@ -97,6 +100,11 @@ const getStatusLabel = (status?: string) => {
         normalizedStatus.slice(1)
     )
 }
+
+/** Accepted, but the SME hasn't submitted the GAP analysis for it yet. */
+const needsGapCompletion = (application: ApplicationRecord) =>
+    normalizeApplicationStatus(application.applicationStatus) === 'accepted' &&
+    !hasSmeGapSubmission({ application })
 
 const ApplicationTracker = () => {
     const screens = useBreakpoint()
@@ -315,6 +323,41 @@ const ApplicationTracker = () => {
             )
         },
         {
+            title: 'Next Step',
+            key: 'gapAnalysis',
+            width: 200,
+            render: (
+                _: unknown,
+                record: ApplicationRecord
+            ) => {
+                if (!needsGapCompletion(record)) {
+                    return (
+                        <Text type="secondary">—</Text>
+                    )
+                }
+
+                return (
+                    <Button
+                        type="primary"
+                        shape="round"
+                        size="small"
+                        icon={<ArrowRightOutlined />}
+                        iconPosition="end"
+                        onClick={() =>
+                            navigate('/incubatee/gap-analysis', {
+                                state: {
+                                    participantId:
+                                        record.participantId
+                                }
+                            })
+                        }
+                    >
+                        Continue GAP Analysis
+                    </Button>
+                )
+            }
+        },
+        {
             title: 'Compliance',
             dataIndex: 'complianceScore',
             key: 'complianceScore',
@@ -379,6 +422,8 @@ const ApplicationTracker = () => {
         const hasDiagnosticNeeds =
             status === 'rejected' &&
             Boolean(application.growthPlanDocUrl)
+
+        const showGapCta = needsGapCompletion(application)
 
         return (
             <List.Item
@@ -488,6 +533,26 @@ const ApplicationTracker = () => {
                                 %
                             </Text>
                         </div>
+
+                        {showGapCta && (
+                            <Button
+                                block
+                                type="primary"
+                                shape="round"
+                                icon={<ArrowRightOutlined />}
+                                iconPosition="end"
+                                onClick={() =>
+                                    navigate('/incubatee/gap-analysis', {
+                                        state: {
+                                            participantId:
+                                                application.participantId
+                                        }
+                                    })
+                                }
+                            >
+                                Continue GAP Analysis
+                            </Button>
+                        )}
 
                         {hasDiagnosticNeeds && (
                             <Button

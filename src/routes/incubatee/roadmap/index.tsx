@@ -2,13 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
     Alert,
     Button,
-    Card,
     Collapse,
     Col,
     Divider,
     Form,
     Grid,
-    Input,
     Progress,
     Row,
     Space,
@@ -18,22 +16,14 @@ import {
     message,
     Popconfirm,
     Skeleton,
-    Select,
-    Segmented,
     List
 } from 'antd'
 import {
     CheckCircleOutlined,
     CheckOutlined,
     DeleteOutlined,
-    PlusOutlined,
-    FileTextOutlined,
-    RocketOutlined,
-    CalendarOutlined,
-    FlagOutlined,
-    RiseOutlined
+    FileTextOutlined
 } from '@ant-design/icons'
-import GroupProgressForm from '../group'
 import {
     collection,
     doc,
@@ -48,14 +38,10 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { useNavigate } from 'react-router-dom'
 import {
     approveDiagnosticPlanMovBySmme,
     createOrUpdateDiagnosticPlanMovDraft
 } from '@/services/movService'
-import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
-import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
-import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
 
 const { Title, Text } = Typography
 const { Panel } = Collapse
@@ -180,17 +166,11 @@ const CardLike: React.FC<{ children: React.ReactNode; compact?: boolean }> = ({
 const RoadmapFlow: React.FC = () => {
     const screens = useBreakpoint()
     const isMobile = !screens.md
-    const contentGap = isMobile ? 12 : 16
 
-    const [selectedView, setSelectedView] = useState<'growth-path' | 'growth-plan' | 'group-progress'>('growth-path')
     const { user } = useFullIdentity()
-    const navigate = useNavigate()
 
     const [userEmail, setUserEmail] = useState<string | null>(null)
     const [participantId, setParticipantId] = useState<string | null>(null)
-    const [assignedInterventions, setAssignedInterventions] = useState<any[]>([])
-    const [appointmentViews, setAppointmentViews] = useState<any[]>([])
-    const [growthPathLoading, setGrowthPathLoading] = useState(false)
 
     const [deptInterventionsMap, setDeptInterventionsMap] = useState<Record<string, any[]>>({})
     const [loadingDeptInterventions, setLoadingDeptInterventions] = useState(false)
@@ -288,43 +268,6 @@ const RoadmapFlow: React.FC = () => {
         resolveParticipantAndPlan()
         return () => { cancelled = true }
     }, [user?.email, user?.id, user?.participantDocId, user?.participantId, user?.profileId, user?.uid])
-
-    // The simulator is intentionally derived from delivery data. It never
-    // writes a forecast back to Firestore or treats a projection as a promise.
-    useEffect(() => {
-        if (!participantId) {
-            setAssignedInterventions([])
-            setAppointmentViews([])
-            return
-        }
-
-        let cancelled = false
-            ; (async () => {
-                setGrowthPathLoading(true)
-                try {
-                    const [assignmentSnap, appointmentSnap] = await Promise.all([
-                        getDocs(query(collection(db, 'assignedInterventions'), where('participantId', '==', participantId))),
-                        getDocs(query(collection(db, 'appointments'), where('smeId', '==', participantId)))
-                    ])
-                    const appointments = await hydrateAppointmentViews(
-                        appointmentSnap.docs.map(item => ({ id: item.id, data: item.data() as any }))
-                    )
-                    if (!cancelled) {
-                        setAssignedInterventions(assignmentSnap.docs.map(item => ({ id: item.id, ...(item.data() as any) })))
-                        setAppointmentViews(appointments)
-                    }
-                } catch (error) {
-                    console.error('Failed to load Growth Path data:', error)
-                    if (!cancelled) {
-                        setAssignedInterventions([])
-                        setAppointmentViews([])
-                    }
-                } finally {
-                    if (!cancelled) setGrowthPathLoading(false)
-                }
-            })()
-        return () => { cancelled = true }
-    }, [participantId])
 
     // ===== Fetch interventions for all departments =====
     useEffect(() => {
@@ -798,235 +741,64 @@ const RoadmapFlow: React.FC = () => {
         )
     }
 
-    const growthPath = useMemo(() => {
-        const isComplete = (assignment: any) =>
-            String(assignment?.assignmentStatus || '').toLowerCase() === 'completed' ||
-            Number(assignment?.computedProgress ?? assignment?.progress ?? 0) >= 100
-        const completed = assignedInterventions.filter(isComplete)
-        const active = assignedInterventions.filter(assignment => !isComplete(assignment))
-        const attended = appointmentViews.filter(appointment =>
-            appointment?.attendance?.status === 'attended' &&
-            String(appointment?.status || '') !== 'cancelled'
-        )
-        const departmentsConnected = new Set(
-            [...assignedInterventions, ...appointmentViews]
-                .map(item => String(item?.departmentId || '').trim())
-                .filter(Boolean)
-        ).size
-        const totalProgress = assignedInterventions.length
-            ? Math.round(assignedInterventions.reduce((sum, assignment) =>
-                sum + Math.min(100, Math.max(0, Number(assignment?.computedProgress ?? assignment?.progress ?? 0))), 0
-            ) / assignedInterventions.length)
-            : 0
-        const projectedProgress = active.length
-            ? Math.min(100, Math.round(totalProgress + (active.length / Math.max(assignedInterventions.length, 1)) * 35))
-            : totalProgress
-        const milestones = active
-            .sort((left, right) => Number(right?.computedProgress || right?.progress || 0) - Number(left?.computedProgress || left?.progress || 0))
-            .slice(0, 3)
-            .map((assignment, index) => {
-                const due = assignment?.dueDate?.toDate?.() || assignment?.dueDate || null
-                const title = String(assignment?.subInterventionTitle || assignment?.interventionTitle || 'Support milestone')
-                const recurring = assignment?.recurrence?.every || assignment?.recurrence?.unit
-                return {
-                    key: assignment.id || `${title}-${index}`,
-                    title,
-                    progress: Math.round(Number(assignment?.computedProgress ?? assignment?.progress ?? 0)),
-                    date: due ? new Date(due).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : 'Next up',
-                    detail: recurring ? 'Recurring support — this milestone continues through its planned cycle.' : 'Complete the remaining delivery steps to move this forward.'
-                }
-            })
-        const level = totalProgress >= 85 ? 'Ready to scale' : totalProgress >= 55 ? 'Momentum' : totalProgress >= 25 ? 'Building' : 'Foundation'
-        return { completed, active, attended, departmentsConnected, totalProgress, projectedProgress, milestones, level }
-    }, [assignedInterventions, appointmentViews])
-
-    const renderGrowthPathSimulator = () => {
-        const metrics: DashboardMetric[] = [
-            { key: 'level', title: 'Current stage', value: growthPath.level, subtitle: 'Based on actual intervention progress', icon: <RocketOutlined />, iconBg: '#e6f4ff', important: true },
-            { key: 'completed', title: 'Milestones completed', value: growthPath.completed.length, subtitle: 'Completed intervention assignments', icon: <CheckCircleOutlined />, iconBg: '#f6ffed', important: true },
-            { key: 'sessions', title: 'Sessions attended', value: growthPath.attended.length, subtitle: 'Only sessions you attended', icon: <CalendarOutlined />, iconBg: '#fff7e6', important: true },
-            { key: 'departments', title: 'Support connected', value: growthPath.departmentsConnected, subtitle: 'Departments supporting your journey', icon: <FlagOutlined />, iconBg: '#f9f0ff' }
-        ]
-
-        const upcomingAppointments = appointmentViews
-            .filter(appointment => {
-                const start = getCreatedAtValue({ createdAt: appointment?.startTime })
-                return start >= Date.now() && String(appointment?.status || '').toLowerCase() !== 'cancelled'
-            })
-            .sort((left, right) => getCreatedAtValue({ createdAt: left?.startTime }) - getCreatedAtValue({ createdAt: right?.startTime }))
-            .slice(0, 3)
-        const nextMilestone = growthPath.milestones[0]
-
-        return (
-            <Space direction='vertical' size='large' style={{ width: '100%' }}>
-            <MotionCard
-                title={<Space><RocketOutlined /><span>Growth Path</span></Space>}
-                extra={<Tag color='blue'>Projection, not a promise</Tag>}
-            >
-                {growthPathLoading ? <Skeleton active /> : !assignedInterventions.length ? (
-                    <Alert showIcon type='info' message='Your Growth Path will appear once interventions are assigned.' />
-                ) : (
-                    <Space direction='vertical' size='large' style={{ width: '100%' }}>
-                        <Text type='secondary'>Your path updates from real delivery, attendance and completed intervention work — not points for their own sake.</Text>
-                        <MetricsGrid metrics={metrics} />
-                        <CardLike>
-                            <Space direction='vertical' size={8} style={{ width: '100%' }}>
-                                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                                    <Text strong><RiseOutlined /> Likely next progress</Text>
-                                    <Text strong>{growthPath.projectedProgress}%</Text>
-                                </Space>
-                                <Progress percent={growthPath.projectedProgress} strokeColor='#1677ff' />
-                                <Text type='secondary'>If your {growthPath.active.length} active intervention{growthPath.active.length === 1 ? '' : 's'} move through the next delivery steps, this is the likely overall progress position. It does not guarantee an outcome.</Text>
-                            </Space>
-                        </CardLike>
-                        <div>
-                            <Text strong>What is next</Text>
-                            <List
-                                style={{ marginTop: 8 }}
-                                dataSource={growthPath.milestones}
-                                locale={{ emptyText: 'You have completed the currently assigned milestones.' }}
-                                renderItem={milestone => (
-                                    <List.Item>
-                                        <List.Item.Meta
-                                            avatar={<FlagOutlined style={{ color: '#1677ff', fontSize: 18 }} />}
-                                            title={<Space wrap><Text strong>{milestone.title}</Text><Tag>{milestone.date}</Tag><Tag color='blue'>{milestone.progress}%</Tag></Space>}
-                                            description={milestone.detail}
-                                        />
-                                    </List.Item>
-                                )}
-                            />
-                        </div>
-                    </Space>
-                )}
-            </MotionCard>
-
-            {!growthPathLoading && assignedInterventions.length > 0 && (
-                <>
-                    <MotionCard title='Next action'>
-                        <Space direction={isMobile ? 'vertical' : 'horizontal'} size='middle' style={{ width: '100%', justifyContent: 'space-between' }}>
-                            <div>
-                                <Text strong>{nextMilestone?.title || 'Review your completed support'}</Text>
-                                <br />
-                                <Text type='secondary'>{nextMilestone?.detail || 'All currently assigned milestones are complete. Check for any follow-up.'}</Text>
-                            </div>
-                            <Button type='primary' onClick={() => navigate('/incubatee/interventions')}>
-                                {nextMilestone ? 'View intervention' : 'View interventions'}
-                            </Button>
-                        </Space>
-                    </MotionCard>
-
-                    <Row gutter={[16, 16]}>
-                        <Col xs={24} lg={15}>
-                            <MotionCard title='Intervention timeline'>
-                                <List
-                                    dataSource={[...growthPath.milestones, ...growthPath.completed.slice(0, 3).map((assignment, index) => ({
-                                        key: assignment.id || `completed-${index}`,
-                                        title: String(assignment?.subInterventionTitle || assignment?.interventionTitle || 'Support milestone'),
-                                        progress: 100,
-                                        date: 'Completed',
-                                        detail: 'This support milestone has been completed.'
-                                    }))]}
-                                    locale={{ emptyText: 'You have completed the currently assigned milestones.' }}
-                                    renderItem={milestone => (
-                                        <List.Item style={{ borderLeft: `3px solid ${milestone.progress >= 100 ? '#52c41a' : '#1677ff'}`, paddingLeft: 14 }}>
-                                            <List.Item.Meta
-                                                avatar={milestone.progress >= 100 ? <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} /> : <FlagOutlined style={{ color: '#1677ff', fontSize: 18 }} />}
-                                                title={<Space wrap><Text strong>{milestone.title}</Text><Tag>{milestone.date}</Tag><Tag color={milestone.progress >= 100 ? 'green' : 'blue'}>{milestone.progress}%</Tag></Space>}
-                                                description={milestone.detail}
-                                            />
-                                        </List.Item>
-                                    )}
-                                />
-                            </MotionCard>
-                        </Col>
-                        <Col xs={24} lg={9}>
-                            <MotionCard title='Upcoming appointments' extra={<Button type='link' onClick={() => navigate('/incubatee/appointments')}>View all</Button>}>
-                                <List
-                                    dataSource={upcomingAppointments}
-                                    locale={{ emptyText: 'No upcoming appointments are scheduled.' }}
-                                    renderItem={appointment => (
-                                        <List.Item>
-                                            <List.Item.Meta
-                                                avatar={<CalendarOutlined style={{ color: '#d97706', fontSize: 18 }} />}
-                                                title={appointment?.sessionTitle || appointment?.interventionTitle || 'Support appointment'}
-                                                description={formatMaybeDate(appointment?.startTime)}
-                                            />
-                                        </List.Item>
-                                    )}
-                                />
-                            </MotionCard>
-                        </Col>
-                    </Row>
-                </>
-            )}
-            </Space>
-        )
-    }
-
-    const renderGrowthPlan = () => {
-        const progressCols = isMobile ? 24 : 12
-
+    const renderDevelopmentalPlan = () => {
         if (loadingOverview || departmentsLoading) {
-            return (
-                <MotionCard
-                    title={
-                        <Space>
-                            <FileTextOutlined />
-                            <span>Developmental Plan — Confirm per Department</span>
-                        </Space>
-                    }
-                >
-                    <Skeleton active />
-                </MotionCard>
-            )
+            return <Skeleton active />
         }
 
         if (!TARGET_DEPTS) {
             return (
-                <MotionCard
-                    title={
-                        <Space>
-                            <FileTextOutlined />
-                            <span>Developmental Plan — Confirm per Department</span>
-                        </Space>
-                    }
-                >
-                    <Alert
-                        type='warning'
-                        showIcon
-                        message='No departments configured'
-                        description='No departments matched the rule (interventionDepartment === false). Fix your department flags, then reload.'
-                    />
-                </MotionCard>
+                <Alert
+                    type='warning'
+                    showIcon
+                    message='No departments configured'
+                    description='No departments matched the rule (interventionDepartment === false). Fix your department flags, then reload.'
+                />
             )
         }
 
         return (
-            <Space direction='vertical' size='large' style={{ width: '100%' }}>
-                <MotionCard
-                    title={
-                        <Space>
-                            <FileTextOutlined />
-                            <span>Developmental Plan — Confirm per Department</span>
-                        </Space>
-                    }
-                >
+            <Space direction='vertical' size={isMobile ? 14 : 'large'} style={{ width: '100%' }}>
+                {!isMobile && (
                     <Alert
                         message='What you (SME) confirm'
                         description='You confirm what each department will deliver. Only departments that have confirmed will appear below. For each: review interventions, add/remove if needed, then confirm.'
                         type='info'
                         showIcon
-                        style={{ marginBottom: 16 }}
                     />
+                )}
 
-                    {/* Progress bars: side-by-side desktop, stacked mobile */}
-                    <Row gutter={[16, 16]} align='middle'>
-                        <Col span={progressCols}>
+                {/* Confirmation progress: one combined card on mobile, side-by-side on desktop */}
+                {isMobile ? (
+                    <CardLike compact>
+                        <Text strong style={{ fontSize: 13 }}>Confirmations</Text>
+                        <div style={{ width: '100%' }}>
+                            <Text type='secondary' style={{ fontSize: 12 }}>Departments</Text>
+                            <Progress
+                                percent={deptPercent}
+                                size={['100%', 10]}
+                                status={deptPercent === 100 ? 'success' : 'active'}
+                                format={() => `${deptConfirmedCount}/${TARGET_DEPTS}`}
+                            />
+                        </div>
+                        <div style={{ width: '100%' }}>
+                            <Text type='secondary' style={{ fontSize: 12 }}>SME</Text>
+                            <Progress
+                                percent={smePercent}
+                                size={['100%', 10]}
+                                status={smePercent === 100 ? 'success' : 'active'}
+                                format={() => `${smeConfirmedCount}/${TARGET_DEPTS}`}
+                            />
+                        </div>
+                    </CardLike>
+                ) : (
+                    <Row gutter={[12, 12]} align='middle'>
+                        <Col span={12}>
                             <CardLike>
-                                <Text strong>Departments confirmed (by departments)</Text>
+                                <Text strong style={{ fontSize: 14 }}>Departments confirmed</Text>
                                 <Progress
                                     percent={deptPercent}
-                                    size={isMobile ? [220, 12] : [360, 14]}
+                                    size={['100%', 14]}
                                     status={deptPercent === 100 ? 'success' : 'active'}
                                 />
                                 <Text type='secondary'>
@@ -1035,12 +807,12 @@ const RoadmapFlow: React.FC = () => {
                             </CardLike>
                         </Col>
 
-                        <Col span={progressCols}>
+                        <Col span={12}>
                             <CardLike>
-                                <Text strong>SME confirmations</Text>
+                                <Text strong style={{ fontSize: 14 }}>SME confirmations</Text>
                                 <Progress
                                     percent={smePercent}
-                                    size={isMobile ? [220, 12] : [360, 14]}
+                                    size={['100%', 14]}
                                     status={smePercent === 100 ? 'success' : 'active'}
                                 />
                                 <Text type='secondary'>
@@ -1049,72 +821,79 @@ const RoadmapFlow: React.FC = () => {
                             </CardLike>
                         </Col>
                     </Row>
+                )}
 
-                    <Divider />
+                <Divider style={{ margin: isMobile ? '4px 0' : undefined }} />
 
-                    {!deptConfirmedCount ? (
-                        <Alert
-                            type='warning'
-                            showIcon
-                            message='No department confirmations yet'
-                            description='Departments must confirm first. Once they do, you’ll see their interventions below.'
-                        />
-                    ) : (
-                        <Collapse accordion>
-                            {confirmedDepts.map(dept => {
-                                const deptId = dept.id
-                                const deptOk = !!deptConfirmedById?.[deptId]
-                                const smeOk = !!smeConfirmedById?.[deptId]?.confirmed
-                                const ivs = interventionsByDeptId.get(deptId) || []
+                {!deptConfirmedCount ? (
+                    <Alert
+                        type='warning'
+                        showIcon
+                        message='No department confirmations yet'
+                        description={isMobile ? undefined : 'Departments must confirm first. Once they do, you’ll see their interventions below.'}
+                    />
+                ) : (
+                    <Collapse accordion bordered={false} style={{ background: 'transparent' }}>
+                        {confirmedDepts.map((dept, index) => {
+                            const deptId = dept.id
+                            const deptOk = !!deptConfirmedById?.[deptId]
+                            const smeOk = !!smeConfirmedById?.[deptId]?.confirmed
+                            const ivs = interventionsByDeptId.get(deptId) || []
 
-                                const header = isMobile ? (
-                                    <div style={{ width: '100%' }}>
-                                        <Space direction='vertical' size={6} style={{ width: '100%' }}>
-                                            <Text strong style={{ fontSize: 15 }}>
-                                                {dept.name}
-                                            </Text>
+                            const header = isMobile ? (
+                                <div style={{ width: '100%' }}>
+                                    <Space direction='vertical' size={6} style={{ width: '100%' }}>
+                                        <Text strong style={{ fontSize: 15 }}>
+                                            {dept.name}
+                                        </Text>
 
-                                            <Space wrap size={6}>
-                                                {deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
-                                                {smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
-                                            </Space>
-
-                                            {smeOk && (
-                                                <Text type='secondary' style={{ fontSize: 12 }}>
-                                                    Confirmed: {formatMaybeDate(smeConfirmedById?.[deptId]?.confirmedAt)}
-                                                </Text>
-                                            )}
-                                        </Space>
-                                    </div>
-                                ) : (
-                                    <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-                                        <Space wrap>
-                                            <Text strong>{dept.name}</Text>
+                                        <Space wrap size={6}>
                                             {deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
                                             {smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
                                         </Space>
-
-                                        <Space>
-                                            {smeOk && (
-                                                <Text type='secondary' style={{ fontSize: 12 }}>
-                                                    SME confirmed: {formatMaybeDate(smeConfirmedById?.[deptId]?.confirmedAt)}
-                                                </Text>
-                                            )}
-                                        </Space>
                                     </Space>
-                                )
+                                </div>
+                            ) : (
+                                <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+                                    <Space wrap>
+                                        <Text strong>{dept.name}</Text>
+                                        {deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
+                                        {smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
+                                    </Space>
 
-                                return (
-                                    <Panel key={deptId} header={header}>
-                                        {!deptOk ? (
-                                            <Alert
-                                                type='info'
-                                                showIcon
-                                                message='Waiting for department'
-                                                description='This department has not confirmed yet.'
-                                            />
-                                        ) : (
-                                            <>
+                                    <Space>
+                                        {smeOk && (
+                                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                                SME confirmed: {formatMaybeDate(smeConfirmedById?.[deptId]?.confirmedAt)}
+                                            </Text>
+                                        )}
+                                    </Space>
+                                </Space>
+                            )
+
+                            return (
+                                <Panel
+                                    key={deptId}
+                                    header={header}
+                                    style={{
+                                        marginBottom: index === confirmedDepts.length - 1 ? 0 : 14,
+                                        background: '#fff',
+                                        borderRadius: 14,
+                                        border: '1px solid rgba(0,0,0,0.06)',
+                                        boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)',
+                                        overflow: 'hidden'
+                                    }}
+                                >
+                                    {!deptOk ? (
+                                        <Alert
+                                            type='info'
+                                            showIcon
+                                            message='Waiting for department'
+                                            description='This department has not confirmed yet.'
+                                        />
+                                    ) : (
+                                        <>
+                                            {!isMobile && (
                                                 <Alert
                                                     type='success'
                                                     showIcon
@@ -1122,261 +901,161 @@ const RoadmapFlow: React.FC = () => {
                                                     description='You can remove items you already have, or add missing items, then confirm this department.'
                                                     style={{ marginBottom: 12 }}
                                                 />
+                                            )}
 
-                                                {isMobile ? (
-                                                    renderInterventionsMobileList(deptId, dept, ivs)
-                                                ) : (
-                                                    <Table
-                                                        size='small'
-                                                        pagination={false}
-                                                        rowKey={(r: any) =>
-                                                            `${r?.departmentId || ''}-${r?.id || ''}-${r?.title || r?.name || ''}-${r?.area || ''}`
-                                                        }
-                                                        columns={[
-                                                            {
-                                                                title: 'Area',
-                                                                dataIndex: 'area',
-                                                                key: 'area',
-                                                                render: (v: any) => String(v ?? '-')
-                                                            },
-                                                            {
-                                                                title: 'Intervention',
-                                                                dataIndex: 'title',
-                                                                key: 'title',
-                                                                render: (v: any) => String(v ?? '-')
-                                                            },
-                                                            {
-                                                                title: '',
-                                                                key: 'actions',
-                                                                width: 80,
-                                                                render: (_: any, row: any) => (
-                                                                    <Popconfirm
-                                                                        title='Remove this intervention?'
-                                                                        okText='Remove'
-                                                                        cancelText='Cancel'
-                                                                        onConfirm={() => handleDeleteIntervention(deptId, row)}
+                                            {isMobile ? (
+                                                renderInterventionsMobileList(deptId, dept, ivs)
+                                            ) : (
+                                                <Table
+                                                    size='small'
+                                                    pagination={false}
+                                                    rowKey={(r: any) =>
+                                                        `${r?.departmentId || ''}-${r?.id || ''}-${r?.title || r?.name || ''}-${r?.area || ''}`
+                                                    }
+                                                    columns={[
+                                                        {
+                                                            title: 'Area',
+                                                            dataIndex: 'area',
+                                                            key: 'area',
+                                                            render: (v: any) => String(v ?? '-')
+                                                        },
+                                                        {
+                                                            title: 'Intervention',
+                                                            dataIndex: 'title',
+                                                            key: 'title',
+                                                            render: (v: any) => String(v ?? '-')
+                                                        },
+                                                        {
+                                                            title: '',
+                                                            key: 'actions',
+                                                            width: 80,
+                                                            render: (_: any, row: any) => (
+                                                                <Popconfirm
+                                                                    title='Remove this intervention?'
+                                                                    okText='Remove'
+                                                                    cancelText='Cancel'
+                                                                    onConfirm={() => handleDeleteIntervention(deptId, row)}
+                                                                    disabled={finalized || savingDeptId === deptId}
+                                                                >
+                                                                    <Button
+                                                                        danger
+                                                                        size='small'
+                                                                        icon={<DeleteOutlined />}
                                                                         disabled={finalized || savingDeptId === deptId}
-                                                                    >
-                                                                        <Button
-                                                                            danger
-                                                                            size='small'
-                                                                            icon={<DeleteOutlined />}
-                                                                            disabled={finalized || savingDeptId === deptId}
-                                                                            loading={savingDeptId === deptId}
-                                                                        />
-                                                                    </Popconfirm>
-                                                                )
-                                                            }
-                                                        ]}
-                                                        dataSource={ivs.map(x => ({
-                                                            ...x,
-                                                            title: x?.title ?? x?.interventionTitle ?? x?.name ?? '-',
-                                                            area: x?.area ?? x?.areaOfSupport ?? dept.name
-                                                        }))}
-                                                    />
-                                                )}
+                                                                        loading={savingDeptId === deptId}
+                                                                    />
+                                                                </Popconfirm>
+                                                            )
+                                                        }
+                                                    ]}
+                                                    dataSource={ivs.map(x => ({
+                                                        ...x,
+                                                        title: x?.title ?? x?.interventionTitle ?? x?.name ?? '-',
+                                                        area: x?.area ?? x?.areaOfSupport ?? dept.name
+                                                    }))}
+                                                />
+                                            )}
 
-                                                <Divider />
+                                            <Divider />
 
-                                                <Form
-                                                    form={addForms}
-                                                    layout={isMobile ? 'vertical' : 'inline'}
-                                                    style={{ width: '100%' }}
-                                                >
-                                                    {/*
-    ❌ Commented out: Select intervention dropdown
-    <Form.Item
-      name={`pick_${deptId}`}
-      style={{ flex: 1, minWidth: 260 }}
-      rules={[{ required: true, message: 'Select an intervention' }]}
-    >
-      <Select
-        showSearch
-        placeholder="Select an intervention…"
-        loading={loadingDeptInterventions}
-        disabled={finalized}
-        optionFilterProp="label"
-        options={(deptInterventionsMap?.[deptId] || []).map(iv => ({
-          value: iv.id,
-          label: iv.title
-        }))}
-        filterOption={(input, option) =>
-          String(option?.label || '').toLowerCase().includes(String(input || '').toLowerCase())
-        }
-      />
-    </Form.Item>
-  */}
+                                            <Form
+                                                form={addForms}
+                                                layout={isMobile ? 'vertical' : 'inline'}
+                                                style={{ width: '100%' }}
+                                            >
+                                                <Form.Item style={{ width: '100%', margin: 0 }}>
+                                                    <Button
+                                                        type='primary'
+                                                        icon={<CheckOutlined />}
+                                                        onClick={() => handleConfirmDeptBySME(dept)}
+                                                        disabled={!deptOk || smeOk || finalized || finalizing}
+                                                        loading={confirmingDeptId === deptId || finalizing}
+                                                        block
+                                                    >
+                                                        Confirm Department
+                                                    </Button>
+                                                </Form.Item>
+                                            </Form>
 
-                                                    {/*
-    We now render ONLY the "Confirm Department" button,
-    and give it full width by placing it in a block-style Form.Item
-    (since layout='inline' won't stretch it otherwise).
-  */}
-                                                    <Form.Item style={{ width: '100%', margin: 0 }}>
-                                                        <Button
-                                                            type='primary'
-                                                            icon={<CheckOutlined />}
-                                                            onClick={() => handleConfirmDeptBySME(dept)}
-                                                            disabled={!deptOk || smeOk || finalized || finalizing}
-                                                            loading={confirmingDeptId === deptId || finalizing}
-                                                            block // 👈 This makes the button span the full width of its container
-                                                        >
-                                                            Confirm Department
-                                                        </Button>
-                                                    </Form.Item>
-
-                                                    {/*
-    ❌ Commented out: Add button
-    <Space size='middle'>
-      <Button
-        icon={<PlusOutlined />}
-        onClick={() => handleAddIntervention(dept)}
-        disabled={finalized || savingDeptId === deptId}
-        loading={savingDeptId === deptId}
-      >
-        Add
-      </Button>
-
-      <Button
-        type='primary'
-        icon={<CheckOutlined />}
-        onClick={() => handleConfirmDeptBySME(dept)}
-        disabled={!deptOk || smeOk || finalized || finalizing}
-        loading={confirmingDeptId === deptId || finalizing}
-      >
-        Confirm Department
-      </Button>
-    </Space>
-  */}
-                                                </Form>
-
-                                                {smeOk ? (
+                                            {smeOk ? (
+                                                isMobile ? (
+                                                    <Tag color='green' style={{ marginTop: 12 }}>
+                                                        You have confirmed this department
+                                                    </Tag>
+                                                ) : (
                                                     <Alert
                                                         style={{ marginTop: 12 }}
                                                         type='success'
                                                         showIcon
                                                         message='You have confirmed this department.'
                                                     />
-                                                ) : (
-                                                    <Alert
-                                                        style={{ marginTop: 12 }}
-                                                        type='warning'
-                                                        showIcon
-                                                        message='Confirm after reviewing'
-                                                        description='Confirming records your agreement with what this department will deliver.'
-                                                    />
-                                                )}
-                                            </>
-                                        )}
-                                    </Panel>
-                                )
-                            })}
-                        </Collapse>
-                    )}
+                                                )
+                                            ) : isMobile ? (
+                                                <Text type='secondary' style={{ marginTop: 12, display: 'block', fontSize: 12 }}>
+                                                    Confirming records your agreement with what this department will deliver.
+                                                </Text>
+                                            ) : (
+                                                <Alert
+                                                    style={{ marginTop: 12 }}
+                                                    type='warning'
+                                                    showIcon
+                                                    message='Confirm after reviewing'
+                                                    description='Confirming records your agreement with what this department will deliver.'
+                                                />
+                                            )}
+                                        </>
+                                    )}
+                                </Panel>
+                            )
+                        })}
+                    </Collapse>
+                )}
 
-                    <Divider />
+                <Divider style={{ margin: isMobile ? '4px 0' : undefined }} />
 
-                    {finalized ? (
-                        <div style={{ textAlign: 'center' }}>
-                            <CheckCircleOutlined style={{ fontSize: 44, color: '#52c41a' }} />
-                            <Title level={3} style={{ marginTop: 8, marginBottom: 0, color: '#52c41a' }}>
-                                Developmental Plan Finalized
-                            </Title>
-                            <Text type='secondary'>You confirmed all {TARGET_DEPTS} departments.</Text>
-                        </div>
-                    ) : (
-                        <Alert
-                            type='info'
-                            showIcon
-                            message='Finalization rule'
-                            description={`Final confirmation is set automatically when you (SME) confirm all ${TARGET_DEPTS} departments.`}
-                        />
-                    )}
-                </MotionCard>
+                {finalized ? (
+                    <div style={{ textAlign: 'center' }}>
+                        <CheckCircleOutlined style={{ fontSize: isMobile ? 34 : 44, color: '#52c41a' }} />
+                        <Title level={isMobile ? 4 : 3} style={{ marginTop: 8, marginBottom: 0, color: '#52c41a' }}>
+                            Developmental Plan Finalized
+                        </Title>
+                        <Text type='secondary'>You confirmed all {TARGET_DEPTS} departments.</Text>
+                    </div>
+                ) : !isMobile ? (
+                    <Alert
+                        type='info'
+                        showIcon
+                        message='Finalization rule'
+                        description={`Final confirmation is set automatically when you (SME) confirm all ${TARGET_DEPTS} departments.`}
+                    />
+                ) : null}
             </Space>
         )
     }
 
-    const renderGroupProgress = () => <GroupProgressForm />
-
-    const viewOptions = [
-        { id: 'growth-path', label: 'Growth Path', icon: <RocketOutlined /> },
-        { id: 'growth-plan', label: 'Developmental Plan', icon: <FileTextOutlined /> },
-        { id: 'group-progress', label: 'Group Progress', icon: <FileTextOutlined /> }
-    ]
-
     return (
         <div
             style={{
-                minHeight: '100vh',
-                padding: 24,
-                background: '#fff'
+                padding: isMobile ? 14 : 24,
             }}
         >
-            <div>
-                <DashboardHeaderCard
-                    title='Roadmap'
-                    subtitle={isMobile ? undefined : 'Review your Developmental Plan and Group Progress'}
-                    extraRight={
-                        !isMobile ? (
-                            <Space wrap>
-                                {viewOptions.map(view => (
-                                    <Button
-                                        key={view.id}
-                                        type={selectedView === (view.id as any) ? 'primary' : 'default'}
-                                        icon={view.icon}
-                                        onClick={() => setSelectedView(view.id as any)}
-                                    >
-                                        {view.label}
-                                    </Button>
-                                ))}
-                            </Space>
-                        ) : null
-                    }
-                    cardProps={{
-                        bodyStyle: {
-                            padding: isMobile ? 14 : 24
-                        }
-                    }}
-                />
+            <Title
+                level={isMobile ? 4 : 3}
+                style={{
+                    margin: 0,
+                    marginBottom: isMobile ? 12 : 16,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    textAlign: 'center'
+                }}
+            >
+                <FileTextOutlined />
+                Developmental Plan
+            </Title>
 
-                {isMobile && (
-                    <Card
-                        size='small'
-                        style={{
-                            marginTop: 12,
-                            borderRadius: 16,
-                            position: 'sticky',
-                            top: 72,
-                            zIndex: 20,
-                            boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)'
-                        }}
-                        bodyStyle={{ padding: 8 }}
-                    >
-                        <Segmented
-                            block
-                            value={selectedView}
-                            onChange={value => setSelectedView(value as any)}
-                            options={viewOptions.map(view => ({
-                                label: view.label,
-                                value: view.id,
-                                icon: view.icon
-                            }))}
-                        />
-                    </Card>
-                )}
-
-                <div
-                    style={{
-                        marginTop: contentGap,
-                        overflowY: 'visible'
-                    }}
-                >
-                    {selectedView === 'growth-path' && renderGrowthPathSimulator()}
-                    {selectedView === 'growth-plan' && renderGrowthPlan()}
-                    {selectedView === 'group-progress' && renderGroupProgress()}
-                </div>
-            </div>
+            {renderDevelopmentalPlan()}
         </div>
     )
 }

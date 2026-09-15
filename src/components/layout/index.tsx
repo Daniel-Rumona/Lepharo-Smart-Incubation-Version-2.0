@@ -127,6 +127,7 @@ type ProgramDoc = {
     assignedBranch?: { id: string; name?: string } | string;
     branchId?: string;
     normalizedAssignedBranchId?: string;
+    participatingDepartmentIds?: string[];
 };
 
 type ActiveProgramId = string | "all";
@@ -324,7 +325,12 @@ export const CustomLayout: React.FC = () => {
     const navigate = useNavigate();
 
     const [role, setRole] = useState<UserRole | null>(null);
+    const isIncubateeMobileHeader = isMobile && role === "incubatee";
     const [department, setDepartment] = useState<string | null>(null);
+    // Raw departments/{id} FK on the user doc -- used to scope which programs an
+    // "operations" user can see, distinct from `effectiveDepartment` below (a
+    // display name, parent-resolved, used for menu-item access rules).
+    const [departmentId, setDepartmentId] = useState<string | null>(null);
 
     // main branch CC flag
     const [isMainCenterCoordinator, setIsMainCenterCoordinator] = useState(false);
@@ -346,6 +352,12 @@ export const CustomLayout: React.FC = () => {
     const [morePage, setMorePage] = useState(1);
 
     const location = useLocation();
+
+    // The assistant owns its own immersive mobile screen (back button +
+    // docked composer, no shared nav chrome to clear) the same way the
+    // course builder route already does — see the paddingBottom/bottom-nav
+    // conditions below.
+    const isImmersiveChatMobile = isMobile && location.pathname === "/chat";
 
     const [effectiveDepartment, setEffectiveDepartment] = useState<string | null>(
         null
@@ -389,6 +401,22 @@ export const CustomLayout: React.FC = () => {
     const hardLock = hasAssignedList && scopedProgramIds.length === 1;
     const softLock = hasAssignedList && scopedProgramIds.length > 1;
     const canUseAllProgramsScope = role === "operations";
+
+    // Programs now optionally declare which departments participate in them
+    // (Coverage step, src/routes/programs). An operations user should only see
+    // programs their own department is part of -- programs that haven't set
+    // this up yet (no list, or an empty one) stay visible to everyone, so this
+    // never hides pre-existing programs.
+    const departmentScopedProgramIds = useMemo(() => {
+        if (role !== "operations" || !departmentId) return null;
+        return programs
+            .filter((program) => {
+                const ids = program.participatingDepartmentIds;
+                if (!Array.isArray(ids) || ids.length === 0) return true;
+                return ids.includes(departmentId);
+            })
+            .map((program) => program.id);
+    }, [programs, role, departmentId]);
     const shouldLabelAllProgramsAsOperations =
         role === "operations" && !!effectiveDepartment?.startsWith("M&E");
     const allProgramsLabel = shouldLabelAllProgramsAsOperations
@@ -434,6 +462,11 @@ export const CustomLayout: React.FC = () => {
         if (isRestrictedRole && !hasAssignedList) {
             return [];
         }
+        if (departmentScopedProgramIds) {
+            return activePrograms.filter((p) =>
+                departmentScopedProgramIds.includes(p.id)
+            );
+        }
         return activePrograms;
     }, [
         programs,
@@ -442,6 +475,7 @@ export const CustomLayout: React.FC = () => {
         softLock,
         isRestrictedRole,
         hasAssignedList,
+        departmentScopedProgramIds,
     ]);
 
     const firstVisibleProgramId = useMemo(() => {
@@ -502,6 +536,7 @@ export const CustomLayout: React.FC = () => {
 
             // Resolve department hierarchy so subdepartments inherit parent menu rules
             const deptId = (data.departmentId || null) as string | null; // preferred
+            setDepartmentId(deptId);
             let resolvedEffective = deptName;
 
             try {
@@ -1473,7 +1508,7 @@ export const CustomLayout: React.FC = () => {
             {
                 key: "roadmap",
                 to: "/incubatee/roadmap",
-                label: "Roadmap",
+                label: "Developmental Plan",
                 icon: <HeatMapOutlined />,
             },
             {
@@ -3063,87 +3098,123 @@ export const CustomLayout: React.FC = () => {
         );
     };
 
+    const renderAssistantAction = () => (
+        <Tooltip title={assistantWorking ? "Data Assistant is working" : "Data Assistant"}>
+            <Badge
+                count={assistantUnreadCount}
+                dot={assistantWorking && assistantUnreadCount === 0}
+                size="small"
+                offset={[-1, 2]}
+            >
+                <Button
+                    type="text"
+                    shape="circle"
+                    className={`workspace-assistant-button ${location.pathname === "/chat" ? "workspace-assistant-button-active" : ""}`}
+                    icon={<OpenAIOutlined />}
+                    onClick={() => {
+                        setPendingSegment("chat");
+                        navigate("/chat");
+                    }}
+                    aria-label={assistantUnreadCount > 0
+                        ? `Open Data Assistant, ${assistantUnreadCount} completed response${assistantUnreadCount === 1 ? "" : "s"}`
+                        : "Open Data Assistant"}
+                />
+            </Badge>
+        </Tooltip>
+    );
+
+    const renderLogoutAction = () => (
+        <Tooltip title="Log out">
+            <Button
+                type="text"
+                danger
+                shape="circle"
+                className="workspace-logout-button"
+                icon={<LogoutOutlined />}
+                onClick={handleLogout}
+                aria-label="Log out"
+            />
+        </Tooltip>
+    );
+
     return (
         <Layout className="workspace-shell" style={{ minHeight: "100vh", background: pageBg }}>
-            {!/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && <div className="workspace-header-wrap">
-                <header className={`workspace-topbar ${isMobile ? "workspace-topbar-mobile workspace-topbar-nonav" : ""}`}>
-                    <button
-                        type="button"
-                        className="workspace-brand"
-                        onClick={() => primaryDestinations[0] && navigate(primaryDestinations[0].route)}
-                        aria-label="Go to dashboard"
+            {!/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && !isImmersiveChatMobile && (
+                <div className="workspace-header-wrap">
+                    <header
+                        className={`workspace-topbar ${isMobile ? "workspace-topbar-mobile workspace-topbar-nonav" : ""} ${isIncubateeMobileHeader ? "workspace-topbar-incubatee-mobile" : ""}`}
                     >
-                        <img src="/assets/images/lepharo.png" alt="Lepharo" />
-                    </button>
+                        {isIncubateeMobileHeader ? (
+                            <>
+                                <div className="workspace-incubatee-mobile-left">
+                                    <CurrentUser />
+                                    {renderAssistantAction()}
+                                </div>
 
-                    {/* On mobile the primary nav moves to the bottom bar below. */}
-                    {!isMobile && (
-                        <div
-                            className="workspace-primary-nav"
-                            aria-label="Primary navigation"
-                            role="tablist"
-                        >
-                            {renderNavItems("top")}
-                        </div>
-                    )}
+                                <button
+                                    type="button"
+                                    className="workspace-brand workspace-incubatee-mobile-brand"
+                                    onClick={() => primaryDestinations[0] && navigate(primaryDestinations[0].route)}
+                                    aria-label="Go to dashboard"
+                                >
+                                    <img src="/assets/images/lepharo.png" alt="Lepharo" />
+                                </button>
 
-                    <div className="workspace-topbar-actions">
-                        <Tooltip title={assistantWorking ? "Data Assistant is working" : "Data Assistant"}>
-                            <Badge
-                                count={assistantUnreadCount}
-                                dot={assistantWorking && assistantUnreadCount === 0}
-                                size="small"
-                                offset={[-1, 2]}
-                            >
-                                <Button
-                                    type="text"
-                                    shape="circle"
-                                    className={`workspace-assistant-button ${location.pathname === "/chat" ? "workspace-assistant-button-active" : ""}`}
-                                    icon={<OpenAIOutlined />}
-                                    onClick={() => {
-                                        setPendingSegment("chat");
-                                        navigate("/chat");
-                                    }}
-                                    aria-label={assistantUnreadCount > 0
-                                        ? `Open Data Assistant, ${assistantUnreadCount} completed response${assistantUnreadCount === 1 ? "" : "s"}`
-                                        : "Open Data Assistant"}
-                                />
-                            </Badge>
-                        </Tooltip>
-                        <ProgramControl />
-                        {showDashboardFilter && (
-                            <DashboardFilterControl compact={isCompactHeader} />
+                                <div className="workspace-incubatee-mobile-right">
+                                    <ThemeToggle compact />
+                                    {renderLogoutAction()}
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <button
+                                    type="button"
+                                    className="workspace-brand"
+                                    onClick={() => primaryDestinations[0] && navigate(primaryDestinations[0].route)}
+                                    aria-label="Go to dashboard"
+                                >
+                                    <img src="/assets/images/lepharo.png" alt="Lepharo" />
+                                </button>
+
+                                {!isMobile && (
+                                    <div
+                                        className="workspace-primary-nav"
+                                        aria-label="Primary navigation"
+                                        role="tablist"
+                                    >
+                                        {renderNavItems("top")}
+                                    </div>
+                                )}
+
+                                <div className="workspace-topbar-actions">
+                                    {renderAssistantAction()}
+                                    <ProgramControl />
+                                    {showDashboardFilter && (
+                                        <DashboardFilterControl compact={isCompactHeader} />
+                                    )}
+                                    <GuideLauncher
+                                        label={isCompactHeader ? "" : "Guide"}
+                                        buttonProps={{
+                                            type: "text",
+                                            shape: "round",
+                                            style: {
+                                                height: 32,
+                                                paddingInline: isCompactHeader ? 10 : 14,
+                                                flex: "0 0 auto",
+                                            },
+                                            "aria-label": "Guide",
+                                        }}
+                                    />
+                                    <ViewAsControls compact={isCompactHeader} />
+                                    <ThemeToggle compact={isCompactHeader} />
+                                    <CurrentUser />
+                                    {renderLogoutAction()}
+                                </div>
+                            </>
                         )}
-                        <GuideLauncher
-                            label={isCompactHeader ? "" : "Guide"}
-                            buttonProps={{
-                                type: "text",
-                                shape: "round",
-                                style: {
-                                    height: 32,
-                                    paddingInline: isCompactHeader ? 10 : 14,
-                                    flex: "0 0 auto",
-                                },
-                                "aria-label": "Guide",
-                            }}
-                        />
-                        <ViewAsControls compact={isCompactHeader} />
-                        <ThemeToggle compact={isCompactHeader} />
-                        <CurrentUser />
-                        <Tooltip title="Log out">
-                            <Button
-                                type="text"
-                                danger
-                                shape="circle"
-                                className="workspace-logout-button"
-                                icon={<LogoutOutlined />}
-                                onClick={handleLogout}
-                                aria-label="Log out"
-                            />
-                        </Tooltip>
-                    </div>
-                </header>
-            </div>}
+                    </header>
+                </div>
+            )}
 
             <Content
                 style={{
@@ -3151,8 +3222,12 @@ export const CustomLayout: React.FC = () => {
                     flex: "1 1 auto",
                     minHeight: 0,
                     // Clears the fixed mobile bottom nav so the last row of a
-                    // page is never trapped underneath it.
-                    paddingBottom: isMobile && !/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname)
+                    // page is never trapped underneath it. Immersive chat has
+                    // no bottom nav to clear (its composer docks flush to the
+                    // bottom of its own screen instead).
+                    paddingBottom: isMobile
+                        && !isImmersiveChatMobile
+                        && !/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname)
                         ? "calc(84px + env(safe-area-inset-bottom))"
                         : 0,
                     overflow:
@@ -3189,7 +3264,7 @@ export const CustomLayout: React.FC = () => {
             </Content>
 
             {/* ---- Mobile bottom navigation ---- */}
-            {isMobile && !/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && (
+            {isMobile && !isImmersiveChatMobile && !/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && (
                 <nav className="workspace-bottom-nav" aria-label="Primary navigation" role="tablist">
                     {renderNavItems("bottom")}
                 </nav>

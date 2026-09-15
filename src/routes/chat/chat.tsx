@@ -7,11 +7,13 @@ import React, {
 import {
     Avatar,
     Button,
+    Grid,
     Input,
     Spin,
     Typography
 } from 'antd'
-import { OpenAIOutlined, SendOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, OpenAIOutlined, SendOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -20,6 +22,8 @@ import {
     MAX_MESSAGE_LENGTH,
     useChatSession
 } from '@/routes/chat/ChatSessionContext'
+
+const { useBreakpoint } = Grid
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -226,7 +230,16 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
         ]
     }
 
-    if (['admin', 'system admin', 'director'].includes(role)) {
+    if (role === 'director') {
+        return [
+            'Brief me on what happened today',
+            'Summarise participant progress across the organisation',
+            'Which compliance items and MOVs are outstanding?',
+            'How many interventions are currently active?'
+        ]
+    }
+
+    if (['admin', 'system admin'].includes(role)) {
         return [
             'Summarise participant progress across the organisation',
             'How many interventions are currently active?',
@@ -256,6 +269,9 @@ const Chat: React.FC = () => {
     const { messages, isTyping, error, startMessage } = useChatSession()
     const state = { messages, isTyping, error }
     const [input, setInput] = useState('')
+    const navigate = useNavigate()
+    const screens = useBreakpoint()
+    const isMobile = !screens.md
     const messagesRef = useRef<HTMLDivElement | null>(null)
     const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
     const suggestedQuestions = useMemo(
@@ -342,11 +358,11 @@ const Chat: React.FC = () => {
         <div className='chat-page'>
             <style>{`
         .chat-page {
-          height: calc(100dvh - 76px);
-          min-height: 480px;
+          flex: 1 1 auto;
+          min-height: 0;
           box-sizing: border-box;
           padding: 0;
-          background: #fff;
+          background: var(--app-surface);
           overflow: hidden;
         }
         .chat-shell {
@@ -356,7 +372,7 @@ const Chat: React.FC = () => {
           display: flex;
           flex-direction: column;
           overflow: hidden;
-          background: #fff;
+          background: var(--app-surface);
         }
         .chat-messages {
           flex: 1 1 auto;
@@ -389,16 +405,16 @@ const Chat: React.FC = () => {
           display: grid;
           place-items: center;
           margin-bottom: 15px;
-          border: 1px solid #d6e4ff;
+          border: 1px solid color-mix(in srgb, var(--app-accent) 20%, var(--app-surface));
           border-radius: 15px;
-          color: #1677ff;
-          background: #f0f6ff;
+          color: var(--app-accent);
+          background: var(--app-accent-soft);
           font-size: 21px;
-          box-shadow: 0 8px 24px rgba(22,119,255,.09);
+          box-shadow: 0 8px 24px color-mix(in srgb, var(--app-accent) 9%, transparent);
         }
         .chat-empty-title {
           margin: 0;
-          color: #172033;
+          color: var(--app-text);
           font-size: clamp(24px, 3vw, 38px);
           font-weight: 650;
           letter-spacing: -.035em;
@@ -407,7 +423,7 @@ const Chat: React.FC = () => {
         .chat-typewriter-line {
           min-height: 43px;
           margin-top: 7px;
-          color: #1677ff;
+          color: var(--app-accent);
           font-size: clamp(22px, 2.7vw, 34px);
           font-weight: 650;
           letter-spacing: -.025em;
@@ -437,10 +453,10 @@ const Chat: React.FC = () => {
           justify-content: space-between;
           gap: 10px;
           padding: 9px 12px;
-          border: 1px solid #e4e7ec;
+          border: 1px solid var(--app-border);
           border-radius: 12px;
-          color: #344054;
-          background: #fff;
+          color: var(--app-text);
+          background: var(--app-surface);
           font: inherit;
           font-size: 12px;
           font-weight: 550;
@@ -450,22 +466,63 @@ const Chat: React.FC = () => {
         }
         .chat-suggestion-arrow {
           flex: 0 0 auto;
-          color: #98a2b3;
+          color: var(--app-text-subtle);
           transition: transform .16s ease, color .16s ease;
         }
         .chat-suggestion:hover,
         .chat-suggestion:focus-visible {
-          border-color: #91caff;
-          color: #0958d9;
-          background: #f6faff;
-          box-shadow: 0 8px 20px rgba(22,119,255,.10);
+          border-color: var(--app-accent);
+          color: var(--app-accent);
+          background: var(--app-accent-soft);
+          box-shadow: 0 8px 20px color-mix(in srgb, var(--app-accent) 15%, transparent);
           transform: translateY(-2px);
           outline: none;
         }
         .chat-suggestion:hover .chat-suggestion-arrow,
         .chat-suggestion:focus-visible .chat-suggestion-arrow {
-          color: #1677ff;
+          color: var(--app-accent);
           transform: translateX(3px);
+        }
+        .chat-mobile-header {
+          flex: 0 0 auto;
+          display: grid;
+          grid-template-columns: 34px 1fr 34px;
+          align-items: center;
+          gap: 10px;
+          height: 52px;
+          padding: 0 14px;
+          border-bottom: 1px solid var(--app-border);
+          background: var(--app-surface);
+        }
+        .chat-mobile-header-spacer {
+          width: 34px;
+          height: 34px;
+        }
+        .chat-back-button {
+          display: grid;
+          place-items: center;
+          width: 34px;
+          height: 34px;
+          padding: 0;
+          border: 0;
+          border-radius: 10px;
+          color: var(--app-text);
+          background: transparent;
+          font-size: 16px;
+          cursor: pointer;
+          transition: background .16s ease;
+        }
+        .chat-back-button:hover,
+        .chat-back-button:focus-visible {
+          background: var(--app-accent-soft);
+          color: var(--app-accent);
+          outline: none;
+        }
+        .chat-mobile-header-title {
+          color: var(--app-text);
+          font-size: 15px;
+          font-weight: 600;
+          text-align: center;
         }
         .chat-marker-rail {
           position: absolute;
@@ -492,7 +549,7 @@ const Chat: React.FC = () => {
           padding: 0;
           border: 0;
           border-radius: 1px;
-          background: #3f3f46;
+          background: color-mix(in srgb, var(--app-text) 55%, var(--app-surface));
           cursor: pointer;
           pointer-events: auto;
           transition: width .18s ease, height .18s ease, background .18s ease, box-shadow .18s ease;
@@ -500,8 +557,8 @@ const Chat: React.FC = () => {
         .chat-marker:hover, .chat-marker:focus-visible {
           width: 30px;
           height: 4px;
-          background: #a1a1aa;
-          box-shadow: 0 0 0 3px rgba(161,161,170,.12);
+          background: color-mix(in srgb, var(--app-text) 35%, var(--app-surface));
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-text) 12%, transparent);
           outline: none;
         }
         .chat-marker-tooltip {
@@ -578,13 +635,13 @@ const Chat: React.FC = () => {
           overflow-wrap: anywhere;
         }
         .chat-bubble-assistant {
-          color: #1f2937;
-          background: #f5f7fa;
+          color: var(--app-text);
+          background: var(--app-surface-sunken);
           border-top-left-radius: 5px;
         }
         .chat-bubble-user {
           color: #fff;
-          background: #1677ff;
+          background: var(--app-accent);
           border-top-right-radius: 5px;
         }
         .chat-bubble p:last-child,
@@ -594,10 +651,10 @@ const Chat: React.FC = () => {
           width: 100%;
           min-width: min(320px, 100%);
           padding: 10px 12px 4px;
-          border: 1px solid #eef0f3;
+          border: 1px solid var(--app-border);
           border-radius: 14px;
-          background: #fff;
-          box-shadow: 0 6px 18px rgba(16, 24, 40, .06);
+          background: var(--app-surface);
+          box-shadow: var(--app-shadow);
         }
         .chat-time {
           display: block;
@@ -611,13 +668,13 @@ const Chat: React.FC = () => {
           padding: 13px 16px;
           border-radius: 16px;
           border-top-left-radius: 5px;
-          background: #f5f7fa;
+          background: var(--app-surface-sunken);
         }
         .chat-typing span {
           width: 7px;
           height: 7px;
           border-radius: 50%;
-          background: #8c8c8c;
+          background: var(--app-text-subtle);
           animation: chatPulse 1.2s infinite ease-in-out;
         }
         .chat-typing span:nth-child(2) { animation-delay: .15s; }
@@ -635,9 +692,9 @@ const Chat: React.FC = () => {
           padding: 18px clamp(18px, 6vw, 112px) 0;
           background: linear-gradient(
             to bottom,
-            rgba(255, 255, 255, 0),
-            #fff 20px,
-            #fff 100%
+            transparent,
+            var(--app-surface) 20px,
+            var(--app-surface) 100%
           );
         }
         .chat-composer-panel {
@@ -655,15 +712,15 @@ const Chat: React.FC = () => {
           gap: 10px;
           min-height: 48px;
           padding: 5px 6px 5px 14px;
-          border: 1px solid #d9d9d9;
+          border: 1px solid var(--app-border-strong);
           border-radius: 18px;
-          background: #fff;
-          box-shadow: 0 8px 24px rgba(16, 24, 40, .08);
+          background: var(--app-surface);
+          box-shadow: var(--app-shadow);
           transition: border-color .2s, box-shadow .2s;
         }
         .chat-input-wrap:focus-within {
-          border-color: #1677ff;
-          box-shadow: 0 0 0 3px rgba(22, 119, 255, .1);
+          border-color: var(--app-accent);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent) 15%, transparent);
         }
         .chat-input-wrap textarea {
           min-height: 24px !important;
@@ -695,11 +752,26 @@ const Chat: React.FC = () => {
           place-items: center;
         }
         @media (max-width: 767px) {
+          /* Two attempts at inheriting height from the ancestor chain
+             (percentage height, then flex-grow) both failed to actually
+             fill the screen in practice — something in that chain still
+             isn't resolving the way it should on paper. Immersive mobile
+             chat has no other on-screen chrome left to coexist with (the
+             shared top bar and bottom nav are already hidden for this
+             route), so sidestep the ancestor chain entirely: pin straight
+             to the viewport with position: fixed + 100dvh, which needs
+             nothing from any parent. */
           .chat-page {
-            height: calc(100dvh - 108px);
-            min-height: 420px;
+            position: fixed;
+            inset: 0;
+            height: 100dvh;
+            flex: none;
+            z-index: 10;
           }
-          .chat-messages { padding: 18px 12px 108px 40px; }
+          /* The hover-to-preview marker rail doesn't translate to touch —
+             hide it and reclaim the left gutter it was reserving. */
+          .chat-marker-rail { display: none; }
+          .chat-messages { padding: 18px 12px 108px 12px; }
           .chat-messages-empty { padding: 18px 14px; }
           .chat-empty-title { font-size: 25px; }
           .chat-typewriter-line { min-height: 34px; font-size: 23px; }
@@ -711,6 +783,20 @@ const Chat: React.FC = () => {
       `}</style>
 
             <section className='chat-shell' aria-label='Smart Incubation assistant'>
+                {isMobile && (
+                    <header className='chat-mobile-header'>
+                        <button
+                            type='button'
+                            className='chat-back-button'
+                            aria-label='Back to dashboard'
+                            onClick={() => navigate(-1)}
+                        >
+                            <ArrowLeftOutlined />
+                        </button>
+                        <span className='chat-mobile-header-title'>QxAgent</span>
+                        <span className='chat-mobile-header-spacer' aria-hidden='true' />
+                    </header>
+                )}
                 <nav className='chat-marker-rail' aria-label='Conversation messages'>
                     {state.messages.filter(item => item.sender === 'user').map(item => {
                         const messageIndex = state.messages.indexOf(item)
@@ -718,18 +804,18 @@ const Chat: React.FC = () => {
                             ? state.messages[messageIndex + 1]
                             : null
                         return (
-                        <button
-                            className='chat-marker'
-                            key={`marker-${item.id}`}
-                            type='button'
-                            aria-label={`Jump to: ${item.content}`}
-                            onClick={() => messageRefs.current[item.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-                        >
-                            <span className='chat-marker-tooltip'>
-                                <span className='chat-marker-question'>{item.content}</span>
-                                {answer && <span className='chat-marker-answer'>{answer.content}</span>}
-                            </span>
-                        </button>
+                            <button
+                                className='chat-marker'
+                                key={`marker-${item.id}`}
+                                type='button'
+                                aria-label={`Jump to: ${item.content}`}
+                                onClick={() => messageRefs.current[item.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                            >
+                                <span className='chat-marker-tooltip'>
+                                    <span className='chat-marker-question'>{item.content}</span>
+                                    {answer && <span className='chat-marker-answer'>{answer.content}</span>}
+                                </span>
+                            </button>
                         )
                     })}
                 </nav>
@@ -780,7 +866,7 @@ const Chat: React.FC = () => {
                                         <Avatar
                                             size={30}
                                             icon={<OpenAIOutlined />}
-                                            style={{ background: '#1677ff', flexShrink: 0 }}
+                                            style={{ background: 'var(--app-accent)', flexShrink: 0 }}
                                         />
                                     )}
                                     <div className='chat-column'>
@@ -806,7 +892,7 @@ const Chat: React.FC = () => {
                                     <Avatar
                                         size={30}
                                         icon={<OpenAIOutlined />}
-                                        style={{ background: '#1677ff' }}
+                                        style={{ background: 'var(--app-accent)' }}
                                     />
                                     <TypingIndicator />
                                 </div>

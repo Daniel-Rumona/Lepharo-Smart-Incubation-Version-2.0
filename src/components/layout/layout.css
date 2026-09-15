@@ -58,9 +58,9 @@
     border-radius: 12px;
     background: #f2f4f7;
     /* Each segment has a min-width floor, so once the topbar's actions grow
-       (e.g. the reporting-period filter expanding out of its compact, icon-only
-       state) the segments can outgrow this column. Scroll internally instead of
-       spilling out past the pill and colliding with the actions on the right. */
+    (e.g. the reporting-period filter expanding out of its compact, icon-only
+    state) the segments can outgrow this column. Scroll internally instead of
+    spilling out past the pill and colliding with the actions on the right. */
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
@@ -530,6 +530,52 @@
         max-width: 105px;
     }
 
+    .workspace-topbar.workspace-topbar-mobile.workspace-topbar-nonav.workspace-topbar-incubatee-mobile {
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        grid-template-areas: "incubatee-left brand incubatee-right";
+        gap: 6px;
+        padding: 4px 6px;
+    }
+
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-left {
+        grid-area: incubatee-left;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 4px;
+    }
+
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-brand {
+        grid-area: brand;
+        width: 78px;
+        height: 32px;
+        justify-self: center;
+        padding: 3px 5px;
+    }
+
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-right {
+        grid-area: incubatee-right;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+    }
+
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-left>*,
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-right>* {
+        flex: 0 0 auto;
+    }
+
+    .workspace-topbar-incubatee-mobile .workspace-assistant-button,
+    .workspace-topbar-incubatee-mobile .workspace-logout-button,
+    .workspace-topbar-incubatee-mobile .workspace-theme-toggle {
+        width: 32px;
+        min-width: 32px;
+        height: 32px;
+    }
+
     .workspace-primary-segment {
         min-width: 0;
         flex: 1 1 0;
@@ -564,9 +610,9 @@
 }
 
 /* ---------- Mobile bottom navigation ----------
-   On phones the primary nav leaves the topbar and becomes a fixed bottom bar:
-   every destination is an icon, and the active one expands to show its label.
-   Shared by the staff workspace and the applicant portal. */
+On phones the primary nav leaves the topbar and becomes a fixed bottom bar:
+every destination is an icon, and the active one expands to show its label.
+Shared by the staff workspace and the applicant portal. */
 
 .workspace-bottom-nav {
     position: fixed;
@@ -578,7 +624,7 @@
     justify-content: center;
     gap: 3px;
     /* Floating pill, sized to its items and centred instead of stretching
-       edge to edge — keeps it compact on narrow phones. */
+    edge to edge — keeps it compact on narrow phones. */
     width: fit-content;
     max-width: calc(100vw - 32px);
     transform: translateX(-50%);

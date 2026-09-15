@@ -372,11 +372,11 @@ export const ComplianceDocuments: React.FC = () => {
                 const [directApp, appSnap] = await Promise.all([
                     getDoc(doc(db, 'applications', pid)),
                     getDocs(
-                    query(
-                        collection(db, 'applications'),
-                        where('participantId', '==', pid),
-                        limit(10)
-                    )
+                        query(
+                            collection(db, 'applications'),
+                            where('participantId', '==', pid),
+                            limit(10)
+                        )
                     )
                 ])
                 const applicationDocs = [
@@ -458,17 +458,17 @@ export const ComplianceDocuments: React.FC = () => {
                 const flatCompliance = Array.isArray(appData?.complianceDocuments)
                     ? appData.complianceDocuments
                     : []
-                ;[
-                    ...flatCompliance.map((obj: any) => ({ ...obj, _source: 'embedded' })),
-                    ...rawCompliance.map((obj: any) => ({ ...obj, _source: 'subcollection' }))
-                ].forEach(obj => {
-                    const key = complianceDocumentKey(obj?.type || obj?.title || obj?.documentName || obj?.name)
-                    if (!key) return
-                    latestByType[key] = {
-                        ...obj,
-                        type: obj?.type || obj?.title || obj?.documentName || obj?.name
-                    }
-                })
+                    ;[
+                        ...flatCompliance.map((obj: any) => ({ ...obj, _source: 'embedded' })),
+                        ...rawCompliance.map((obj: any) => ({ ...obj, _source: 'subcollection' }))
+                    ].forEach(obj => {
+                        const key = complianceDocumentKey(obj?.type || obj?.title || obj?.documentName || obj?.name)
+                        if (!key) return
+                        latestByType[key] = {
+                            ...obj,
+                            type: obj?.type || obj?.title || obj?.documentName || obj?.name
+                        }
+                    })
 
                 const latestCompliance = Object.values(latestByType)
 
@@ -1287,9 +1287,7 @@ export const ComplianceDocuments: React.FC = () => {
     return (
         <Layout
             style={{
-                background: '#fff',
-                minHeight: '100vh',
-                padding: screens.md ? 24 : 12
+                padding: screens.md ? '10px 24px' : '10px 12px'
             }}
         >
             <Helmet>

@@ -298,6 +298,7 @@ GLOBAL_DATA_TOOLS = {
     "get_inquiries",
     "get_intake_submissions",
     "get_monthly_participants_serviced",
+    "get_recent_activity_summary",
 }
 
 
@@ -671,6 +672,7 @@ TOOL_TOPIC_RULES: list[tuple[re.Pattern, tuple[str, ...]]] = [
     (re.compile(r"\bcatalog|\bservices? (offered|catalog)\b", re.I), ("catalog", "interventions_catalog")),
     (re.compile(r"\bdepartments?\b|\bhod\b", re.I), ("department",)),
     (re.compile(r"\bprogram(me)?s?\b|\bbranch\b", re.I), ("program",)),
+    (re.compile(r"\bbrief me\b|\bcatch me up\b|\bwhat happened\b|\brecap\b|\brecent activity\b|\bwhat'?s new\b|\btoday'?s? activity\b|\bsince (i|we) last\b|\bwhat needs my attention\b", re.I), ("recent_activity",)),
 ]
 
 SELF_SCOPE_PATTERN = re.compile(r"\bmy\b|\bmine\b|\bassigned to me\b|\bi have\b|\bi am\b", re.I)
@@ -1410,6 +1412,14 @@ def chat(payload: ChatRequest, request: Request):
       intervention IDs. Use human-readable names and descriptions instead. This
       rule still applies if the user explicitly asks for an ID.
     - Keep answers practical and concise.
+    - If get_recent_activity_summary data was fetched, this is a director's on-demand
+      catch-up, not a pushed report — answer in 2-4 short sentences of plain-English
+      narrative highlighting what is genuinely worth knowing, never a bullet list of
+      every count in "windows". Pick whichever window (today/week/month) best matches
+      the question, defaulting to "today" if unspecified. Skip categories that are zero
+      or unremarkable rather than padding the answer with "nothing happened in X". Keep
+      the tone calm and supportive, never alarmist, and never imply anyone is being
+      checked up on.
     - Tool result "summary" objects are exact server-computed aggregates across the
       complete permitted Firestore query. Always use those summaries for totals,
       counts, averages, breakdowns, and high-level summaries.

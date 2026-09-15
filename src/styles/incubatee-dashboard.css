@@ -58,7 +58,7 @@
         margin-bottom: 10px;
         padding: 12px;
         border: 1px solid #dbe7f5;
-        border-radius: 12px;
+        border-radius: 15px;
     }
 
     .incubatee-urgent-list .ant-list-item-meta {
@@ -76,7 +76,7 @@
         padding: 0 !important;
     }
 
-    .incubatee-urgent-list .ant-list-item-action > li {
+    .incubatee-urgent-list .ant-list-item-action>li {
         width: 100%;
         padding: 0 !important;
     }
@@ -85,6 +85,7 @@
         width: 100%;
     }
 }
+
 .incubatee-overview-card {
     border-radius: 12px;
 }
@@ -141,7 +142,7 @@
     gap: 3px;
 }
 
-.incubatee-week-day > span:first-child {
+.incubatee-week-day>span:first-child {
     font-size: 12px;
 }
 
@@ -168,5 +169,3 @@
 .incubatee-overview-session .ant-tag {
     margin-top: 6px;
 }
-
-

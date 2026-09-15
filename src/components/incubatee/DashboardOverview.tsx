@@ -51,21 +51,23 @@ interface Props<T extends DashboardScheduleRow> {
     recentCompletionsLoading?: boolean
 }
 
-const getWorkWeekStart = (date: dayjs.Dayjs) => {
+const getWorkWeekStart = (
+    date: dayjs.Dayjs
+) => {
     const weekday = date.day()
 
-    // Sunday -> next Monday
     if (weekday === 0) {
         return date.add(1, 'day')
     }
 
-    // Saturday -> next Monday
     if (weekday === 6) {
         return date.add(2, 'day')
     }
 
-    // Monday-Friday -> Monday of the current week
-    return date.subtract(weekday - 1, 'day')
+    return date.subtract(
+        weekday - 1,
+        'day'
+    )
 }
 
 export default function DashboardOverview<
@@ -83,72 +85,102 @@ export default function DashboardOverview<
     const { token } = theme.useToken()
 
     const [today, setToday] = useState(
-        () => dayjs().format('YYYY-MM-DD')
+        () =>
+            dayjs().format(
+                'YYYY-MM-DD'
+            )
     )
 
-    const [selection, setSelection] = useState<{
-        day: string
-        manual: boolean
-    }>({
-        day: today,
-        manual: false
-    })
+    const [selection, setSelection] =
+        useState<{
+            day: string
+            manual: boolean
+        }>({
+            day: today,
+            manual: false
+        })
 
     useEffect(() => {
-        const timer = window.setInterval(() => {
-            setToday(dayjs().format('YYYY-MM-DD'))
-        }, 60000)
+        const timer =
+            window.setInterval(() => {
+                setToday(
+                    dayjs().format(
+                        'YYYY-MM-DD'
+                    )
+                )
+            }, 60000)
 
-        return () => window.clearInterval(timer)
+        return () =>
+            window.clearInterval(
+                timer
+            )
     }, [])
 
     const days = useMemo(() => {
-        const currentDate = dayjs(today)
-        const monday = getWorkWeekStart(currentDate)
+        const currentDate =
+            dayjs(today)
+
+        const monday =
+            getWorkWeekStart(
+                currentDate
+            )
 
         return Array.from(
             { length: 5 },
             (_, index) =>
                 monday
                     .add(index, 'day')
-                    .format('YYYY-MM-DD')
+                    .format(
+                        'YYYY-MM-DD'
+                    )
         )
     }, [today])
 
     const weekRows = useMemo(
         () =>
             rows.filter(row =>
-                days.includes(row._n.date)
+                days.includes(
+                    row._n.date
+                )
             ),
         [rows, days]
     )
 
     const selectedDay =
         selection.manual &&
-            days.includes(selection.day)
-            ? selection.day
-            : weekRows[0]?._n.date ||
-            (
-                days.includes(today)
-                    ? today
-                    : days[0]
+            days.includes(
+                selection.day
             )
+            ? selection.day
+            : weekRows[0]
+                ?._n.date ||
+            (days.includes(today)
+                ? today
+                : days[0])
 
-    const selectedRows = useMemo(
-        () =>
-            weekRows.filter(
-                row => row._n.date === selectedDay
-            ),
-        [weekRows, selectedDay]
-    )
+    const selectedRows =
+        useMemo(
+            () =>
+                weekRows.filter(
+                    row =>
+                        row._n.date ===
+                        selectedDay
+                ),
+            [
+                weekRows,
+                selectedDay
+            ]
+        )
 
-    const weekStartLabel = dayjs(days[0]).format(
-        'D MMM'
-    )
+    const weekStartLabel =
+        dayjs(days[0]).format(
+            'D MMM'
+        )
 
-    const weekEndLabel = dayjs(days[4]).format(
-        'D MMM'
-    )
+    const weekEndLabel =
+        dayjs(days[4]).format(
+            'D MMM'
+        )
 
     return (
         <Row gutter={[16, 16]}>
@@ -164,7 +196,10 @@ export default function DashboardOverview<
                     }
                     extra={
                         <DashboardButton
+                            variant='filled'
                             size="small"
+                            icon={<CalendarOutlined />}
+                            iconPosition="end"
                             onClick={
                                 onViewAppointments
                             }
@@ -172,23 +207,36 @@ export default function DashboardOverview<
                             View all
                         </DashboardButton>
                     }
-                    loading={appointmentsLoading}
+                    loading={
+                        appointmentsLoading
+                    }
                 >
                     <div
                         className="incubatee-week"
                         role="group"
                         aria-label="Appointments from Monday to Friday"
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns:
+                                'repeat(5, minmax(0, 1fr))',
+                            gap: 6,
+                            width: '100%',
+                            marginBottom: 14
+                        }}
                     >
                         {days.map(day => {
                             const count =
                                 weekRows.filter(
                                     row =>
-                                        row._n.date ===
+                                        row
+                                            ._n
+                                            .date ===
                                         day
                                 ).length
 
                             const isSelected =
-                                selectedDay === day
+                                selectedDay ===
+                                day
 
                             return (
                                 <Button
@@ -208,20 +256,61 @@ export default function DashboardOverview<
                                         'dddd D MMMM'
                                     )}, ${count} appointments`}
                                     onClick={() =>
-                                        setSelection({
-                                            day,
-                                            manual: true
-                                        })
+                                        setSelection(
+                                            {
+                                                day,
+                                                manual: true
+                                            }
+                                        )
                                     }
+                                    style={{
+                                        width:
+                                            '100%',
+                                        minWidth:
+                                            0,
+                                        height:
+                                            'auto',
+                                        minHeight:
+                                            62,
+                                        padding:
+                                            '7px 4px',
+                                        display:
+                                            'flex',
+                                        flexDirection:
+                                            'column',
+                                        alignItems:
+                                            'center',
+                                        justifyContent:
+                                            'center',
+                                        gap: 1
+                                    }}
                                 >
-                                    <span>
-                                        {dayjs(day).format(
+                                    <span
+                                        style={{
+                                            fontSize:
+                                                11,
+                                            lineHeight:
+                                                1.2
+                                        }}
+                                    >
+                                        {dayjs(
+                                            day
+                                        ).format(
                                             'ddd'
                                         )}
                                     </span>
 
-                                    <strong>
-                                        {dayjs(day).format(
+                                    <strong
+                                        style={{
+                                            fontSize:
+                                                16,
+                                            lineHeight:
+                                                1.25
+                                        }}
+                                    >
+                                        {dayjs(
+                                            day
+                                        ).format(
                                             'D'
                                         )}
                                     </strong>
@@ -254,11 +343,15 @@ export default function DashboardOverview<
 
                     {appointmentError ? (
                         <Text type="danger">
-                            {appointmentError}
+                            {
+                                appointmentError
+                            }
                         </Text>
                     ) : (
                         <List
-                            dataSource={selectedRows}
+                            dataSource={
+                                selectedRows
+                            }
                             locale={{
                                 emptyText: (
                                     <Empty
@@ -277,24 +370,32 @@ export default function DashboardOverview<
                                 <List.Item className="incubatee-overview-appointment">
                                     <div className="incubatee-overview-time">
                                         <Text>
-                                            {row._n.start ||
+                                            {row
+                                                ._n
+                                                .start ||
                                                 'Time TBC'}
                                         </Text>
 
-                                        {row._n.end && (
-                                            <Text type="secondary">
-                                                {
-                                                    row
-                                                        ._n
-                                                        .end
-                                                }
-                                            </Text>
-                                        )}
+                                        {row
+                                            ._n
+                                            .end && (
+                                                <Text type="secondary">
+                                                    {
+                                                        row
+                                                            ._n
+                                                            .end
+                                                    }
+                                                </Text>
+                                            )}
                                     </div>
 
                                     <div className="incubatee-overview-session">
-                                        <Text strong>
-                                            {row.title}
+                                        <Text
+                                            strong
+                                        >
+                                            {
+                                                row.title
+                                            }
                                         </Text>
 
                                         <div>
@@ -302,6 +403,7 @@ export default function DashboardOverview<
                                                 {
                                                     row.deliveryLabel
                                                 }
+
                                                 {row.location
                                                     ? ` · ${row.location}`
                                                     : ''}
@@ -335,15 +437,6 @@ export default function DashboardOverview<
                             )}
                         />
                     )}
-
-                    <Text type="secondary">
-                        {weekStartLabel}–
-                        {weekEndLabel} ·{' '}
-                        {weekRows.length}{' '}
-                        {weekRows.length === 1
-                            ? 'appointment'
-                            : 'appointments'}
-                    </Text>
                 </MotionCard>
             </Col>
 
@@ -366,7 +459,9 @@ export default function DashboardOverview<
                     }
                 >
                     <List
-                        dataSource={recentCompletions}
+                        dataSource={
+                            recentCompletions
+                        }
                         size="small"
                         locale={{
                             emptyText: (
@@ -379,21 +474,31 @@ export default function DashboardOverview<
                             )
                         }}
                         renderItem={item => (
-                            <List.Item key={item.id}>
+                            <List.Item
+                                key={
+                                    item.id
+                                }
+                            >
                                 <List.Item.Meta
                                     avatar={
                                         <CheckCircleOutlined
                                             style={{
-                                                color: token.colorSuccess,
-                                                fontSize: 18
+                                                color:
+                                                    token.colorSuccess,
+                                                fontSize:
+                                                    18
                                             }}
                                         />
                                     }
-                                    title={item.title}
+                                    title={
+                                        item.title
+                                    }
                                     description={
                                         <Space
                                             direction="vertical"
-                                            size={2}
+                                            size={
+                                                2
+                                            }
                                         >
                                             {item.subtitle && (
                                                 <Text type="secondary">
