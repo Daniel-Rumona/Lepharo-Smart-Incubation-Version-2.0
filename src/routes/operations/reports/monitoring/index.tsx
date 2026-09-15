@@ -405,7 +405,7 @@ const MonitoringReports: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
+        <div style={{ padding: '5px 24px' }}>
             {initialLoading && (
                 <LoadingOverlay tip='Loading Departmental Analytics' />
             )}

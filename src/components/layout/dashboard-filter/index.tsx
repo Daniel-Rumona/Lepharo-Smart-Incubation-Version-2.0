@@ -104,10 +104,34 @@ export const DashboardFilterControl: React.FC<{ compact?: boolean }> = ({ compac
                         icon={<FilterOutlined />}
                         onClick={() => setOpen(true)}
                         className="workspace-dashboard-filter"
-                        style={{ height: 32, paddingInline: compact ? 10 : 14, flex: '0 0 auto' }}
+                        style={{
+                            height: 32,
+                            paddingInline: compact ? 10 : 14,
+                            // A custom range label ("01 Jan 2025 – 15 Sep 2026") runs far
+                            // longer than a preset like "This month" — let the button shrink
+                            // and cap it instead of forcing the topbar's segmented nav to
+                            // overflow its pill.
+                            flex: compact ? '0 0 auto' : '0 1 auto',
+                            minWidth: 0,
+                            maxWidth: compact ? undefined : 200,
+                        }}
                         aria-label={`Change reporting period. Currently ${label}`}
                     >
-                        {compact ? '' : label}
+                        {compact ? '' : (
+                            <span
+                                style={{
+                                    display: 'inline-block',
+                                    minWidth: 0,
+                                    maxWidth: '100%',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    verticalAlign: 'bottom',
+                                }}
+                            >
+                                {label}
+                            </span>
+                        )}
                     </Button>
                 </Badge>
             </Tooltip>

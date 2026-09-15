@@ -1,12 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
     Typography,
     Row,
     Col,
     Spin,
     Button,
-    Tour,
-    TourProps,
     message,
     Modal,
     Space,
@@ -21,13 +19,18 @@ import {
     FieldTimeOutlined,
     EnvironmentOutlined
 } from '@ant-design/icons'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { db } from '@/firebase'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { auth } from 'firebase'
 import { Helmet } from 'react-helmet'
 import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
+import {
+    guideTarget,
+    usePageGuides,
+    type PageGuideRegistration
+} from '@/components/guide-me'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -152,85 +155,49 @@ const ApplicantLandingPage = () => {
     const [loading, setLoading] = useState(false)
 
     const navigate = useNavigate()
-    const location = useLocation()
 
-    const qs = new URLSearchParams(location.search)
-    const tourKey = qs.get('tour')
-    const tourTick = qs.get('ts')
-    const [tourOpen, setTourOpen] = useState(false)
-    const [tourSteps, setTourSteps] = useState<TourProps['steps']>([])
-
-    const getEl = (id: string) =>
-        document.querySelector(`[data-tour-id="${id}"]`) as HTMLElement | null
-
-    const waitFor = (
-        fn: () => HTMLElement | null,
-        tries = 20,
-        delay = 80
-    ): Promise<HTMLElement | null> =>
-        new Promise(resolve => {
-            const tick = (left: number) => {
-                const el = fn()
-                if (el || left <= 0) return resolve(el || null)
-                setTimeout(() => tick(left - 1), delay)
-            }
-            requestAnimationFrame(() => tick(tries))
-        })
-
-    useEffect(() => {
-        const run = async () => {
-            if (tourKey !== 'apply') return
-            if (loading) return
-
-            const steps: TourProps['steps'] = []
-            const isDesktop =
-                window.matchMedia?.('(min-width: 768px)').matches ?? true
-            const navApply = isDesktop ? getEl('nav-apply') : null
-            if (navApply) {
-                steps.push({
-                    title: 'Submit Application',
+    const guideRegistration = useMemo<PageGuideRegistration>(
+        () => ({
+            pageId: 'applicant-dashboard',
+            pageTitle: 'Programs & Apply',
+            guides: [
+                {
+                    id: 'apply-walkthrough',
+                    title: 'How to apply to a program',
                     description:
-                        'Begin a new application here. On mobile, open the menu from the top-left icon.',
-                    target: () => navApply
-                })
-            }
-            const applyBtn = await waitFor(() => getEl('apply-btn-first'))
-            if (applyBtn) {
-                applyBtn.scrollIntoView({ block: 'center', behavior: 'smooth' })
-                steps.push({
-                    title: 'Start your application',
-                    description:
-                        'Click “Apply” on a program to begin. If your profile isn’t complete, you’ll be redirected to finish it first.',
-                    target: () => applyBtn
-                })
-            }
+                        'Browse the open programs and submit an application to one.',
+                    kind: 'task',
+                    steps: [
+                        {
+                            element: guideTarget('nav-apply'),
+                            popover: {
+                                title: 'Submit Application',
+                                description:
+                                    'Begin a new application here. On mobile, open the menu from the top-left icon.',
+                                side: 'bottom',
+                                align: 'start'
+                            }
+                        },
+                        {
+                            element: guideTarget('apply-btn-first'),
+                            popover: {
+                                title: 'Start your application',
+                                description:
+                                    'Click "Apply" on a program to begin. If your profile isn’t complete, you’ll be redirected to finish it first.',
+                                side: 'top',
+                                align: 'start'
+                            },
+                            waitForElement: 5000,
+                            skipMissingElement: true
+                        }
+                    ]
+                }
+            ]
+        }),
+        []
+    )
 
-            if (!steps.length) return
-            setTourSteps(steps)
-            requestAnimationFrame(() => setTourOpen(true))
-
-            const next = new URLSearchParams(location.search)
-            next.delete('tour')
-            next.delete('ts')
-            navigate(`${location.pathname}?${next.toString()}`, { replace: true })
-        }
-        run()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tourKey, tourTick, loading, allPrograms])
-
-    useEffect(() => {
-        const onStart = (e: Event) => {
-            const key = (e as CustomEvent).detail?.key
-            if (key === 'apply') {
-                const params = new URLSearchParams(location.search)
-                params.set('tour', 'apply')
-                params.set('ts', String(Date.now()))
-                navigate(`${location.pathname}?${params.toString()}`, { replace: true })
-            }
-        }
-        window.addEventListener('sme:start-tour', onStart)
-        return () => window.removeEventListener('sme:start-tour', onStart)
-    }, [location.pathname, location.search, navigate])
+    usePageGuides(guideRegistration)
 
 
     const fetchPrograms = async () => {
@@ -403,7 +370,7 @@ const ApplicantLandingPage = () => {
                     actions={[
                         <span
                             key='apply'
-                            data-tour-id={idx === 0 ? 'apply-btn-first' : undefined}
+                            data-guide={idx === 0 ? 'apply-btn-first' : undefined}
                             style={{ display: 'block', padding: '0 12px' }}
                         >
                             <Button
@@ -503,14 +470,6 @@ const ApplicantLandingPage = () => {
                     />
                 )}
             </div>
-
-            <Tour
-                open={tourOpen}
-                onClose={() => setTourOpen(false)}
-                steps={tourSteps}
-                mask
-                arrow
-            />
 
             <Modal
                 open={programModalVisible}

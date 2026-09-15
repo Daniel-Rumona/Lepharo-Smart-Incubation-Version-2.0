@@ -241,6 +241,10 @@ const StakeholderEngagementPage = lazy(() => import("./routes/operations/stakeho
 const StrategicDashboard = lazy(() => import("./routes/directors/strategic"));
 const SuccessChallengesPage = lazy(() => import("./routes/operations/success-challenges"));
 const SurveyBuilder = lazy(() => import("./components/surveys/index"));
+const CourseBuilder = lazy(() => import("./components/courses/index"));
+const CoursesRepository = lazy(() => import("./components/courses/repository"));
+const LearnerCoursePage = lazy(() => import("./components/courses/CoursePlayer"));
+const AcademyCatalog = lazy(() => import("./components/courses/repository").then(module => ({ default: module.AcademyCatalog })));
 const SurveysDetailsPage = lazy(() => import("./components/surveys/SurveysDetails"));
 const SystemSetupForm = lazy(() => import("./routes/system"));
 const TasksModule = lazy(() => import("./components/tasks/TaskModule"));
@@ -346,6 +350,8 @@ const App = () => {
                                                         </Authenticated>
                                                     }
                                                 >
+                                                    <Route path="academy" element={<AcademyCatalog />} />
+                                                    <Route path="academy/:id" element={<LearnerCoursePage />} />
                                                     {/* System Admin Routes */}
                                                     <Route path="admin" element={<AdminOnlyRoute />}>
                                                         <Route index element={<UserManagement />} />
@@ -627,6 +633,9 @@ const App = () => {
                                                             path="training"
                                                             element={<TrainingDashboard />}
                                                         />
+                                                        <Route path="training/courses/builder" element={<CourseBuilder />} />
+                                                        <Route path="training/courses/builder/:id" element={<CourseBuilder />} />
+                                                        <Route path="training/courses" element={<CoursesRepository />} />
                                                         <Route
                                                             path="requests"
                                                             element={<InterventionsRequests />}

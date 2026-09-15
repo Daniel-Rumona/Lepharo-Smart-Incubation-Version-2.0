@@ -188,16 +188,60 @@ export function normalizeDepartmentName(value: any): string {
 
     const lower = raw.toLowerCase()
 
-    if (lower === 'rom' || lower.includes('recruitment') || lower.includes('onboarding')) return 'ROM'
-    if (lower.includes('hse')) return 'HSE & Labour Compliance'
-    if (lower.includes('labour')) return 'HSE & Labour Compliance'
-    if (lower.includes('financial')) return 'Financial Compliance'
-    if (lower === 'pds' || lower.includes('personal development')) return 'PDS'
-    if (lower.includes('market')) return 'Market Linkages'
-    if (lower.includes('legal')) return 'Legal Advisory Services'
-    if (lower.includes('wellness')) return 'Wellness Services'
-    if (lower.includes('training') || lower.includes('academy')) return 'Training Academy'
-    if (lower.includes('marketing') || lower.includes('communication')) return 'Marketing and Communication'
+    if (lower === 'rom' || lower.includes('recruitment') || lower.includes('onboarding')) {
+        return 'ROM'
+    }
+
+    if (lower.includes('hse') || lower.includes('labour')) {
+        return 'HSE & Labour Compliance'
+    }
+
+    if (lower.includes('financial')) {
+        return 'Financial Compliance'
+    }
+
+    if (lower === 'pds' || lower.includes('personal development')) {
+        return 'PDS'
+    }
+
+    /*
+     * IMPORTANT:
+     * Marketing must be checked before Market Linkages.
+     *
+     * `marketing` contains the substring `market`, so the previous
+     * `lower.includes('market')` check incorrectly normalised
+     * "Marketing and Communication" to "Market Linkages".
+     */
+    if (
+        lower.includes('marketing') ||
+        lower.includes('marketing and communication') ||
+        lower.includes('marketing & communication') ||
+        lower === 'communication' ||
+        lower === 'communications'
+    ) {
+        return 'Marketing and Communication'
+    }
+
+    if (
+        lower === 'market' ||
+        lower === 'market linkage' ||
+        lower === 'market linkages' ||
+        lower.includes('market linkage')
+    ) {
+        return 'Market Linkages'
+    }
+
+    if (lower.includes('legal')) {
+        return 'Legal Advisory Services'
+    }
+
+    if (lower.includes('wellness')) {
+        return 'Wellness Services'
+    }
+
+    if (lower.includes('training') || lower.includes('academy')) {
+        return 'Training Academy'
+    }
 
     return raw
 }
@@ -904,6 +948,37 @@ export function computeRiskScore(input: RiskScoreInputs): RiskScoreResult {
     }
 
     return { score, level: getRiskLevel(score), breakdown }
+}
+
+
+export function getRiskDriversForRow(row: SMERow): Array<{
+    key: string
+    label: string
+    points: number
+}> {
+    const result = computeRiskScore({
+        daysSinceLastService: row.daysSinceLastService,
+        hasNeverReceivedService:
+            row.fullyConfirmedDepartmentsCount > 0 &&
+            row.totalTouches === 0,
+        docsMissing: row.docsMissing,
+        docsQueried: row.docsQueried,
+        docsRejected: row.docsRejected,
+        missingDepartmentsCount: row.missingDepartmentsCount,
+        smePendingAcceptanceCount: row.smePendingAcceptanceCount,
+        smePendingConfirmationCount: row.smePendingConfirmationCount,
+        declinedTouches: row.declinedTouches
+    })
+
+    return result.breakdown
+        .filter(item => item.delta > 0)
+        .map((item, index) => ({
+            key: `risk-driver-${index}-${normalizeLower(item.label)
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '')}`,
+            label: item.label,
+            points: item.delta
+        }))
 }
 
 export function buildRow(args: {

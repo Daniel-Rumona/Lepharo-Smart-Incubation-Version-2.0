@@ -767,7 +767,7 @@ const statusTag = (r: AssignedIntervention) => {
     if (lifecycle.key === 'awaiting-participant-confirmation') {
         // Same state the grouped tag and the metric call "Awaiting SME
         // Confirmation". One name for one state.
-        return <Tag color={lifecycle.color}>Awaiting SME Confirmation</Tag>
+        return <Tag color={lifecycle.color}>Pending Sign-off</Tag>
     }
     if (lifecycle.key === 'participant-rejected') {
         return <Tag color={lifecycle.color}>Completion Rejected</Tag>
@@ -879,7 +879,7 @@ const groupedStatusTag = (record: DisplayIntervention) => {
     switch (resolveDisplayStatus(record)) {
         case 'no-attendance': return <Tag color="red">No Attendance</Tag>
         case 'completed': return <Tag color="green">Completed</Tag>
-        case 'awaiting-confirmation': return <Tag color="purple">Awaiting SME Confirmation</Tag>
+        case 'awaiting-confirmation': return <Tag color="purple">Pending Sign-off</Tag>
         case 'declined': return <Tag color="red">Group Declined</Tag>
         case 'awaiting-response': return <Tag color="gold">Waiting on Appointment Responses</Tag>
         case 'in-delivery': return <Tag color="geekblue">In Delivery</Tag>
@@ -4725,7 +4725,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                 <Col flex={metricColFlex} style={{ minWidth: 0 }}>
                                     <MotionCard.Metric
                                         loading={loading}
-                                        title="Awaiting SME Confirmation"
+                                        title="Pending Sign-off"
                                         value={metrics.awaitingSmeCompletionConfirm}
                                         icon={<FileProtectOutlined style={{ color: '#eb2f96' }} />}
                                         iconBg="rgba(235,47,150,.12)"

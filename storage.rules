@@ -10,6 +10,21 @@ rules_version = '2';
 //    silently override every restriction here, including canAccessProposals().
 service firebase.storage {
   match /b/{bucket}/o {
+    match /academyMaterials/{owner}/{courseId}/{fileId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == owner
+        && firestore.get(/databases/(default)/documents/users/$(owner)).data.role in ['operations', 'coordinator', 'admin', 'system_admin', 'superadmin', 'director', 'projectadmin']
+        && request.resource.size <= 25 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+    match /academySubmissions/{learnerId}/{enrollmentId}/{fileId} {
+      allow read: if request.auth != null && (request.auth.uid == learnerId
+        || firestore.get(/databases/(default)/documents/academyEnrollments/$(enrollmentId)).data.owner == request.auth.uid);
+      allow create: if request.auth != null && request.auth.uid == learnerId
+        && firestore.get(/databases/(default)/documents/academyEnrollments/$(enrollmentId)).data.learnerId == learnerId
+        && request.resource.size <= 25 * 1024 * 1024;
+      allow update, delete: if false;
+    }
     match /library/{userId}/{fileName} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == userId

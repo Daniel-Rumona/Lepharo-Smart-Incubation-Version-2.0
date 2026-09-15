@@ -31,7 +31,7 @@ type ApplicantDestination = {
     route: string
     label: string
     icon: React.ReactNode
-    tourId: string
+    guideTargetId: string
 }
 
 const APPLICANT_DESTINATIONS: ApplicantDestination[] = [
@@ -40,28 +40,28 @@ const APPLICANT_DESTINATIONS: ApplicantDestination[] = [
         route: '/applicant/profile',
         label: 'My Profile',
         icon: <UserOutlined />,
-        tourId: 'nav-profile'
+        guideTargetId: 'nav-profile'
     },
     {
         key: 'tracker',
         route: '/applicant/tracker',
         label: 'Tracker',
         icon: <AppstoreOutlined />,
-        tourId: 'nav-tracker'
+        guideTargetId: 'nav-tracker'
     },
     {
         key: 'applications',
         route: '/applicant',
         label: 'Applications',
         icon: <BarChartOutlined />,
-        tourId: 'nav-apply'
+        guideTargetId: 'nav-apply'
     },
     {
         key: 'inquiries',
         route: '/applicant/inquiries',
         label: 'Inquiries',
         icon: <FileTextOutlined />,
-        tourId: 'nav-inquiries'
+        guideTargetId: 'nav-inquiries'
     }
 ]
 
@@ -79,6 +79,13 @@ const ApplicantLayout: React.FC = () => {
     const [logoUrl, setLogoUrl] = useState<string | null>(null)
     const [displayName, setDisplayName] = useState<string>('')
     const { user, loading: identityLoading } = useFullIdentity()
+
+    // The inquiry wizard runs as its own full-bleed page on mobile (not a
+    // modal) — it owns its own back button, title and step progress, so the
+    // shell's topbar and bottom nav would just be redundant chrome eating
+    // into the same screen a multi-step form badly needs.
+    const isImmersiveMobilePage =
+        isMobile && location.pathname === '/applicant/submit-inquiry'
 
     const selectedKey = location.pathname.includes('/tracker')
         ? 'tracker'
@@ -149,93 +156,95 @@ const ApplicantLayout: React.FC = () => {
             // it — same as components/layout.
             style={{ minHeight: '100vh', background: pageBg }}
         >
-            <div className='workspace-header-wrap'>
-                <header
-                    className={`workspace-topbar ${isMobile
-                        ? 'workspace-topbar-mobile workspace-topbar-nonav'
-                        : ''
-                        }`}
-                >
-                    <button
-                        type='button'
-                        className='workspace-brand'
-                        onClick={() => navigate('/applicant')}
-                        aria-label='Go to applications'
+            {!isImmersiveMobilePage && (
+                <div className='workspace-header-wrap'>
+                    <header
+                        className={`workspace-topbar ${isMobile
+                            ? 'workspace-topbar-mobile workspace-topbar-nonav'
+                            : ''
+                            }`}
                     >
-                        <img src='/assets/images/lepharo.png' alt='Lepharo' />
-                    </button>
-
-                    {/* On mobile this moves to the bottom bar below. */}
-                    {!isMobile && (
-                        <div
-                            className='workspace-primary-nav'
-                            aria-label='Primary navigation'
-                            role='tablist'
+                        <button
+                            type='button'
+                            className='workspace-brand'
+                            onClick={() => navigate('/applicant')}
+                            aria-label='Go to applications'
                         >
-                            {APPLICANT_DESTINATIONS.map(destination => (
-                                <button
-                                    key={destination.route}
-                                    type='button'
-                                    role='tab'
-                                    data-tour-id={destination.tourId}
-                                    aria-selected={activeSegment === destination.route}
-                                    className={`workspace-primary-segment ${activeSegment === destination.route
-                                        ? 'workspace-primary-segment-active'
-                                        : ''
-                                        }`}
-                                    onClick={() => navigate(destination.route)}
-                                >
-                                    <span className='workspace-segment-icon'>
-                                        {destination.icon}
-                                    </span>
-                                    <span>{destination.label}</span>
-                                </button>
-                            ))}
+                            <img src='/assets/images/lepharo.png' alt='Lepharo' />
+                        </button>
+
+                        {/* On mobile this moves to the bottom bar below. */}
+                        {!isMobile && (
+                            <div
+                                className='workspace-primary-nav'
+                                aria-label='Primary navigation'
+                                role='tablist'
+                            >
+                                {APPLICANT_DESTINATIONS.map(destination => (
+                                    <button
+                                        key={destination.route}
+                                        type='button'
+                                        role='tab'
+                                        data-guide={destination.guideTargetId}
+                                        aria-selected={activeSegment === destination.route}
+                                        className={`workspace-primary-segment ${activeSegment === destination.route
+                                            ? 'workspace-primary-segment-active'
+                                            : ''
+                                            }`}
+                                        onClick={() => navigate(destination.route)}
+                                    >
+                                        <span className='workspace-segment-icon'>
+                                            {destination.icon}
+                                        </span>
+                                        <span>{destination.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className='workspace-topbar-actions'>
+                            <GuideLauncher
+                                label={isCompactHeader ? '' : 'Guide'}
+                                buttonProps={{
+                                    type: 'text',
+                                    shape: 'round',
+                                    style: {
+                                        height: 32,
+                                        paddingInline: isCompactHeader ? 10 : 14,
+                                        flex: '0 0 auto'
+                                    },
+                                    'aria-label': 'Guide'
+                                }}
+                            />
+                            <ViewAsControls compact={isCompactHeader} />
+                            <ThemeToggle compact={isCompactHeader} />
+
+                            <Tooltip title={displayName ? `${displayName} — my profile` : 'My profile'}>
+                                <Avatar
+                                    className='workspace-current-user-avatar'
+                                    size='default'
+                                    src={logoUrl || undefined}
+                                    icon={!logoUrl ? <UserOutlined /> : undefined}
+                                    onClick={() => navigate(PROFILE_ROUTE)}
+                                    style={{ cursor: 'pointer', fontWeight: 700, flex: '0 0 auto' }}
+                                />
+                            </Tooltip>
+
+                            <Tooltip title='Log out'>
+                                <Button
+                                    type='text'
+                                    danger
+                                    shape='circle'
+                                    className='workspace-logout-button'
+                                    icon={<LogoutOutlined />}
+                                    onClick={handleLogout}
+                                    aria-label='Log out'
+                                />
+                            </Tooltip>
                         </div>
-                    )}
-
-                    <div className='workspace-topbar-actions'>
-                        <GuideLauncher
-                            label={isCompactHeader ? '' : 'Guide'}
-                            buttonProps={{
-                                type: 'text',
-                                shape: 'round',
-                                style: {
-                                    height: 32,
-                                    paddingInline: isCompactHeader ? 10 : 14,
-                                    flex: '0 0 auto'
-                                },
-                                'aria-label': 'Guide'
-                            }}
-                        />
-                        <ViewAsControls compact={isCompactHeader} />
-                        <ThemeToggle compact={isCompactHeader} />
-
-                        <Tooltip title={displayName ? `${displayName} — my profile` : 'My profile'}>
-                            <Avatar
-                                className='workspace-current-user-avatar'
-                                size='default'
-                                src={logoUrl || undefined}
-                                icon={!logoUrl ? <UserOutlined /> : undefined}
-                                onClick={() => navigate(PROFILE_ROUTE)}
-                                style={{ cursor: 'pointer', fontWeight: 700, flex: '0 0 auto' }}
-                            />
-                        </Tooltip>
-
-                        <Tooltip title='Log out'>
-                            <Button
-                                type='text'
-                                danger
-                                shape='circle'
-                                className='workspace-logout-button'
-                                icon={<LogoutOutlined />}
-                                onClick={handleLogout}
-                                aria-label='Log out'
-                            />
-                        </Tooltip>
-                    </div>
-                </header>
-            </div>
+                    </header>
+                </div>
+            )}
 
             <Content
                 style={{
@@ -243,8 +252,9 @@ const ApplicantLayout: React.FC = () => {
                     flex: '1 1 auto',
                     minHeight: 0,
                     // Clears the fixed bottom nav so the last row of a page is
-                    // never trapped underneath it.
-                    paddingBottom: isMobile
+                    // never trapped underneath it. Not needed when that nav
+                    // is itself hidden for the immersive inquiry page.
+                    paddingBottom: isMobile && !isImmersiveMobilePage
                         ? 'calc(84px + env(safe-area-inset-bottom))'
                         : 0,
                     display: 'flex',
@@ -272,7 +282,7 @@ const ApplicantLayout: React.FC = () => {
             </Content>
 
             {/* ---- Mobile bottom navigation ---- */}
-            {isMobile && (
+            {isMobile && !isImmersiveMobilePage && (
                 <nav className='workspace-bottom-nav' aria-label='Primary navigation'>
                     {APPLICANT_DESTINATIONS.map(destination => {
                         const isActive = activeSegment === destination.route
@@ -281,7 +291,7 @@ const ApplicantLayout: React.FC = () => {
                             <button
                                 key={destination.route}
                                 type='button'
-                                data-tour-id={destination.tourId}
+                                data-guide={destination.guideTargetId}
                                 aria-current={isActive ? 'page' : undefined}
                                 aria-label={destination.label}
                                 className={`workspace-bottom-nav-item ${isActive ? 'workspace-bottom-nav-item-active' : ''
@@ -300,7 +310,9 @@ const ApplicantLayout: React.FC = () => {
                 </nav>
             )}
 
-            <HelpAssistant />
+            {/* The wizard already has its own bottom action bar — the FAB
+                would float right on top of it with nowhere clear to sit. */}
+            {!isImmersiveMobilePage && <HelpAssistant />}
         </Layout>
     )
 }

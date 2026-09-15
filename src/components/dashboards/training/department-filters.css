@@ -1,0 +1,70 @@
+.training-department-filter.ant-btn {
+  flex: 1 1 220px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: auto;
+  min-height: 52px;
+  max-width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--filter-border);
+  border-radius: 10px;
+  background: var(--filter-surface);
+  color: var(--filter-text);
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 2px 3px rgb(0 0 0 / 6%);
+  cursor: pointer;
+  transition: border-color 160ms, background 160ms, box-shadow 160ms,
+    transform 160ms;
+}
+.training-department-filter.ant-btn:hover,
+.training-department-filter.ant-btn[aria-pressed="true"] {
+  border-color: var(--filter-primary);
+  background: var(--filter-selected);
+  color: var(--filter-primary);
+}
+.training-department-filter.ant-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgb(0 0 0 / 10%);
+}
+.training-department-filter.ant-btn:active {
+  transform: translateY(0);
+}
+.training-department-filter.ant-btn:focus-visible {
+  outline: 2px solid var(--filter-primary);
+  outline-offset: 3px;
+}
+.training-department-filter-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--filter-selected);
+  color: var(--filter-primary);
+  font-size: 17px;
+}
+.training-department-filter-label {
+  flex: 1;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.training-department-filter-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--filter-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .training-department-filter.ant-btn {
+    transition: none;
+  }
+  .training-department-filter.ant-btn:hover {
+    transform: none;
+  }
+}

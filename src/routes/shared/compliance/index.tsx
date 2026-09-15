@@ -20,9 +20,10 @@ import {
     Empty,
     Switch,
     InputNumber,
-    Divider,
     Grid,
-    Alert
+    Alert,
+    Result,
+    theme
 } from 'antd'
 import {
     SearchOutlined,
@@ -36,12 +37,13 @@ import {
     PlusOutlined,
     FileProtectOutlined,
     SettingOutlined,
-    UserOutlined,
     InboxOutlined,
     MailOutlined,
     InfoCircleOutlined,
     RobotOutlined,
-    DownloadOutlined
+    DownloadOutlined,
+    EditOutlined,
+    DeleteOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { UploadProps } from 'antd'
@@ -60,14 +62,13 @@ import {
     where,
     getDoc,
     serverTimestamp,
-    addDoc,
-    limit
+    addDoc
 } from 'firebase/firestore'
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { httpsCallable } from 'firebase/functions'
 import EmailTemplateModal from '@/components/modals/EmailTemplate'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MotionCard, useMetricPalette } from '@/components/dashboards/metrics/Header'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import {
     guideTarget,
@@ -75,7 +76,12 @@ import {
     type PageGuideRegistration
 } from '@/components/guide-me'
 import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
-import { PreIncubationContractModal } from '@/components/modals/Contracts/PreIncubationContract'
+import {
+    PreIncubationContractModal,
+    downloadPreIncubationDocxFromArgs
+} from '@/components/modals/Contracts/PreIncubationContract'
+import { type MoaVars, saveMoaDocx } from '@/components/modals/Contracts/moa.pages'
+import { exportGapDocx } from '@/utils/gapDocx'
 import {
     complianceStatusCountsAsCovered,
     complianceStatusLabel,
@@ -405,6 +411,8 @@ const ComplianceTrackingPage: React.FC = () => {
     const [programName, setProgramName] = useState<string>('—')
     const [departmentInfo, setDepartmentInfo] = useState<any>(null)
     const screens = useBreakpoint()
+    const { token } = theme.useToken()
+    const metricPalette = useMetricPalette()
 
     const guideRegistration = useMemo<PageGuideRegistration>(
         () => ({
@@ -634,11 +642,35 @@ const ComplianceTrackingPage: React.FC = () => {
                         {
                             element: guideTarget('add-compliance-document'),
                             waitForElement: 5000,
+                            advanceOnClick: true,
                             popover: {
                                 title: 'Add a requirement',
-                                description: 'Add a document requirement, then choose an available programme preset. Eligible onboarding and monitoring departments can also select agreements.',
+                                description: 'Open the document editor to choose a document and configure its expiry rule.',
                                 side: 'bottom',
+                                align: 'start',
+                                showButtons: ['close']
+                            }
+                        },
+                        {
+                            element: '.guide-document-editor-modal',
+                            waitForElement: 5000,
+                            popover: {
+                                title: 'Document details',
+                                description: 'Select the document title and configure whether it expires. Saving returns you to the document cards.',
+                                side: 'left',
                                 align: 'start'
+                            }
+                        },
+                        {
+                            element: guideTarget('save-compliance-document-draft'),
+                            waitForElement: 5000,
+                            advanceOnClick: true,
+                            popover: {
+                                title: 'Add the document',
+                                description: 'Add this document to the setup draft. The department setup is only written to Firestore when you save the main setup.',
+                                side: 'top',
+                                align: 'center',
+                                showButtons: ['close']
                             }
                         },
                         {
@@ -646,7 +678,7 @@ const ComplianceTrackingPage: React.FC = () => {
                             waitForElement: 5000,
                             popover: {
                                 title: 'Save document requirements',
-                                description: 'Save once at least one requirement has been added. A department that does not monitor compliance can simply remain with zero applicable requirements.',
+                                description: 'Save the card list to make it the department compliance setup for this programme.',
                                 side: 'top',
                                 align: 'center'
                             }
@@ -695,6 +727,10 @@ const ComplianceTrackingPage: React.FC = () => {
 
     const [deptRequired, setDeptRequired] = useState<RequiredDoc[] | null>(null)
     const [reqModalOpen, setReqModalOpen] = useState(false)
+    const [draftRequirements, setDraftRequirements] = useState<RequiredDoc[]>([])
+    const [documentEditorOpen, setDocumentEditorOpen] = useState(false)
+    const [editingRequirementIndex, setEditingRequirementIndex] = useState<number | null>(null)
+    const [requirementsLoading, setRequirementsLoading] = useState(false)
 
     const [manageOpen, setManageOpen] = useState(false)
     const [manageTarget, setManageTarget] = useState<any | null>(null)
@@ -713,7 +749,7 @@ const ComplianceTrackingPage: React.FC = () => {
     const { user } = useFullIdentity()
 
     const [formUpload] = Form.useForm()
-    const [formReq] = Form.useForm()
+    const [documentEditorForm] = Form.useForm()
     const storage = getStorage()
 
     const [emailTargets, setEmailTargets] = useState<
@@ -810,14 +846,45 @@ const ComplianceTrackingPage: React.FC = () => {
     }, [activeProgramId, isAllPrograms])
 
     const fetchDeptRequirements = useCallback(async () => {
-        if (!activeProgramId || !currentUser?.departmentId) return
-        const resolved = await resolveComplianceRequirements(activeProgramId, {
-            departmentId: currentUser.departmentId
-        })
-        const list = sanitizeTemplates(resolved.requirements as RequiredDoc[])
-        setDeptRequired(list)
-        formReq.setFieldsValue({ requiredDocuments: list.map(r => ({ ...r })) })
-    }, [activeProgramId, currentUser?.departmentId, formReq, programTemplates])
+        if (!activeProgramId || !currentUser?.departmentId) {
+            setDeptRequired(null)
+            return
+        }
+
+        setRequirementsLoading(true)
+        try {
+            const requirementsRef = doc(
+                db,
+                'programs',
+                activeProgramId,
+                'deptRequirements',
+                currentUser.departmentId
+            )
+            const requirementsSnap = await getDoc(requirementsRef)
+
+            if (!requirementsSnap.exists()) {
+                setDeptRequired([])
+                return
+            }
+
+            const data = requirementsSnap.data() as any
+            const savedRequirements = Array.isArray(data.requiredDocuments)
+                ? data.requiredDocuments
+                : []
+
+            setDeptRequired(
+                sanitizeTemplates(savedRequirements as RequiredDoc[]).filter(
+                    isRequirementVisibleToDepartment
+                )
+            )
+        } catch (error) {
+            console.error('Failed to load department compliance requirements', error)
+            setDeptRequired([])
+            message.error("Failed to load this department's compliance setup.")
+        } finally {
+            setRequirementsLoading(false)
+        }
+    }, [activeProgramId, currentUser?.departmentId, isRequirementVisibleToDepartment])
 
     useEffect(() => {
         if (activeProgramId && currentUser?.departmentId) fetchDeptRequirements()
@@ -1406,6 +1473,21 @@ const ComplianceTrackingPage: React.FC = () => {
             .map(p => {
                 const app = appByParticipant[p.id]
                 const cov = coverageForPart(p.id)
+                const moaDocument = docsForPart(p.id).find(document =>
+                    (document.kind ?? 'upload') === 'agreement' &&
+                    normalize(document.agreementId || document.id) === 'moa'
+                )
+                const moaMeta = app?.signedAgreements?.moa || {}
+                const moaSigned = Boolean(
+                    moaDocument?.participantSignatureURL ||
+                    moaDocument?.participantSignedAt ||
+                    moaDocument?.uploadedAt ||
+                    moaMeta.participantSignatureURL ||
+                    moaMeta.participantSignatureUrl ||
+                    moaMeta.participantSigned === true ||
+                    moaMeta.acceptedAt ||
+                    moaMeta.signedAt
+                )
 
                 return {
                     key: p.id,
@@ -1416,13 +1498,14 @@ const ComplianceTrackingPage: React.FC = () => {
                     gapGroup: app?.gapGroup ?? '—',
                     coverage: cov.have,
                     required: cov.need,
-                    status: cov.status
+                    status: cov.status,
+                    moaSigned
                 }
             })
             .filter(r => !searchText || (r.participantName || '').toLowerCase().includes(searchText.toLowerCase()))
 
         return base.sort((a, b) => a.coverage / (a.required || 1) - b.coverage / (b.required || 1))
-    }, [participants, appByParticipant, coverageForPart, searchText])
+    }, [participants, appByParticipant, coverageForPart, docsForPart, searchText])
 
     const updateAppDocs = async (participantId: string, updater: (docs: ComplianceDocument[]) => ComplianceDocument[]) => {
         const app = appByParticipant[participantId]
@@ -1738,19 +1821,262 @@ const ComplianceTrackingPage: React.FC = () => {
         document.body.removeChild(anchor)
     }
 
-    const uploadPresets = useMemo(() => {
-        return (visibleProgramTemplates || [])
-            .filter(p => (p.type ?? 'upload') === 'upload')
-            .map(p => ({
-                id: p.id,
-                title: p.title,
-                isOnboarding: p.isOnboarding === true,
-                hasExpiry: !!p.hasExpiry,
-                expiryMonths: p.expiryMonths ?? null
-            }))
-    }, [visibleProgramTemplates])
+    const downloadAgreement = async (
+        participantId: string,
+        requirement: RequiredDoc,
+        documentRecord: ComplianceDocument
+    ) => {
+        if (hasOpenableFile(documentRecord)) {
+            await downloadDocument(documentRecord, requirement.title)
+            return
+        }
 
-    const getPresetById = (id?: string) => uploadPresets.find(p => p.id === id)
+        const agreementId = normalize(
+            requirement.agreementId || documentRecord.agreementId || requirement.id
+        )
+        const application = appByParticipant[participantId]
+        const participant = participants.find(item => item.id === participantId) || {}
+        const meta = {
+            ...(application?.signedAgreements?.[agreementId] || {}),
+            ...documentRecord
+        }
+        const cleanName = String(
+            application?.programName || participant.beneficiaryName || documentRecord.documentName || agreementId
+        ).replace(/[^a-z0-9]+/gi, '_')
+
+        try {
+            if (agreementId === 'gap-analysis') {
+                let gapSnapshot = documentRecord.gapAnalysisId
+                    ? await getDoc(doc(db, 'gapAnalysis', documentRecord.gapAnalysisId))
+                    : null
+                if (!gapSnapshot?.exists()) {
+                    const gapQuery = await getDocs(query(
+                        collection(db, 'gapAnalysis'),
+                        where('participantId', '==', participantId)
+                    ))
+                    gapSnapshot = gapQuery.docs
+                        .sort((left, right) => {
+                            const leftAt = asDayjs(left.data()?.submittedAt || left.data()?.updatedAt)?.valueOf() || 0
+                            const rightAt = asDayjs(right.data()?.submittedAt || right.data()?.updatedAt)?.valueOf() || 0
+                            return rightAt - leftAt
+                        })[0] || null
+                }
+                if (!gapSnapshot?.exists()) throw new Error('The GAP record could not be found.')
+
+                const standardSnapshot = await getDoc(doc(db, 'qmsStandards', 'gap-analysis'))
+                const standard = standardSnapshot.exists() ? standardSnapshot.data() as any : null
+                await exportGapDocx(
+                    { id: gapSnapshot.id, ...gapSnapshot.data() },
+                    {
+                        ...(standard?.formNo && standard?.revisionNo && standard?.effectiveDate
+                            ? {
+                                headerMeta: {
+                                    formNo: standard.formNo,
+                                    revisionNo: standard.revisionNo,
+                                    effectiveDate: dayjs(standard.effectiveDate).format('D MMMM YYYY'),
+                                    centerTitle: standard.centerTitle || 'SMME GAP ANALYSIS',
+                                    onboardingComments: standard.onboardingComments || ''
+                                }
+                            }
+                            : {}),
+                        filenameBase: `${cleanName || 'SMME'}-GAP-Analysis`
+                    }
+                )
+                message.success('GAP Analysis downloaded.')
+                return
+            }
+
+            const programSnapshot = application?.programId
+                ? await getDoc(doc(db, 'programs', application.programId))
+                : null
+            const program = programSnapshot?.exists() ? programSnapshot.data() as any : {}
+            const programStart = asDayjs(program?.startDate)
+            const programEnd = asDayjs(program?.endDate)
+            const resolvedCompliance = application?.programId
+                ? await resolveComplianceRequirements(application.programId, { includeAllDepartments: true })
+                : null
+            const agreementTemplate = resolvedCompliance?.agreements.find(template =>
+                normalize(template.agreementId) === agreementId
+            )
+            const documentEffectiveDate = agreementTemplate?.effectiveDate
+                ? dayjs(agreementTemplate.effectiveDate).format('DD MMMM YYYY')
+                : programStart?.format('DD MMMM YYYY') || '________'
+
+            if (agreementId === 'pre-incubation-contract') {
+                await downloadPreIncubationDocxFromArgs({
+                    effectiveDate: documentEffectiveDate,
+                    registrationNumber: application?.registrationNumber || participant.registrationNumber,
+                    companyName: application?.beneficiaryName || participant.beneficiaryName,
+                    directorName:
+                        participant.participantName || application?.participantName || application?.applicantName,
+                    directorId: participant.idNumber || application?.idNumber,
+                    start: programStart || undefined,
+                    end: programEnd || undefined,
+                    products: participant.natureOfBusiness,
+                    signPlace: program?.branchName || application?.branchName,
+                    companyAddress: participant.businessAddress || application?.businessAddress,
+                    companyEmail: participant.email || application?.email,
+                    companyPhone: participant.phone || application?.phone,
+                    directorPosition: application?.directorPosition || 'MANAGING DIRECTOR',
+                    incubateeSignatureImg:
+                        meta.participantSignatureURL || meta.signatureURL || meta.userSignatureURL,
+                    romSignatureImg: meta.romSignatureURL || meta.romSignatureUrl,
+                    romNameToRender: meta.romName || meta.romSignedBy,
+                    romPositionToRender: meta.romPosition || 'Operations',
+                    incubateeSignedAt: meta.participantSignedAt || meta.acceptedAt,
+                    romSignedAt: meta.romSignedAt
+                }, `Pre-Incubation_Agreement_${cleanName || 'SMME'}.docx`)
+                message.success('Pre-Incubation Agreement downloaded.')
+                return
+            }
+
+            if (agreementId === 'moa') {
+                const vars: MoaVars = {
+                    beneficiaryName: application?.beneficiaryName || participant.beneficiaryName || '________',
+                    registrationNumber: participant.registrationNumber || application?.registrationNumber || '________',
+                    participantName:
+                        participant.participantName || application?.participantName || application?.applicantName || '________',
+                    idNumber: participant.idNumber || application?.idNumber || '________',
+                    businessAddress: participant.businessAddress || application?.businessAddress || '________',
+                    contactNumber: participant.phone || application?.phone || '________',
+                    email: participant.email || application?.email || '________',
+                    effectiveDate: programStart?.format('DD MMMM YYYY') || '________',
+                    graduationDate: programEnd?.format('DD MMMM YYYY') || '________'
+                }
+                const acceptedAt = asDayjs(meta.acceptedAt || meta.signedAt)
+                const romSignedAt = asDayjs(meta.romSignedAt || meta.operationsSignedAt)
+                await saveMoaDocx(
+                    vars,
+                    `MOA_${cleanName || 'SMME'}.docx`,
+                    {
+                        centerTitle: 'INCUBATION MEMORANDUM OF AGREEMENT',
+                        formNo: agreementTemplate?.formNo || '',
+                        revisionNo: agreementTemplate?.revisionNo || '',
+                        effectiveDate: documentEffectiveDate
+                    },
+                    {
+                        incubatee: {
+                            name: meta.signerName || vars.participantName,
+                            positionOrTitle: meta.signerTitle || 'Director',
+                            place: meta.place || application?.branchName || '',
+                            day: acceptedAt?.format('DD') || '',
+                            month: acceptedAt?.format('MMMM') || '',
+                            year: acceptedAt?.format('YYYY') || '',
+                            signatureUrl:
+                                meta.participantSignatureURL || meta.signatureURL || meta.userSignatureURL
+                        },
+                        incubator: {
+                            name: meta.romSignerName || meta.romName || '',
+                            positionOrTitle: meta.romSignerTitle || meta.romPosition || 'Centre Coordinator',
+                            place: meta.romPlace || application?.branchName || '',
+                            day: romSignedAt?.format('DD') || '',
+                            month: romSignedAt?.format('MMMM') || '',
+                            year: romSignedAt?.format('YYYY') || '',
+                            signatureUrl: meta.romSignatureURL || meta.romSignatureUrl
+                        }
+                    }
+                )
+                message.success('MOA downloaded.')
+                return
+            }
+
+            throw new Error('This agreement does not have a downloadable file yet.')
+        } catch (error: any) {
+            console.error('Could not download compliance agreement', error)
+            message.error(error?.message || 'The agreement could not be downloaded.')
+        }
+    }
+
+
+    const requirementOptionValue = (requirement: RequiredDoc) => keyForReq(requirement)
+
+    const availableRequirementTemplates = useMemo(
+        () => visibleProgramTemplates.map(template => ({
+            ...template,
+            optionValue: requirementOptionValue(template)
+        })),
+        [visibleProgramTemplates]
+    )
+
+    const openRequirementsManager = () => {
+        setDraftRequirements((deptRequired || []).map(requirement => ({ ...requirement })))
+        setReqModalOpen(true)
+    }
+
+    const openDocumentEditor = (index: number | null = null) => {
+        const current = index === null ? null : draftRequirements[index]
+        setEditingRequirementIndex(index)
+        documentEditorForm.resetFields()
+        documentEditorForm.setFieldsValue({
+            templateKey: current ? requirementOptionValue(current) : undefined,
+            hasExpiry: current?.hasExpiry === true,
+            expiryMonths: current?.hasExpiry ? current.expiryMonths ?? null : null
+        })
+        setReqModalOpen(false)
+        setDocumentEditorOpen(true)
+    }
+
+    const closeDocumentEditor = () => {
+        setDocumentEditorOpen(false)
+        setEditingRequirementIndex(null)
+        documentEditorForm.resetFields()
+        setReqModalOpen(true)
+    }
+
+    const saveDocumentDraft = async () => {
+        try {
+            const values = await documentEditorForm.validateFields()
+            const template = availableRequirementTemplates.find(
+                item => item.optionValue === values.templateKey
+            )
+
+            if (!template) {
+                message.error('Select a valid document.')
+                return
+            }
+
+            const isAgreement = (template.type ?? 'upload') === 'agreement'
+            const nextRequirement: RequiredDoc = {
+                id: template.id,
+                title: template.title,
+                type: isAgreement ? 'agreement' : 'upload',
+                isOnboarding: isAgreement || template.isOnboarding === true,
+                hasExpiry: values.hasExpiry === true,
+                expiryMonths: values.hasExpiry ? values.expiryMonths ?? null : null,
+                ...(isAgreement
+                    ? { agreementId: template.agreementId || template.id }
+                    : { presetId: template.presetId || template.id })
+            }
+
+            setDraftRequirements(previous => {
+                const next = previous.map(item => ({ ...item }))
+                if (editingRequirementIndex === null) next.push(nextRequirement)
+                else next[editingRequirementIndex] = nextRequirement
+                return next
+            })
+
+            setDocumentEditorOpen(false)
+            setEditingRequirementIndex(null)
+            documentEditorForm.resetFields()
+            setReqModalOpen(true)
+        } catch {
+            // Validation errors are shown by Ant Design Form.
+        }
+    }
+
+    const removeDraftRequirement = (index: number) => {
+        const requirement = draftRequirements[index]
+        Modal.confirm({
+            centered: true,
+            title: 'Remove document?',
+            content: `Remove ${requirement?.title || 'this document'} from this department's compliance setup?`,
+            okText: 'Remove',
+            okButtonProps: { danger: true },
+            onOk: () => {
+                setDraftRequirements(previous => previous.filter((_, itemIndex) => itemIndex !== index))
+            }
+        })
+    }
 
     const openUploadFor = (participant: any, requiredId?: string) => {
         setManageTarget(participant)
@@ -2160,11 +2486,13 @@ const ComplianceTrackingPage: React.FC = () => {
                                     </Button>
                                 )}
 
-                                {d && hasOpenableFile(d) && (
+                                {d && (hasOpenableFile(d) || isAgreement) && (
                                     <Button
                                         data-guide='download-document-action'
                                         icon={<DownloadOutlined />}
-                                        onClick={() => downloadDocument(d, r.req.title)}
+                                        onClick={() => isAgreement
+                                            ? downloadAgreement(pId, r.req, d)
+                                            : downloadDocument(d, r.req.title)}
                                     >
                                         Download
                                     </Button>
@@ -2354,12 +2682,14 @@ const ComplianceTrackingPage: React.FC = () => {
                                         </Button>
                                     )}
 
-                                    {d && hasOpenableFile(d) && (
+                                    {d && (hasOpenableFile(d) || isAgreement) && (
                                         <Button
                                             data-guide='download-document-action'
                                             size='small'
                                             icon={<DownloadOutlined />}
-                                            onClick={() => downloadDocument(d, r.req.title)}
+                                            onClick={() => isAgreement
+                                                ? downloadAgreement(manageTarget.participantId, r.req, d)
+                                                : downloadDocument(d, r.req.title)}
                                         >
                                             Download
                                         </Button>
@@ -2503,35 +2833,11 @@ const ComplianceTrackingPage: React.FC = () => {
     const saveRequirements = async () => {
         setSavingReqs(true)
         try {
-            const draftDocuments = formReq.getFieldValue('requiredDocuments') || []
-            if (!Array.isArray(draftDocuments) || draftDocuments.length === 0) {
-                message.warning('Add at least one required document before saving.')
-                return
-            }
-
-            const { requiredDocuments } = await formReq.validateFields()
             const pid = activeProgramId
             if (!pid || isAllPrograms) throw new Error('Select one active program before configuring documents.')
             if (!currentUser?.departmentId) throw new Error('Missing department context.')
 
-            const list: RequiredDoc[] = (requiredDocuments || []).map((r: any) => {
-                const base = mapProgramReqToRequiredDoc(r)
-                const isAgreement = (r.type ?? base.type) === 'agreement'
-                const out: RequiredDoc = {
-                    id: base.id,
-                    title: isAgreement
-                        ? standardAgreementTitle(r.agreementId || base.agreementId || base.id, r.title || base.title)
-                        : r.title || base.title,
-                    type: isAgreement ? 'agreement' : 'upload',
-                    isOnboarding: isAgreement || r.isOnboarding === true || base.isOnboarding === true,
-                    hasExpiry: !!r.hasExpiry,
-                    expiryMonths: r.hasExpiry ? r.expiryMonths ?? null : null
-                }
-                if (isAgreement) out.agreementId = r.agreementId || base.agreementId
-                else out.presetId = r.presetId || base.presetId
-                return out
-            })
-
+            const list = sanitizeTemplates(draftRequirements).filter(isRequirementVisibleToDepartment)
             const clean = stripUndefinedDeep({
                 departmentId: currentUser.departmentId,
                 departmentName: departmentInfo?.name || currentUser?.department || '',
@@ -2539,11 +2845,20 @@ const ComplianceTrackingPage: React.FC = () => {
                 updatedAt: serverTimestamp()
             })
 
-            await setDoc(doc(db, 'programs', pid, 'deptRequirements', currentUser.departmentId), clean, { merge: true })
+            await setDoc(
+                doc(db, 'programs', pid, 'deptRequirements', currentUser.departmentId),
+                clean,
+                { merge: true }
+            )
 
             if (pid === activeProgramId) setDeptRequired(list)
+            setDraftRequirements(list.map(requirement => ({ ...requirement })))
             setReqModalOpen(false)
-            message.success('Department-required documents saved.')
+            message.success(
+                list.length
+                    ? 'Department-required documents saved.'
+                    : 'Department document setup cleared.'
+            )
         } catch (e: any) {
             console.error(e)
             message.error(e?.message || 'Failed to save requirements.')
@@ -2564,6 +2879,17 @@ const ComplianceTrackingPage: React.FC = () => {
             : []),
         { title: 'Group', dataIndex: 'gapGroup', key: 'gapGroup' },
         { title: 'Branch', dataIndex: 'branchName', key: 'branchName' },
+        ...(isROMDept
+            ? [{
+                title: 'MOA',
+                key: 'moa',
+                render: (_: unknown, record: { moaSigned?: boolean }) => (
+                    <Tag color={record.moaSigned ? 'green' : 'orange'}>
+                        {record.moaSigned ? 'Signed' : 'Unsigned'}
+                    </Tag>
+                )
+            } as ColumnType<any>]
+            : []),
         {
             title: 'Coverage',
             key: 'coverage',
@@ -2616,422 +2942,470 @@ const ComplianceTrackingPage: React.FC = () => {
         requirement => (requirement.type ?? 'upload') === 'upload'
     )
 
+    const hasDepartmentRequirements = (deptRequired?.length || 0) > 0
+    const showDepartmentSetupEmptyState = Boolean(
+        activeProgramId &&
+        !isAllPrograms &&
+        deptRequired !== null &&
+        !hasDepartmentRequirements
+    )
+
+    const selectedEditorTemplateKey = Form.useWatch('templateKey', documentEditorForm)
+    const selectedEditorHasExpiry = Form.useWatch('hasExpiry', documentEditorForm)
+    const editingRequirement = editingRequirementIndex === null
+        ? null
+        : draftRequirements[editingRequirementIndex]
+    const usedRequirementKeys = new Set(
+        draftRequirements
+            .filter((_, index) => index !== editingRequirementIndex)
+            .map(requirementOptionValue)
+    )
+    const editorTemplateOptions = availableRequirementTemplates.map(template => ({
+        label: template.title,
+        value: template.optionValue,
+        disabled: usedRequirementKeys.has(template.optionValue)
+    }))
+    const selectedEditorTemplate = availableRequirementTemplates.find(
+        template => template.optionValue === selectedEditorTemplateKey
+    )
+
     return (
-        <div style={{ minHeight: '100vh', background: '#fff', padding: 24 }}>
+        <div
+            className='compliance-tracking-page'
+            style={{ minHeight: '100vh', background: token.colorBgLayout, color: token.colorText, padding: 24 }}
+        >
+            <style>{`
+                .compliance-tracking-page .ant-table-wrapper,
+                .compliance-tracking-page .ant-table,
+                .compliance-tracking-page .ant-table-container,
+                .compliance-tracking-page .ant-table-thead > tr > th,
+                .compliance-tracking-page .ant-table-tbody > tr > td {
+                    background: ${token.colorBgContainer};
+                    color: ${token.colorText};
+                    border-color: ${token.colorBorderSecondary};
+                }
+                .compliance-tracking-page .ant-table-thead > tr > th {
+                    background: ${token.colorFillAlter};
+                }
+                .compliance-tracking-page .ant-table-tbody > tr:hover > td {
+                    background: ${token.colorFillQuaternary} !important;
+                }
+                .compliance-tracking-page .ant-table .ant-btn {
+                    border-radius: 999px;
+                }
+            `}</style>
             <Helmet>
                 <title>Compliance Management | Smart Incubation</title>
             </Helmet>
 
-            {loading ? (
+            {loading || (!!activeProgramId && requirementsLoading) ? (
                 <LoadingOverlay tip='Loading compliance data' />
             ) : (
                 <>
-                    <Row data-guide='compliance-metrics' gutter={[16, 16]} style={{ marginBottom: 12 }}>
-                        {[
-                            { title: 'Required / Participant', value: metrics.needPer, color: '#722ed1', icon: <FileTextOutlined />, bg: '#f9f0ff' },
-                            { title: 'Uploaded', value: metrics.uploaded, color: '#52c41a', icon: <SafetyCertificateOutlined />, bg: '#f6ffed' },
-                            { title: 'Missing', value: metrics.missing, color: '#fa541c', icon: <WarningOutlined />, bg: '#fff2e8' },
-                            { title: 'Pending', value: metrics.pending, color: '#1677ff', icon: <FileProtectOutlined />, bg: '#e6f7ff' },
-                            { title: 'Expired/Invalid', value: metrics.expired + metrics.queried, color: '#f5222d', icon: <CloseCircleOutlined />, bg: '#fff2f0' }
-                        ].map((m, i) => (
-                            <Col
-                                xs={24}
-                                sm={12}
-                                md={8}
-                                lg={{ flex: '1 1 0' }}
-                                style={{ minWidth: 0 }}
-                                key={m.title}
-                            >
-                                <MotionCard.Metric
-                                    loading={loading}
-                                    icon={React.cloneElement(m.icon as any, { style: { color: m.color } })}
-                                    iconBg={m.bg}
-                                    title={m.title}
-                                    value={m.value}
-                                />
-                            </Col>
-                        ))}
-                    </Row>
-
-                    <MotionCard
-                        filterBar={
-                            <Row
-                                data-guide='compliance-filters'
-                                gutter={[8, 8]}
-                                align='middle'
-                                wrap={!screens.lg}
-                                style={{ width: '100%' }}
-                            >
-                                <Col
-                                    xs={24}
-                                    md={8}
-                                    flex={screens.lg ? '0 0 220px' : undefined}
-                                    style={{
-                                        minWidth: 0,
-                                        maxWidth: screens.lg ? 220 : undefined
-                                    }}
-                                >
-                                    <Input
-                                        placeholder='Search SME…'
-                                        value={searchText}
-                                        onChange={e => setSearchText(e.target.value)}
-                                        prefix={<SearchOutlined />}
-                                        allowClear
-                                    />
-                                </Col>
-
-                                <Col
-                                    xs={24}
-                                    md={16}
-                                    flex={screens.lg ? '1 1 auto' : undefined}
-                                    style={{
-                                        minWidth: 0,
-                                        display: 'flex',
-                                        justifyContent: 'flex-end'
-                                    }}
-                                >
-                                    <Space
-                                        size={8}
-                                        wrap={!screens.lg}
-                                        style={{
-                                            width: screens.lg ? 'auto' : '100%',
-                                            justifyContent: 'flex-end'
-                                        }}
+                    {showDepartmentSetupEmptyState ? (
+                        <MotionCard>
+                            <Result
+                                status='info'
+                                icon={<FileProtectOutlined style={{ color: token.colorPrimary }} />}
+                                title='No compliance documents configured'
+                                subTitle={`${departmentInfo?.name || currentUser?.department || 'This department'} has no document requirements configured for ${programName}.`}
+                                extra={
+                                    <Button
+                                        data-guide='setup-compliance-documents'
+                                        type='primary'
+                                        shape='round'
+                                        icon={<SettingOutlined />}
+                                        onClick={openRequirementsManager}
                                     >
-                                        <Button
-                                            data-guide='email-compliance-reminders'
-                                            shape='round'
-                                            icon={<MailOutlined />}
-                                            onClick={() => {
-                                                const targets = buildEmailTargets()
-
-                                                if (!targets.length) {
-                                                    message.info(
-                                                        'All good — no reminders needed for this program.'
-                                                    )
-                                                    return
-                                                }
-
-                                                setEmailTargets(targets)
-                                                setEmailTemplatesOpen(true)
-                                            }}
-                                        >
-                                            Email Reminders
-                                        </Button>
-
-                                        <Button
-                                            data-guide='quick-compliance-reminders'
-                                            shape='round'
-                                            icon={<MailOutlined />}
-                                            onClick={handleSendReminders}
-                                        >
-                                            Quick Reminders
-                                        </Button>
-
-                                        <Button
-                                            data-guide='bulk-ai-compliance'
-                                            shape='round'
-                                            icon={<RobotOutlined />}
-                                            loading={aiBatchRunning}
-                                            disabled={aiBatchRunning || rows.length === 0}
-                                            onClick={() => {
-                                                Modal.confirm({
-                                                    centered: true,
-                                                    title: 'Run AI verification for all SMEs?',
-                                                    content: `This checks every uploaded document across ${rows.length} SME(s) shown here. Each check may use an AI request, so this can take a while and consume shared AI quota.`,
-                                                    okText: 'Run AI Verify All',
-                                                    onOk: () =>
-                                                        runBatchVerification(
-                                                            rows.map(r => r.participantId),
-                                                            'all SMEs'
-                                                        )
-                                                })
-                                            }}
-                                        >
-                                            {aiBatchRunning && aiBatchProgress
-                                                ? `Verifying ${aiBatchProgress.done}/${aiBatchProgress.total}…`
-                                                : 'AI Verify All'}
-                                        </Button>
-
-                                        <Button
-                                            data-guide='setup-compliance-documents'
-                                            shape='round'
-                                            icon={<SettingOutlined />}
-                                            disabled={!activeProgramId || isAllPrograms}
-                                            title={
-                                                !activeProgramId || isAllPrograms
-                                                    ? 'Select one active program to configure its documents.'
-                                                    : undefined
-                                            }
-                                            onClick={() => {
-                                                formReq.setFieldsValue({
-                                                    requiredDocuments: (
-                                                        deptRequired !== null
-                                                            ? deptRequired.filter(
-                                                                isRequirementVisibleToDepartment
-                                                            )
-                                                            : visibleProgramTemplates
-                                                    ).map(r => ({ ...r }))
-                                                })
-
-                                                setReqModalOpen(true)
-                                            }}
-                                        >
-                                            Setup Documents
-                                        </Button>
-                                    </Space>
-                                </Col>
-                            </Row>
-                        }
-                        filterBarProps={{
-                            background: '#f8fafc',
-                            borderColor: '#d9e8ff',
-                            borderRadius: 14,
-                            boxShadow: 'inset 0 2px 8px rgba(15,23,42,0.05)',
-                            padding: 16
-                        }}
-                    >
-                        <div data-guide='compliance-table'>
-                            <Table
-                                rowKey='key'
-                                dataSource={rows}
-                                columns={columns}
-                                locale={{
-                                    emptyText: (
-                                        <Empty
-                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                            description={isAllPrograms
-                                                ? 'No participants found across the available programs.'
-                                                : 'No participants found for this program.'}
-                                        />
-                                    )
-                                }}
-                                pagination={{ position: ['bottomCenter'], pageSize: 7, showSizeChanger: false }}
+                                        Setup Documents
+                                    </Button>
+                                }
                             />
-                        </div>
-                    </MotionCard>
+                        </MotionCard>
+                    ) : (
+                        <>
+                            <Row data-guide='compliance-metrics' gutter={[16, 16]} style={{ marginBottom: 12 }}>
+                                {[
+                                    { title: 'Required / Participant', value: metrics.needPer, color: '#722ed1', icon: <FileTextOutlined />, bg: '#f9f0ff' },
+                                    { title: 'Uploaded', value: metrics.uploaded, color: '#52c41a', icon: <SafetyCertificateOutlined />, bg: '#f6ffed' },
+                                    { title: 'Missing', value: metrics.missing, color: '#fa541c', icon: <WarningOutlined />, bg: '#fff2e8' },
+                                    { title: 'Pending', value: metrics.pending, color: '#1677ff', icon: <FileProtectOutlined />, bg: '#e6f7ff' },
+                                    { title: 'Expired/Invalid', value: metrics.expired + metrics.queried, color: '#f5222d', icon: <CloseCircleOutlined />, bg: '#fff2f0' }
+                                ].map(m => (
+                                    <Col
+                                        xs={24}
+                                        sm={12}
+                                        md={8}
+                                        lg={{ flex: '1 1 0' }}
+                                        style={{ minWidth: 0 }}
+                                        key={m.title}
+                                    >
+                                        <MotionCard.Metric
+                                            icon={React.cloneElement(m.icon as any, { style: { color: m.color } })}
+                                            iconBg={metricPalette.isDark ? token.colorFillSecondary : m.bg}
+                                            title={m.title}
+                                            value={m.value}
+                                        />
+                                    </Col>
+                                ))}
+                            </Row>
+
+                            <MotionCard
+                                filterBar={
+                                    <Row
+                                        data-guide='compliance-filters'
+                                        gutter={[8, 8]}
+                                        align='middle'
+                                        style={{ width: '100%' }}
+                                    >
+                                        <Col xs={24} sm={12} lg={8} style={{ minWidth: 0 }}>
+                                            <Input
+                                                placeholder='Search SME…'
+                                                value={searchText}
+                                                onChange={e => setSearchText(e.target.value)}
+                                                prefix={<SearchOutlined />}
+                                                allowClear
+                                            />
+                                        </Col>
+
+                                        <Col xs={24} sm={12} lg={4} style={{ minWidth: 0 }}>
+                                            <Button
+                                                data-guide='email-compliance-reminders'
+                                                shape='round'
+                                                icon={<MailOutlined />}
+                                                block
+                                                onClick={() => {
+                                                    const targets = buildEmailTargets()
+
+                                                    if (!targets.length) {
+                                                        message.info('All good — no reminders needed for this program.')
+                                                        return
+                                                    }
+
+                                                    setEmailTargets(targets)
+                                                    setEmailTemplatesOpen(true)
+                                                }}
+                                            >
+                                                Email Reminders
+                                            </Button>
+                                        </Col>
+
+                                        <Col xs={24} sm={12} lg={4} style={{ minWidth: 0 }}>
+                                            <Button
+                                                data-guide='quick-compliance-reminders'
+                                                shape='round'
+                                                icon={<MailOutlined />}
+                                                block
+                                                onClick={handleSendReminders}
+                                            >
+                                                Quick Reminders
+                                            </Button>
+                                        </Col>
+
+                                        <Col xs={24} sm={12} lg={4} style={{ minWidth: 0 }}>
+                                            <Button
+                                                data-guide='bulk-ai-compliance'
+                                                shape='round'
+                                                icon={<RobotOutlined />}
+                                                block
+                                                loading={aiBatchRunning}
+                                                disabled={aiBatchRunning || rows.length === 0}
+                                                onClick={() => {
+                                                    Modal.confirm({
+                                                        centered: true,
+                                                        title: 'Run AI verification for all SMEs?',
+                                                        content: `This checks every uploaded document across ${rows.length} SME(s) shown here. Each check may use an AI request, so this can take a while and consume shared AI quota.`,
+                                                        okText: 'Run AI Verify All',
+                                                        onOk: () =>
+                                                            runBatchVerification(
+                                                                rows.map(r => r.participantId),
+                                                                'all SMEs'
+                                                            )
+                                                    })
+                                                }}
+                                            >
+                                                {aiBatchRunning && aiBatchProgress
+                                                    ? `Verifying ${aiBatchProgress.done}/${aiBatchProgress.total}…`
+                                                    : 'AI Verify All'}
+                                            </Button>
+                                        </Col>
+
+                                        <Col xs={24} sm={12} lg={4} style={{ minWidth: 0 }}>
+                                            <Button
+                                                data-guide='setup-compliance-documents'
+                                                shape='round'
+                                                icon={<SettingOutlined />}
+                                                block
+                                                disabled={!activeProgramId || isAllPrograms}
+                                                title={
+                                                    !activeProgramId || isAllPrograms
+                                                        ? 'Select one active program to configure its documents.'
+                                                        : undefined
+                                                }
+                                                onClick={openRequirementsManager}
+                                            >
+                                                Setup Documents
+                                            </Button>
+                                        </Col>
+                                    </Row>
+                                }
+                                filterBarProps={{
+                                    background: metricPalette.filterBarBg,
+                                    borderColor: metricPalette.filterBarBorder,
+                                    borderRadius: 14,
+                                    boxShadow: metricPalette.filterBarShadow,
+                                    padding: 16
+                                }}
+                            >
+                                <div data-guide='compliance-table'>
+                                    <Table
+                                        rowKey='key'
+                                        dataSource={rows}
+                                        columns={columns}
+                                        style={{ background: token.colorBgContainer }}
+                                        locale={{
+                                            emptyText: (
+                                                <Empty
+                                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                                    description={isAllPrograms
+                                                        ? 'No participants found across the available programs.'
+                                                        : 'No participants found for this program.'}
+                                                />
+                                            )
+                                        }}
+                                        pagination={{ position: ['bottomCenter'], pageSize: 7, showSizeChanger: false }}
+                                    />
+                                </div>
+                            </MotionCard>
+                        </>
+                    )}
 
                     <Modal
                         className='guide-setup-compliance-modal'
                         centered
-                        title='Setup Required Documents (Department)'
+                        title='Setup Documents'
                         open={reqModalOpen}
-                        onCancel={() => setReqModalOpen(false)}
-                        width={1200}
-                        styles={{ body: { maxHeight: '68vh', overflowY: 'auto', paddingRight: 8 } }}
-                        footer={<div style={{ display: 'flex', gap: 12, width: '100%' }}>
-                            <Button danger block style={{ flex: 1 }} onClick={() => setReqModalOpen(false)} disabled={savingReqs}>
-                                Cancel
-                            </Button>
-                            <Button
-                                className='guide-save-compliance-documents'
-                                type='primary'
-                                block
-                                style={{ flex: 1 }}
-                                onClick={saveRequirements}
-                                loading={savingReqs}
-                            >
-                                {savingReqs ? 'Saving…' : 'Save Documents'}
-                            </Button>
-                        </div>}
+                        onCancel={() => {
+                            setReqModalOpen(false)
+                            setDraftRequirements((deptRequired || []).map(requirement => ({ ...requirement })))
+                        }}
+                        width={820}
+                        styles={{ body: { maxHeight: '68vh', overflowY: 'auto', paddingRight: 4 } }}
+                        footer={
+                            <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+                                <Button
+                                    block
+                                    style={{ flex: 1 }}
+                                    onClick={() => {
+                                        setReqModalOpen(false)
+                                        setDraftRequirements((deptRequired || []).map(requirement => ({ ...requirement })))
+                                    }}
+                                    disabled={savingReqs}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    className='guide-save-compliance-documents'
+                                    type='primary'
+                                    block
+                                    style={{ flex: 1 }}
+                                    onClick={saveRequirements}
+                                    loading={savingReqs}
+                                >
+                                    {savingReqs ? 'Saving…' : 'Save Documents'}
+                                </Button>
+                            </div>
+                        }
                     >
-                        <Text type='secondary'>
-                            Configure the documents your department requires for this program. These drive coverage, uploads, and validation.
-                        </Text>
+                        <Space direction='vertical' size={18} style={{ width: '100%' }}>
+                            <div>
+                                <Text strong style={{ display: 'block', fontSize: 16 }}>
+                                    {departmentInfo?.name || currentUser?.department || 'Department'} requirements
+                                </Text>
+                                <Text type='secondary'>
+                                    Manage the documents this department monitors for {programName}.
+                                </Text>
+                            </div>
 
-                        <Divider />
-
-                        <Form form={formReq} layout='vertical'>
-                            <Form.List name='requiredDocuments'>
-                                {(fields, { add, remove }, { errors }) => (
-                                    <>
-                                        <div style={{
-                                            position: 'sticky',
-                                            top: 0,
-                                            zIndex: 5,
-                                            background: '#fff',
-                                            padding: '0 0 12px',
-                                            marginBottom: 12,
-                                            borderBottom: '1px solid #f0f0f0'
-                                        }}>
-                                            <Button
-                                                data-guide='add-compliance-document'
-                                                type='primary'
-                                                block
-                                                icon={<PlusOutlined />}
-                                                onClick={() => add({ type: 'upload', isOnboarding: false, hasExpiry: false, expiryMonths: null })}
+                            <Row gutter={[12, 12]}>
+                                {draftRequirements.map((requirement, index) => (
+                                    <Col xs={24} md={12} key={`${requirementOptionValue(requirement)}-${index}`}>
+                                        <Card
+                                            size='small'
+                                            styles={{ body: { padding: 16 } }}
+                                            style={{
+                                                height: '100%',
+                                                borderColor: token.colorBorderSecondary,
+                                                background: token.colorBgContainer
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'flex-start',
+                                                    justifyContent: 'space-between',
+                                                    gap: 12
+                                                }}
                                             >
-                                                Add Required Document
-                                            </Button>
-                                        </div>
-                                        {fields.map(field => (
-                                            <Card key={field.key} size='small' style={{ marginBottom: 12 }}>
-                                                <Row gutter={[12, 8]} align='top'>
-                                                    <Col xs={24} md={5}>
-                                                        <Form.Item {...field} name={[field.name, 'type']} label='Source' initialValue='upload' style={{ marginBottom: 8 }}>
-                                                            <Select
-                                                                options={[
-                                                                    { label: 'Upload', value: 'upload' },
-                                                                    ...(canSeeOnboardingDocuments
-                                                                        ? [{ label: 'Agreement', value: 'agreement' }]
-                                                                        : [])
-                                                                ]}
-                                                                onChange={val => {
-                                                                    const list = formReq.getFieldValue('requiredDocuments') || []
-                                                                    const row = { ...(list[field.name] || {}) }
+                                                <Space align='start' size={12}>
+                                                    <MotionCard.IconChip
+                                                        size={38}
+                                                        radius={11}
+                                                        bg={token.colorFillSecondary}
+                                                        icon={<FileTextOutlined style={{ color: token.colorPrimary }} />}
+                                                    />
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <Text strong style={{ display: 'block' }} ellipsis={{ tooltip: requirement.title }}>
+                                                            {requirement.title}
+                                                        </Text>
+                                                        <Space size={6} wrap style={{ marginTop: 8 }}>
+                                                            <Tag color={(requirement.type ?? 'upload') === 'agreement' ? 'purple' : 'blue'}>
+                                                                {(requirement.type ?? 'upload') === 'agreement' ? 'Agreement' : 'Upload'}
+                                                            </Tag>
+                                                            <Tag>
+                                                                {requirement.hasExpiry
+                                                                    ? `${requirement.expiryMonths || '—'} month expiry`
+                                                                    : 'No expiry'}
+                                                            </Tag>
+                                                        </Space>
+                                                    </div>
+                                                </Space>
 
-                                                                    if (val === 'agreement') {
-                                                                        delete row.presetId
-                                                                        row.isOnboarding = true
-                                                                    } else {
-                                                                        delete row.agreementId
-                                                                    }
+                                                <Space size={4}>
+                                                    <Tooltip title='Edit document'>
+                                                        <Button
+                                                            type='text'
+                                                            shape='circle'
+                                                            icon={<EditOutlined />}
+                                                            onClick={() => openDocumentEditor(index)}
+                                                        />
+                                                    </Tooltip>
+                                                    <Tooltip title='Delete document'>
+                                                        <Button
+                                                            type='text'
+                                                            shape='circle'
+                                                            danger
+                                                            icon={<DeleteOutlined />}
+                                                            onClick={() => removeDraftRequirement(index)}
+                                                        />
+                                                    </Tooltip>
+                                                </Space>
+                                            </div>
+                                        </Card>
+                                    </Col>
+                                ))}
 
-                                                                    list[field.name] = row
-                                                                    formReq.setFieldsValue({ requiredDocuments: list })
-                                                                }}
-                                                            />
-                                                        </Form.Item>
-                                                    </Col>
+                                <Col xs={24} md={12}>
+                                    <Button
+                                        data-guide='add-compliance-document'
+                                        type='dashed'
+                                        block
+                                        onClick={() => openDocumentEditor(null)}
+                                        style={{
+                                            minHeight: 92,
+                                            height: '100%',
+                                            borderRadius: 12,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            flexDirection: 'column',
+                                            gap: 8
+                                        }}
+                                    >
+                                        <PlusOutlined style={{ fontSize: 20 }} />
+                                        <span>Add Document</span>
+                                    </Button>
+                                </Col>
+                            </Row>
 
-                                                    <Col xs={24} md={13}>
-                                                        <Form.Item noStyle shouldUpdate>
-                                                            {({ getFieldValue }) => {
-                                                                const type = getFieldValue(['requiredDocuments', field.name, 'type']) ?? 'upload'
-                                                                if (type === 'upload') {
-                                                                    return (
-                                                                        <Form.Item
-                                                                            {...field}
-                                                                            name={[field.name, 'presetId']}
-                                                                            label='Document Preset'
-                                                                            rules={[{ required: true, message: 'Choose a preset' }]}
-                                                                            style={{ marginBottom: 8 }}
-                                                                        >
-                                                                            <Select
-                                                                                placeholder={uploadPresets.length ? 'Pick a preset' : 'No presets for this program'}
-                                                                                options={uploadPresets.map(p => ({ label: p.title, value: p.id }))}
-                                                                                disabled={!uploadPresets.length}
-                                                                                onChange={presetId => {
-                                                                                    const preset = getPresetById(presetId)
-                                                                                    const list = formReq.getFieldValue('requiredDocuments') || []
-                                                                                    const row = list[field.name] || {}
-                                                                                    list[field.name] = {
-                                                                                        ...row,
-                                                                                        presetId,
-                                                                                        title: preset?.title || '',
-                                                                                        isOnboarding: preset?.isOnboarding === true,
-                                                                                        hasExpiry: !!preset?.hasExpiry,
-                                                                                        expiryMonths: preset?.hasExpiry ? preset?.expiryMonths ?? null : null
-                                                                                    }
-                                                                                    formReq.setFieldsValue({ requiredDocuments: list })
-                                                                                }}
-                                                                            />
-                                                                        </Form.Item>
-                                                                    )
-                                                                }
+                            {!draftRequirements.length && (
+                                <Text type='secondary' style={{ textAlign: 'center' }}>
+                                    No documents have been added yet. Add the first document to begin monitoring compliance.
+                                </Text>
+                            )}
+                        </Space>
+                    </Modal>
 
-                                                                return (
-                                                                    <Form.Item
-                                                                        {...field}
-                                                                        name={[field.name, 'agreementId']}
-                                                                        label='Agreement'
-                                                                        rules={[{ required: true, message: 'Select an agreement' }]}
-                                                                        style={{ marginBottom: 8 }}
-                                                                    >
-                                                                        <Select
-                                                                            placeholder='Choose agreement'
-                                                                            options={visibleProgramTemplates
-                                                                                .filter(t => (t.type ?? 'upload') === 'agreement')
-                                                                                .map(a => ({
-                                                                                    label: standardAgreementTitle(a.agreementId || a.id, a.title),
-                                                                                    value: a.agreementId || a.id
-                                                                                }))}
-                                                                            onChange={(slugVal: string) => {
-                                                                                const template = programTemplates.find(a => (a.agreementId || a.id) === slugVal)
-                                                                                const list = formReq.getFieldValue('requiredDocuments') || []
-                                                                                const row = list[field.name] || {}
-                                                                                list[field.name] = {
-                                                                                    ...row,
-                                                                                    type: 'agreement',
-                                                                                    agreementId: slugVal,
-                                                                                    isOnboarding: true,
-                                                                                    title: standardAgreementTitle(slugVal, template?.title),
-                                                                                    hasExpiry: !!template?.hasExpiry,
-                                                                                    expiryMonths: template?.hasExpiry ? template.expiryMonths ?? null : null
-                                                                                }
-                                                                                formReq.setFieldsValue({ requiredDocuments: list })
-                                                                            }}
-                                                                        />
-                                                                    </Form.Item>
-                                                                )
-                                                            }}
-                                                        </Form.Item>
-                                                    </Col>
+                    <Modal
+                        className='guide-document-editor-modal'
+                        centered
+                        title={editingRequirement ? 'Edit Required Document' : 'Add Required Document'}
+                        open={documentEditorOpen}
+                        onCancel={closeDocumentEditor}
+                        width={540}
+                        destroyOnHidden
+                        footer={
+                            <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+                                <Button block style={{ flex: 1 }} onClick={closeDocumentEditor}>
+                                    Cancel
+                                </Button>
+                                <Button
+                                    data-guide='save-compliance-document-draft'
+                                    type='primary'
+                                    block
+                                    style={{ flex: 1 }}
+                                    onClick={saveDocumentDraft}
+                                >
+                                    {editingRequirement ? 'Update Document' : 'Add Document'}
+                                </Button>
+                            </div>
+                        }
+                    >
+                        <Form
+                            form={documentEditorForm}
+                            layout='vertical'
+                            requiredMark={false}
+                        >
+                            <Form.Item
+                                name='templateKey'
+                                label='Document Title'
+                                rules={[{ required: true, message: 'Select a document.' }]}
+                            >
+                                <Select
+                                    showSearch
+                                    optionFilterProp='label'
+                                    placeholder={editorTemplateOptions.length ? 'Select document' : 'No documents available'}
+                                    options={editorTemplateOptions}
+                                    disabled={!editorTemplateOptions.length}
+                                />
+                            </Form.Item>
 
-                                                    <Col xs={24} md={6}>
-                                                        <Form.Item
-                                                            {...field}
-                                                            name={[field.name, 'hasExpiry']}
-                                                            label='Has Expiry'
-                                                            valuePropName='checked'
-                                                            style={{ marginBottom: 8 }}
-                                                        >
-                                                            <Switch />
-                                                        </Form.Item>
-                                                    </Col>
-                                                </Row>
+                            {selectedEditorTemplate && (
+                                <Alert
+                                    type='info'
+                                    showIcon
+                                    style={{ marginBottom: 18 }}
+                                    message={(selectedEditorTemplate.type ?? 'upload') === 'agreement'
+                                        ? 'Agreement document'
+                                        : 'Upload document'}
+                                    description={(selectedEditorTemplate.type ?? 'upload') === 'agreement'
+                                        ? 'The SME completes this document through the agreement workflow.'
+                                        : 'The SME or authorised staff can upload this document for compliance review.'}
+                                />
+                            )}
 
-                                                <Row gutter={[12, 8]} align='bottom'>
-                                                    <Col xs={24} md={12}>
-                                                        <Form.Item {...field} name={[field.name, 'title']} hidden>
-                                                            <Input />
-                                                        </Form.Item>
-                                                        <Form.Item label='Title' style={{ marginBottom: 0 }}>
-                                                            <Form.Item noStyle shouldUpdate>
-                                                                {({ getFieldValue }) => {
-                                                                    const presetId = getFieldValue(['requiredDocuments', field.name, 'presetId'])
-                                                                    const fromPreset = getPresetById(presetId)?.title
-                                                                    const fromState = getFieldValue(['requiredDocuments', field.name, 'title']) || ''
-                                                                    return <Input readOnly value={fromPreset || fromState} />
-                                                                }}
-                                                            </Form.Item>
-                                                        </Form.Item>
-                                                    </Col>
+                            <Form.Item
+                                name='hasExpiry'
+                                label='Expiry'
+                                valuePropName='checked'
+                            >
+                                <Switch checkedChildren='Has expiry' unCheckedChildren='No expiry' />
+                            </Form.Item>
 
-                                                    <Col xs={24} md={8}>
-                                                        <Form.Item noStyle shouldUpdate>
-                                                            {({ getFieldValue }) => {
-                                                                const hasExpiry = !!getFieldValue(['requiredDocuments', field.name, 'hasExpiry'])
-                                                                return (
-                                                                    <Form.Item
-                                                                        {...field}
-                                                                        name={[field.name, 'expiryMonths']}
-                                                                        label='Expiry Months'
-                                                                        style={{ marginBottom: 0 }}
-                                                                        rules={hasExpiry ? [{ required: true, message: 'Enter months' }] : []}
-                                                                    >
-                                                                        <InputNumber min={1} style={{ width: '100%' }} disabled={!hasExpiry} placeholder={hasExpiry ? undefined : 'No expiry'} />
-                                                                    </Form.Item>
-                                                                )
-                                                            }}
-                                                        </Form.Item>
-                                                    </Col>
-
-                                                    <Col xs={24} md={4}>
-                                                        <Form.Item label=' ' colon={false} style={{ marginBottom: 0, textAlign: 'right' }}>
-                                                            <Button danger onClick={() => remove(field.name)}>
-                                                                Remove
-                                                            </Button>
-                                                        </Form.Item>
-                                                    </Col>
-                                                </Row>
-                                            </Card>
-                                        ))}
-
-                                        <Form.ErrorList errors={errors} />
-                                    </>
-                                )}
-                            </Form.List>
+                            {selectedEditorHasExpiry && (
+                                <Form.Item
+                                    name='expiryMonths'
+                                    label='Expiry Months'
+                                    rules={[{ required: true, message: 'Enter the expiry period in months.' }]}
+                                >
+                                    <InputNumber
+                                        min={1}
+                                        precision={0}
+                                        style={{ width: '100%' }}
+                                        placeholder='e.g. 12'
+                                    />
+                                </Form.Item>
+                            )}
                         </Form>
                     </Modal>
 

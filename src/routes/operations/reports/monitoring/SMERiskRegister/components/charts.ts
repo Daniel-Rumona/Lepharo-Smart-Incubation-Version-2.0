@@ -2,296 +2,552 @@ import type Highcharts from 'highcharts'
 
 import type { SMERow } from '../types'
 
-export type CoverageMetrics = {
-    fullyCovered: number
-    withMissing: number
-    notServiced: number
-    critical: number
+export type ChartTheme = {
+    primary: string
+    success: string
+    mediumRisk: string
+    highRisk: string
+    criticalRisk: string
+    text: string
+    mutedText: string
+    border: string
+    split: string
+    surface: string
 }
 
-export type MissingDeptChartDatum = {
-    departmentName: string
-    count: number
+const FALLBACK_THEME: ChartTheme = {
+    primary: '#1677ff',
+    success: '#52c41a',
+    mediumRisk: '#faad14',
+    highRisk: '#d46b08',
+    criticalRisk: '#ff4d4f',
+    text: '#262626',
+    mutedText: '#8c8c8c',
+    border: '#f0f0f0',
+    split: '#f0f0f0',
+    surface: '#ffffff'
 }
 
-// Validated palette (see the dataviz skill's references/palette.md). Status colors
-// are reserved for charts where the color literally means good/bad; magnitude-only
-// charts use the single sequential hue instead -- the two are never mixed on one
-// chart.
-const STATUS_COLORS = {
-    good: '#0ca30c',
-    warning: '#fab219',
-    serious: '#ec835a',
-    critical: '#d03b3b'
-}
+const getTheme = (
+    chartTheme?: Partial<ChartTheme>
+): ChartTheme => ({
+    ...FALLBACK_THEME,
+    ...(chartTheme || {})
+})
 
-const SEQUENTIAL_BLUE = '#2a78d6'
-
-const CHART_INK = '#0b0b0b'
-const CHART_MUTED_INK = '#898781'
-const CHART_GRIDLINE = '#e1e0d9'
-const CHART_AXIS_LINE = '#c3c2b7'
-
-const RECESSIVE_AXIS: Highcharts.XAxisOptions = {
-    gridLineColor: CHART_GRIDLINE,
-    lineColor: CHART_AXIS_LINE,
-    tickColor: CHART_AXIS_LINE,
-    labels: { style: { color: CHART_MUTED_INK, fontSize: '12px' } }
-}
-
-const OUTSIDE_LABEL_STYLE: Highcharts.CSSObject = {
-    textOutline: 'none',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: CHART_INK
-}
-
-const ALWAYS_ON_STACK_LABELS: Highcharts.YAxisStackLabelsOptions = {
-    enabled: true,
-    allowOverlap: true,
-    crop: false,
-    overflow: 'allow',
-    formatter: function () {
-        return `${Number(this.total ?? 0)}`
-    },
-    style: {
-        textOutline: 'none',
-        fontSize: '12px',
-        fontWeight: '700',
-        color: CHART_INK
-    }
-}
-
-export function buildCoverageChartOptions(metrics: CoverageMetrics, isDepartmentScopedView: boolean): Highcharts.Options {
-    // Status progression good -> critical: color IS the meaning here, so this is
-    // exactly the "status" job, one color per bar rather than a single series hue.
-    const points = [
-        { y: Number(metrics.fullyCovered || 0), color: STATUS_COLORS.good },
-        { y: Number(metrics.withMissing || 0), color: STATUS_COLORS.warning },
-        { y: Number(metrics.notServiced || 0), color: STATUS_COLORS.serious },
-        { y: Number(metrics.critical || 0), color: STATUS_COLORS.critical }
-    ]
+const baseOptions = (
+    chartTheme?: Partial<ChartTheme>
+): Highcharts.Options => {
+    const colors = getTheme(chartTheme)
 
     return {
         chart: {
-            type: 'column',
-            height: 360,
             backgroundColor: 'transparent',
-            animation: false,
-            spacingTop: 24
+            style: {
+                fontFamily: 'inherit'
+            },
+            animation: {
+                duration: 350
+            }
         },
-        title: { text: undefined },
-        credits: { enabled: false },
-        legend: { enabled: false },
+        title: {
+            text: undefined
+        },
+        credits: {
+            enabled: false
+        },
+        exporting: {
+            enabled: false
+        },
+        tooltip: {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            borderRadius: 10,
+            shadow: false,
+            style: {
+                color: colors.text,
+                fontSize: '12px'
+            }
+        },
+        legend: {
+            itemStyle: {
+                color: colors.text,
+                fontSize: '11px',
+                fontWeight: '500'
+            },
+            itemHoverStyle: {
+                color: colors.text
+            },
+            symbolRadius: 5
+        },
         xAxis: {
-            ...RECESSIVE_AXIS,
-            categories: isDepartmentScopedView
-                ? ['Complete', 'Needs Action', 'No Service', 'Critical Risk']
-                : ['Fully Covered', 'Needs Follow-Up', 'Not Serviced', 'Critical Risk']
+            lineColor: colors.border,
+            tickColor: colors.border,
+            labels: {
+                style: {
+                    color: colors.mutedText,
+                    fontSize: '10px'
+                }
+            }
         },
         yAxis: {
-            min: 0,
-            title: { text: 'SMEs', style: { color: CHART_MUTED_INK } },
-            allowDecimals: false,
-            gridLineColor: CHART_GRIDLINE,
-            labels: { style: { color: CHART_MUTED_INK } }
+            gridLineColor: colors.split,
+            lineColor: colors.border,
+            tickColor: colors.border,
+            labels: {
+                style: {
+                    color: colors.mutedText,
+                    fontSize: '10px'
+                }
+            },
+            title: {
+                text: undefined
+            }
         },
         plotOptions: {
-            column: {
-                borderRadius: 4,
-                animation: false,
-                minPointLength: 8,
+            series: {
+                animation: {
+                    duration: 420
+                },
+                states: {
+                    inactive: {
+                        opacity: 0.3
+                    }
+                }
+            }
+        }
+    }
+}
+
+const countRiskLevels = (rows: SMERow[]) => ({
+    critical: rows.filter(
+        row => row.riskLevel === 'Critical'
+    ).length,
+    high: rows.filter(
+        row => row.riskLevel === 'High'
+    ).length,
+    medium: rows.filter(
+        row => row.riskLevel === 'Medium'
+    ).length,
+    low: rows.filter(
+        row => row.riskLevel === 'Low'
+    ).length
+})
+
+export function buildPortfolioRiskChartOptions(
+    rows: SMERow[],
+    chartTheme?: Partial<ChartTheme>,
+    hiddenLevels: Array<'Critical' | 'High' | 'Medium' | 'Low'> = []
+): Highcharts.Options {
+    const colors = getTheme(chartTheme)
+    const base = baseOptions(colors)
+    const risk = countRiskLevels(rows)
+    const hidden = new Set(hiddenLevels)
+
+    return {
+        ...base,
+        chart: {
+            ...base.chart,
+            type: 'pie',
+            height: 138,
+            spacing: [0, 0, 0, 0]
+        },
+        title: {
+            text: undefined
+        },
+        tooltip: {
+            ...base.tooltip,
+            pointFormat:
+                '<b>{point.y}</b> SMEs · {point.percentage:.0f}%'
+        },
+        legend: {
+            enabled: false
+        },
+        plotOptions: {
+            ...base.plotOptions,
+            pie: {
+                startAngle: -90,
+                endAngle: 90,
+                center: ['50%', '92%'],
+                size: '160%',
+                innerSize: '70%',
+                borderWidth: 3,
+                borderColor: colors.surface,
+                borderRadius: 5,
+                dataLabels: {
+                    enabled: false
+                },
+                showInLegend: false,
+                cursor: 'default'
+            }
+        },
+        series: [
+            {
+                type: 'pie',
+                name: 'Risk level',
+                data: [
+                    {
+                        name: 'Critical',
+                        y: risk.critical,
+                        color: colors.criticalRisk,
+                        visible: !hidden.has('Critical')
+                    },
+                    {
+                        name: 'High',
+                        y: risk.high,
+                        color: colors.highRisk,
+                        visible: !hidden.has('High')
+                    },
+                    {
+                        name: 'Medium',
+                        y: risk.medium,
+                        color: colors.mediumRisk,
+                        visible: !hidden.has('Medium')
+                    },
+                    {
+                        name: 'Low',
+                        y: risk.low,
+                        color: colors.success,
+                        visible: !hidden.has('Low')
+                    }
+                ]
+            }
+        ]
+    }
+}
+
+type RiskDriverDatum = {
+    label: string
+    count: number
+    color: string
+}
+
+export function buildRiskDriversChartOptions(
+    rows: SMERow[],
+    chartTheme?: Partial<ChartTheme>
+): Highcharts.Options {
+    const colors = getTheme(chartTheme)
+    const base = baseOptions(colors)
+
+    const affected = (
+        predicate: (row: SMERow) => boolean
+    ) => rows.filter(predicate).length
+
+    const data: RiskDriverDatum[] = [
+        {
+            label: 'DP department review',
+            count: affected(row =>
+                row.expectedDepartments.some(
+                    department =>
+                        !department.deptConfirmed
+                )
+            ),
+            color: colors.criticalRisk
+        },
+        {
+            label: 'DP SME confirmation',
+            count: affected(row =>
+                row.expectedDepartments.some(
+                    department =>
+                        department.deptConfirmed &&
+                        !department.smmeConfirmed
+                )
+            ),
+            color: colors.highRisk
+        },
+        {
+            label: 'Ready but unserviced',
+            count: affected(row =>
+                row.expectedDepartments.some(
+                    department =>
+                        department.deptConfirmed &&
+                        department.smmeConfirmed &&
+                        department.servicedCount === 0
+                )
+            ),
+            color: colors.highRisk
+        },
+        {
+            label: 'Missing documents',
+            count: affected(
+                row => row.docsMissing > 0
+            ),
+            color: colors.mediumRisk
+        },
+        {
+            label: 'Queried / rejected docs',
+            count: affected(
+                row =>
+                    row.docsQueried > 0 ||
+                    row.docsRejected > 0
+            ),
+            color: colors.highRisk
+        },
+        {
+            label: 'SME intervention response',
+            count: affected(
+                row =>
+                    row.smePendingAcceptanceCount > 0 ||
+                    row.smePendingConfirmationCount > 0
+            ),
+            color: colors.highRisk
+        },
+        {
+            label: '30+ days inactive',
+            count: affected(
+                row =>
+                    row.daysSinceLastService !== null &&
+                    row.daysSinceLastService >= 30
+            ),
+            color: colors.mediumRisk
+        },
+        {
+            label: 'Declined interventions',
+            count: affected(
+                row => row.declinedTouches > 0
+            ),
+            color: colors.criticalRisk
+        }
+    ]
+        .filter(item => item.count > 0)
+        .sort((a, b) => b.count - a.count)
+
+    return {
+        ...base,
+        chart: {
+            ...base.chart,
+            type: 'bar',
+            height: Math.max(320, data.length * 38 + 50),
+            spacing: [8, 36, 0, 0]
+        },
+        legend: {
+            enabled: false
+        },
+        xAxis: {
+            ...(base.xAxis as Highcharts.XAxisOptions),
+            categories: data.map(item => item.label),
+            tickLength: 0,
+            lineWidth: 0,
+            labels: {
+                style: {
+                    color: colors.text,
+                    fontSize: '10px',
+                    textOverflow: 'ellipsis'
+                }
+            }
+        },
+        yAxis: {
+            ...(base.yAxis as Highcharts.YAxisOptions),
+            min: 0,
+            allowDecimals: false,
+            gridLineWidth: 0,
+            labels: {
+                enabled: false
+            }
+        },
+        tooltip: {
+            ...base.tooltip,
+            headerFormat: '',
+            pointFormatter: function () {
+                return `<b>${this.category}</b><br/>${this.y} SME${Number(this.y) === 1 ? '' : 's'} affected`
+            }
+        },
+        plotOptions: {
+            ...base.plotOptions,
+            bar: {
+                borderWidth: 0,
+                borderRadius: 7,
+                pointWidth: 15,
+                minPointLength: 4,
                 dataLabels: {
                     enabled: true,
                     inside: false,
                     crop: false,
                     overflow: 'allow',
-                    formatter: function () {
-                        return Number(this.y ?? 0) > 0 ? `${this.y}` : ''
-                    },
-                    style: OUTSIDE_LABEL_STYLE
+                    x: 5,
+                    style: {
+                        color: colors.text,
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        textOutline: 'none'
+                    }
                 }
+            }
+        },
+        series: [
+            {
+                type: 'bar',
+                name: 'SMEs affected',
+                data: data.map(item => ({
+                    y: item.count,
+                    color: item.color
+                }))
+            }
+        ]
+    }
+}
+
+type DepartmentPressure = {
+    departmentName: string
+    departmentReview: number
+    awaitingSme: number
+    readyNoService: number
+    total: number
+}
+
+export function buildDepartmentRiskPressureChartOptions(
+    rows: SMERow[],
+    isDepartmentScopedView: boolean,
+    chartTheme?: Partial<ChartTheme>
+): Highcharts.Options {
+    const colors = getTheme(chartTheme)
+    const base = baseOptions(colors)
+
+    const map = new Map<string, DepartmentPressure>()
+
+    rows.forEach(row => {
+        row.expectedDepartments.forEach(department => {
+            const name =
+                department.departmentName ||
+                'Unknown Department'
+
+            const current =
+                map.get(name) || {
+                    departmentName: name,
+                    departmentReview: 0,
+                    awaitingSme: 0,
+                    readyNoService: 0,
+                    total: 0
+                }
+
+            if (!department.deptConfirmed) {
+                current.departmentReview += 1
+            } else if (!department.smmeConfirmed) {
+                current.awaitingSme += 1
+            } else if (department.servicedCount === 0) {
+                current.readyNoService += 1
+            }
+
+            current.total =
+                current.departmentReview +
+                current.awaitingSme +
+                current.readyNoService
+
+            map.set(name, current)
+        })
+    })
+
+    const data = [...map.values()]
+        .filter(item => item.total > 0)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 9)
+
+    return {
+        ...base,
+        chart: {
+            ...base.chart,
+            type: 'column',
+            height: 365,
+            spacing: [8, 10, 52, 8]
+        },
+        xAxis: {
+            ...(base.xAxis as Highcharts.XAxisOptions),
+            categories: data.map(
+                item => item.departmentName
+            ),
+            tickLength: 0,
+            lineWidth: 0,
+            labels: {
+                rotation: -24,
+                align: 'right',
+                style: {
+                    color: colors.text,
+                    fontSize: '9px',
+                    textOverflow: 'none'
+                },
+                formatter: function () {
+                    const value = String(this.value)
+                    return value.length > 22
+                        ? `${value.slice(0, 20)}…`
+                        : value
+                }
+            }
+        },
+        yAxis: {
+            ...(base.yAxis as Highcharts.YAxisOptions),
+            min: 0,
+            allowDecimals: false,
+            gridLineWidth: 1,
+            stackLabels: {
+                enabled: true,
+                crop: false,
+                overflow: 'allow',
+                style: {
+                    color: colors.text,
+                    fontSize: '10px',
+                    fontWeight: '600',
+                    textOutline: 'none'
+                },
+                formatter: function () {
+                    const total = Number(this.total || 0)
+                    return total > 0 ? `${total}` : ''
+                }
+            }
+        },
+        legend: {
+            ...base.legend,
+            enabled: true,
+            align: 'left',
+            verticalAlign: 'top',
+            layout: 'horizontal',
+            margin: 8
+        },
+        tooltip: {
+            ...base.tooltip,
+            shared: true,
+            valueSuffix: ' SMEs'
+        },
+        plotOptions: {
+            ...base.plotOptions,
+            series: {
+                stacking: 'normal',
+                borderWidth: 0,
+                maxPointWidth: 42
+            },
+            column: {
+                borderWidth: 0,
+                borderRadius: 5,
+                maxPointWidth: 42,
+                groupPadding: 0.13,
+                pointPadding: 0.03
             }
         },
         series: [
             {
                 type: 'column',
-                name: 'SMEs',
-                data: points
-            }
-        ]
-    }
-}
-
-export function buildMissingDeptChartOptions(
-    missingDeptChartData: MissingDeptChartDatum[],
-    isDepartmentScopedView: boolean
-): Highcharts.Options {
-    return {
-        chart: {
-            type: 'bar',
-            height: 420,
-            backgroundColor: 'transparent',
-            animation: false,
-            spacingRight: 40
-        },
-        title: { text: undefined },
-        credits: { enabled: false },
-        legend: { enabled: false },
-        xAxis: {
-            ...RECESSIVE_AXIS,
-            categories: missingDeptChartData.map(item => item.departmentName)
-        },
-        yAxis: {
-            min: 0,
-            title: { text: isDepartmentScopedView ? 'SMEs needing my department follow-up' : 'SMEs needing this department follow-up', style: { color: CHART_MUTED_INK } },
-            allowDecimals: false,
-            gridLineColor: CHART_GRIDLINE,
-            labels: { style: { color: CHART_MUTED_INK } }
-        },
-        plotOptions: {
-            bar: {
-                borderRadius: 4,
-                animation: false,
-                minPointLength: 8,
-                color: SEQUENTIAL_BLUE,
-                dataLabels: {
-                    enabled: true,
-                    inside: false,
-                    crop: false,
-                    overflow: 'allow',
-                    formatter: function () {
-                        return Number(this.y ?? 0) > 0 ? `${this.y}` : ''
-                    },
-                    style: OUTSIDE_LABEL_STYLE
-                }
-            }
-        },
-        series: [
-            {
-                type: 'bar',
-                name: 'Needs Follow-Up',
-                data: missingDeptChartData.map(item => Number(item.count || 0))
-            }
-        ]
-    }
-}
-
-export function buildActivityBreakdownChartOptions(servicedTouchRows: SMERow[]): Highcharts.Options {
-    // Completed/Pending/Declined is a status set too -- reuse the same tokens as
-    // the coverage chart so "good/warning/critical" mean the same thing everywhere
-    // in this modal. Per-segment labels are dropped (status fills range from light
-    // amber to dark red, so no single ink reads on all three); the always-on stack
-    // total plus the legend and tooltip carry the value instead.
-    return {
-        chart: {
-            type: 'bar',
-            height: Math.max(320, servicedTouchRows.length * 48),
-            backgroundColor: 'transparent'
-        },
-        title: { text: undefined },
-        credits: { enabled: false },
-        xAxis: {
-            ...RECESSIVE_AXIS,
-            categories: servicedTouchRows.map(row => row.smeName)
-        },
-        yAxis: {
-            min: 0,
-            title: { text: 'Times Serviced', style: { color: CHART_MUTED_INK } },
-            allowDecimals: false,
-            gridLineColor: CHART_GRIDLINE,
-            labels: { style: { color: CHART_MUTED_INK } },
-            stackLabels: {
-                ...ALWAYS_ON_STACK_LABELS,
-                formatter: function () {
-                    const total = Number(this.total ?? 0)
-                    return total > 0 ? `${total}` : ''
-                }
-            }
-        },
-        legend: { enabled: true, itemStyle: { color: CHART_INK } },
-        plotOptions: {
-            series: {
-                stacking: 'normal',
-                dataLabels: { enabled: false }
-            },
-            bar: {
-                borderRadius: 4,
-                minPointLength: 6,
-                borderWidth: 2,
-                borderColor: 'transparent'
-            }
-        },
-        series: [
-            {
-                type: 'bar',
-                name: 'Completed',
-                color: STATUS_COLORS.good,
-                data: servicedTouchRows.map(row => Number(row.completedTouches || 0))
+                name: 'Department review',
+                color: colors.criticalRisk,
+                data: data.map(
+                    item => item.departmentReview
+                )
             },
             {
-                type: 'bar',
-                name: 'Pending',
-                color: STATUS_COLORS.warning,
-                data: servicedTouchRows.map(row => Number(row.pendingTouches || 0))
+                type: 'column',
+                name: 'Awaiting SME',
+                color: colors.highRisk,
+                data: data.map(
+                    item => item.awaitingSme
+                )
             },
             {
-                type: 'bar',
-                name: 'Declined',
-                color: STATUS_COLORS.critical,
-                data: servicedTouchRows.map(row => Number(row.declinedTouches || 0))
-            }
-        ]
-    }
-}
-
-export function buildNeglectedChartOptions(neglectedRows: SMERow[]): Highcharts.Options {
-    // Pure magnitude (days), not a discrete status -- sequential blue, same hue as
-    // the other magnitude-only chart above, keeping status red reserved for charts
-    // where color encodes state.
-    return {
-        chart: {
-            type: 'bar',
-            height: Math.max(320, neglectedRows.length * 48),
-            backgroundColor: 'transparent'
-        },
-        title: { text: undefined },
-        credits: { enabled: false },
-        xAxis: {
-            ...RECESSIVE_AXIS,
-            categories: neglectedRows.map(row => row.smeName)
-        },
-        yAxis: {
-            min: 0,
-            title: { text: 'Days since last service', style: { color: CHART_MUTED_INK } },
-            allowDecimals: false,
-            gridLineColor: CHART_GRIDLINE,
-            labels: { style: { color: CHART_MUTED_INK } }
-        },
-        legend: { enabled: false },
-        plotOptions: {
-            bar: {
-                borderRadius: 4,
-                minPointLength: 6,
-                color: SEQUENTIAL_BLUE,
-                dataLabels: {
-                    enabled: true,
-                    inside: false,
-                    crop: false,
-                    overflow: 'allow',
-                    formatter: function () {
-                        const val = Number(this.y ?? 0)
-                        return val > 0 ? `${val}d` : ''
-                    },
-                    style: OUTSIDE_LABEL_STYLE
-                }
-            }
-        },
-        series: [
-            {
-                type: 'bar',
-                name: 'Days',
-                data: neglectedRows.map(row => Number(row.daysSinceLastService || 0))
+                type: 'column',
+                name: isDepartmentScopedView
+                    ? 'Ready, no service'
+                    : 'Ready but unserviced',
+                color: colors.mediumRisk,
+                data: data.map(
+                    item => item.readyNoService
+                )
             }
         ]
     }

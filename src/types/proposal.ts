@@ -31,7 +31,27 @@ export const PROPOSAL_STATUSES = [
     'Archived'
 ] as const
 
+/** Pipeline stages as shown to users; each groups one or more statuses. */
+export const PROPOSAL_STAGE_GROUPS: ReadonlyArray<{
+    label: string
+    statuses: ReadonlyArray<typeof PROPOSAL_STATUSES[number]>
+    color: string
+}> = [
+    { label: 'Draft', statuses: ['Draft', 'In preparation'], color: '#64748b' },
+    { label: 'Submitted', statuses: ['Submitted'], color: '#2563eb' },
+    { label: 'Under review', statuses: ['Under review'], color: '#7c3aed' },
+    { label: 'Accepted', statuses: ['Accepted', 'SLA signed'], color: '#059669' },
+    {
+        label: 'Activation',
+        statuses: ['Awaiting order number', 'Implementation planning', 'Ready for activation', 'Active'],
+        color: '#d97706'
+    }
+]
+
+export const PROPOSAL_OWNER_TYPES = ['Individual', 'Department', 'Centre'] as const
+
 export type ProposalCategory = typeof PROPOSAL_CATEGORIES[number]
+export type ProposalOwnerType = typeof PROPOSAL_OWNER_TYPES[number]
 export type ProposalScope = typeof PROPOSAL_SCOPES[number]
 export type ProposalStatus = typeof PROPOSAL_STATUSES[number]
 
@@ -46,6 +66,15 @@ export type ProposalContributor = {
     name: string
     role: string
     email?: string | null
+}
+
+/**
+ * A proposal is owned by a person, a department, or a centre. For department
+ * and centre owners `id` is the department or branch id; legacy owners carry
+ * no `type` and are treated as individuals.
+ */
+export type ProposalOwner = ProposalContributor & {
+    type?: ProposalOwnerType
 }
 
 export type ProposalDocument = {
@@ -90,7 +119,7 @@ export type Proposal = {
     status: ProposalStatus
     description?: string | null
     originator: ProposalContributor
-    owner: ProposalContributor
+    owner: ProposalOwner
     contributors: ProposalContributor[]
     centres: ProposalReference[]
     departments: ProposalReference[]

@@ -19,7 +19,7 @@ import {
     Checkbox,
     Result,
     Popconfirm,
-    Upload, Avatar,
+    Upload,
     Card,
     Empty,
     Spin,
@@ -36,7 +36,8 @@ import {
     PoweroffOutlined, PictureOutlined,
     DownloadOutlined,
     FileTextOutlined,
-    UploadOutlined
+    UploadOutlined,
+    RightOutlined
 } from '@ant-design/icons'
 import CountUp from 'react-countup'
 import {
@@ -56,8 +57,8 @@ import {
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
 import { Helmet } from 'react-helmet'
-import { motion } from 'framer-motion'
-import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
+import { motion, AnimatePresence } from 'framer-motion'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import {
@@ -75,6 +76,7 @@ import {
     canonicalAgreementId,
     listAgreementTemplates
 } from '@/services/complianceResolver'
+import { departmentService } from '@/services/departmentService'
 
 const { Text } = Typography
 
@@ -179,6 +181,18 @@ const parseAnyToDayjs = (val: any) => {
     if (val?.toDate) return dayjs(val.toDate())
     return null
 }
+
+const PROGRAM_TYPES = [
+    'Pre-incubation',
+    'Business Incubation',
+    'Virtual Incubation',
+    'Accelerator Program',
+    'Technology Incubation',
+    'Youth Incubation',
+    'Women Empowerment Program',
+    'Green Economy Incubation',
+    'Agro-Processing Support'
+]
 
 const SECTORS = ['Agriculture', 'IT', 'Manufacturing', 'Tourism', 'Other']
 const PROVINCES = [
@@ -620,7 +634,10 @@ const RequiredDocumentsStep: React.FC<{
     onChange: (v: RequiredDoc[]) => void
     onBack: () => void
     onNext: () => void
-}> = ({ value = [], onChange, onBack, onNext }) => {
+    backLabel?: string
+    nextLabel?: string
+    nextLoading?: boolean
+}> = ({ value = [], onChange, onBack, onNext, backLabel = 'Back', nextLabel = 'Next', nextLoading = false }) => {
     const [rows, setRows] = useState<RequiredDoc[]>(value)
     const [docModalOpen, setDocModalOpen] = useState(false)
     const [editing, setEditing] = useState<RequiredDoc | null>(null)
@@ -788,9 +805,9 @@ const RequiredDocumentsStep: React.FC<{
             </div>
 
             <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                <Button onClick={onBack}>Back</Button>
-                <Button type='primary' onClick={onNext}>
-                    Next
+                <Button style={{ flex: 1 }} onClick={onBack}>{backLabel}</Button>
+                <Button style={{ flex: 1 }} type='primary' loading={nextLoading} onClick={onNext}>
+                    {nextLabel}
                 </Button>
             </div>
 
@@ -938,7 +955,15 @@ const RequiredDocumentsStep: React.FC<{
    ELIGIBILITY STEP
 ────────────────────────────────────────────────────────────────── */
 
-const EligibilityCriteriaStep = ({ value = {}, onChange, onBack, onNext }) => {
+const EligibilityCriteriaStep = ({
+    value = {},
+    onChange,
+    onBack,
+    onNext,
+    backLabel = 'Back',
+    nextLabel = 'Next',
+    nextLoading = false
+}) => {
     const [form] = Form.useForm()
     const [selectedCriteria, setSelectedCriteria] = useState<string[]>([])
 
@@ -966,27 +991,68 @@ const EligibilityCriteriaStep = ({ value = {}, onChange, onBack, onNext }) => {
         onNext()
     }
 
+    const toggleCriterion = (key: string) => {
+        const isSelected = selectedCriteria.includes(key)
+        setSelectedCriteria(
+            isSelected ? selectedCriteria.filter(c => c !== key) : [...selectedCriteria, key]
+        )
+        if (isSelected) form.resetFields([key])
+    }
+
     return (
         <Form
             layout='vertical'
             form={form}
             initialValues={value}
-            style={{ marginTop: 8, maxWidth: 560 }}
+            style={{ marginTop: 8 }}
         >
             <Form.Item label='Select eligibility criteria for this program'>
-                <Select
-                    mode='multiple'
-                    placeholder='Choose criteria'
-                    value={selectedCriteria}
-                    onChange={val => {
-                        setSelectedCriteria(val)
-                        const newObj = { ...form.getFieldsValue() }
-                        Object.keys(newObj).forEach(k => {
-                            if (!val.includes(k)) form.resetFields([k])
-                        })
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: 12
                     }}
-                    options={CRITERIA_OPTIONS}
-                />
+                >
+                    {CRITERIA_OPTIONS.map((opt, idx) => {
+                        const isSelected = selectedCriteria.includes(opt.value)
+                        const isLast = idx === CRITERIA_OPTIONS.length - 1
+                        return (
+                            <div
+                                key={opt.value}
+                                onClick={() => toggleCriterion(opt.value)}
+                                style={{
+                                    gridColumn: isLast ? '1 / -1' : undefined,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: 8,
+                                    padding: '8px 12px',
+                                    borderRadius: 8,
+                                    border: `1px solid ${isSelected ? '#1677ff' : '#e6e6e6'}`,
+                                    background: isSelected ? 'rgba(22,119,255,.06)' : '#fff',
+                                    cursor: 'pointer',
+                                    fontSize: 13,
+                                    lineHeight: '18px',
+                                    transition: 'all .15s ease',
+                                    userSelect: 'none'
+                                }}
+                            >
+                                <span
+                                    style={{
+                                        color: isSelected ? '#1677ff' : 'rgba(0,0,0,.85)',
+                                        fontWeight: isSelected ? 500 : 400
+                                    }}
+                                >
+                                    {opt.label}
+                                </span>
+                                <CheckCircleOutlined
+                                    style={{ color: isSelected ? '#1677ff' : '#d9d9d9', fontSize: 14 }}
+                                />
+                            </div>
+                        )
+                    })}
+                </div>
             </Form.Item>
 
             {selectedCriteria.some(c => OWNERSHIP_FIELDS.includes(c)) && (
@@ -1027,14 +1093,14 @@ const EligibilityCriteriaStep = ({ value = {}, onChange, onBack, onNext }) => {
             )}
 
             <Row gutter={16}>
-                <Col span={8}>
+                <Col span={12}>
                     {selectedCriteria.includes('minAge') && (
                         <Form.Item name='minAge' label='Minimum Age'>
                             <InputNumber min={0} style={{ width: '100%' }} />
                         </Form.Item>
                     )}
                 </Col>
-                <Col span={8}>
+                <Col span={12}>
                     {selectedCriteria.includes('maxAge') && (
                         <Form.Item name='maxAge' label='Maximum Age'>
                             <InputNumber min={0} style={{ width: '100%' }} />
@@ -1086,22 +1152,309 @@ const EligibilityCriteriaStep = ({ value = {}, onChange, onBack, onNext }) => {
             )}
 
             <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                <Button onClick={onBack}>Back</Button>
-                <Button type='primary' onClick={handleNext}>
-                    Next
+                <Button style={{ flex: 1 }} onClick={onBack}>{backLabel}</Button>
+                <Button style={{ flex: 1 }} type='primary' loading={nextLoading} onClick={handleNext}>
+                    {nextLabel}
                 </Button>
             </div>
         </Form>
     )
 }
 
+/* ──────────────────────────────────────────────────────────────────
+   COVERAGE STEP (scope + participating departments)
+────────────────────────────────────────────────────────────────── */
+
+type ProgramCoverageValue = {
+    isMultiBranch: boolean
+    supportedBranchIds: string[]
+    participatingDepartmentIds: string[]
+}
+
+const coverageCardStyle = (isSelected: boolean): React.CSSProperties => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: `1px solid ${isSelected ? '#1677ff' : '#e6e6e6'}`,
+    background: isSelected ? 'rgba(22,119,255,.06)' : '#fff',
+    cursor: 'pointer',
+    fontSize: 13,
+    lineHeight: '18px',
+    transition: 'all .15s ease',
+    userSelect: 'none'
+})
+
+const CoverageCard: React.FC<{
+    label: string
+    selected: boolean
+    onClick: () => void
+    fullWidth?: boolean
+}> = ({ label, selected, onClick, fullWidth }) => (
+    <div
+        onClick={onClick}
+        style={{
+            ...coverageCardStyle(selected),
+            gridColumn: fullWidth ? '1 / -1' : undefined
+        }}
+    >
+        <span style={{ color: selected ? '#1677ff' : 'rgba(0,0,0,.85)', fontWeight: selected ? 500 : 400 }}>
+            {label}
+        </span>
+        <CheckCircleOutlined style={{ color: selected ? '#1677ff' : '#d9d9d9', fontSize: 14 }} />
+    </div>
+)
+
+const TickableCardGrid: React.FC<{
+    options: { value: string; label: string }[]
+    selected: string[]
+    onChange: (next: string[]) => void
+    columns?: number
+    showAllOption?: boolean
+    emptyText?: string
+}> = ({ options, selected, onChange, columns = 3, showAllOption = true, emptyText = 'Nothing to select yet.' }) => {
+    if (!options.length) {
+        return <Text type="secondary">{emptyText}</Text>
+    }
+
+    const allSelected = selected.length === options.length
+
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 12 }}>
+            {showAllOption && (
+                <CoverageCard
+                    label="All"
+                    selected={allSelected}
+                    fullWidth
+                    onClick={() => onChange(allSelected ? [] : options.map(o => o.value))}
+                />
+            )}
+            {options.map(opt => (
+                <CoverageCard
+                    key={opt.value}
+                    label={opt.label}
+                    selected={selected.includes(opt.value)}
+                    onClick={() =>
+                        onChange(
+                            selected.includes(opt.value)
+                                ? selected.filter(v => v !== opt.value)
+                                : [...selected, opt.value]
+                        )
+                    }
+                />
+            ))}
+        </div>
+    )
+}
+
+const CoverageStep: React.FC<{
+    value: ProgramCoverageValue
+    onChange: (v: ProgramCoverageValue) => void
+    branches: any[]
+    departments: any[]
+    userBranchId: string | null
+    onBack: () => void
+    onNext: () => void
+    backLabel?: string
+    nextLabel?: string
+    nextLoading?: boolean
+}> = ({
+    value,
+    onChange,
+    branches,
+    departments,
+    userBranchId,
+    onBack,
+    onNext,
+    backLabel = 'Back',
+    nextLabel = 'Next',
+    nextLoading = false
+}) => {
+        const { isMultiBranch, supportedBranchIds, participatingDepartmentIds } = value
+
+        const branchOptions = branches
+            .filter(b => !userBranchId || b.id !== userBranchId)
+            .map(b => ({ value: b.id, label: b.name || b.title || 'Branch' }))
+
+        const departmentOptions = departments.map(d => ({ value: d.id, label: d.name }))
+
+        const handleNext = () => {
+            if (!participatingDepartmentIds.length) {
+                message.error('Please select at least one participating department')
+                return
+            }
+            onNext()
+        }
+
+        return (
+            <div style={{ marginTop: 8 }}>
+                <Text strong>Program Scope</Text>
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gap: 12,
+                        marginTop: 8,
+                        marginBottom: 24
+                    }}
+                >
+                    <CoverageCard
+                        label="Single branch"
+                        selected={!isMultiBranch}
+                        onClick={() =>
+                            onChange({ isMultiBranch: false, supportedBranchIds: [], participatingDepartmentIds })
+                        }
+                    />
+                    <CoverageCard
+                        label="Multi-branch (participants from multiple hubs)"
+                        selected={isMultiBranch}
+                        onClick={() =>
+                            onChange({ isMultiBranch: true, supportedBranchIds, participatingDepartmentIds })
+                        }
+                    />
+                </div>
+
+                {isMultiBranch && (
+                    <div style={{ marginBottom: 24 }}>
+                        <Text strong>Supported branches / hubs</Text>
+                        <div style={{ marginTop: 8 }}>
+                            <TickableCardGrid
+                                options={branchOptions}
+                                selected={supportedBranchIds}
+                                onChange={ids =>
+                                    onChange({ isMultiBranch, supportedBranchIds: ids, participatingDepartmentIds })
+                                }
+                                emptyText="No other branches to select."
+                            />
+                        </div>
+                    </div>
+                )}
+
+                <Text strong>
+                    Participating departments <Text type="danger">*</Text>
+                </Text>
+                <div style={{ marginTop: 8 }}>
+                    <TickableCardGrid
+                        options={departmentOptions}
+                        selected={participatingDepartmentIds}
+                        onChange={ids =>
+                            onChange({ isMultiBranch, supportedBranchIds, participatingDepartmentIds: ids })
+                        }
+                        emptyText="No departments configured yet."
+                    />
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+                    <Button style={{ flex: 1 }} onClick={onBack}>{backLabel}</Button>
+                    <Button style={{ flex: 1 }} type="primary" loading={nextLoading} onClick={handleNext}>
+                        {nextLabel}
+                    </Button>
+                </div>
+            </div>
+        )
+    }
+
+/* ──────────────────────────────────────────────────────────────────
+   EDIT: SECTION PICKER (jump straight to one part of the program
+   instead of walking every step)
+────────────────────────────────────────────────────────────────── */
+
+const PROGRAM_EDIT_SECTIONS: { step: number; title: string; description: string }[] = [
+    { step: 0, title: 'Program Details', description: 'Name, description, type, status, cohort, dates, funder & capacity' },
+    { step: 1, title: 'Coverage', description: 'Branch scope and participating departments' },
+    { step: 2, title: 'Program Logo', description: 'Upload or replace the program logo' },
+    { step: 3, title: 'Eligibility Criteria', description: 'Who can apply to this program' },
+    { step: 4, title: 'Required Documents', description: 'Documents and agreements SMEs must provide' },
+    { step: 5, title: 'Onboarding Questions', description: 'Custom questions asked during application' }
+]
+
+const SectionPickerStep: React.FC<{
+    onSelect: (step: number) => void
+    onSaveAndClose: () => void
+    saving: boolean
+}> = ({ onSelect, onSaveAndClose, saving }) => (
+    <div style={{ marginTop: 8 }}>
+        <Text strong>What would you like to edit?</Text>
+        <div
+            style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: 12,
+                marginTop: 12
+            }}
+        >
+            {PROGRAM_EDIT_SECTIONS.map(section => (
+                <div
+                    key={section.step}
+                    onClick={() => onSelect(section.step)}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        padding: '14px 16px',
+                        borderRadius: 10,
+                        border: '1px solid #e6e6e6',
+                        background: '#fff',
+                        cursor: 'pointer',
+                        transition: 'all .15s ease'
+                    }}
+                >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontWeight: 500 }}>{section.title}</span>
+                        <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
+                            {section.description}
+                        </span>
+                    </div>
+                    <RightOutlined style={{ color: 'rgba(0,0,0,.35)', fontSize: 14, flexShrink: 0 }} />
+                </div>
+            ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+            <Button
+                style={{ flex: 1 }}
+                type="primary"
+                loading={saving}
+                onClick={onSaveAndClose}
+            >
+                Save Program
+            </Button>
+        </div>
+    </div>
+)
+
+const LOGO_PREVIEW_SIZE = 220
+const MIN_LOGO_DIMENSION = 300
+
+const readImageDimensions = (file: File): Promise<{ width: number; height: number }> =>
+    new Promise((resolve, reject) => {
+        const img = new window.Image()
+        const url = URL.createObjectURL(file)
+        img.onload = () => {
+            const { naturalWidth: width, naturalHeight: height } = img
+            URL.revokeObjectURL(url)
+            resolve({ width, height })
+        }
+        img.onerror = () => {
+            URL.revokeObjectURL(url)
+            reject(new Error('Could not read image dimensions'))
+        }
+        img.src = url
+    })
+
 const ProgramLogoStep: React.FC<{
     logoPreview: string | null
     onPick: (file: File | null, previewUrl: string | null) => void
     onBack: () => void
     onNext: () => void
-}> = ({ logoPreview, onPick, onBack, onNext }) => {
-    const beforeUpload: UploadProps['beforeUpload'] = file => {
+    backLabel?: string
+    nextLabel?: string
+    nextLoading?: boolean
+}> = ({ logoPreview, onPick, onBack, onNext, backLabel = 'Back', nextLabel = 'Next', nextLoading = false }) => {
+    const beforeUpload: UploadProps['beforeUpload'] = async file => {
         const isImage =
             file.type === 'image/png' ||
             file.type === 'image/jpeg' ||
@@ -1119,53 +1472,136 @@ const ProgramLogoStep: React.FC<{
             return Upload.LIST_IGNORE
         }
 
+        try {
+            const { width, height } = await readImageDimensions(file as File)
+            if (width < MIN_LOGO_DIMENSION || height < MIN_LOGO_DIMENSION) {
+                message.error(
+                    `Logo is too small (${width}x${height}px). Please upload an image at least ${MIN_LOGO_DIMENSION}x${MIN_LOGO_DIMENSION}px.`
+                )
+                return Upload.LIST_IGNORE
+            }
+        } catch {
+            message.error('Could not read that image. Please try a different file.')
+            return Upload.LIST_IGNORE
+        }
+
         const previewUrl = URL.createObjectURL(file)
         onPick(file as File, previewUrl)
         return false // prevent auto-upload
     }
 
+    const handleNext = () => {
+        if (!logoPreview) {
+            message.error('Please upload a program logo before continuing')
+            return
+        }
+        onNext()
+    }
+
     return (
-        <div style={{ maxWidth: 560 }}>
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
             <Alert
                 type="info"
                 showIcon
-                style={{ marginBottom: 12 }}
-                message="Upload a project logo (optional)"
-                description="This logo will appear in dashboards, documents, and program cards."
+                style={{ marginBottom: 20 }}
+                message="Upload a project logo"
+                description={`A clear, high-resolution logo makes dashboards, documents, and program cards look their best. PNG, JPG, or WEBP, at least ${MIN_LOGO_DIMENSION}x${MIN_LOGO_DIMENSION}px, up to 2MB.`}
             />
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                {logoPreview ? (
-                    <Avatar size={72} src={logoPreview} />
-                ) : (
-                    <Avatar size={72} icon={<PictureOutlined />} />
-                )}
-
-                <Upload
-                    accept="image/png,image/jpeg,image/jpg,image/webp"
-                    maxCount={1}
-                    showUploadList={false}
-                    beforeUpload={beforeUpload}
+            <div
+                style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '8px 0 24px'
+                }}
+            >
+                <div
+                    style={{
+                        width: LOGO_PREVIEW_SIZE,
+                        height: LOGO_PREVIEW_SIZE,
+                        borderRadius: 20,
+                        border: logoPreview ? '1px solid #e6efff' : '1px dashed #adc6ff',
+                        background: '#fafcff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden'
+                    }}
                 >
-                    <Button icon={<PictureOutlined />}>Choose Logo</Button>
-                </Upload>
+                    {logoPreview ? (
+                        <img
+                            src={logoPreview}
+                            alt="Program logo preview"
+                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
+                    ) : (
+                        <PictureOutlined style={{ fontSize: 56, color: '#adc6ff' }} />
+                    )}
+                </div>
 
-                {logoPreview && (
-                    <Button danger onClick={() => onPick(null, null)}>
-                        Remove
-                    </Button>
-                )}
+                <Space>
+                    <Upload
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        maxCount={1}
+                        showUploadList={false}
+                        beforeUpload={beforeUpload}
+                    >
+                        <Button type={logoPreview ? 'default' : 'primary'} icon={<PictureOutlined />}>
+                            {logoPreview ? 'Change Logo' : 'Choose Logo'}
+                        </Button>
+                    </Upload>
+
+                    {logoPreview && (
+                        <Button danger onClick={() => onPick(null, null)}>
+                            Remove
+                        </Button>
+                    )}
+                </Space>
             </div>
 
             <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                <Button onClick={onBack}>Back</Button>
-                <Button type="primary" onClick={onNext}>
-                    Next
+                <Button style={{ flex: 1 }} onClick={onBack}>{backLabel}</Button>
+                <Button style={{ flex: 1 }} type="primary" loading={nextLoading} onClick={handleNext}>
+                    {nextLabel}
                 </Button>
             </div>
         </div>
     )
 }
+
+type ProgramManagerViewMode = 'programs' | 'proposals'
+
+const ProgramViewToggle: React.FC<{
+    value: ProgramManagerViewMode
+    onChange: (v: ProgramManagerViewMode) => void
+}> = ({ value, onChange }) => (
+    <Segmented
+        value={value}
+        onChange={v => onChange(v as ProgramManagerViewMode)}
+        options={[
+            {
+                label: (
+                    <Space>
+                        <ProjectOutlined />
+                        Programs
+                    </Space>
+                ),
+                value: 'programs'
+            },
+            {
+                label: (
+                    <Space>
+                        <FileTextOutlined />
+                        Proposals
+                    </Space>
+                ),
+                value: 'proposals'
+            }
+        ]}
+    />
+)
 
 const ProjectProposalsManager: React.FC<{
 
@@ -1173,7 +1609,9 @@ const ProjectProposalsManager: React.FC<{
     userBranchId: string | null
     isProjectAdmin: boolean
     resolveAssignedBranch: (branchId?: string) => { id: string; name: string } | null
-}> = ({ branches, userBranchId, isProjectAdmin, resolveAssignedBranch }) => {
+    viewMode: ProgramManagerViewMode
+    onViewModeChange: (v: ProgramManagerViewMode) => void
+}> = ({ branches, userBranchId, isProjectAdmin, resolveAssignedBranch, viewMode, onViewModeChange }) => {
     const { user } = useFullIdentity()
     const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
@@ -1225,6 +1663,7 @@ const ProjectProposalsManager: React.FC<{
             setProposals(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
         } catch (e) {
             message.error('Failed to load project proposals')
+            console.log(e.message || e)
         } finally {
             setLoading(false)
         }
@@ -1470,7 +1909,6 @@ const ProjectProposalsManager: React.FC<{
                             value={formatter(metrics.total)}
                             icon={<ProjectOutlined style={{ fontSize: 18, color: '#1677ff' }} />}
                             iconBg='rgba(22,119,255,.12)'
-                            wrapperStyle={{ minHeight: 72 }}
                         />
                     </motion.div>
                 </Col>
@@ -1486,7 +1924,6 @@ const ProjectProposalsManager: React.FC<{
                             }
                             icon={<CheckCircleOutlined style={{ fontSize: 18, color: '#52c41a' }} />}
                             iconBg='rgba(82,196,26,.12)'
-                            wrapperStyle={{ minHeight: 72 }}
                         />
                     </motion.div>
                 </Col>
@@ -1502,7 +1939,6 @@ const ProjectProposalsManager: React.FC<{
                             }
                             icon={<DollarOutlined style={{ fontSize: 18, color: '#faad14' }} />}
                             iconBg='rgba(250,173,20,.14)'
-                            wrapperStyle={{ minHeight: 72 }}
                         />
                     </motion.div>
                 </Col>
@@ -1518,43 +1954,48 @@ const ProjectProposalsManager: React.FC<{
                             }
                             icon={<PoweroffOutlined style={{ fontSize: 18, color: '#ff4d4f' }} />}
                             iconBg='rgba(255,77,79,.12)'
-                            wrapperStyle={{ minHeight: 72 }}
                         />
                     </motion.div>
                 </Col>
             </Row>
 
-            <MotionCard style={{ marginBottom: 12 }}>
-                <Row gutter={[16, 16]} align="middle">
-                    <Col xs={24} md={8}>
-                        <Input
-                            allowClear
-                            placeholder="Search title / funder"
-                            value={searchText}
-                            onChange={e => setSearchText(e.target.value)}
-                        />
-                    </Col>
-                    <Col xs={24} md={8}>
-                        <Select
-                            allowClear
-                            style={{ width: '100%' }}
-                            placeholder="Filter by status"
-                            value={statusFilter}
-                            onChange={v => setStatusFilter(v as any)}
-                            options={PROPOSAL_STATUSES.map(s => ({ label: s, value: s }))}
-                        />
-                    </Col>
-                    <Col xs={24} md={8} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-                            Add Proposal
-                        </Button>
-                    </Col>
-                </Row>
-            </MotionCard>
+            <MotionCard
+                loading={loading}
+                filterBarProps={{ marginBottom: 0 }}
+                filterBar={
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, width: '100%' }}>
+                        <div style={{ flex: '0 1 220px' }}>
+                            <ProgramViewToggle value={viewMode} onChange={onViewModeChange} />
+                        </div>
+                        <div style={{ flex: '1 1 220px' }}>
+                            <Input
+                                allowClear
+                                placeholder="Search title / funder"
+                                value={searchText}
+                                onChange={e => setSearchText(e.target.value)}
+                            />
+                        </div>
+                        <div style={{ flex: '1 1 220px' }}>
+                            <Select
+                                allowClear
+                                style={{ width: '100%' }}
+                                placeholder="Filter by status"
+                                value={statusFilter}
+                                onChange={v => setStatusFilter(v as any)}
+                                options={PROPOSAL_STATUSES.map(s => ({ label: s, value: s }))}
+                            />
+                        </div>
+                        <div style={{ flex: '0 1 180px', display: 'flex', justifyContent: 'flex-end' }}>
+                            <Button shape="round" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                                Add Proposal
+                            </Button>
+                        </div>
+                    </div>
+                }
+            />
 
-            <MotionCard>
+            <MotionCard style={{ marginTop: 15 }} loading={loading}>
                 <Table
-                    loading={loading}
                     dataSource={filtered}
                     rowKey="id"
                     pagination={{ pageSize: 8, showSizeChanger: false, position: ['bottomCenter'] }}
@@ -1920,18 +2361,8 @@ const ProgramManager: React.FC = () => {
                             waitForElement: 5000,
                             popover: {
                                 title: 'Programme setup wizard',
-                                description: 'Complete programme details, logo, eligibility, onboarding documents and onboarding questions.',
+                                description: 'Complete programme details, coverage, logo, eligibility, onboarding documents and onboarding questions.',
                                 side: 'left',
-                                align: 'start'
-                            }
-                        },
-                        {
-                            element: guideTarget('program-wizard-steps'),
-                            waitForElement: 5000,
-                            popover: {
-                                title: 'Five setup stages',
-                                description: 'Complete each stage in order. Your inputs are carried forward until the programme is saved.',
-                                side: 'bottom',
                                 align: 'start'
                             }
                         },
@@ -2025,8 +2456,12 @@ const ProgramManager: React.FC = () => {
 
     const [branchesLoading, setBranchesLoading] = useState(true)
     const [programsLoading, setProgramsLoading] = useState(true)
+    const [initialProgramsLoaded, setInitialProgramsLoaded] = useState(false)
     const [userResolved, setUserResolved] = useState(false)
-    const booting = !userResolved || branchesLoading || programsLoading
+    // programsLoading toggles again on every refresh (e.g. after save/delete) — only the
+    // first load should trigger the full-page overlay; later refreshes use the filter
+    // bar / table skeletons instead so the whole page doesn't flash.
+    const booting = !userResolved || branchesLoading || !initialProgramsLoaded
     const [logoFile, setLogoFile] = useState<File | null>(null)
     const [logoPreview, setLogoPreview] = useState<string | null>(null)
 
@@ -2036,11 +2471,16 @@ const ProgramManager: React.FC = () => {
     const [form] = Form.useForm()
     const [eligibility, setEligibility] = useState({})
     const [requiredDocs, setRequiredDocs] = useState<RequiredDoc[]>([])
+    const [coverage, setCoverage] = useState<ProgramCoverageValue>({
+        isMultiBranch: false,
+        supportedBranchIds: [],
+        participatingDepartmentIds: []
+    })
+    const [departments, setDepartments] = useState<any[]>([])
 
     const [togglingProgramId, setTogglingProgramId] = useState<string | null>(
         null
     )
-    const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
     const [searchText, setSearchText] = useState('')
     const [filteredStatus, setFilteredStatus] = useState<string | null>(null)
@@ -2100,6 +2540,16 @@ const ProgramManager: React.FC = () => {
         fetchBranches()
     }, [])
 
+    useEffect(() => {
+        departmentService
+            .getAllDepartments()
+            .then(setDepartments)
+            .catch(err => {
+                console.error('Failed to load departments', err)
+                setDepartments([])
+            })
+    }, [])
+
     // prefill branch on create modal
     useEffect(() => {
         if (!modalVisible) return
@@ -2131,6 +2581,7 @@ const ProgramManager: React.FC = () => {
             message.error('Failed to load programs')
         } finally {
             setProgramsLoading(false)
+            setInitialProgramsLoaded(true)
         }
     }
 
@@ -2153,6 +2604,16 @@ const ProgramManager: React.FC = () => {
 
         if (prefId) form.setFieldsValue({ branchId: prefId })
     }, [modalVisible, userBranchId, branches, form, booting])
+
+    const handleCoverageChange = (next: ProgramCoverageValue) => {
+        setCoverage(next)
+        const synced = upsertHubQuestion(
+            questions,
+            next.isMultiBranch ? next.supportedBranchIds : [],
+            branches
+        )
+        setQuestions(synced)
+    }
 
     const normalizeProgramRequirements = (docs: RequiredDoc[] = []) =>
         docs.map(d => ({
@@ -2242,6 +2703,7 @@ const ProgramManager: React.FC = () => {
             form.resetFields()
             setRequiredDocs([])
             setQuestions([])
+            setCoverage({ isMultiBranch: false, supportedBranchIds: [], participatingDepartmentIds: [] })
             fetchPrograms()
         } catch (err: any) {
             message.error('Failed to add program: ' + (err.message || err))
@@ -2287,6 +2749,7 @@ const ProgramManager: React.FC = () => {
             message.success('Program updated successfully')
             setEditModalVisible(false)
             setQuestions([])
+            setCoverage({ isMultiBranch: false, supportedBranchIds: [], participatingDepartmentIds: [] })
             fetchPrograms()
         } catch (err: any) {
             message.error('Failed to update program')
@@ -2294,6 +2757,20 @@ const ProgramManager: React.FC = () => {
         } finally {
             setSaving(false)
         }
+    }
+
+    // Every section of the edit wizard is fully prefilled the moment "Edit" is
+    // clicked (editForm, coverage, eligibility, requiredDocs, questions, logo all
+    // load from the record right away), so any single section can save the whole
+    // program on its own -- the user never has to walk through the rest.
+    const saveEditedProgram = async () => {
+        await handleUpdateProgram({
+            ...basicDetails,
+            ...editForm.getFieldsValue(),
+            ...coverage,
+            onboardingQuestions: questions,
+            eligibilityCriteria: eligibility
+        })
     }
 
     const handleDeleteProgram = async (id: string) => {
@@ -2341,44 +2818,6 @@ const ProgramManager: React.FC = () => {
                     <LoadingOverlay tip='Getting your programs ready…' />
                 ) : (
                     <>
-                        <div data-guide='program-manager-header'>
-                            <DashboardHeaderCard
-                                title='Incubation Programs Repository'
-                                subtitle=
-                                {viewMode === 'proposals' ? (
-                                    <Text type="secondary">Track proposals and progress updates</Text>
-                                ) : (
-                                    <Text type="secondary">Manage incubation programs</Text>
-                                )}
-                                extraRight={
-                                    <Segmented
-                                        value={viewMode}
-                                        onChange={v => setViewMode(v as any)}
-                                        options={[
-                                            {
-                                                label: (
-                                                    <Space>
-                                                        <ProjectOutlined />
-                                                        Programs
-                                                    </Space>
-                                                ),
-                                                value: 'programs'
-                                            },
-                                            {
-                                                label: (
-                                                    <Space>
-                                                        <FileTextOutlined />
-                                                        Proposals
-                                                    </Space>
-                                                ),
-                                                value: 'proposals'
-                                            }
-                                        ]}
-                                    />
-                                }
-                            />
-                        </div>
-
                         {viewMode === 'programs' ? (
                             <>
                                 {/* metrics */}
@@ -2398,7 +2837,6 @@ const ProgramManager: React.FC = () => {
                                                     />
                                                 }
                                                 iconBg='rgba(29,57,196,.12)'
-                                                wrapperStyle={{ minHeight: 72 }}
                                             />
                                         </motion.div>
                                     </Col>
@@ -2422,7 +2860,6 @@ const ProgramManager: React.FC = () => {
                                                     />
                                                 }
                                                 iconBg='rgba(82,196,26,.12)'
-                                                wrapperStyle={{ minHeight: 72 }}
                                             />
                                         </motion.div>
                                     </Col>
@@ -2446,7 +2883,6 @@ const ProgramManager: React.FC = () => {
                                                     />
                                                 }
                                                 iconBg='rgba(24,144,255,.12)'
-                                                wrapperStyle={{ minHeight: 72 }}
                                             />
                                         </motion.div>
                                     </Col> */}
@@ -2466,75 +2902,78 @@ const ProgramManager: React.FC = () => {
                                                     />
                                                 }
                                                 iconBg='rgba(235,47,150,.12)'
-                                                wrapperStyle={{ minHeight: 72 }}
                                             />
                                         </motion.div>
                                     </Col>
                                 </Row>
-
-                                {programs.length >= programLimit && (
-                                    <Alert
-                                        message='Program Limit Reached'
-                                        description={`Your organization is allowed to manage up to ${programLimit} program${programLimit === 1 ? '' : 's'}. Contact your system administrator to change this limit.`}
-                                        type='warning'
-                                        showIcon
-                                        style={{
-                                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                            borderRadius: 8,
-                                            marginBottom: 16,
-                                            border: '1px solid #d6e4ff'
-                                        }}
-                                    />
-                                )}
 
                                 <motion.div
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ duration: 0.4 }}
                                 >
-                                    <MotionCard>
-                                        <Row data-guide='program-filters' gutter={[16, 16]} align='middle'>                                           <Col xs={24} sm={12} md={8}>
-                                            <Input
-                                                placeholder='Search Program Name'
-                                                value={searchText}
-                                                onChange={e => setSearchText(e.target.value)}
-                                                allowClear
-                                            />
-                                        </Col>
-                                            <Col xs={24} sm={12} md={8}>
-                                                <Select
-                                                    placeholder='Filter by Status'
-                                                    onChange={value => setFilteredStatus(value)}
-                                                    value={filteredStatus}
-                                                    allowClear
-                                                    style={{ width: '100%' }}
-                                                >
-                                                    <Select.Option value='Active'>Active</Select.Option>
-                                                    <Select.Option value='Inactive'>Inactive</Select.Option>
-                                                    <Select.Option value='Completed'>Completed</Select.Option>
-                                                    <Select.Option value='Upcoming'>Upcoming</Select.Option>
-                                                </Select>
-                                            </Col>
-                                            {programs.length < programLimit && !loading && (
-                                                <Button
-                                                    data-guide='add-program-action'
-                                                    type='primary'
-                                                    icon={<PlusOutlined />}
-                                                    onClick={() => {
-                                                        if (programs.length >= programLimit) {
-                                                            message.warning(
-                                                                `Only ${programLimit} program${programLimit === 1 ? ' is' : 's are'} allowed. Contact the system administrator to add more.`
-                                                            )
-                                                        } else {
-                                                            setModalVisible(true)
-                                                        }
-                                                    }}
-                                                >
-                                                    Add Program
-                                                </Button>
-                                            )}
-                                        </Row>
-                                    </MotionCard>
+                                    <MotionCard
+                                        loading={programsLoading}
+                                        filterBarProps={{ marginBottom: 0 }}
+                                        filterBar={
+                                            <div
+                                                data-guide='program-filters'
+                                                style={{ display: 'flex', flexWrap: 'wrap', gap: 16, width: '100%' }}
+                                            >
+                                                <div data-guide='program-manager-header' style={{ flex: '0 1 220px' }}>
+                                                    <ProgramViewToggle value={viewMode} onChange={setViewMode} />
+                                                </div>
+                                                <div style={{ flex: '1 1 220px' }}>
+                                                    <Input
+                                                        placeholder='Search Program Name'
+                                                        value={searchText}
+                                                        onChange={e => setSearchText(e.target.value)}
+                                                        allowClear
+                                                    />
+                                                </div>
+                                                <div style={{ flex: '1 1 220px' }}>
+                                                    <Select
+                                                        placeholder='Filter by Status'
+                                                        onChange={value => setFilteredStatus(value)}
+                                                        value={filteredStatus}
+                                                        allowClear
+                                                        style={{ width: '100%' }}
+                                                    >
+                                                        <Select.Option value='Active'>Active</Select.Option>
+                                                        <Select.Option value='Inactive'>Inactive</Select.Option>
+                                                        <Select.Option value='Completed'>Completed</Select.Option>
+                                                        <Select.Option value='Upcoming'>Upcoming</Select.Option>
+                                                    </Select>
+                                                </div>
+                                                {programs.length < programLimit && (
+                                                    <div style={{ flex: '0 1 180px', display: 'flex', justifyContent: 'flex-end' }}>
+                                                        <Button
+                                                            shape='round'
+                                                            data-guide='add-program-action'
+                                                            type='primary'
+                                                            icon={<PlusOutlined />}
+                                                            onClick={() => {
+                                                                if (programs.length >= programLimit) {
+                                                                    message.warning(
+                                                                        `Only ${programLimit} program${programLimit === 1 ? ' is' : 's are'} allowed. Contact the system administrator to add more.`
+                                                                    )
+                                                                } else {
+                                                                    setCoverage({
+                                                                        isMultiBranch: false,
+                                                                        supportedBranchIds: [],
+                                                                        participatingDepartmentIds: []
+                                                                    })
+                                                                    setModalVisible(true)
+                                                                }
+                                                            }}
+                                                        >
+                                                            Add Program
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        }
+                                    />
                                 </motion.div>
 
                                 <motion.div
@@ -2552,7 +2991,7 @@ const ProgramManager: React.FC = () => {
                                         ) : (
                                             <div data-guide='program-table'>
                                                 <Table
-                                                    loading={loading}
+                                                    loading={programsLoading}
                                                     dataSource={filteredPrograms}
                                                     rowKey='id'
                                                     pagination={{ pageSize: 6, showSizeChanger: false, position: ['bottomCenter'] }}
@@ -2672,12 +3111,6 @@ const ProgramManager: React.FC = () => {
                                                                                 record.assignedBranch?.id ||
                                                                                 record.branchId ||
                                                                                 null,
-                                                                            supportedBranchIds: (
-                                                                                record.supportedBranchIds || []
-                                                                            ).filter(
-                                                                                (id: string) =>
-                                                                                    !userBranchId || id !== userBranchId // strip my own branch
-                                                                            ),
                                                                             startDate: record.startDate
                                                                                 ? typeof record.startDate === 'string'
                                                                                     ? dayjs(record.startDate)
@@ -2692,6 +3125,18 @@ const ProgramManager: React.FC = () => {
                                                                                         ? dayjs(record.endDate.toDate())
                                                                                         : null
                                                                                 : null
+                                                                        })
+                                                                        const recordSupportedBranchIds = (
+                                                                            record.supportedBranchIds || []
+                                                                        ).filter(
+                                                                            (id: string) =>
+                                                                                !userBranchId || id !== userBranchId // strip my own branch
+                                                                        )
+                                                                        setCoverage({
+                                                                            isMultiBranch: !!record.isMultiBranch,
+                                                                            supportedBranchIds: recordSupportedBranchIds,
+                                                                            participatingDepartmentIds:
+                                                                                record.participatingDepartmentIds || []
                                                                         })
                                                                         const baseQuestions =
                                                                             record.onboardingQuestions || []
@@ -2721,7 +3166,7 @@ const ProgramManager: React.FC = () => {
                                                                                 }
                                                                             })()
                                                                         setEditModalVisible(true)
-                                                                        setCurrentStep(0)
+                                                                        setCurrentStep(-1)
                                                                     }}
                                                                 />
 
@@ -2789,14 +3234,20 @@ const ProgramManager: React.FC = () => {
                                         setCurrentStep(0)
                                         setEligibility({})
                                         setRequiredDocs([])
+                                        setCoverage({
+                                            isMultiBranch: false,
+                                            supportedBranchIds: [],
+                                            participatingDepartmentIds: []
+                                        })
                                     }}
                                     footer={null}
                                     confirmLoading={saving}
                                     width={1200}
                                 >
-                                    <div data-guide='program-wizard-steps'>
+                                    <div data-guide='program-wizard-steps' hidden>
                                         <Steps current={currentStep} style={{ marginBottom: 24 }}>
                                             <Steps.Step title="Program Details" />
+                                            <Steps.Step title="Coverage" />
                                             <Steps.Step title="Program Logo" />
                                             <Steps.Step title="Eligibility Criteria" />
                                             <Steps.Step title="Required Documents" />
@@ -2804,386 +3255,321 @@ const ProgramManager: React.FC = () => {
                                         </Steps>
                                     </div>
 
-                                    {currentStep === 0 && (
-                                        <Form data-guide='program-basic-details'
-                                            layout='vertical'
-                                            form={form}
-                                            onFinish={values => {
-                                                setBasicDetails(values)
-                                                // ensure hub question is in sync when leaving step 0
-                                                const synced = upsertHubQuestion(
-                                                    questions,
-                                                    values.supportedBranchIds || [],
-                                                    branches
-                                                )
-                                                setQuestions(synced)
-                                                setCurrentStep(1)
-                                            }}
+                                    <AnimatePresence mode='wait'>
+                                        <motion.div
+                                            key={currentStep}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            transition={{ duration: 0.25 }}
                                         >
-                                            <Form.Item
-                                                name='branchId'
-                                                label='Branch'
-                                                rules={[{ required: true }]}
-                                            >
-                                                <Select
-                                                    disabled={!!userBranchId}
-                                                    placeholder='Select branch'
+                                            {currentStep === 0 && (
+                                                <Form data-guide='program-basic-details'
+                                                    layout='vertical'
+                                                    form={form}
+                                                    onFinish={values => {
+                                                        setBasicDetails(values)
+                                                        setCurrentStep(1)
+                                                    }}
                                                 >
-                                                    {branches.map(branch => (
-                                                        <Select.Option key={branch.id} value={branch.id}>
-                                                            {branch.name}
-                                                        </Select.Option>
-                                                    ))}
-                                                </Select>
-                                            </Form.Item>
-                                            <Form.Item
-                                                name='name'
-                                                label='Program Name'
-                                                rules={[{ required: true }]}
-                                            >
-                                                <Input />
-                                            </Form.Item>
-                                            <Form.Item
-                                                name='description'
-                                                label='Program Description'
-                                                rules={[
-                                                    { required: true, message: 'Please enter a description' },
-                                                    {
-                                                        validator: (_, value) => {
-                                                            const words = (value || '')
-                                                                .trim()
-                                                                .split(/\s+/)
-                                                                .filter(Boolean).length
-                                                            return words < 100
-                                                                ? Promise.resolve()
-                                                                : Promise.reject(
-                                                                    new Error(
-                                                                        `Please keep it under 100 words (currently ${words}).`
-                                                                    )
-                                                                )
-                                                        }
-                                                    }
-                                                ]}
-                                            >
-                                                <Input.TextArea
-                                                    autoSize={{ minRows: 3, maxRows: 6 }}
-                                                    placeholder='Briefly describe the program (under 100 words)'
-                                                />
-                                            </Form.Item>
-
-                                            <Form.Item noStyle shouldUpdate>
-                                                {({ getFieldValue }) => {
-                                                    const v = getFieldValue('description') || ''
-                                                    const words = v.trim() ? v.trim().split(/\s+/).length : 0
-                                                    return (
-                                                        <div
-                                                            style={{
-                                                                textAlign: 'right',
-                                                                marginTop: -8,
-                                                                marginBottom: 12
-                                                            }}
-                                                        >
-                                                            <span
-                                                                style={{
-                                                                    color:
-                                                                        words >= 100 ? '#ff4d4f' : 'rgba(0,0,0,.45)'
-                                                                }}
-                                                            >
-                                                                {words}/99 words
-                                                            </span>
-                                                        </div>
-                                                    )
-                                                }}
-                                            </Form.Item>
-
-                                            <Row gutter={16}>
-                                                <Col span={12}>
                                                     <Form.Item
-                                                        name='type'
-                                                        label='Type'
-                                                        rules={[{ required: true }]}
+                                                        name='branchId'
+                                                        label='Branch'
+                                                        hidden
                                                     >
-                                                        <Select placeholder='Select program type'>
-                                                            {[
-                                                                'Pre-incubation',
-                                                                'Business Incubation',
-                                                                'Virtual Incubation',
-                                                                'Accelerator Program',
-                                                                'Technology Incubation',
-                                                                'Youth Incubation',
-                                                                'Women Empowerment Program',
-                                                                'Green Economy Incubation',
-                                                                'Agro-Processing Support'
-                                                            ].map(t => (
-                                                                <Select.Option key={t} value={t}>
-                                                                    {t}
+                                                        <Select
+                                                            disabled={!!userBranchId}
+                                                            placeholder='Select branch'
+                                                        >
+                                                            {branches.map(branch => (
+                                                                <Select.Option key={branch.id} value={branch.id}>
+                                                                    {branch.name}
                                                                 </Select.Option>
                                                             ))}
                                                         </Select>
                                                     </Form.Item>
-                                                </Col>
-                                                <Col span={12}>
-                                                    <Form.Item name='status' label='Status'>
-                                                        <Select>
-                                                            <Select.Option value='Active'>Active</Select.Option>
-                                                            <Select.Option value='Inactive'>
-                                                                Inactive
-                                                            </Select.Option>
-                                                            <Select.Option value='Completed'>
-                                                                Completed
-                                                            </Select.Option>
-                                                            <Select.Option value='Upcoming'>
-                                                                Upcoming
-                                                            </Select.Option>
-                                                        </Select>
-                                                    </Form.Item>
-                                                </Col>
-                                            </Row>
-
-                                            <Form.Item
-                                                name='isMultiBranch'
-                                                label='Program Scope'
-                                                valuePropName='checked'
-                                            >
-                                                <Checkbox
-                                                    onChange={e => {
-                                                        const checked = e.target.checked
-                                                        if (!checked) {
-                                                            // clear supported hubs + remove hub question
-                                                            form.setFieldsValue({ supportedBranchIds: [] })
-                                                            const synced = upsertHubQuestion([], [], branches)
-                                                            setQuestions(synced)
-                                                        }
-                                                    }}
-                                                >
-                                                    Multi-branch program (participants from multiple branches)
-                                                </Checkbox>
-                                            </Form.Item>
-
-                                            <Form.Item
-                                                noStyle
-                                                shouldUpdate={(prev, curr) =>
-                                                    prev.isMultiBranch !== curr.isMultiBranch
-                                                }
-                                            >
-                                                {({ getFieldValue }) =>
-                                                    getFieldValue('isMultiBranch') ? (
-                                                        <Form.Item
-                                                            name='supportedBranchIds'
-                                                            label='Supported branches / hubs'
-                                                        >
-                                                            <Select
-                                                                mode='multiple'
-                                                                placeholder='Select supported hubs'
-                                                                onChange={(ids: string[]) => {
-                                                                    const synced = upsertHubQuestion(
-                                                                        questions,
-                                                                        ids,
-                                                                        branches
-                                                                    )
-                                                                    setQuestions(synced)
-                                                                }}
-                                                            >
-                                                                {branches
-                                                                    .filter(
-                                                                        b => !userBranchId || b.id !== userBranchId
-                                                                    ) // exclude my own branch
-                                                                    .map(branch => (
-                                                                        <Select.Option
-                                                                            key={branch.id}
-                                                                            value={branch.id}
-                                                                        >
-                                                                            {branch.name || branch.title || 'Branch'}
-                                                                        </Select.Option>
-                                                                    ))}
-                                                            </Select>
-                                                        </Form.Item>
-                                                    ) : null
-                                                }
-                                            </Form.Item>
-
-                                            <Row gutter={16}>
-                                                <Col span={8}>
                                                     <Form.Item
-                                                        name='cohortYear'
-                                                        label='Cohort Year'
+                                                        name='name'
+                                                        label='Program Name'
                                                         rules={[{ required: true }]}
                                                     >
-                                                        <Input placeholder='e.g., 2025' />
+                                                        <Input />
                                                     </Form.Item>
-                                                </Col>
-                                                <Col span={8}>
-                                                    <Form.Item name='startDate' label='Start Date'>
-                                                        <DatePicker style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                </Col>
-                                                <Col span={8}>
-                                                    <Form.Item name='endDate' label='End Date'>
-                                                        <DatePicker style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                </Col>
-                                            </Row>
-                                            <Row gutter={16}>
-                                                <Col span={12}>
                                                     <Form.Item
-                                                        name='assignedFunder'
-                                                        label='Assign Project Funder'
-                                                    >
-                                                        <Input placeholder='e.g., Quantilytix' />
-                                                    </Form.Item>
-                                                </Col>
-                                                {/* <Col span={12}>
-                                                    <Form.Item
-                                                        name='budget'
-                                                        label='Budget'
+                                                        name='description'
+                                                        label='Program Description'
                                                         rules={[
-                                                            { required: true, message: 'Enter a budget' },
-                                                            { type: 'number', min: 0 }
+                                                            { required: true, message: 'Please enter a description' },
+                                                            {
+                                                                validator: (_, value) => {
+                                                                    const words = (value || '')
+                                                                        .trim()
+                                                                        .split(/\s+/)
+                                                                        .filter(Boolean).length
+                                                                    return words < 100
+                                                                        ? Promise.resolve()
+                                                                        : Promise.reject(
+                                                                            new Error(
+                                                                                `Please keep it under 100 words (currently ${words}).`
+                                                                            )
+                                                                        )
+                                                                }
+                                                            }
                                                         ]}
                                                     >
-                                                        <InputNumber
-                                                            style={{ width: '100%' }}
-                                                            min={0}
-                                                            step={1}
-                                                            precision={0}
-                                                            parser={v => (v ? v.replace(/[^\d]/g, '') : '')}
-                                                            inputMode='numeric'
-                                                            prefix='R'
+                                                        <Input.TextArea
+                                                            autoSize={{ minRows: 3, maxRows: 6 }}
+                                                            placeholder='Briefly describe the program (under 100 words)'
                                                         />
                                                     </Form.Item>
-                                                </Col> */}
-                                            </Row>
 
-                                            <Form.Item name='maxCapacity' label='Max Capacity'>
-                                                <InputNumber
-                                                    style={{ width: '100%' }}
-                                                    min={0}
-                                                    step={1}
-                                                    precision={0}
-                                                    parser={v => (v ? v.replace(/[^\d]/g, '') : '')}
-                                                    inputMode='numeric'
+                                                    <Form.Item noStyle shouldUpdate>
+                                                        {({ getFieldValue }) => {
+                                                            const v = getFieldValue('description') || ''
+                                                            const words = v.trim() ? v.trim().split(/\s+/).length : 0
+                                                            return (
+                                                                <div
+                                                                    style={{
+                                                                        textAlign: 'right',
+                                                                        marginTop: -8,
+                                                                        marginBottom: 12
+                                                                    }}
+                                                                >
+                                                                    <span
+                                                                        style={{
+                                                                            color:
+                                                                                words >= 100 ? '#ff4d4f' : 'rgba(0,0,0,.45)'
+                                                                        }}
+                                                                    >
+                                                                        {words}/99 words
+                                                                    </span>
+                                                                </div>
+                                                            )
+                                                        }}
+                                                    </Form.Item>
+
+                                                    <Row gutter={16}>
+                                                        <Col span={12}>
+                                                            <Form.Item
+                                                                name='type'
+                                                                label='Type'
+                                                                rules={[{ required: true }]}
+                                                            >
+                                                                <Select placeholder='Select program type'>
+                                                                    {PROGRAM_TYPES.map(t => (
+                                                                        <Select.Option key={t} value={t}>
+                                                                            {t}
+                                                                        </Select.Option>
+                                                                    ))}
+                                                                </Select>
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={12}>
+                                                            <Form.Item name='status' label='Status'>
+                                                                <Select>
+                                                                    <Select.Option value='Active'>Active</Select.Option>
+                                                                    <Select.Option value='Inactive'>
+                                                                        Inactive
+                                                                    </Select.Option>
+                                                                    <Select.Option value='Completed'>
+                                                                        Completed
+                                                                    </Select.Option>
+                                                                    <Select.Option value='Upcoming'>
+                                                                        Upcoming
+                                                                    </Select.Option>
+                                                                </Select>
+                                                            </Form.Item>
+                                                        </Col>
+                                                    </Row>
+
+                                                    <Row gutter={16}>
+                                                        <Col span={8}>
+                                                            <Form.Item
+                                                                name='cohortYear'
+                                                                label='Cohort Year'
+                                                                rules={[{ required: true }]}
+                                                            >
+                                                                <Input placeholder='e.g., 2025' />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={8}>
+                                                            <Form.Item
+                                                                name='startDate'
+                                                                label='Start Date'
+                                                                rules={[{ required: true, message: 'Please select a start date' }]}
+                                                            >
+                                                                <DatePicker style={{ width: '100%' }} />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={8}>
+                                                            <Form.Item
+                                                                name='endDate'
+                                                                label='End Date'
+                                                                rules={[{ required: true, message: 'Please select an end date' }]}
+                                                            >
+                                                                <DatePicker style={{ width: '100%' }} />
+                                                            </Form.Item>
+                                                        </Col>
+                                                    </Row>
+                                                    <Row gutter={16}>
+                                                        <Col span={12}>
+                                                            <Form.Item
+                                                                name='assignedFunder'
+                                                                label='Assign Project Funder'
+                                                                rules={[{ required: true, message: 'Please assign a project funder' }]}
+                                                            >
+                                                                <Input placeholder='e.g., Quantilytix' />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={12}>
+                                                            <Form.Item name='maxCapacity' label='Max Capacity'>
+                                                                <InputNumber
+                                                                    style={{ width: '100%' }}
+                                                                    min={0}
+                                                                    step={1}
+                                                                    precision={0}
+                                                                    parser={v => (v ? v.replace(/[^\d]/g, '') : '')}
+                                                                    inputMode='numeric'
+                                                                />
+                                                            </Form.Item>
+                                                        </Col>
+                                                    </Row>
+                                                    <Form.Item>
+                                                        <Button type='primary' htmlType='submit' block>
+                                                            Next
+                                                        </Button>
+                                                    </Form.Item>
+                                                </Form>
+                                            )}
+
+                                            {currentStep === 1 && (
+                                                <CoverageStep
+                                                    value={coverage}
+                                                    onChange={handleCoverageChange}
+                                                    branches={branches}
+                                                    departments={departments}
+                                                    userBranchId={userBranchId}
+                                                    onBack={() => setCurrentStep(0)}
+                                                    onNext={() => setCurrentStep(2)}
                                                 />
-                                            </Form.Item>
-                                            <Form.Item>
-                                                <Button type='primary' htmlType='submit' block>
-                                                    Next
-                                                </Button>
-                                            </Form.Item>
-                                        </Form>
-                                    )}
+                                            )}
 
-                                    {currentStep === 1 && (
-                                        <ProgramLogoStep
-                                            logoPreview={logoPreview}
-                                            onPick={(file, preview) => {
-                                                // cleanup old preview url to avoid memory leak
-                                                if (logoPreview && logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview)
-                                                setLogoFile(file)
-                                                setLogoPreview(preview)
-                                            }}
-                                            onBack={() => setCurrentStep(0)}
-                                            onNext={() => setCurrentStep(2)}
-                                        />
-                                    )}
+                                            {currentStep === 2 && (
+                                                <ProgramLogoStep
+                                                    logoPreview={logoPreview}
+                                                    onPick={(file, preview) => {
+                                                        // cleanup old preview url to avoid memory leak
+                                                        if (logoPreview && logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview)
+                                                        setLogoFile(file)
+                                                        setLogoPreview(preview)
+                                                    }}
+                                                    onBack={() => setCurrentStep(1)}
+                                                    onNext={() => setCurrentStep(3)}
+                                                />
+                                            )}
 
-                                    {currentStep === 2 && (
-                                        <EligibilityCriteriaStep
-                                            value={eligibility}
-                                            onChange={setEligibility}
-                                            onBack={() => setCurrentStep(1)}
-                                            onNext={() => setCurrentStep(3)}
-                                        />
-                                    )}
+                                            {currentStep === 3 && (
+                                                <EligibilityCriteriaStep
+                                                    value={eligibility}
+                                                    onChange={setEligibility}
+                                                    onBack={() => setCurrentStep(2)}
+                                                    onNext={() => setCurrentStep(4)}
+                                                />
+                                            )}
 
-                                    {currentStep === 3 && (
-                                        <div data-guide='program-required-documents-step'>
-                                            <RequiredDocumentsStep
-                                                value={requiredDocs}
-                                                onChange={setRequiredDocs}
-                                                onBack={() => setCurrentStep(2)}
-                                                onNext={() => setCurrentStep(4)}
-                                            />
-                                        </div>
-                                    )}
+                                            {currentStep === 4 && (
+                                                <div data-guide='program-required-documents-step'>
+                                                    <RequiredDocumentsStep
+                                                        value={requiredDocs}
+                                                        onChange={setRequiredDocs}
+                                                        onBack={() => setCurrentStep(3)}
+                                                        onNext={() => setCurrentStep(5)}
+                                                    />
+                                                </div>
+                                            )}
 
-                                    {currentStep === 4 && (
-                                        <>
-                                            <QuestionTable
-                                                questions={questions}
-                                                onAdd={() => {
-                                                    setEditingQuestion(null)
-                                                    setQuestionModalOpen(true)
-                                                }}
-                                                onEdit={(q: any) => {
-                                                    setEditingQuestion(q)
-                                                    setQuestionModalOpen(true)
-                                                }}
-                                                onDelete={(id: string) =>
-                                                    setQuestions(
-                                                        questions.filter(q => q.id !== id || q.systemKey)
-                                                    )
-                                                }
-                                            />
-                                            <QuestionModal
-                                                visible={questionModalOpen}
-                                                initialValues={editingQuestion}
-                                                onSave={(values: any) => {
-                                                    let opts = values.options
-                                                    if (
-                                                        values.type === 'dropdown' &&
-                                                        typeof opts === 'string'
-                                                    ) {
-                                                        opts = opts
-                                                            .split(',')
-                                                            .map((o: string) => o.trim())
-                                                            .filter(Boolean)
-                                                    }
-                                                    if (editingQuestion) {
-                                                        setQuestions(
-                                                            questions.map(q =>
-                                                                q.id === editingQuestion.id
-                                                                    ? {
-                                                                        ...editingQuestion,
+                                            {currentStep === 5 && (
+                                                <>
+                                                    <QuestionTable
+                                                        questions={questions}
+                                                        onAdd={() => {
+                                                            setEditingQuestion(null)
+                                                            setQuestionModalOpen(true)
+                                                        }}
+                                                        onEdit={(q: any) => {
+                                                            setEditingQuestion(q)
+                                                            setQuestionModalOpen(true)
+                                                        }}
+                                                        onDelete={(id: string) =>
+                                                            setQuestions(
+                                                                questions.filter(q => q.id !== id || q.systemKey)
+                                                            )
+                                                        }
+                                                    />
+                                                    <QuestionModal
+                                                        visible={questionModalOpen}
+                                                        initialValues={editingQuestion}
+                                                        onSave={(values: any) => {
+                                                            let opts = values.options
+                                                            if (
+                                                                values.type === 'dropdown' &&
+                                                                typeof opts === 'string'
+                                                            ) {
+                                                                opts = opts
+                                                                    .split(',')
+                                                                    .map((o: string) => o.trim())
+                                                                    .filter(Boolean)
+                                                            }
+                                                            if (editingQuestion) {
+                                                                setQuestions(
+                                                                    questions.map(q =>
+                                                                        q.id === editingQuestion.id
+                                                                            ? {
+                                                                                ...editingQuestion,
+                                                                                ...values,
+                                                                                options: opts
+                                                                            }
+                                                                            : q
+                                                                    )
+                                                                )
+                                                                message.success('Question updated')
+                                                            } else {
+                                                                setQuestions([
+                                                                    ...questions,
+                                                                    {
                                                                         ...values,
+                                                                        id: Date.now().toString(),
                                                                         options: opts
                                                                     }
-                                                                    : q
-                                                            )
-                                                        )
-                                                        message.success('Question updated')
-                                                    } else {
-                                                        setQuestions([
-                                                            ...questions,
-                                                            {
-                                                                ...values,
-                                                                id: Date.now().toString(),
-                                                                options: opts
+                                                                ])
+                                                                message.success('Question added')
                                                             }
-                                                        ])
-                                                        message.success('Question added')
-                                                    }
-                                                    setQuestionModalOpen(false)
-                                                }}
-                                                onCancel={() => setQuestionModalOpen(false)}
-                                            />
-                                            <div style={{ marginTop: 32, display: 'flex', gap: 12 }}>
-                                                <Button onClick={() => setCurrentStep(3)}>Back</Button>
-                                                <Button
-                                                    type='primary'
-                                                    loading={saving}
-                                                    onClick={async () => {
-                                                        await handleAddProgram({
-                                                            ...basicDetails,
-                                                            onboardingQuestions: questions,
-                                                            eligibilityCriteria: eligibility
-                                                        })
-                                                    }}
-                                                >
-                                                    Save Program
-                                                </Button>
-                                            </div>
-                                        </>
-                                    )}
+                                                            setQuestionModalOpen(false)
+                                                        }}
+                                                        onCancel={() => setQuestionModalOpen(false)}
+                                                    />
+                                                    <div style={{ marginTop: 32, display: 'flex', gap: 12 }}>
+                                                        <Button style={{ flex: 1 }} onClick={() => setCurrentStep(4)}>Back</Button>
+                                                        <Button
+                                                            style={{ flex: 1 }}
+                                                            type='primary'
+                                                            loading={saving}
+                                                            onClick={async () => {
+                                                                await handleAddProgram({
+                                                                    ...basicDetails,
+                                                                    ...coverage,
+                                                                    onboardingQuestions: questions,
+                                                                    eligibilityCriteria: eligibility
+                                                                })
+                                                            }}
+                                                        >
+                                                            Save Program
+                                                        </Button>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </motion.div>
+                                    </AnimatePresence>
                                 </Modal>
 
                                 {/* EDIT */}
@@ -3197,16 +3583,22 @@ const ProgramManager: React.FC = () => {
                                         setQuestions([])
                                         setEditingQuestion(null)
                                         setRequiredDocs([])
-                                        setCurrentStep(0)
+                                        setCurrentStep(-1)
                                         setEligibility({})
+                                        setCoverage({
+                                            isMultiBranch: false,
+                                            supportedBranchIds: [],
+                                            participatingDepartmentIds: []
+                                        })
                                     }}
                                     footer={null}
                                     confirmLoading={saving}
                                     width={1200}
                                 >
-                                    <div data-guide='program-wizard-steps'>
+                                    <div data-guide='program-wizard-steps' hidden>
                                         <Steps current={currentStep} style={{ marginBottom: 24 }}>
                                             <Steps.Step title="Program Details" />
+                                            <Steps.Step title="Coverage" />
                                             <Steps.Step title="Program Logo" />
                                             <Steps.Step title="Eligibility Criteria" />
                                             <Steps.Step title="Required Documents" />
@@ -3214,284 +3606,287 @@ const ProgramManager: React.FC = () => {
                                         </Steps>
                                     </div>
 
-                                    {currentStep === 0 && (
-                                        <Form data-guide='program-basic-details'
-                                            layout='vertical'
-                                            form={editForm}
-                                            onFinish={values => {
-                                                setBasicDetails(values)
-                                                const synced = upsertHubQuestion(
-                                                    questions,
-                                                    values.supportedBranchIds || [],
-                                                    branches
-                                                )
-                                                setQuestions(synced)
-                                                setCurrentStep(1)
-                                            }}
+                                    <AnimatePresence mode='wait'>
+                                        <motion.div
+                                            key={currentStep}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            transition={{ duration: 0.25 }}
                                         >
-                                            <Form.Item
-                                                name='branchId'
-                                                label='Branch'
-                                                rules={[{ required: true }]}
-                                            >
-                                                <Select
-                                                    disabled={!!userBranchId}
-                                                    placeholder='Select branch'
-                                                >
-                                                    {branches.map(branch => (
-                                                        <Select.Option key={branch.id} value={branch.id}>
-                                                            {branch.name}
-                                                        </Select.Option>
-                                                    ))}
-                                                </Select>
-                                            </Form.Item>
-
-                                            <Form.Item
-                                                name='name'
-                                                label='Program Name'
-                                                rules={[{ required: true }]}
-                                            >
-                                                <Input />
-                                            </Form.Item>
-                                            <Form.Item
-                                                name='description'
-                                                label='Program Description'
-                                                rules={[{ required: true }]}
-                                            >
-                                                <Input />
-                                            </Form.Item>
-                                            <Form.Item name='type' label='Type'>
-                                                <Input />
-                                            </Form.Item>
-                                            <Form.Item name='status' label='Status'>
-                                                <Select>
-                                                    <Select.Option value='Active'>Active</Select.Option>
-                                                    <Select.Option value='Inactive'>Inactive</Select.Option>
-                                                    <Select.Option value='Completed'>Completed</Select.Option>
-                                                    <Select.Option value='Upcoming'>Upcoming</Select.Option>
-                                                </Select>
-                                            </Form.Item>
-
-                                            <Form.Item
-                                                name='isMultiBranch'
-                                                label='Program Scope'
-                                                valuePropName='checked'
-                                            >
-                                                <Checkbox
-                                                    onChange={e => {
-                                                        const checked = e.target.checked
-                                                        if (!checked) {
-                                                            // clear supported hubs + remove hub question
-                                                            editForm.setFieldsValue({ supportedBranchIds: [] })
-                                                            const synced = upsertHubQuestion([], [], branches)
-                                                            setQuestions(synced)
-                                                        }
+                                            {currentStep === -1 && (
+                                                <SectionPickerStep
+                                                    onSelect={setCurrentStep}
+                                                    onSaveAndClose={saveEditedProgram}
+                                                    saving={saving}
+                                                />
+                                            )}
+                                            {currentStep === 0 && (
+                                                <Form data-guide='program-basic-details'
+                                                    layout='vertical'
+                                                    form={editForm}
+                                                    onFinish={values => {
+                                                        setBasicDetails(values)
+                                                        saveEditedProgram()
                                                     }}
                                                 >
-                                                    Multi-branch program (participants from multiple branches)
-                                                </Checkbox>
-                                            </Form.Item>
-
-                                            <Form.Item
-                                                noStyle
-                                                shouldUpdate={(prev, curr) =>
-                                                    prev.isMultiBranch !== curr.isMultiBranch
-                                                }
-                                            >
-                                                {({ getFieldValue }) =>
-                                                    getFieldValue('isMultiBranch') ? (
-                                                        <Form.Item
-                                                            name='supportedBranchIds'
-                                                            label='Supported branches / hubs'
+                                                    <Form.Item
+                                                        name='branchId'
+                                                        label='Branch'
+                                                        hidden
+                                                    >
+                                                        <Select
+                                                            disabled={!!userBranchId}
+                                                            placeholder='Select branch'
                                                         >
-                                                            <Select
-                                                                mode='multiple'
-                                                                placeholder='Select supported hubs'
-                                                                onChange={(ids: string[]) => {
-                                                                    const synced = upsertHubQuestion(
-                                                                        questions,
-                                                                        ids,
-                                                                        branches
-                                                                    )
-                                                                    setQuestions(synced)
-                                                                }}
-                                                            >
-                                                                {branches
-                                                                    .filter(
-                                                                        b => !userBranchId || b.id !== userBranchId
-                                                                    ) // exclude my own branch
-                                                                    .map(branch => (
-                                                                        <Select.Option
-                                                                            key={branch.id}
-                                                                            value={branch.id}
-                                                                        >
-                                                                            {branch.name || branch.title || 'Branch'}
+                                                            {branches.map(branch => (
+                                                                <Select.Option key={branch.id} value={branch.id}>
+                                                                    {branch.name}
+                                                                </Select.Option>
+                                                            ))}
+                                                        </Select>
+                                                    </Form.Item>
+
+                                                    <Form.Item
+                                                        name='name'
+                                                        label='Program Name'
+                                                        rules={[{ required: true }]}
+                                                    >
+                                                        <Input />
+                                                    </Form.Item>
+                                                    <Form.Item
+                                                        name='description'
+                                                        label='Program Description'
+                                                        rules={[{ required: true }]}
+                                                    >
+                                                        <Input />
+                                                    </Form.Item>
+                                                    <Row gutter={16}>
+                                                        <Col span={12}>
+                                                            <Form.Item name='type' label='Type'>
+                                                                <Select placeholder='Select program type'>
+                                                                    {PROGRAM_TYPES.map(t => (
+                                                                        <Select.Option key={t} value={t}>
+                                                                            {t}
                                                                         </Select.Option>
                                                                     ))}
-                                                            </Select>
-                                                        </Form.Item>
-                                                    ) : null
-                                                }
-                                            </Form.Item>
+                                                                </Select>
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={12}>
+                                                            <Form.Item name='status' label='Status'>
+                                                                <Select>
+                                                                    <Select.Option value='Active'>Active</Select.Option>
+                                                                    <Select.Option value='Inactive'>Inactive</Select.Option>
+                                                                    <Select.Option value='Completed'>Completed</Select.Option>
+                                                                    <Select.Option value='Upcoming'>Upcoming</Select.Option>
+                                                                </Select>
+                                                            </Form.Item>
+                                                        </Col>
+                                                    </Row>
 
-                                            <Row gutter={16}>
-                                                <Col span={8}>
-                                                    <Form.Item
-                                                        name='cohortYear'
-                                                        label='Cohort Year'
-                                                        rules={[
-                                                            {
-                                                                required: true,
-                                                                message: 'Please input the cohort year'
+                                                    <Row gutter={16}>
+                                                        <Col span={8}>
+                                                            <Form.Item
+                                                                name='cohortYear'
+                                                                label='Cohort Year'
+                                                                rules={[
+                                                                    {
+                                                                        required: true,
+                                                                        message: 'Please input the cohort year'
+                                                                    }
+                                                                ]}
+                                                            >
+                                                                <Input placeholder='e.g., 2025' />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={8}>
+                                                            <Form.Item
+                                                                name='startDate'
+                                                                label='Start Date'
+                                                                rules={[{ required: true, message: 'Please select a start date' }]}
+                                                            >
+                                                                <DatePicker style={{ width: '100%' }} />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={8}>
+                                                            <Form.Item
+                                                                name='endDate'
+                                                                label='End Date'
+                                                                rules={[{ required: true, message: 'Please select an end date' }]}
+                                                            >
+                                                                <DatePicker style={{ width: '100%' }} />
+                                                            </Form.Item>
+                                                        </Col>
+                                                    </Row>
+                                                    <Row gutter={16}>
+                                                        <Col span={12}>
+                                                            <Form.Item
+                                                                name='assignedFunder'
+                                                                label='Assign Project Funder'
+                                                                rules={[{ required: true, message: 'Please assign a project funder' }]}
+                                                            >
+                                                                <Input placeholder='e.g., Quantiltyix' />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={12}>
+                                                            <Form.Item name='maxCapacity' label='Max Capacity'>
+                                                                <InputNumber style={{ width: '100%' }} min={1} />
+                                                            </Form.Item>
+                                                        </Col>
+                                                    </Row>
+
+                                                    <div style={{ display: 'flex', gap: 12 }}>
+                                                        <Button
+                                                            style={{ flex: 1 }}
+                                                            htmlType='button'
+                                                            onClick={() => setCurrentStep(-1)}
+                                                        >
+                                                            Back to Sections
+                                                        </Button>
+                                                        <Button
+                                                            style={{ flex: 1 }}
+                                                            type='primary'
+                                                            htmlType='submit'
+                                                            loading={saving}
+                                                        >
+                                                            Save Program
+                                                        </Button>
+                                                    </div>
+                                                </Form>
+                                            )}
+                                            {currentStep === 1 && (
+                                                <CoverageStep
+                                                    value={coverage}
+                                                    onChange={handleCoverageChange}
+                                                    branches={branches}
+                                                    departments={departments}
+                                                    userBranchId={userBranchId}
+                                                    onBack={() => setCurrentStep(-1)}
+                                                    onNext={saveEditedProgram}
+                                                    backLabel='Back to Sections'
+                                                    nextLabel='Save Program'
+                                                    nextLoading={saving}
+                                                />
+                                            )}
+
+                                            {currentStep === 2 && (
+                                                <ProgramLogoStep
+                                                    logoPreview={logoPreview}
+                                                    onPick={(file, preview) => {
+                                                        if (logoPreview && logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview)
+                                                        setLogoFile(file)
+                                                        setLogoPreview(preview)
+                                                    }}
+                                                    onBack={() => setCurrentStep(-1)}
+                                                    onNext={saveEditedProgram}
+                                                    backLabel='Back to Sections'
+                                                    nextLabel='Save Program'
+                                                    nextLoading={saving}
+                                                />
+                                            )}
+
+                                            {currentStep === 3 && (
+                                                <EligibilityCriteriaStep
+                                                    value={eligibility}
+                                                    onChange={setEligibility}
+                                                    onBack={() => setCurrentStep(-1)}
+                                                    onNext={saveEditedProgram}
+                                                    backLabel='Back to Sections'
+                                                    nextLabel='Save Program'
+                                                    nextLoading={saving}
+                                                />
+                                            )}
+                                            {currentStep === 4 && (
+                                                <div data-guide='program-required-documents-step'>
+                                                    <RequiredDocumentsStep
+                                                        value={requiredDocs}
+                                                        onChange={setRequiredDocs}
+                                                        onBack={() => setCurrentStep(-1)}
+                                                        onNext={saveEditedProgram}
+                                                        backLabel='Back to Sections'
+                                                        nextLabel='Save Program'
+                                                        nextLoading={saving}
+                                                    />
+                                                </div>
+                                            )}
+                                            {currentStep === 5 && (
+                                                <>
+                                                    <QuestionTable
+                                                        questions={questions}
+                                                        onAdd={() => {
+                                                            setEditingQuestion(null)
+                                                            setQuestionModalOpen(true)
+                                                        }}
+                                                        onEdit={(q: any) => {
+                                                            setEditingQuestion(q)
+                                                            setQuestionModalOpen(true)
+                                                        }}
+                                                        onDelete={(id: string) =>
+                                                            setQuestions(
+                                                                questions.filter(
+                                                                    q => q.id !== id || q.systemKey === 'nearestHub'
+                                                                )
+                                                            )
+                                                        }
+                                                    />
+                                                    <QuestionModal
+                                                        visible={questionModalOpen}
+                                                        initialValues={editingQuestion}
+                                                        onSave={(values: any) => {
+                                                            let opts = values.options
+                                                            if (
+                                                                values.type === 'dropdown' &&
+                                                                typeof opts === 'string'
+                                                            ) {
+                                                                opts = opts
+                                                                    .split(',')
+                                                                    .map((o: string) => o.trim())
+                                                                    .filter(Boolean)
                                                             }
-                                                        ]}
-                                                    >
-                                                        <Input placeholder='e.g., 2025' />
-                                                    </Form.Item>
-                                                </Col>
-                                                <Col span={8}>
-                                                    <Form.Item name='startDate' label='Start Date'>
-                                                        <DatePicker style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                </Col>
-                                                <Col span={8}>
-                                                    <Form.Item name='endDate' label='End Date'>
-                                                        <DatePicker style={{ width: '100%' }} />
-                                                    </Form.Item>
-                                                </Col>
-                                            </Row>
-                                            <Form.Item
-                                                name='assignedFunder'
-                                                label='Assign Project Funder'
-                                            >
-                                                <Input placeholder='e.g., Quantiltyix' />
-                                            </Form.Item>
-                                            {/* <Form.Item name='budget' label='Budget (ZAR)'>
-                                                <InputNumber style={{ width: '100%' }} min={0} />
-                                            </Form.Item> */}
-                                            <Form.Item name='maxCapacity' label='Max Capacity'>
-                                                <InputNumber style={{ width: '100%' }} min={1} />
-                                            </Form.Item>
-
-                                            <Form.Item>
-                                                <Button type='primary' htmlType='submit' block>
-                                                    Next
-                                                </Button>
-                                            </Form.Item>
-                                        </Form>
-                                    )}
-                                    {currentStep === 1 && (
-                                        <ProgramLogoStep
-                                            logoPreview={logoPreview}
-                                            onPick={(file, preview) => {
-                                                if (logoPreview && logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview)
-                                                setLogoFile(file)
-                                                setLogoPreview(preview)
-                                            }}
-                                            onBack={() => setCurrentStep(0)}
-                                            onNext={() => setCurrentStep(2)}
-                                        />
-                                    )}
-
-                                    {currentStep === 2 && (
-                                        <EligibilityCriteriaStep
-                                            value={eligibility}
-                                            onChange={setEligibility}
-                                            onBack={() => setCurrentStep(1)}
-                                            onNext={() => setCurrentStep(3)}
-                                        />
-                                    )}
-                                    {currentStep === 3 && (
-                                        <div data-guide='program-required-documents-step'>
-                                            <RequiredDocumentsStep
-                                                value={requiredDocs}
-                                                onChange={setRequiredDocs}
-                                                onBack={() => setCurrentStep(2)}
-                                                onNext={() => setCurrentStep(4)}
-                                            />
-                                        </div>
-                                    )}
-                                    {currentStep === 4 && (
-                                        <>
-                                            <QuestionTable
-                                                questions={questions}
-                                                onAdd={() => {
-                                                    setEditingQuestion(null)
-                                                    setQuestionModalOpen(true)
-                                                }}
-                                                onEdit={(q: any) => {
-                                                    setEditingQuestion(q)
-                                                    setQuestionModalOpen(true)
-                                                }}
-                                                onDelete={(id: string) =>
-                                                    setQuestions(
-                                                        questions.filter(
-                                                            q => q.id !== id || q.systemKey === 'nearestHub'
-                                                        )
-                                                    )
-                                                }
-                                            />
-                                            <QuestionModal
-                                                visible={questionModalOpen}
-                                                initialValues={editingQuestion}
-                                                onSave={(values: any) => {
-                                                    let opts = values.options
-                                                    if (
-                                                        values.type === 'dropdown' &&
-                                                        typeof opts === 'string'
-                                                    ) {
-                                                        opts = opts
-                                                            .split(',')
-                                                            .map((o: string) => o.trim())
-                                                            .filter(Boolean)
-                                                    }
-                                                    if (editingQuestion) {
-                                                        setQuestions(
-                                                            questions.map(q =>
-                                                                q.id === editingQuestion.id
-                                                                    ? {
-                                                                        ...editingQuestion,
+                                                            if (editingQuestion) {
+                                                                setQuestions(
+                                                                    questions.map(q =>
+                                                                        q.id === editingQuestion.id
+                                                                            ? {
+                                                                                ...editingQuestion,
+                                                                                ...values,
+                                                                                options: opts
+                                                                            }
+                                                                            : q
+                                                                    )
+                                                                )
+                                                                message.success('Question updated')
+                                                            } else {
+                                                                setQuestions([
+                                                                    ...questions,
+                                                                    {
                                                                         ...values,
+                                                                        id: Date.now().toString(),
                                                                         options: opts
                                                                     }
-                                                                    : q
-                                                            )
-                                                        )
-                                                        message.success('Question updated')
-                                                    } else {
-                                                        setQuestions([
-                                                            ...questions,
-                                                            {
-                                                                ...values,
-                                                                id: Date.now().toString(),
-                                                                options: opts
+                                                                ])
+                                                                message.success('Question added')
                                                             }
-                                                        ])
-                                                        message.success('Question added')
-                                                    }
-                                                    setQuestionModalOpen(false)
-                                                }}
-                                                onCancel={() => setQuestionModalOpen(false)}
-                                            />
-                                            <div style={{ marginTop: 32, display: 'flex', gap: 12 }}>
-                                                <Button onClick={() => setCurrentStep(3)}>Back</Button>
-                                                <Button
-                                                    type='primary'
-                                                    loading={saving}
-                                                    onClick={async () => {
-                                                        await handleUpdateProgram({
-                                                            ...basicDetails,
-                                                            ...editForm.getFieldsValue(),
-                                                            onboardingQuestions: questions,
-                                                            eligibilityCriteria: eligibility
-                                                        })
-                                                    }}
-                                                >
-                                                    Save Program
-                                                </Button>
-                                            </div>
-                                        </>
-                                    )}
+                                                            setQuestionModalOpen(false)
+                                                        }}
+                                                        onCancel={() => setQuestionModalOpen(false)}
+                                                    />
+                                                    <div style={{ marginTop: 32, display: 'flex', gap: 12 }}>
+                                                        <Button style={{ flex: 1 }} onClick={() => setCurrentStep(-1)}>Back to Sections</Button>
+                                                        <Button
+                                                            style={{ flex: 1 }}
+                                                            type='primary'
+                                                            loading={saving}
+                                                            onClick={saveEditedProgram}
+                                                        >
+                                                            Save Program
+                                                        </Button>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </motion.div>
+                                    </AnimatePresence>
                                 </Modal>
                             </>
                         ) : (
@@ -3500,6 +3895,8 @@ const ProgramManager: React.FC = () => {
                                 userBranchId={userBranchId}
                                 isProjectAdmin={isProjectAdmin}
                                 resolveAssignedBranch={resolveAssignedBranch}
+                                viewMode={viewMode}
+                                onViewModeChange={setViewMode}
                             />
                         )}
                     </>

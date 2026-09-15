@@ -2,6 +2,7 @@ import {
     createContext,
     useCallback,
     useContext,
+    useEffect,
     useMemo,
     useRef,
     useState
@@ -29,6 +30,13 @@ type GuideContextValue = {
 
     startGuide: (guideId: string) => void
     stopGuide: () => void
+
+    /**
+     * Queue a guide to auto-start once the page it belongs to registers
+     * itself (e.g. after navigating there from elsewhere in the app, such
+     * as the Help Assistant). No-ops if that page never registers.
+     */
+    startGuideOnPage: (pageId: string, guideId: string) => void
 }
 
 const GuideContext = createContext<GuideContextValue | null>(null)
@@ -99,6 +107,32 @@ export const GuideProvider = ({ children }: PropsWithChildren) => {
         [guides]
     )
 
+    const pendingGuideRef =
+        useRef<{ pageId: string; guideId: string } | null>(null)
+
+    const startGuideOnPage = useCallback(
+        (pageId: string, guideId: string) => {
+            pendingGuideRef.current = { pageId, guideId }
+        },
+        []
+    )
+
+    // Runs once the target page mounts and registers its own guides
+    // (e.g. after the Help Assistant navigates there for a pending request).
+    useEffect(() => {
+        const pending = pendingGuideRef.current
+
+        if (!pending || registration?.pageId !== pending.pageId) return
+
+        pendingGuideRef.current = null
+
+        const timeout = window.setTimeout(() => {
+            startGuide(pending.guideId)
+        }, 250)
+
+        return () => window.clearTimeout(timeout)
+    }, [registration, startGuide])
+
     const value = useMemo<GuideContextValue>(
         () => ({
             registration,
@@ -110,7 +144,8 @@ export const GuideProvider = ({ children }: PropsWithChildren) => {
             registerPageGuides,
             unregisterPageGuides,
             startGuide,
-            stopGuide
+            stopGuide,
+            startGuideOnPage
         }),
         [
             registration,
@@ -121,7 +156,8 @@ export const GuideProvider = ({ children }: PropsWithChildren) => {
             registerPageGuides,
             unregisterPageGuides,
             startGuide,
-            stopGuide
+            stopGuide,
+            startGuideOnPage
         ]
     )
 

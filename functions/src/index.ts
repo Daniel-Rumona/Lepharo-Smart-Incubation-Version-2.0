@@ -26,3 +26,5 @@ export { onInquiryCreatedNotifyStaff } from "./emailInquiries";
 export * from "./pushNotifications";
 
 export { lphWhatsAppGateway } from "./whatsappGateway";
+
+export { academyAction, academyCoach } from './academy';

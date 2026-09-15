@@ -38,6 +38,7 @@ const { useBreakpoint } = Grid
 
 type Props = {
     departmentName: string
+    matchesDepartment?: (entry: Record<string, any>) => boolean
     programId?: string
     pageSize?: number
 
@@ -497,6 +498,7 @@ const renderWaitingOn = (record: Row) => {
 
 const DepartmentInterventionsStatus: React.FC<Props> = ({
     departmentName,
+    matchesDepartment,
     programId,
     pageSize = 4,
     title = 'Interventions by Status',
@@ -532,7 +534,7 @@ const DepartmentInterventionsStatus: React.FC<Props> = ({
         try {
             const clauses: QueryConstraint[] = []
 
-            if (departmentName) {
+            if (departmentName && !matchesDepartment) {
                 clauses.push(where('areaOfSupport', '==', departmentName))
             }
 
@@ -549,7 +551,7 @@ const DepartmentInterventionsStatus: React.FC<Props> = ({
                 ...(d.data() as DocumentData)
             }))
 
-            setRows(list)
+            setRows(matchesDepartment ? list.filter(matchesDepartment) : list)
         } catch (e: any) {
             console.error('Failed to load department intervention status:', e)
             setRows([])
@@ -557,7 +559,7 @@ const DepartmentInterventionsStatus: React.FC<Props> = ({
         } finally {
             setLoading(false)
         }
-    }, [departmentName, programId])
+    }, [departmentName, programId, matchesDepartment])
 
     useEffect(() => {
         setActiveBucket(null)

@@ -51,16 +51,19 @@ import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { Helmet } from 'react-helmet'
 import { roundBtn } from '@/components/shared/StyledButton'
 import {
-    hasMovPoeSync
+    hasMovPoeSync,
+    extractCanonicalPoeUrls
 } from '@/services/poeService'
 import { MovDocumentView, MovSigner } from '@/components/movs/MovDocumentView'
+import { ConsolidatedMOVReviewModal } from '@/components/movs/ConsolidatedMOVReviewModal'
 import { PreIncPoeButton } from '@/components/movs/PreIncPoeButton'
 import { PreIncubationContractModal } from '@/components/modals/Contracts/PreIncubationContract'
 import { filterMovRecords } from '@/utils/reportVisibility'
 import { MetricsGrid } from '@/components/dashboards/metrics/MetricsGrid'
 import { workflowQueryService } from '@/services/workflowQueryService'
+import { getPreIncAgreementUrl, hasPreIncAgreementEvidence, isOnboardingMov } from '@/services/movService'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 const POE_PAGE_SIZE = 4
 
@@ -104,6 +107,7 @@ type MovDoc = {
     programId?: string
     preIncubationAgreement?: boolean
     preIncubationAgreementMeta?: any
+    resources?: any[]
 }
 
 type InhouseQueryDoc = {
@@ -178,6 +182,20 @@ const formatTurnaround = (start: any, end: any) => {
     return `${minutes}m`
 }
 
+const formatMonthLabel = (value?: any) => {
+    const raw = String(value ?? '').trim()
+    if (!raw) return '—'
+
+    const yyyyMm = raw.match(/^(\d{4})-(\d{2})(?:-\d{2})?$/)
+    if (yyyyMm) {
+        const parsed = dayjs(`${yyyyMm[1]}-${yyyyMm[2]}-01`)
+        return parsed.isValid() ? parsed.format('MMM YYYY') : raw
+    }
+
+    const parsed = dayjs(raw)
+    return parsed.isValid() ? parsed.format('MMM YYYY') : raw
+}
+
 const isPlaceholder = (v: any) => {
     const s = String(v ?? '').trim().toLowerCase()
     return !s || s === '-' || s === '—' || s === 'n/a' || s === 'na' || s === 'null' || s === 'undefined'
@@ -221,27 +239,108 @@ const hydrateMovPeople = async (
 ): Promise<MovDoc> => {
     const out: MovDoc = { ...base }
 
-    if (!out.facilitatorName) {
-        if (out.facilitatorId) {
-            const cDoc = await getDoc(doc(db, 'consultants', out.facilitatorId))
-            if (cDoc.exists()) {
-                const c = cDoc.data() as any
-                out.facilitatorName = out.facilitatorName || c.name || c.displayName
-            }
+    if (!out.facilitatorName && out.facilitatorId) {
+        const cDoc = await getDoc(doc(db, 'consultants', out.facilitatorId))
+        if (cDoc.exists()) {
+            const c = cDoc.data() as any
+            out.facilitatorName = out.facilitatorName || c.name || c.displayName
         }
     }
 
-    const pId = out.beneficiaryId || out.smmeId
+    const pId = out.participantId || out.beneficiaryId || out.smmeId
+    const onboardingMov = isOnboardingMov(out)
+    let participantData: any = null
 
-    if (pId && (!out.smmeCompanyName || !out.smmeName)) {
+    // Onboarding MOVs use the signed Pre-Incubation Agreement as their POE.
+    // Load the participant even when the display names are already present,
+    // because the signed agreement metadata may live on that record.
+    if (pId && (!out.smmeCompanyName || !out.smmeName || onboardingMov)) {
         const pDoc = await getDoc(doc(db, 'participants', pId))
         if (pDoc.exists()) {
-            const p = pDoc.data() as any
-            out.smmeCompanyName = out.smmeCompanyName || p.companyName || p.businessName || ''
-            out.smmeName = out.smmeName || p.name || p.ownerName || ''
+            participantData = pDoc.data() as any
+            out.smmeCompanyName = out.smmeCompanyName || participantData.companyName || participantData.businessName || ''
+            out.smmeName = out.smmeName || participantData.name || participantData.ownerName || ''
         }
     }
 
+    // Resolve the Pre-Incubation Agreement before POE hydration so Monitoring
+    // sees the same onboarding evidence as CoordinatorMOVApprovals.
+    if (onboardingMov && !out.preIncubationAgreementMeta) {
+        try {
+            let applicationData: any = null
+            let applicationId = String(out.applicationId || '').trim()
+
+            if (applicationId) {
+                const applicationSnap = await getDoc(doc(db, 'applications', applicationId))
+                if (applicationSnap.exists()) {
+                    applicationData = applicationSnap.data() as any
+                }
+            } else if (pId) {
+                const applicationConstraints: QueryConstraint[] = [
+                    where('participantId', '==', pId)
+                ]
+
+                const sourceProgramId = String(out.programId || ctx.programId || '').trim()
+                if (sourceProgramId) {
+                    applicationConstraints.push(where('programId', '==', sourceProgramId))
+                }
+                applicationConstraints.push(limit(1))
+
+                const applicationSnap = await getDocs(
+                    query(collection(db, 'applications'), ...applicationConstraints)
+                )
+
+                if (!applicationSnap.empty) {
+                    const applicationDoc = applicationSnap.docs[0]
+                    applicationId = applicationDoc.id
+                    applicationData = applicationDoc.data() as any
+                    out.applicationId = out.applicationId || applicationDoc.id
+                }
+            }
+
+            let meta =
+                applicationData?.signedAgreements?.['pre-incubation-contract'] ||
+                participantData?.signedAgreements?.['pre-incubation-contract'] ||
+                null
+
+            // Some older/manual records store the signed agreement in the
+            // application's complianceDocuments subcollection instead.
+            if (!meta && applicationId) {
+                try {
+                    const complianceSnap = await getDocs(
+                        collection(db, 'applications', applicationId, 'complianceDocuments')
+                    )
+
+                    const preIncDocument = complianceSnap.docs
+                        .map(item => ({ id: item.id, ...(item.data() as any) }))
+                        .find(item => {
+                            const descriptor = normalizeText(
+                                item.slug ||
+                                item.docType ||
+                                item.type ||
+                                item.title ||
+                                item.id
+                            )
+                            return descriptor.includes('pre') && descriptor.includes('incubation')
+                        })
+
+                    if (preIncDocument) meta = preIncDocument
+                } catch (error) {
+                    console.warn('Could not load manual Pre-Inc agreement metadata', {
+                        applicationId,
+                        error
+                    })
+                }
+            }
+
+            if (meta) {
+                out.preIncubationAgreementMeta = meta
+                out.preIncubationAgreement = true
+            }
+        } catch (e) {
+            console.error('Failed to hydrate Pre-Incubation Agreement for MOV', base.id, e)
+        }
+    }
 
     if (!out.subInterventionTitle) {
         try {
@@ -280,10 +379,25 @@ const hydrateMovPeople = async (
 
     try {
         const latestUrls = await getLatestPoeUrlsForMovRow(out, ctx)
+        const ownResourceUrls = Array.isArray(out.resources)
+            ? out.resources
+                .map((resource: any) => resource?.link || resource?.url || resource?.href)
+                .filter(Boolean)
+            : []
+        const storedUrls = Array.isArray(base.poeUrls) ? uniq(base.poeUrls) : []
 
-        out.poeUrls = latestUrls
+        // Never erase evidence already stored on the MOV just because the linked
+        // assignment has no current resources.
+        out.poeUrls = uniq([...latestUrls, ...ownResourceUrls, ...storedUrls])
     } catch (e) {
         console.error('Failed to hydrate latest POEs for MOV', base.id, e)
+    }
+
+    if (hasPreIncAgreementEvidence(out)) {
+        const preIncUrl = getPreIncAgreementUrl(out)
+        if (preIncUrl && !(out.poeUrls || []).includes(preIncUrl)) {
+            out.poeUrls = [...(out.poeUrls || []), preIncUrl]
+        }
     }
 
     return out
@@ -301,36 +415,7 @@ const uniq = (arr: string[]) =>
 const normalizeText = (value: any) =>
     String(value ?? '').trim().toLowerCase()
 
-const isPreIncMov = (mov?: any) => {
-    if (!mov) return false
-
-    const title = normalizeText(
-        mov.interventionTitle ||
-        mov.snapshot?.interventionTitle ||
-        mov.subInterventionTitle
-    )
-
-    return (
-        mov.preIncubationAgreement === true ||
-        !!mov.preIncubationAgreementMeta ||
-        title.includes('onboarding') ||
-        title.includes('pre-incubation') ||
-        title.includes('pre incubation')
-    )
-}
-
-const preIncUrlFromMeta = (meta?: any) =>
-    String(
-        meta?.signedFileURL ||
-        meta?.signedFileUrl ||
-        meta?.downloadURL ||
-        meta?.fileURL ||
-        meta?.fileUrl ||
-        meta?.pdfUrl ||
-        meta?.pdfURL ||
-        meta?.url ||
-        ''
-    ).trim()
+const isPreIncMov = (mov?: any) => isOnboardingMov(mov)
 
 const getLatestPoeUrlsForMovRow = async (
     row: MovDoc,
@@ -339,7 +424,9 @@ const getLatestPoeUrlsForMovRow = async (
         isAllPrograms?: boolean
     }
 ): Promise<string[]> => {
-    const urls: string[] = []
+    // ROM uploads live on the MOV itself and may have no linked assignment.
+    // Use the same canonical fields for viewing, counting and validation.
+    const urls: string[] = extractCanonicalPoeUrls(row)
 
     const participantId =
         (row as any).participantId ||
@@ -368,17 +455,16 @@ const getLatestPoeUrlsForMovRow = async (
     ])
 
     const mergeUrls = (data: any) => {
-        const resources = Array.isArray(data?.resources) ? data.resources : []
-        urls.push(...resources.map((resource: any) => resource?.link).filter(Boolean))
+        urls.push(...extractCanonicalPoeUrls(data))
     }
 
-    if (isPreIncMov(row)) {
-        const preIncUrl = preIncUrlFromMeta((row as any).preIncubationAgreementMeta)
+    if (hasPreIncAgreementEvidence(row)) {
+        const preIncUrl = getPreIncAgreementUrl(row)
         if (preIncUrl) urls.push(preIncUrl)
     }
 
     // Canonical assignment evidence source.
-    if (!urls.length && assignedInterventionId) {
+    if (assignedInterventionId) {
         const assignedSnap = await getDoc(doc(db, 'assignedInterventions', assignedInterventionId))
 
         if (assignedSnap.exists()) {
@@ -616,7 +702,7 @@ const MonitoringMOVApprovals: React.FC = () => {
             setPoeViewerUrls(urls)
         } catch (error) {
             console.error('Failed to load POEs:', error)
-            setPoeViewerUrls(Array.isArray(row.poeUrls) ? uniq(row.poeUrls) : [])
+            setPoeViewerUrls(extractCanonicalPoeUrls(row))
             message.error('Failed to load the latest POEs.')
         } finally {
             setPoeViewerLoading(false)
@@ -1104,20 +1190,6 @@ const MonitoringMOVApprovals: React.FC = () => {
         )
     }
 
-    const getRequiredPoeRowIds = (pack: any): string[] => {
-        const rows: MovDoc[] = Array.isArray(pack?.interventions) ? pack.interventions : []
-        const required: string[] = []
-
-        for (const r of rows) {
-            const hasLocal =
-                isPreIncMov(r) ||
-                (Array.isArray(r.poeUrls) && r.poeUrls.length > 0)
-            if (hasLocal) required.push(r.id)
-        }
-
-        return Array.from(new Set(required.filter(Boolean)))
-    }
-
     const getPoeProgress = (pack: any) => {
         const rows: MovDoc[] = Array.isArray(pack?.interventions) ? pack.interventions : []
         const validations = pack?.poeValidations || {}
@@ -1467,14 +1539,6 @@ const MonitoringMOVApprovals: React.FC = () => {
         }
     }
 
-    const groupByDept = (interventions: any[] = []) =>
-        interventions.reduce((acc: Record<string, any[]>, mov: any) => {
-            const dept = mov?.departmentName || 'Department'
-            if (!acc[dept]) acc[dept] = []
-            acc[dept].push(mov)
-            return acc
-        }, {})
-
     const statusTag = (record: any) => {
         const v = getApproval(record, 'validation')
         const hod = getApproval(record, 'hod_submission')
@@ -1694,10 +1758,7 @@ const MonitoringMOVApprovals: React.FC = () => {
         {
             title: 'Month',
             dataIndex: 'month',
-            render: (m: string) =>
-                dayjs(m, ['YYYY-MM', 'YYYY-MM-DD']).isValid()
-                    ? dayjs(m, ['YYYY-MM', 'YYYY-MM-DD']).format('MMM YYYY')
-                    : m
+            render: (m: string) => formatMonthLabel(m)
         },
         { title: 'Department', dataIndex: 'department' },
         { title: 'Status', render: (record: any) => statusTag(record) },
@@ -1895,14 +1956,39 @@ const MonitoringMOVApprovals: React.FC = () => {
     const meName = hasValidation ? (selected?.monitoringName || validationApproval?.name || '—') : '—'
     const meSigUrl = hasValidation ? (selected?.monitoringSignatureUrl || '') : ''
 
-    const poeActionIconBtn: React.CSSProperties = {
+    const rowActionPillStyle: React.CSSProperties = {
         ...roundBtn,
-        width: 36,
-        height: 36,
-        padding: 0,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center'
+        height: 32,
+        paddingInline: 10,
+        fontSize: 13,
+        whiteSpace: 'nowrap',
+        flexShrink: 0
+    }
+
+    const getMovPoeCount = (mov: MovDoc) => {
+        if (isPreIncMov(mov)) return 1
+        return extractCanonicalPoeUrls(mov).length
+    }
+
+    const getMovReviewState = (mov: MovDoc) => {
+        const hasEvidence = isPreIncMov(mov) || getMovPoeCount(mov) > 0
+        const packValidation = getPoeValidation(selected, mov.id)
+        const rowValidation = getSingleMovValidation(mov)
+        const openRowQuery = hasOpenPoeQuery(mov.id)
+
+        if (openRowQuery) {
+            return { label: 'Open Query', color: 'volcano', tone: 'error' as const }
+        }
+
+        if (!hasEvidence) {
+            return { label: 'Evidence Missing', color: 'orange', tone: 'warning' as const }
+        }
+
+        if (packValidation?.status === 'validated' || rowValidation?.status === 'validated') {
+            return { label: 'Validated', color: 'green', tone: 'success' as const }
+        }
+
+        return { label: 'Ready for Validation', color: 'blue', tone: 'processing' as const }
     }
 
     const sigImgStyle: React.CSSProperties = {
@@ -1914,16 +2000,13 @@ const MonitoringMOVApprovals: React.FC = () => {
         padding: 2
     }
 
-    // A 1px borderColor override alone reads too close to the card's own hover
-    // border, so a hovered-but-unselected card can look "selected" too. Selection
-    // needs its own unmistakable treatment: a thicker border plus a tinted fill.
     const activeMetricStyle = (rgb: string): React.CSSProperties => ({
         border: `2px solid rgb(${rgb})`,
         background: `rgba(${rgb},0.08)`
     })
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
+        <div style={{ padding: '5px 24px' }}>
             <Helmet>
                 <title>MOV Verifications | Smart Incubation</title>
             </Helmet>
@@ -1984,7 +2067,7 @@ const MonitoringMOVApprovals: React.FC = () => {
                     ]} />
 
                     <Row gutter={[16, 16]} style={{ marginBottom: 16, marginTop: 16 }} align="stretch">
-                        <Col xs={24} lg={14}>
+                        <Col xs={24} lg={8}>
                             <MotionCard loading={listLoading} size="small" style={{ height: '100%' }}>
                                 <div aria-label="MOV validation proportion" style={{ display: 'flex', width: '100%', height: 8, borderRadius: 999, overflow: 'hidden', background: '#eef2f7' }}>
                                     {[
@@ -2008,7 +2091,7 @@ const MonitoringMOVApprovals: React.FC = () => {
                                         />
                                     ))}
                                 </div>
-                                <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 20, marginTop: 8 }}>
+                                <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
                                     {[
                                         { key: 'validated', value: validatedCount, color: '#52c41a', label: 'Validated' },
                                         { key: 'pending', value: pendingValidations, color: '#faad14', label: 'Pending Validation' }
@@ -2033,10 +2116,10 @@ const MonitoringMOVApprovals: React.FC = () => {
                             </MotionCard>
                         </Col>
 
-                        <Col xs={24} lg={10}>
+                        <Col xs={24} lg={16}>
                             <MotionCard loading={listLoading} size="small" style={{ height: '100%' }}>
                                 <Row gutter={[12, 12]} align="middle">
-                                    <Col xs={24} md={12}>
+                                    <Col xs={24} md={8}>
                                         <Select
                                             value={selectedDept}
                                             onChange={setSelectedDept}
@@ -2051,31 +2134,40 @@ const MonitoringMOVApprovals: React.FC = () => {
                                         </Select>
                                     </Col>
 
-                                    <Col xs={24} md={12}>
+                                    <Col xs={24} md={8}>
                                         <Select
                                             value={selectedMonth}
                                             onChange={v => setSelectedMonth(v || 'all')}
                                             style={{ width: '100%' }}
                                         >
                                             <Option value="all">All Months</Option>
-                                            {monthOptions.map(m => {
-                                                const formatted = dayjs(m, ['YYYY-MM', 'YYYY-MM-DD']).isValid()
-                                                    ? dayjs(m, ['YYYY-MM', 'YYYY-MM-DD']).format('MMM YYYY')
-                                                    : m
-                                                return (
-                                                    <Option key={m} value={m}>
-                                                        {formatted}
-                                                    </Option>
-                                                )
-                                            })}
+                                            {monthOptions.map(m => (
+                                                <Option key={m} value={m}>
+                                                    {formatMonthLabel(m)}
+                                                </Option>
+                                            ))}
                                         </Select>
+                                    </Col>
+
+                                    <Col xs={24} md={8}>
+                                        <Select
+                                            value={statusFilter}
+                                            onChange={value => setStatusFilter(value)}
+                                            style={{ width: '100%' }}
+                                            options={[
+                                                { label: 'All Statuses', value: 'all' },
+                                                { label: 'Pending Validation', value: 'pending' },
+                                                { label: 'Validated', value: 'validated' },
+                                                { label: 'Open M&E Queries', value: 'queries' }
+                                            ]}
+                                        />
                                     </Col>
                                 </Row>
                             </MotionCard>
                         </Col>
                     </Row>
 
-                    <MotionCard loading={listLoading} skeletonRows={8} title={`MOV Packs (${filtered.length})`} style={cardShellStyle}>
+                    <MotionCard loading={listLoading} skeletonRows={8} style={cardShellStyle}>
                         <Table
                             rowKey="id"
                             dataSource={sortPackRows(filtered)}
@@ -2088,6 +2180,7 @@ const MonitoringMOVApprovals: React.FC = () => {
             )}
 
             <Modal
+                centered
                 open={singleMovOpen}
                 zIndex={1100}
                 maskClosable={false}
@@ -2128,7 +2221,17 @@ const MonitoringMOVApprovals: React.FC = () => {
                 ) : (
                     <div style={{ maxHeight: 'none', overflowY: 'visible', padding: 18, background: '#dfe3e8', border: '1px solid #cfd5dc', borderRadius: 8 }}>
                         <div style={{ maxWidth: 1120, minWidth: 860, margin: '0 auto', background: '#fff', boxShadow: '0 8px 28px rgba(15,23,42,.16)', border: '1px solid #e5e7eb' }}>
-                            <div style={{ padding: '12px 16px 0' }}><PreIncPoeButton mov={selectedSingleMov} /></div>
+                            <Space style={{ padding: '12px 16px 0' }}>
+                                <PreIncPoeButton mov={selectedSingleMov} />
+                                {extractCanonicalPoeUrls(selectedSingleMov).length > 0 && (
+                                    <Button
+                                        icon={<FileDoneOutlined />}
+                                        onClick={() => void openPoeViewer(selectedSingleMov)}
+                                    >
+                                        POEs ({extractCanonicalPoeUrls(selectedSingleMov).length})
+                                    </Button>
+                                )}
+                            </Space>
                             <MovDocumentView
                                 mov={selectedSingleMov}
                                 signers={[
@@ -2168,132 +2271,47 @@ const MonitoringMOVApprovals: React.FC = () => {
                 )}
             </Modal>
 
-            <Modal
+            <ConsolidatedMOVReviewModal
                 open={modalVisible}
+                pack={selected}
                 zIndex={1000}
-                title="Review Consolidated MOV"
-                onCancel={() => {
+                onClose={() => {
                     setModalVisible(false)
                     setSelected(null)
                     setPackQueries([])
                 }}
-                width={1350}
-                footer={[
-                    <Button
-                        key="close"
-                        danger
-                        style={roundBtn}
-                        onClick={() => {
-                            setModalVisible(false)
-                            setSelected(null)
-                            setPackQueries([])
-                        }}
-                    >
-                        Close
-                    </Button>,
-                    <Button
-                        icon={<InfoCircleOutlined />}
-                        style={roundBtn}
-                        variant="filled"
-                        color="orange"
-                        key="query"
-                        danger
-                        onClick={() => setQueryModalOpen(true)}
-                        disabled={!selected}
-                    >
-                        Raise M&E Query
-                    </Button>,
-                    <Tooltip
-                        key="confirmOnBehalfTip"
-                        title={selectedHasCCConfirmation ? 'This pack has already been confirmed' : ''}
-                    >
-                        <Button
-                            icon={<SafetyCertificateOutlined />}
-                            style={roundBtn}
-                            onClick={() => setConfirmOnBehalfOpen(true)}
-                            disabled={!selected || selectedHasCCConfirmation || myRole !== 'operations'}
-                        >
-                            Confirm on Behalf of CC
-                        </Button>
-                    </Tooltip>,
-                    <Tooltip key="validateTip" title={validateDisabled ? validateDisabledReason : ''}>
-                        <Button
-                            icon={<CheckCircleOutlined />}
-                            style={roundBtn}
-                            key="ok"
-                            type="primary"
-                            onClick={handleValidate}
-                            disabled={validateDisabled}
-                        >
-                            Validate Pack (Invoice Redeemable)
-                        </Button>
-                    </Tooltip>
+                warningMessage={
+                    !selectedHasCCConfirmation && !selectedHasValidation
+                        ? 'The pack must have Center Coordinator confirmation before M&E validation. If the Center Coordinator cannot confirm it, M&E may confirm on their behalf with a required reason.'
+                        : undefined
+                }
+                monthFormatter={formatMonthLabel}
+                tableScrollX={1100}
+                summaryItems={[
+                    {
+                        label: 'HOD Approval',
+                        value: getApproval(selected, 'hod_submission')?.name || 'Pending'
+                    },
+                    {
+                        label: 'Center Coordinator Confirmation',
+                        value: getApproval(selected, 'final_confirmation')?.name || 'Pending'
+                    },
+                    {
+                        label: 'M&E Validation',
+                        value: getApproval(selected, 'validation')?.name || 'Pending'
+                    },
+                    {
+                        label: 'POE Validations',
+                        value: `${poeProgressOnSelected.validated}/${poeProgressOnSelected.required || 0}`
+                    }
                 ]}
-            >
-                <Alert
-                    type="warning"
-                    message="The pack must have CC confirmation before M&E validation. If the CC cannot confirm it, M&E may confirm on their behalf with a required reason."
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                />
-
-                <Row
-                    align="middle"
-                    justify="center"
-                    style={{
-                        marginBottom: 20,
-                        border: '1px solid #d9d9d9',
-                        borderRadius: 12,
-                        padding: '12px 16px',
-                        textAlign: 'center',
-                        background: '#fafafa'
-                    }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                        <img src="/assets/images/lepharo.png" alt="Company Logo" style={{ height: 60 }} />
-                        <div>
-                            <Title level={4} style={{ margin: 0 }}>
-                                {selected?.department}
-                            </Title>
-                            <Text strong>
-                                {selected?.month ? dayjs(selected?.month).format('MMMM YYYY') : '—'}
-                            </Text>
-                        </div>
-                    </div>
-                </Row>
-
-                <Card size="small" style={{ marginBottom: 20, border: '1px solid #d6e4ff' }}>
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                        <Row>
-                            <Col span={24}>
-                                <Space size="large" wrap>
-                                    <div>
-                                        <Text type="secondary">HOD Approval:</Text>{' '}
-                                        <Text strong>{getApproval(selected, 'hod_submission')?.name || 'Pending'}</Text>
-                                    </div>
-                                    <div>
-                                        <Text type="secondary">M&E Validation:</Text>{' '}
-                                        <Text strong>{getApproval(selected, 'validation')?.name || 'Pending'}</Text>
-                                    </div>
-                                    <div>
-                                        <Text type="secondary">Center Coordinator Confirmation:</Text>{' '}
-                                        <Text strong>{getApproval(selected, 'final_confirmation')?.name || 'Pending'}</Text>
-                                    </div>
-                                    <div>
-                                        <Text type="secondary">POE Validations:</Text>{' '}
-                                        <Text strong>
-                                            {poeProgressOnSelected.validated}/{poeProgressOnSelected.required || 0}
-                                        </Text>
-                                    </div>
-                                </Space>
-                            </Col>
-                        </Row>
-
+                summaryAlerts={
+                    <>
                         {openMEQueriesOnSelected > 0 ? (
                             <Alert
                                 type="error"
                                 showIcon
-                                message={`There ${openMEQueriesOnSelected === 1 ? 'is' : 'are'} ${openMEQueriesOnSelected} open M&E ${openMEQueriesOnSelected === 1 ? 'query' : 'queries'} on this pack. Resolve them before validating.`}
+                                message={`There ${openMEQueriesOnSelected === 1 ? 'is' : 'are'} ${openMEQueriesOnSelected} open M&E ${openMEQueriesOnSelected === 1 ? 'query' : 'queries'} on this pack.`}
                                 action={
                                     <Button size="small" onClick={() => setQueriesModalOpen(true)}>
                                         View Queries
@@ -2339,244 +2357,242 @@ const MonitoringMOVApprovals: React.FC = () => {
                                 message={`Invoice Redeemable${selected?.invoiceRedeemableAt ? ` • ${dayjs(toJsDate(selected.invoiceRedeemableAt) || selected.invoiceRedeemableAt).format('YYYY-MM-DD HH:mm')}` : ''}`}
                             />
                         ) : null}
-                    </Space>
-                </Card>
+                    </>
+                }
+                columns={[
+                    {
+                        title: 'SME / Intervention',
+                        key: 'details',
+                        render: (_: any, mov: MovDoc) => (
+                            <div style={{ minWidth: 0 }}>
+                                <Text strong style={{ display: 'block' }}>
+                                    {mov.smmeCompanyName || mov.smmeName || 'SME'}
+                                </Text>
+                                <Text type="secondary" style={{ display: 'block', marginTop: 2 }}>
+                                    {mov.interventionTitle || 'Intervention'}
+                                </Text>
+                            </div>
+                        )
+                    },
+                    {
+                        title: 'Facilitator / Completed',
+                        key: 'delivery',
+                        width: 210,
+                        render: (_: any, mov: MovDoc) => {
+                            const source =
+                                mov.interventionDate ||
+                                (mov as any)?.periodStart ||
+                                (mov as any)?.assignmentCreatedAt ||
+                                (mov as any)?.createdAt
+                            const date = typeof source?.toDate === 'function' ? source.toDate() : source
 
-                {Object.entries(groupByDept(selected?.interventions)).map(([deptName, deptMovs]: [string, any[]], idx) => (
-                    <div key={idx} style={{ marginBottom: 32 }}>
-                        <Table
-                            bordered
-                            size="small"
-                            pagination={{ pageSize: 5, showSizeChanger: false, position: ['bottomCenter'] }}
-                            scroll={{ x: 1100 }}
-                            dataSource={deptMovs}
-                            rowKey={(mov: any) => mov.id || `${mov.smmeCompanyName}-${mov.interventionTitle}-${mov.interventionDate}`}
-                            columns={[
-                                { title: 'Beneficiary', dataIndex: 'smmeCompanyName', width: 180 },
-                                { title: 'Intervention', dataIndex: 'interventionTitle', width: 220 },
-                                { title: 'Facilitator', dataIndex: 'facilitatorName', width: 160 },
-                                {
-                                    title: 'Date Completed',
-                                    dataIndex: 'interventionDate',
-                                    width: 120,
-                                    render: (val: any, row: any) => {
-                                        const source = val || row?.periodStart || row?.assignmentCreatedAt || row?.createdAt
-                                        const date = typeof source?.toDate === 'function' ? source.toDate() : source
-                                        return dayjs(date).isValid() ? dayjs(date).format('YYYY-MM-DD') : '—'
-                                    }
-                                },
-                                {
-                                    title: 'Facilitator Signature',
-                                    dataIndex: 'facilitatorSignatureUrl',
-                                    width: 170,
-                                    render: (_: any, mov: MovDoc) => {
-                                        const safe = normalizeImageUrl(mov.facilitatorSignatureUrl)
-                                        const tip = signatureIssueTooltip({
-                                            label: 'Facilitator signature not found'
-                                        })
-
-                                        if (safe) return <img src={safe} alt="Facilitator Signature" style={sigImgStyle} />
-
-                                        return (
-                                            <Tooltip title={<pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{tip}</pre>}>
-                                                <span style={{ color: '#999', cursor: 'help' }}>—</span>
-                                            </Tooltip>
-                                        )
-                                    }
-                                },
-                                {
-                                    title: 'SMME Signature',
-                                    dataIndex: 'smmeSignatureUrl',
-                                    width: 170,
-                                    render: (_: any, mov: MovDoc) => {
-                                        const safe = normalizeImageUrl(mov.smmeSignatureUrl)
-                                        const tip = signatureIssueTooltip({
-                                            label: 'SMME signature not found'
-                                        })
-
-                                        if (safe) return <img src={safe} alt="SMME Signature" style={sigImgStyle} />
-
-                                        return (
-                                            <Tooltip title={<pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{tip}</pre>}>
-                                                <span style={{ color: '#999', cursor: 'help' }}>—</span>
-                                            </Tooltip>
-                                        )
-                                    }
-                                },
-                                {
-                                    title: 'POE Status',
-                                    width: 120,
-                                    render: (_: any, mov: MovDoc) => {
-                                        const hasLocalPoe =
-                                            isPreIncMov(mov) ||
-                                            (Array.isArray(mov.poeUrls) && mov.poeUrls.length > 0)
-                                        const packValidation = getPoeValidation(selected, mov.id)
-                                        const rowValidation = getSingleMovValidation(mov)
-                                        const openRowQuery = hasOpenPoeQuery(mov.id)
-
-                                        if (!hasLocalPoe) {
-                                            return <Tag color="default" style={{ margin: 0, fontWeight: 500 }}>CHECK</Tag>
-                                        }
-
-                                        if (openRowQuery) {
-                                            return <Tag color="volcano" style={{ margin: 0, fontWeight: 500 }}>QUERY</Tag>
-                                        }
-
-                                        if (packValidation?.status === 'validated' || rowValidation?.status === 'validated') {
-                                            return <Tag color="green" style={{ margin: 0, fontWeight: 500 }}>VALID</Tag>
-                                        }
-
-                                        return <Tag color="orange" style={{ margin: 0, fontWeight: 500 }}>PENDING</Tag>
-                                    }
-                                },
-                                {
-                                    title: 'Actions',
-                                    width: 160,
-                                    render: (_: any, mov: MovDoc) => {
-                                        const v = getPoeValidation(selected, mov.id)
-                                        const validated = v?.status === 'validated'
-                                        const blockedByQuery = hasOpenPoeQuery(mov.id)
-
-                                        return (
-                                            <Space size={8}>
-                                                <Tooltip title="Open MOV">
-                                                    <Button
-                                                        style={poeActionIconBtn}
-                                                        color="blue"
-                                                        variant="filled"
-                                                        icon={<FileDoneOutlined />}
-                                                        loading={openingMovId === String(mov.id || '')}
-                                                        disabled={openingMovId !== null}
-                                                        onClick={() => handleOpenSingleMov(mov)}
-                                                    />
-                                                </Tooltip>
-
-                                                <Tooltip
-                                                    title={
-                                                        isPreIncMov(mov)
-                                                            ? 'View Pre-Inc Agreement'
-                                                            : Array.isArray(mov.poeUrls) && mov.poeUrls.length > 1
-                                                                ? `View POEs (${mov.poeUrls.length})`
-                                                                : 'View POE'
-                                                    }
-                                                >
-                                                    <Button
-                                                        style={poeActionIconBtn}
-                                                        color="cyan"
-                                                        variant="filled"
-                                                        icon={<FileSearchOutlined />}
-                                                        loading={preIncViewerLoadingId === String(mov.id || '')}
-                                                        onClick={() => {
-                                                            if (isPreIncMov(mov)) {
-                                                                void openPreIncPoe(mov)
-                                                                return
-                                                            }
-
-                                                            void openPoeViewer(mov)
-                                                        }}
-                                                    />
-                                                </Tooltip>
-
-                                                <Tooltip
-                                                    title={
-                                                        myRole !== 'operations'
-                                                            ? 'Only M&E can validate'
-                                                            : getSingleMovValidation(mov)
-                                                                ? 'Already signed by M&E'
-                                                                : 'Sign single MOV as M&E'
-                                                    }
-                                                >
-                                                    <Button
-                                                        style={poeActionIconBtn}
-                                                        color="green"
-                                                        variant="filled"
-                                                        icon={<SafetyCertificateOutlined />}
-                                                        loading={openingMovId === String(mov.id || '')}
-                                                        disabled={
-                                                            openingMovId !== null ||
-                                                            !!getSingleMovValidation(mov) ||
-                                                            myRole !== 'operations'
-                                                        }
-                                                        onClick={() => handleOpenSingleMov(mov)}
-                                                    />
-                                                </Tooltip>
-
-                                                <Tooltip title="Query POE">
-                                                    <Button
-                                                        style={poeActionIconBtn}
-                                                        color="orange"
-                                                        variant="filled"
-                                                        icon={<InfoCircleOutlined />}
-                                                        onClick={() => openPoeQuery(mov)}
-                                                    />
-                                                </Tooltip>
-                                            </Space>
-                                        )
-                                    }
-                                }
-                            ]}
-                        />
-                    </div>
-                ))}
-
-                <Card size="small" style={{ marginBottom: 20, border: '1px solid #d6e4ff' }}>
-                    <Row gutter={[16, 16]} align="top">
-                        <Col xs={24} md={12}>
-                            <Text strong>M&E (Operations):</Text>{' '}
-                            <Text>{hasValidation ? meName : 'Pending validation'}</Text>
-
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Signature:</Text>{' '}
-                                {meSigUrl ? (
-                                    <img
-                                        src={meSigUrl}
-                                        alt="M&E Signature"
-                                        style={{
-                                            maxHeight: 48,
-                                            maxWidth: 180,
-                                            objectFit: 'contain',
-                                            border: '1px solid #eee',
-                                            borderRadius: 4,
-                                            padding: 2,
-                                            verticalAlign: 'middle',
-                                            marginLeft: 8
-                                        }}
-                                    />
-                                ) : (
-                                    <Text style={{ marginLeft: 8 }}>
-                                        {hasValidation ? 'Signature missing' : 'Awaiting validation'}
+                            return (
+                                <div>
+                                    <Text strong style={{ display: 'block' }}>
+                                        {mov.facilitatorName || (mov as any).assigneeName || '—'}
                                     </Text>
-                                )}
-                            </div>
-                        </Col>
+                                    <Text type="secondary" style={{ display: 'block', marginTop: 2 }}>
+                                        {dayjs(date).isValid() ? dayjs(date).format('DD MMM YYYY') : '—'}
+                                    </Text>
+                                </div>
+                            )
+                        }
+                    },
+                    {
+                        title: 'Status',
+                        key: 'status',
+                        width: 170,
+                        render: (_: any, mov: MovDoc) => {
+                            const state = getMovReviewState(mov)
+                            return (
+                                <Tag
+                                    color={state.color}
+                                    style={{ margin: 0, borderRadius: 999, fontWeight: 600 }}
+                                >
+                                    {state.label}
+                                </Tag>
+                            )
+                        }
+                    },
+                    {
+                        title: 'Actions',
+                        key: 'actions',
+                        width: 430,
+                        render: (_: any, mov: MovDoc) => {
+                            const poeCount = getMovPoeCount(mov)
+                            const validation = getSingleMovValidation(mov)
+                            const hasEvidence = poeCount > 0
 
-                        <Col xs={24} md={12} style={{ textAlign: 'right' }}>
-                            <Text strong>HOD:</Text> <Text>{getApproval(selected, 'hod_submission')?.name || '—'}</Text>
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Signature:</Text>{' '}
-                                {selected?.hodSignatureUrl ? (
-                                    <img
-                                        src={selected.hodSignatureUrl}
-                                        alt="HOD Signature"
-                                        style={{
-                                            maxHeight: 48,
-                                            maxWidth: 180,
-                                            objectFit: 'contain',
-                                            border: '1px solid #eee',
-                                            borderRadius: 4,
-                                            padding: 2,
-                                            verticalAlign: 'middle',
-                                            marginLeft: 8
+                            return (
+                                <Space
+                                    size={6}
+                                    style={{
+                                        display: 'flex',
+                                        flexWrap: 'nowrap',
+                                        alignItems: 'center',
+                                        whiteSpace: 'nowrap'
+                                    }}
+                                >
+                                    <Button
+                                        size="small"
+                                        icon={<FileSearchOutlined />}
+                                        style={rowActionPillStyle}
+                                        color="blue"
+                                        variant="filled"
+                                        loading={openingMovId === String(mov.id || '')}
+                                        disabled={openingMovId !== null}
+                                        onClick={() => handleOpenSingleMov(mov)}
+                                    >
+                                        Open
+                                    </Button>
+
+                                    <Button
+                                        size="small"
+                                        icon={<FileDoneOutlined />}
+                                        style={rowActionPillStyle}
+                                        color="cyan"
+                                        variant="filled"
+                                        loading={preIncViewerLoadingId === String(mov.id || '')}
+                                        disabled={!hasEvidence}
+                                        onClick={() => {
+                                            if (isPreIncMov(mov)) {
+                                                void openPreIncPoe(mov)
+                                                return
+                                            }
+
+                                            void openPoeViewer(mov)
                                         }}
-                                    />
-                                ) : (
-                                    <Text style={{ marginLeft: 8 }}>—</Text>
-                                )}
-                            </div>
-                        </Col>
-                    </Row>
-                </Card>
-            </Modal>
+                                    >
+                                        POEs ({poeCount})
+                                    </Button>
+
+                                    <Button
+                                        size="small"
+                                        icon={<QuestionCircleOutlined />}
+                                        style={rowActionPillStyle}
+                                        color="orange"
+                                        variant="filled"
+                                        onClick={() => openPoeQuery(mov)}
+                                    >
+                                        Query
+                                    </Button>
+
+                                    <Button
+                                        size="small"
+                                        icon={
+                                            validation
+                                                ? <CheckCircleOutlined />
+                                                : <SafetyCertificateOutlined />
+                                        }
+                                        style={rowActionPillStyle}
+                                        color="green"
+                                        variant="filled"
+                                        loading={openingMovId === String(mov.id || '')}
+                                        disabled={
+                                            openingMovId !== null ||
+                                            !!validation ||
+                                            myRole !== 'operations' ||
+                                            !hasEvidence ||
+                                            hasOpenPoeQuery(mov.id)
+                                        }
+                                        onClick={() => handleOpenSingleMov(mov)}
+                                    >
+                                        {validation ? 'Validated' : 'Validate'}
+                                    </Button>
+                                </Space>
+                            )
+                        }
+                    }
+                ]}
+                getRowTone={(mov: MovDoc) => getMovReviewState(mov).tone}
+                signatureItems={[
+                    {
+                        label: 'HOD',
+                        name: getApproval(selected, 'hod_submission')?.name || 'Pending approval',
+                        signatureUrl: selected?.hodSignatureUrl,
+                        emptySignatureText: 'HOD signature not captured'
+                    },
+                    {
+                        label: 'Center Coordinator',
+                        name: selectedCCConfirmation?.name || 'Pending confirmation',
+                        signatureUrl:
+                            selected?.ccSignatureUrl ||
+                            selected?.centerCoordinatorSignatureUrl ||
+                            (selectedCCConfirmation as any)?.signatureUrl ||
+                            '',
+                        emptySignatureText: selectedHasCCConfirmation
+                            ? 'Center Coordinator signature not captured'
+                            : 'Awaiting confirmation'
+                    },
+                    {
+                        label: 'M&E Validation',
+                        name: hasValidation ? meName : 'Pending validation',
+                        signatureUrl: meSigUrl,
+                        emptySignatureText: hasValidation ? 'M&E signature not captured' : 'Awaiting validation'
+                    }
+                ]}
+                footer={[
+                    <Button
+                        key="close"
+                        danger
+                        style={modalFooterButtonStyle}
+                        onClick={() => {
+                            setModalVisible(false)
+                            setSelected(null)
+                            setPackQueries([])
+                        }}
+                    >
+                        Close
+                    </Button>,
+                    <Button
+                        icon={<InfoCircleOutlined />}
+                        style={modalFooterButtonStyle}
+                        variant="filled"
+                        color="orange"
+                        key="query"
+                        danger
+                        onClick={() => setQueryModalOpen(true)}
+                        disabled={!selected}
+                    >
+                        Raise M&E Query
+                    </Button>,
+                    ...(
+                        selected &&
+                            !selectedHasCCConfirmation &&
+                            !selectedHasValidation &&
+                            myRole === 'operations'
+                            ? [
+                                <Button
+                                    key="confirm-on-behalf"
+                                    icon={<SafetyCertificateOutlined />}
+                                    style={modalFooterButtonStyle}
+                                    onClick={() => setConfirmOnBehalfOpen(true)}
+                                >
+                                    Confirm on Behalf of CC
+                                </Button>
+                            ]
+                            : []
+                    ),
+                    ...(
+                        !selectedHasValidation
+                            ? [
+                                <Tooltip key="validateTip" title={validateDisabled ? validateDisabledReason : ''}>
+                                    <Button
+                                        icon={<CheckCircleOutlined />}
+                                        style={modalFooterButtonStyle}
+                                        type="primary"
+                                        onClick={handleValidate}
+                                        disabled={validateDisabled}
+                                    >
+                                        Validate Pack
+                                    </Button>
+                                </Tooltip>
+                            ]
+                            : []
+                    )
+                ]}
+
+            />
 
             <PreIncubationContractModal
                 open={!!preIncViewer}
@@ -2590,6 +2606,7 @@ const MonitoringMOVApprovals: React.FC = () => {
             />
 
             <Modal
+                centered
                 open={poeViewerOpen}
                 title={`Proof of Execution${poeViewerUrls.length ? ` (${poeViewerUrls.length})` : ''}`}
                 onCancel={closePoeViewer}
@@ -2676,6 +2693,7 @@ const MonitoringMOVApprovals: React.FC = () => {
             </Modal>
 
             <Modal
+                centered
                 open={confirmOnBehalfOpen}
                 title="Confirm on Behalf of Center Coordinator"
                 okText="Confirm on Behalf"
@@ -2713,6 +2731,7 @@ const MonitoringMOVApprovals: React.FC = () => {
             </Modal>
 
             <Modal
+                centered
                 open={queryModalOpen}
                 title="Raise M&E Query (POE)"
                 onCancel={() => {
@@ -2794,6 +2813,7 @@ const MonitoringMOVApprovals: React.FC = () => {
             </Modal>
 
             <Modal
+                centered
                 open={queriesModalOpen}
                 title="M&E Queries"
                 onCancel={() => setQueriesModalOpen(false)}

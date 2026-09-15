@@ -95,7 +95,10 @@ const normalizeProposal = (id: string, data: Record<string, any>): Proposal => {
         status: normalizeLegacyStatus(data.status),
         description: data.description || data.about || null,
         originator: data.originator || fallbackPerson(data.createdBy?.name, 'Originator'),
-        owner: data.owner || fallbackPerson(data.createdBy?.name, 'Proposal owner'),
+        owner: {
+            type: 'Individual',
+            ...(data.owner || fallbackPerson(data.createdBy?.name, 'Proposal owner'))
+        },
         contributors: Array.isArray(data.contributors) ? data.contributors : [],
         centres,
         departments: Array.isArray(data.departments) ? data.departments : [],

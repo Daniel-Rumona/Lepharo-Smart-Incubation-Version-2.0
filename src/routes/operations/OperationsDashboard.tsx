@@ -1,46 +1,35 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-    Card,
-    Row,
-    Col,
-    Typography,
-    List,
-    Space,
-    Badge,
     Button,
     Modal,
-    Form,
-    Input,
-    message,
+    Row,
+    Col,
     Layout,
-    Table,
     Empty,
+    Space,
+    Skeleton,
+    Tag,
+    Typography,
     Tooltip,
-    Segmented,
+    message,
+    theme
 } from 'antd'
-import {
-    CheckCircleOutlined,
-    BellOutlined,
-    DeleteOutlined,
-    TeamOutlined
-} from '@ant-design/icons'
+import { BellOutlined, CheckCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
 import {
+    Timestamp,
+    addDoc,
+    arrayUnion,
     collection,
     getDoc,
     getDocs,
-    setDoc,
     doc,
-    Timestamp,
-    updateDoc,
     where,
     query,
-    addDoc
+    updateDoc
 } from 'firebase/firestore'
 import dayjs from 'dayjs'
-import isBetween from 'dayjs/plugin/isBetween'
-import { useFullIdentity } from '@/hooks/useFullIdentity'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import drilldown from 'highcharts/modules/drilldown'
@@ -48,23 +37,31 @@ import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCa
 import AppointmentsCalendarModal from '@/components/modals/AppointmentsCalender'
 import AppointmentDetailsModal from '@/components/modals/AppointmentDetails'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
-import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 import InterventionMetricsGrid from '@/components/dashboards/metrics/InterventionMetricsGrid'
+import type { DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
 import { fetchAppointments } from '@/services/appointmentService'
 import { summarizeAssignedInterventions } from '@/services/interventionMetricsService'
-import { resolveAssignmentLifecycle } from '@/services/assignmentLifecycleService'
-import type { AssignmentLifecycleKey } from '@/services/assignmentLifecycleService'
+import DepartmentInterventionStatusCard, {
+    INTERVENTION_STATUS_COLORS,
+    INTERVENTION_STATUS_ORDER,
+    formatInterventionStatusLabel,
+    resolveInterventionStatus
+} from '@/components/dashboards/metrics/DepartmentBreakdown'
+import DepartmentMonthlyUploadStatusCard from '@/components/dashboards/metrics/DepartmentMonthlyUploadStatusCard'
+import { useDashboardDateRange } from '@/lib/useDashboardDateRange'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+import ResolveQueryModal from '@/components/modals/ResolveQueryModal'
+import { workflowQueryService, type WorkflowQueryView } from '@/services/workflowQueryService'
+
+const { Text } = Typography
+const { useToken } = theme
 
 if (typeof drilldown === 'function') drilldown(Highcharts)
-
-dayjs.extend(isBetween)
-const { Title, Text } = Typography
 
 /* ----------------------------- types ------------------------------ */
 type AssignedIntervention = {
     id: string
-
     participantId: string
     departmentId?: string
     status?: string
@@ -83,11 +80,19 @@ type AssignedIntervention = {
     assignedBranch?: { id?: string; name?: string } | string
     participantID?: string
     participant?: { id?: string } | string
+    participantName?: string
+    beneficiaryName?: string
+    smeName?: string
     incubateeId?: string
     applicationId?: string
     assigneeId?: string
     interventionTitle?: string
     programId?: string
+    assignedAt?: any
+    assignedAtResolved?: any
+    createdAt?: any
+    startDate?: any
+    dueDate?: any
 }
 
 type DepartmentDoc = { id: string; name?: string; departmentName?: string }
@@ -116,25 +121,7 @@ type ProgramDoc = {
     assignedBranches?: Array<{ id?: string; name?: string } | string>
 }
 
-type EventItem = {
-    id: string
-    title: string
-    time?: any
-    date?: string
-    type?: string
-    format?: 'virtual' | 'in-person' | string
-    link?: string
-    location?: string
-    department?: string
-    departmentName?: string
-}
 
-type DeptRow = {
-    key: string
-    department: string
-    counts: Record<string, number>
-    total: number
-}
 
 type EnrichedIntervention = AssignedIntervention & {
     departmentName: string
@@ -143,76 +130,13 @@ type EnrichedIntervention = AssignedIntervention & {
 
 type BranchPerformanceMetric = 'interventions' | 'reach'
 
-/* ------------------------ status helpers -------------------------- */
-const STATUS_COLORS: Record<AssignmentLifecycleKey, string> = {
-    assigned: '#1677ff',
-    'awaiting-participant-acceptance': '#fa8c16',
-    'in-delivery': '#2f54eb',
-    'awaiting-participant-confirmation': '#722ed1',
-    'participant-rejected': '#d4380d',
-    completed: '#52c41a',
-    'needs-reassignment': '#eb2f96',
-    'participant-declined': '#ff7875',
-    cancelled: '#f5222d'
+type SubmissionRecord = {
+    month?: string
+    department?: string
+    departmentName?: string
+    interventions?: Array<{ department?: string; departmentName?: string }>
 }
 
-const STATUS_ORDER: AssignmentLifecycleKey[] = [
-    'assigned',
-    'awaiting-participant-acceptance',
-    'in-delivery',
-    'awaiting-participant-confirmation',
-    'participant-rejected',
-    'completed',
-    'needs-reassignment',
-    'participant-declined',
-    'cancelled'
-]
-
-const formatStatusLabel = (status?: string): string => {
-    const normalized = String(status || '')
-        .trim()
-        .toLowerCase()
-        .replace(/_/g, '-')
-
-    const map: Record<string, string> = {
-        assigned: 'Assigned',
-        'awaiting-participant-acceptance': 'Awaiting SME Acceptance',
-        'in-delivery': 'In Delivery',
-        'awaiting-participant-confirmation': 'Awaiting SME Confirmation',
-        'participant-rejected': 'SME Rejected Completion',
-        completed: 'Completed',
-        'needs-reassignment': 'Needs Reassignment',
-        'participant-declined': 'SME Declined',
-        cancelled: 'Cancelled'
-    }
-
-    return map[normalized] || 'Assigned'
-}
-
-const normalizeStatus = (record: AssignedIntervention): AssignmentLifecycleKey =>
-    resolveAssignmentLifecycle({
-        ...record,
-        // Older records stored the assignment lifecycle in `status`.
-        assignmentStatus: record.assignmentStatus || record.status,
-        participantAcceptanceStatus:
-            record.participantAcceptanceStatus ||
-            (['in-progress', 'in_progress'].includes(
-                String(record.assignmentStatus || record.status || '').toLowerCase()
-            )
-                ? 'accepted'
-                : undefined),
-        participantCompletionStatus:
-            record.participantCompletionStatus ||
-            record.beneficiaryCompletionStatus ||
-            (['confirmed', 'completed'].includes(String(record.completionStatus || '').toLowerCase())
-                ? record.completionStatus
-                : undefined),
-        assigneeCompletionStatus:
-            record.assigneeCompletionStatus ||
-            (['submitted', 'done', 'completed'].includes(String(record.completionStatus || '').toLowerCase())
-                ? record.completionStatus
-                : undefined)
-    }).key
 
 const getParticipantId = (record: AssignedIntervention | ApplicationDoc): string => {
     const participant = record.participant
@@ -281,65 +205,15 @@ const getProgramBranchReference = (program: ProgramDoc): BranchReference => {
     }
 }
 
-/* --------- stacked row bar for department breakdown cell ---------- */
-const StackedRowBar: React.FC<{
-    counts: Record<string, number>
-    statuses?: AssignmentLifecycleKey[]
-}> = ({ counts, statuses = STATUS_ORDER }) => {
-    const total = Object.values(counts).reduce((sum, n) => sum + n, 0)
-
-    if (!total) {
-        return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No data' />
-    }
-
-    return (
-        <div
-            style={{
-                display: 'flex',
-                height: 28,
-                minWidth: '100%',
-                borderRadius: 12,
-                overflow: 'hidden',
-                border: '1px solid #f0f0f0'
-            }}
-        >
-            {statuses.map(status => {
-                const value = counts[status] || 0
-                if (!value) return null
-                const pct = (value / total) * 100
-
-                return (
-                    <Tooltip
-                        key={status}
-                        title={`${formatStatusLabel(status)}: ${value}`}
-                    >
-                        <div
-                            style={{
-                                width: `${pct}%`,
-                                background: STATUS_COLORS[status] || '#999',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: 10,
-                                color: '#fff',
-                                whiteSpace: 'nowrap'
-                            }}
-                        >
-                            {pct > 12 ? value : ''}
-                        </div>
-                    </Tooltip>
-                )
-            })}
-        </div>
-    )
-}
 
 export const OperationsDashboard: React.FC = () => {
-    const { user } = useFullIdentity()
     const { activeProgramId } = useActiveProgramId()
+    const { range: dateRange, label: periodLabel, withinRange } = useDashboardDateRange()
+    const { user } = useFullIdentity() as any
+    const { token } = useToken()
 
     /* ----------------------------- state ---------------------------- */
-    const [loading, setLoading] = useState(false)
+    const [loading, setLoading] = useState(true)
     const [assigned, setAssigned] = useState<AssignedIntervention[]>([])
     const [totalRequired, setTotalRequired] = useState(0)
     const [deptMap, setDeptMap] = useState<Record<string, string>>({})
@@ -351,13 +225,18 @@ export const OperationsDashboard: React.FC = () => {
     const [branchPerformanceMetric, setBranchPerformanceMetric] =
         useState<BranchPerformanceMetric>('interventions')
 
+    const [monthlyMovSubmissions, setMonthlyMovSubmissions] = useState<SubmissionRecord[]>([])
+    const [workflowQueries, setWorkflowQueries] = useState<WorkflowQueryView[]>([])
+    const [queriesLoading, setQueriesLoading] = useState(true)
+    const [queriesModalOpen, setQueriesModalOpen] = useState(false)
+    const [resolvingQuery, setResolvingQuery] = useState<WorkflowQueryView | null>(null)
+    const [remindingQueryId, setRemindingQueryId] = useState<string | null>(null)
+
     const [appointments, setAppointments] = useState<any[]>([])
     const [calendarVisible, setCalendarVisible] = useState(false)
     const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null)
     const [appointmentDetailsVisible, setAppointmentDetailsVisible] = useState(false)
 
-    const [notifications, setNotifications] = useState<any[]>([])
-    const [notificationModalOpen, setNotificationModalOpen] = useState(false)
 
     /* ---------------------- fetch core datasets --------------------- */
     useEffect(() => {
@@ -388,6 +267,29 @@ export const OperationsDashboard: React.FC = () => {
                     depNameMap[d.id] = data.name || data.departmentName || 'Unspecified'
                 })
                 setDeptMap(depNameMap)
+
+                const movQuery = query(
+                    collection(db, 'consolidatedMOVs'),
+                    ...(activeProgramId && activeProgramId !== 'all'
+                        ? [where('programId', '==', activeProgramId)]
+                        : [])
+                )
+
+                const movSnap = await getDocs(movQuery)
+                const submittedPacks = movSnap.docs
+                    .map(d => ({
+                        id: d.id,
+                        ...(d.data() as any)
+                    }))
+                    .filter(pack =>
+                        Array.isArray((pack as any).approvals) &&
+                        (pack as any).approvals.some(
+                            (approval: any) =>
+                                String(approval?.step || '').toLowerCase() === 'hod_submission'
+                        )
+                    )
+
+                setMonthlyMovSubmissions(submittedPacks)
 
                 const programDocs = activeProgramId && activeProgramId !== 'all'
                     ? [await getDoc(doc(db, 'programs', activeProgramId))]
@@ -463,6 +365,7 @@ export const OperationsDashboard: React.FC = () => {
             } catch (e) {
                 console.error('Error loading dashboard datasets:', e)
                 setAppointments([])
+                setMonthlyMovSubmissions([])
             } finally {
                 setLoading(false)
             }
@@ -471,34 +374,29 @@ export const OperationsDashboard: React.FC = () => {
         run()
     }, [activeProgramId])
 
-    /* ------------------------- notifications ------------------------ */
     useEffect(() => {
-        const fetchNotifications = async () => {
-            try {
-                const snapshot = await getDocs(collection(db, 'notifications'))
-                const all = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+        let cancelled = false
+        setQueriesLoading(true)
 
-                if (!user || !user.departmentName) {
-                    setNotifications([])
-                    return
-                }
+        workflowQueryService.list(
+            activeProgramId && activeProgramId !== 'all'
+                ? { programId: activeProgramId }
+                : {}
+        )
+            .then(rows => {
+                if (!cancelled) setWorkflowQueries(rows)
+            })
+            .catch(error => {
+                console.error('Error loading workflow queries:', error)
+                if (!cancelled) setWorkflowQueries([])
+            })
+            .finally(() => {
+                if (!cancelled) setQueriesLoading(false)
+            })
 
-                const filtered = all.filter(
-                    (n: any) =>
-                        n.recipientRoles?.includes('operations') &&
-                        n.department === user.departmentName
-                )
+        return () => { cancelled = true }
+    }, [activeProgramId])
 
-                setNotifications(filtered)
-            } catch (err) {
-                console.error('Error loading notifications:', err)
-            }
-        }
-
-        if (user?.departmentName) {
-            fetchNotifications()
-        }
-    }, [user?.departmentName])
 
     /* ----------------------- enrich interventions ------------------- */
     const enriched = useMemo<EnrichedIntervention[]>(() => {
@@ -530,8 +428,65 @@ export const OperationsDashboard: React.FC = () => {
         })
     }, [assigned, deptMap, appMap, branchMap, programBranchMap])
 
+    const departmentNames = useMemo(
+        () =>
+            Array.from(
+                new Set(
+                    Object.values(deptMap)
+                        .map(name => String(name || '').trim())
+                        .filter(name => name && name !== 'Unspecified')
+                )
+            ).sort((a, b) =>
+                a.localeCompare(b, undefined, { sensitivity: 'base' })
+            ),
+        [deptMap]
+    )
+
     /* ---------------------------- metrics --------------------------- */
-    const interventionMetrics = summarizeAssignedInterventions(enriched, totalRequired || enriched.length)
+    const periodInterventions = useMemo(
+        () => enriched.filter(intervention =>
+            withinRange(
+                intervention.assignedAtResolved ||
+                intervention.assignedAt ||
+                intervention.createdAt ||
+                intervention.startDate
+            )
+        ),
+        [enriched, withinRange]
+    )
+
+    // Required remains the programme-wide obligation. The operational tiles
+    // describe only assignments made within the topbar reporting period.
+    const interventionMetrics = summarizeAssignedInterventions(
+        periodInterventions,
+        totalRequired || enriched.length
+    )
+
+    const openQueries = useMemo(
+        () => workflowQueries.filter(queryItem =>
+            !['resolved', 'cancelled'].includes(String(queryItem.status || '').toLowerCase()) &&
+            withinRange(queryItem.updatedAt || queryItem.createdAt)
+        ),
+        [withinRange, workflowQueries]
+    )
+
+    const queryMetric = useMemo<DashboardMetric[]>(() => {
+        // Zero queries is a good state, not a dashboard metric that needs a
+        // permanent empty tile. The four intervention metrics then reclaim
+        // the row width.
+        if (!queriesLoading && openQueries.length === 0) return []
+
+        return [{
+            key: 'open-queries',
+            important: true,
+            icon: <QuestionCircleOutlined style={{ fontSize: 20, color: '#d97706' }} />,
+            iconBg: 'transparent',
+            title: 'Open Queries',
+            value: queriesLoading ? '...' : openQueries.length,
+            subtitle: `Open ${periodLabel.toLowerCase()}`,
+            onClick: () => setQueriesModalOpen(true)
+        }]
+    }, [openQueries.length, periodLabel, queriesLoading])
 
     /* -------------------- branch multi-level drilldown ------------- */
     const branchBreakdown = useMemo(() => {
@@ -552,7 +507,7 @@ export const OperationsDashboard: React.FC = () => {
         enriched.forEach(item => {
             const branch = item.branchName || 'Unknown Branch'
             const department = item.departmentName || 'Unspecified'
-            const status = normalizeStatus(item)
+            const status = resolveInterventionStatus(item)
 
             if (!map[branch]) {
                 map[branch] = { total: 0, departments: {} }
@@ -564,7 +519,7 @@ export const OperationsDashboard: React.FC = () => {
                     statuses: {}
                 }
 
-                STATUS_ORDER.forEach(s => {
+                INTERVENTION_STATUS_ORDER.forEach(s => {
                     map[branch].departments[department].statuses[s] = 0
                 })
             }
@@ -599,7 +554,7 @@ export const OperationsDashboard: React.FC = () => {
 
             const branch = item.branchName || 'Unknown Branch'
             const department = item.departmentName || 'Unspecified'
-            const status = normalizeStatus(item)
+            const status = resolveInterventionStatus(item)
 
             if (!map[branch]) {
                 map[branch] = { smeIds: new Set(), departments: {} }
@@ -608,7 +563,7 @@ export const OperationsDashboard: React.FC = () => {
                 map[branch].departments[department] = {
                     smeIds: new Set(),
                     statuses: Object.fromEntries(
-                        STATUS_ORDER.map(key => [key, new Set<string>()])
+                        INTERVENTION_STATUS_ORDER.map(key => [key, new Set<string>()])
                     )
                 }
             }
@@ -671,18 +626,18 @@ export const OperationsDashboard: React.FC = () => {
                     type: 'column',
                     id: `branch::${branch}::dept::${department}`,
                     name: `${department} - Status Breakdown`,
-                    data: STATUS_ORDER
+                    data: INTERVENTION_STATUS_ORDER
                         .filter(status => (
                             branchPerformanceMetric === 'reach'
                                 ? statusReach[status]?.size || 0
                                 : statusCounts[status] || 0
                         ) > 0)
                         .map(status => ({
-                            name: formatStatusLabel(status),
+                            name: formatInterventionStatusLabel(status),
                             y: branchPerformanceMetric === 'reach'
                                 ? statusReach[status]?.size || 0
                                 : statusCounts[status] || 0,
-                            color: STATUS_COLORS[status] || '#999'
+                            color: INTERVENTION_STATUS_COLORS[status] || '#999'
                         })) as any[]
                 } as Highcharts.DrilldownSeriesColumnOptions)
             })
@@ -752,171 +707,56 @@ export const OperationsDashboard: React.FC = () => {
         credits: { enabled: false }
     }
 
-    const StatusLegend: React.FC<{ statuses?: AssignmentLifecycleKey[] }> = ({ statuses }) => {
-        const keys = statuses ?? STATUS_ORDER
+    const interventionHealth = useMemo(() => {
+        const rows = periodInterventions
+        const completed = rows.filter(item => resolveInterventionStatus(item) === 'completed').length
+        const inDelivery = rows.filter(
+            item => resolveInterventionStatus(item) === 'in-delivery'
+        ).length
+        const awaitingConfirmation = rows.filter(
+            item => resolveInterventionStatus(item) === 'awaiting-participant-confirmation'
+        ).length
+        const periodEnd = dateRange?.[1]?.endOf('day') || dayjs().endOf('day')
+        const isPastPeriod = !!dateRange && periodEnd.isBefore(dayjs().startOf('day'))
+        const overdue = rows.filter(item => {
+            const due = item.dueDate
+            return resolveInterventionStatus(item) !== 'completed' &&
+                !!due &&
+                dayjs(typeof due?.toDate === 'function' ? due.toDate() : due).isBefore(periodEnd, 'day')
+        }).length
+        const percent = rows.length ? Math.round((completed / rows.length) * 100) : 0
+        return { total: rows.length, completed, inDelivery, awaitingConfirmation, overdue, isPastPeriod, percent }
+    }, [dateRange, periodInterventions])
 
-        return (
-            <Space wrap size='small' style={{ marginBottom: 12 }}>
-                {keys.map(k => (
-                    <span
-                        key={k}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-                    >
-                        <span
-                            style={{
-                                width: 12,
-                                height: 12,
-                                borderRadius: 3,
-                                background: STATUS_COLORS[k],
-                                display: 'inline-block'
-                            }}
-                        />
-                        <Text type='secondary'>
-                            {formatStatusLabel(k)}
-                        </Text>
-                    </span>
-                ))}
-            </Space>
-        )
-    }
+    const remindQueryResolver = async (queryItem: WorkflowQueryView) => {
+        const resolverId = String(queryItem.resolverId || '').trim()
+        if (!resolverId) return message.warning('This query has no assigned responder.')
 
-    /* -------------------- department breakdown table ---------------- */
-    const deptRows: DeptRow[] = useMemo(() => {
-        const map: Record<string, { counts: Record<string, number>; total: number }> = {}
-
-        enriched.forEach(d => {
-            const dept = d.departmentName || 'Unspecified Department'
-            const status = normalizeStatus(d)
-
-            if (!map[dept]) {
-                map[dept] = {
-                    counts: Object.fromEntries(STATUS_ORDER.map(key => [key, 0])),
-                    total: 0
-                }
-            }
-
-            map[dept].counts[status] = (map[dept].counts[status] || 0) + 1
-            map[dept].total += 1
-        })
-
-        return Object.entries(map).map(([department, agg]) => ({
-            key: department,
-            department,
-            counts: agg.counts,
-            total: agg.total
-        }))
-    }, [enriched])
-
-    const deptColumns = [
-        {
-            title: 'Department',
-            dataIndex: 'department',
-            key: 'department',
-            render: (v: string) => <Text strong>{v}</Text>
-        },
-        {
-            title: 'Status',
-            key: 'bar',
-            render: (_: any, row: DeptRow) => (
-                <StackedRowBar
-                    counts={row.counts}
-                    statuses={STATUS_ORDER}
-                />
-            )
-        },
-        {
-            title: 'Total',
-            dataIndex: 'total',
-            key: 'total',
-            align: 'right' as const
-        }
-    ]
-
-    /* ----------------------- notification actions ------------------- */
-    const handleAcceptRequest = async (notif: any) => {
-        await updateDoc(doc(db, 'notifications', notif.id), {
-            status: 'accepted',
-            actionedBy: user?.id,
-            actionedAt: new Date()
-        })
-
-        const appSnap = await getDocs(
-            query(
-                collection(db, 'applications'),
-                where('participantId', '==', notif.participantId)
-            )
-        )
-
-        if (!appSnap.empty) {
-            const appRef = appSnap.docs[0].ref
-            const appData: any = appSnap.docs[0].data()
-            const updatedRequired = [
-                ...(appData?.interventions?.required || []),
-                {
-                    id: `requested-${Date.now()}`,
-                    title: notif.interventionTitle,
-                    area: notif.areaOfSupport,
-                    fromRequest: true,
-                    approvedAt: new Date()
-                }
-            ]
-            await updateDoc(appRef, { 'interventions.required': updatedRequired })
-        }
-
-        await addDoc(collection(db, 'notifications'), {
-            type: 'intervention-request-accepted',
-            recipientRoles: ['incubatee'],
-            participantId: notif.participantId,
-            interventionTitle: notif.interventionTitle,
-            areaOfSupport: notif.areaOfSupport,
-            message: {
-                incubatee: `Your request for "${notif.interventionTitle}" has been accepted by Operations.`
-            },
-            createdAt: new Date(),
-            readBy: {}
-        })
-
-        message.success('Request accepted and participant notified.')
-    }
-
-    const handleDeclineRequest = async (notif: any) => {
-        Modal.confirm({
-            title: 'Decline Reason',
-            content: (
-                <Input.TextArea
-                    autoFocus
-                    placeholder='Enter reason for declining'
-                    onChange={e => ((window as any).__declineReason = e.target.value)}
-                />
-            ),
-            onOk: async () => {
-                const reason = (window as any).__declineReason || ''
-
-                await updateDoc(doc(db, 'notifications', notif.id), {
-                    status: 'declined',
-                    actionedBy: user?.id,
-                    actionedAt: new Date(),
-                    declineReason: reason
+        setRemindingQueryId(queryItem.id)
+        try {
+            const role = String(queryItem.resolver?.role || 'consultant').trim()
+            const reminder = { sentAt: Timestamp.now(), sentById: String(user?.uid || user?.id || '') || null }
+            await Promise.all([
+                addDoc(collection(db, 'notifications'), {
+                    type: 'workflow-query-reminder',
+                    message: { [role]: 'Reminder: an open query needs your response.' },
+                    recipientRoles: [role], recipientIds: [resolverId], workflowQueryId: queryItem.id,
+                    programId: queryItem.programId, createdAt: new Date(), readBy: {}
+                }),
+                updateDoc(doc(db, 'workflowQueries', queryItem.id), {
+                    lastReminderAt: reminder.sentAt, reminders: arrayUnion(reminder), updatedAt: Timestamp.now()
                 })
-
-                await addDoc(collection(db, 'notifications'), {
-                    type: 'intervention-request-declined',
-                    recipientRoles: ['incubatee'],
-                    participantId: notif.participantId,
-                    interventionTitle: notif.interventionTitle,
-                    areaOfSupport: notif.areaOfSupport,
-                    reason,
-                    message: {
-                        incubatee: `Your request for "${notif.interventionTitle}" was declined. Reason: ${reason}`
-                    },
-                    createdAt: new Date(),
-                    readBy: {}
-                })
-
-                message.success('Request declined and participant notified.')
-            }
-        })
+            ])
+            message.success('Reminder sent.')
+        } catch (error) {
+            console.error('Failed to send query reminder:', error)
+            message.error('Could not send the reminder.')
+        } finally {
+            setRemindingQueryId(null)
+        }
     }
+
+
 
     /* ------------------------------ UI ------------------------------ */
     return (
@@ -925,12 +765,18 @@ export const OperationsDashboard: React.FC = () => {
                 <title>Operations Dashboard</title>
             </Helmet>
 
-            {loading && <LoadingOverlay tip='Getting data ready' />}
-
             <div style={{ marginBottom: 24 }}>
-                <InterventionMetricsGrid metrics={interventionMetrics} loading={loading} />
+                <InterventionMetricsGrid
+                    metrics={interventionMetrics}
+                    periodLabel={periodLabel}
+                    extraMetrics={queryMetric}
+                />
             </div>
 
+            {/*
+             * Branch drilldown chart temporarily disabled.
+             * Keep the drilldown calculations above so this can be restored later.
+             *
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 <Col span={24}>
                     <MotionCard>
@@ -967,107 +813,100 @@ export const OperationsDashboard: React.FC = () => {
                     </MotionCard>
                 </Col>
             </Row>
+            */}
 
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} lg={12}>
-                    <MotionCard
-                        title={
-                            <Space>
-                                <TeamOutlined />
-                                <span>Department Breakdown — Intervention Status</span>
-                            </Space>
-                        }
-                    >
-                        <StatusLegend
-                            statuses={STATUS_ORDER}
-                        />
+                    <DepartmentInterventionStatusCard
+                        interventions={enriched}
+                        loading={loading}
+                    />
 
-                        {deptRows.length === 0 ? (
-                            <Empty
-                                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                description='No interventions found.'
-                            />
-                        ) : (
-                            <Table
-                                rowKey='key'
-                                dataSource={deptRows}
-                                columns={deptColumns}
-                                pagination={{ pageSize: 8, hideOnSinglePage: true }}
-                            />
-                        )}
-                    </MotionCard>
+                    <div style={{ marginTop: 16 }}>
+                        <DepartmentMonthlyUploadStatusCard
+                            departments={departmentNames}
+                            submissions={monthlyMovSubmissions}
+                            loading={loading}
+                            dateRange={dateRange}
+                        />
+                    </div>
                 </Col>
 
                 <Col xs={24} lg={12}>
+                    <div style={{ marginBottom: 16 }}>
+                        <MotionCard
+                            title='Intervention progress health'
+                            extra={<Text type='secondary'>{periodLabel}</Text>}
+                        >
+                            {loading ? (
+                                <Row gutter={16} align='middle'>
+                                    <Col xs={24} sm={10} style={{ textAlign: 'center' }}>
+                                        <Skeleton.Avatar active size={104} shape='circle' />
+                                    </Col>
+                                    <Col xs={24} sm={14}>
+                                        <Space direction='vertical' size={10} style={{ width: '100%' }}>
+                                            <Skeleton.Input active size='small' style={{ width: 190 }} />
+                                            <Skeleton.Input active size='small' style={{ width: '100%' }} />
+                                            <Skeleton.Input active size='small' style={{ width: 150 }} />
+                                        </Space>
+                                    </Col>
+                                </Row>
+                            ) : <Row gutter={16} align='middle'>
+                                <Col xs={24} sm={10} style={{ textAlign: 'center' }}>
+                                    <svg
+                                        viewBox='0 0 120 70'
+                                        width='176'
+                                        height='103'
+                                        role='img'
+                                        aria-label={`${interventionHealth.percent}% intervention completion`}
+                                    >
+                                        <path d='M 10 60 A 50 50 0 0 1 110 60' fill='none' stroke={token.colorFillSecondary} strokeWidth='12' strokeLinecap='round' />
+                                        <path
+                                            d='M 10 60 A 50 50 0 0 1 110 60'
+                                            fill='none'
+                                            stroke={interventionHealth.percent >= 80 ? '#52c41a' : interventionHealth.percent >= 50 ? '#faad14' : '#ff4d4f'}
+                                            strokeWidth='12'
+                                            strokeLinecap='round'
+                                            pathLength='100'
+                                            strokeDasharray={`${interventionHealth.percent} 100`}
+                                        />
+                                        <text x='60' y='51' textAnchor='middle' fontSize='23' fontWeight='700' fill={token.colorText}>{interventionHealth.percent}%</text>
+                                        <text x='60' y='66' textAnchor='middle' fontSize='9' fill={token.colorTextSecondary}>completed</text>
+                                    </svg>
+                                </Col>
+                                <Col xs={24} sm={14}>
+                                    <Space direction='vertical' size={4} style={{ width: '100%' }}>
+                                        <Text strong>Completion in this reporting period</Text>
+                                        <Text type='secondary'>
+                                            {interventionHealth.completed} of {interventionHealth.total} assigned interventions completed.
+                                        </Text>
+                                        <Text type='secondary'>
+                                            {interventionHealth.inDelivery} in delivery · {interventionHealth.awaitingConfirmation} awaiting SME confirmation.
+                                        </Text>
+                                        <Tag color={interventionHealth.isPastPeriod ? (interventionHealth.overdue ? 'error' : 'default') : interventionHealth.percent >= 80 ? 'success' : interventionHealth.percent >= 50 ? 'warning' : 'error'} style={{ width: 'fit-content', marginTop: 6 }}>
+                                            {interventionHealth.isPastPeriod
+                                                ? interventionHealth.overdue
+                                                    ? `${interventionHealth.overdue} overdue at period end`
+                                                    : 'Period closed'
+                                                : interventionHealth.percent >= 80 ? 'On track' : interventionHealth.percent >= 50 ? 'Needs attention' : 'Action required'}
+                                        </Tag>
+                                    </Space>
+                                </Col>
+                            </Row>}
+                        </MotionCard>
+                    </div>
+
                     <UpcomingAppointmentsCard
                         programId={activeProgramId}
                         daysAhead={7}
                         limit={6}
                         onViewCalendar={() => setCalendarVisible(true)}
                     />
+
+
                 </Col>
             </Row>
 
-            <Button
-                type='primary'
-                shape='circle'
-                icon={
-                    <Badge count={notifications.filter(n => !n.readBy?.operations).length}>
-                        <BellOutlined />
-                    </Badge>
-                }
-                style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}
-                onClick={() => setNotificationModalOpen(true)}
-            />
-
-            <Modal
-                title='Notifications'
-                open={notificationModalOpen}
-                onCancel={() => setNotificationModalOpen(false)}
-                footer={null}
-                width={700}
-            >
-                {notifications.length === 0 ? (
-                    <Empty description='No notifications.' />
-                ) : (
-                    <List
-                        itemLayout='horizontal'
-                        dataSource={notifications}
-                        renderItem={(item: any) => (
-                            <List.Item
-                                actions={
-                                    item.type === 'intervention-request' &&
-                                        item.status === 'pending'
-                                        ? [
-                                            <Button
-                                                key='accept'
-                                                type='link'
-                                                icon={<CheckCircleOutlined />}
-                                                onClick={() => handleAcceptRequest(item)}
-                                            >
-                                                Accept
-                                            </Button>,
-                                            <Button
-                                                key='decline'
-                                                type='link'
-                                                danger
-                                                icon={<DeleteOutlined />}
-                                                onClick={() => handleDeclineRequest(item)}
-                                            >
-                                                Decline
-                                            </Button>
-                                        ]
-                                        : []
-                                }
-                            >
-                                <List.Item.Meta
-                                    title={item.message?.operations || 'No message'}
-                                />
-                            </List.Item>
-                        )}
-                    />
-                )}
-            </Modal>
 
             <AppointmentsCalendarModal
                 open={calendarVisible}
@@ -1083,6 +922,96 @@ export const OperationsDashboard: React.FC = () => {
                 open={appointmentDetailsVisible}
                 onClose={() => setAppointmentDetailsVisible(false)}
                 appointment={selectedAppointment}
+            />
+
+            <Modal
+                open={queriesModalOpen}
+                onCancel={() => setQueriesModalOpen(false)}
+                footer={null}
+                centered
+                title={`Open queries · ${periodLabel}`}
+                width={760}
+            >
+                {queriesLoading ? (
+                    <Space direction='vertical' size={10} style={{ width: '100%' }}>
+                        {Array.from({ length: 4 }).map((_, index) => (
+                            <Skeleton key={index} active title={false} paragraph={{ rows: 2 }} />
+                        ))}
+                    </Space>
+                ) : openQueries.length === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No open queries in this period.' />
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {openQueries.map(queryItem => {
+                            const sme = String(
+                                (queryItem as any).participantName ||
+                                (queryItem as any).beneficiaryName ||
+                                ''
+                            )
+                            const openedAt = dayjs(queryItem.createdAt?.toDate?.() || queryItem.createdAt)
+                            const daysOpen = openedAt.isValid() ? Math.max(0, dayjs().startOf('day').diff(openedAt.startOf('day'), 'day')) : null
+
+                            return (
+                                <div
+                                    key={queryItem.id}
+                                    style={{ padding: '12px 14px', border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 12 }}
+                                >
+                                    <Space align='start' style={{ width: '100%', justifyContent: 'space-between' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <Space size={6} wrap>
+                                                <Text strong>{queryItem.queryMessage || queryItem.message}</Text>
+                                                <Tag color='warning'>Open</Tag>
+                                                {daysOpen !== null && <Tag>{daysOpen === 0 ? 'Opened today' : `${daysOpen} day${daysOpen === 1 ? '' : 's'} open`}</Tag>}
+                                            </Space>
+                                            {sme ? <Text type='secondary' style={{ display: 'block', marginTop: 5 }}>SME: {sme}</Text> : null}
+                                            <Text type='secondary' style={{ display: 'block', marginTop: 2, fontSize: 12 }}>
+                                                Opened {openedAt.isValid() ? openedAt.format('DD MMM YYYY') : 'date unavailable'} · Assigned to {queryItem.resolver?.name || queryItem.resolver?.email || 'an unlisted responder'}
+                                            </Text>
+                                        </div>
+                                        <Space size={4}>
+                                            <Tooltip title='Send reminder'>
+                                                <Button
+                                                    shape='circle'
+                                                    icon={<BellOutlined />}
+                                                    loading={remindingQueryId === queryItem.id}
+                                                    disabled={!queryItem.resolverId}
+                                                    onClick={() => remindQueryResolver(queryItem)}
+                                                    aria-label='Send reminder'
+                                                />
+                                            </Tooltip>
+                                            <Button
+                                                type='link'
+                                                icon={<CheckCircleOutlined />}
+                                                onClick={() => setResolvingQuery(queryItem)}
+                                            >
+                                                Resolve
+                                            </Button>
+                                        </Space>
+                                    </Space>
+                                </div>
+                            )
+                        })}
+                    </div>
+                )}
+            </Modal>
+
+            <ResolveQueryModal
+                open={!!resolvingQuery}
+                query={resolvingQuery}
+                actor={{
+                    id: String(user?.uid || user?.id || ''),
+                    name: user?.name || user?.displayName || null,
+                    email: user?.email || null,
+                    role: user?.role || null,
+                    departmentName: user?.departmentName || null
+                }}
+                onClose={() => setResolvingQuery(null)}
+                onResolved={queryId => {
+                    setWorkflowQueries(rows => rows.map(row =>
+                        row.id === queryId ? { ...row, status: 'resolved' } : row
+                    ))
+                    setResolvingQuery(null)
+                }}
             />
         </Layout>
     )

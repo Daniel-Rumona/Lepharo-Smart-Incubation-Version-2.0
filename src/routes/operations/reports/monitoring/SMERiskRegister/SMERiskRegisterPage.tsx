@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, Col, Row, Skeleton } from 'antd'
 
 import { MotionCard } from '@/components/dashboards/metrics/Header'
@@ -12,9 +12,16 @@ import { matchesServiceRecency, normalizeLower } from './riskEngine'
 import type { Props, RiskLevel, ServiceRecencyFilter, SMERow } from './types'
 import { useSMERiskRegisterData } from './useSMERiskRegisterData'
 
-type CoverageFilter = 'all' | 'fully_covered' | 'partially_covered' | 'not_serviced'
+type CoverageFilter =
+    | 'all'
+    | 'fully_covered'
+    | 'partially_covered'
+    | 'not_serviced'
 
-export default function SMERiskRegisterPage({ programId: programIdProp, parentPadding }: Props) {
+export default function SMERiskRegisterPage({
+    programId: programIdProp,
+    parentPadding
+}: Props) {
     const {
         loading,
         rows,
@@ -22,9 +29,6 @@ export default function SMERiskRegisterPage({ programId: programIdProp, parentPa
         isDepartmentScopedView,
         scopedDepartment,
         departmentScopeLabel,
-        expectedDepartmentsLabel,
-        servicedDepartmentsLabel,
-        missingDepartmentsLabel,
         getSMEChallenges,
         getCommunicationAttempts,
         getReminderEmails,
@@ -33,8 +37,10 @@ export default function SMERiskRegisterPage({ programId: programIdProp, parentPa
 
     const [searchText, setSearchText] = useState('')
     const [riskFilter, setRiskFilter] = useState<'all' | RiskLevel>('all')
-    const [coverageFilter, setCoverageFilter] = useState<CoverageFilter>('all')
-    const [serviceRecencyFilter, setServiceRecencyFilter] = useState<ServiceRecencyFilter>('all')
+    const [coverageFilter, setCoverageFilter] =
+        useState<CoverageFilter>('all')
+    const [serviceRecencyFilter, setServiceRecencyFilter] =
+        useState<ServiceRecencyFilter>('all')
     const [analyticsOpen, setAnalyticsOpen] = useState(false)
     const [selectedRow, setSelectedRow] = useState<SMERow | null>(null)
 
@@ -47,14 +53,23 @@ export default function SMERiskRegisterPage({ programId: programIdProp, parentPa
                 normalizeLower(row.smeName).includes(text) ||
                 normalizeLower(row.ownerName).includes(text) ||
                 normalizeLower(row.currentGroup).includes(text) ||
-                row.expectedDepartments.some(d => normalizeLower(d.departmentName).includes(text)) ||
-                row.servicedDepartments.some(d => normalizeLower(d.departmentName).includes(text)) ||
-                row.missingDepartments.some(d => normalizeLower(d.departmentName).includes(text)) ||
-                row.expectedDepartments.some(d =>
-                    d.expectedInterventionTitles.some(title => normalizeLower(title).includes(text))
+                row.expectedDepartments.some(department =>
+                    normalizeLower(department.departmentName).includes(text)
+                ) ||
+                row.servicedDepartments.some(department =>
+                    normalizeLower(department.departmentName).includes(text)
+                ) ||
+                row.missingDepartments.some(department =>
+                    normalizeLower(department.departmentName).includes(text)
+                ) ||
+                row.expectedDepartments.some(department =>
+                    department.expectedInterventionTitles.some(title =>
+                        normalizeLower(title).includes(text)
+                    )
                 )
 
-            const matchesRisk = riskFilter === 'all' || row.riskLevel === riskFilter
+            const matchesRisk =
+                riskFilter === 'all' || row.riskLevel === riskFilter
 
             const matchesCoverage =
                 coverageFilter === 'all' ||
@@ -69,97 +84,186 @@ export default function SMERiskRegisterPage({ programId: programIdProp, parentPa
                     row.expectedDepartmentsCount > 0 &&
                     row.servicedDepartmentsCount === 0)
 
-            const matchesService = matchesServiceRecency(row, serviceRecencyFilter)
+            const matchesService = matchesServiceRecency(
+                row,
+                serviceRecencyFilter
+            )
 
-            return matchesSearch && matchesRisk && matchesCoverage && matchesService
+            return (
+                matchesSearch &&
+                matchesRisk &&
+                matchesCoverage &&
+                matchesService
+            )
         })
-    }, [rows, searchText, riskFilter, coverageFilter, serviceRecencyFilter])
+    }, [
+        rows,
+        searchText,
+        riskFilter,
+        coverageFilter,
+        serviceRecencyFilter
+    ])
 
-    const metrics = useMemo(() => ({
-        total: filteredRows.length,
-        fullyCovered: filteredRows.filter(
-            r => r.expectedDepartmentsCount > 0 && r.missingDepartmentsCount === 0
-        ).length,
-        withMissing: filteredRows.filter(r => r.missingDepartmentsCount > 0).length,
-        notServiced: filteredRows.filter(
-            r => r.expectedDepartmentsCount > 0 && r.servicedDepartmentsCount === 0
-        ).length,
-        critical: filteredRows.filter(r => r.riskLevel === 'Critical').length,
-        totalTouches: filteredRows.reduce((sum, row) => sum + row.totalTouches, 0)
-    }), [filteredRows])
+    const metrics = useMemo(
+        () => ({
+            total: filteredRows.length,
+            fullyCovered: filteredRows.filter(
+                row =>
+                    row.expectedDepartmentsCount > 0 &&
+                    row.missingDepartmentsCount === 0
+            ).length,
+            withMissing: filteredRows.filter(
+                row => row.missingDepartmentsCount > 0
+            ).length,
+            notServiced: filteredRows.filter(
+                row =>
+                    row.expectedDepartmentsCount > 0 &&
+                    row.servicedDepartmentsCount === 0
+            ).length,
+            critical: filteredRows.filter(
+                row => row.riskLevel === 'Critical'
+            ).length,
+            totalTouches: filteredRows.reduce(
+                (sum, row) => sum + row.totalTouches,
+                0
+            )
+        }),
+        [filteredRows]
+    )
 
     const missingDeptChartData = useMemo(() => {
         const map = new Map<string, number>()
+
         filteredRows.forEach(row => {
-            row.missingDepartments.forEach(dep => {
-                map.set(dep.departmentName, (map.get(dep.departmentName) ?? 0) + 1)
+            row.missingDepartments.forEach(department => {
+                map.set(
+                    department.departmentName,
+                    (map.get(department.departmentName) ?? 0) + 1
+                )
             })
         })
+
         return [...map.entries()]
-            .map(([departmentName, count]) => ({ departmentName, count }))
+            .map(([departmentName, count]) => ({
+                departmentName,
+                count
+            }))
             .sort((a, b) => b.count - a.count)
             .slice(0, 10)
     }, [filteredRows])
 
-    const servicedTouchRows = useMemo(() => {
-        return filteredRows
-            .filter(row => Number(row.totalTouches || 0) > 0)
-            .sort((a, b) => Number(b.totalTouches || 0) - Number(a.totalTouches || 0))
-            .slice(0, 10)
-    }, [filteredRows])
+    const servicedTouchRows = useMemo(
+        () =>
+            filteredRows
+                .filter(row => Number(row.totalTouches || 0) > 0)
+                .sort(
+                    (a, b) =>
+                        Number(b.totalTouches || 0) -
+                        Number(a.totalTouches || 0)
+                )
+                .slice(0, 10),
+        [filteredRows]
+    )
 
-    const neglectedRows = useMemo(() => {
-        return filteredRows
-            .filter(r => Number(r.totalTouches || 0) === 0 || (r.daysSinceLastService ?? 0) >= 30)
-            .sort((a, b) => {
-                if (b.riskScore !== a.riskScore) return b.riskScore - a.riskScore
-                if ((b.daysSinceLastService || 0) !== (a.daysSinceLastService || 0)) {
-                    return (b.daysSinceLastService || 0) - (a.daysSinceLastService || 0)
-                }
-                return b.missingDepartmentsCount - a.missingDepartmentsCount
-            })
-            .slice(0, 10)
-    }, [filteredRows])
+    const neglectedRows = useMemo(
+        () =>
+            filteredRows
+                .filter(
+                    row =>
+                        Number(row.totalTouches || 0) === 0 ||
+                        (row.daysSinceLastService ?? 0) >= 30
+                )
+                .sort((a, b) => {
+                    if (b.riskScore !== a.riskScore) {
+                        return b.riskScore - a.riskScore
+                    }
 
-    useEffect(() => {
-        setSelectedRow(current => {
-            const matchingRow = current ? filteredRows.find(row => row.key === current.key) : undefined
-            if (matchingRow) return matchingRow
-            return filteredRows[0] || null
-        })
-    }, [filteredRows])
+                    if (
+                        (b.daysSinceLastService || 0) !==
+                        (a.daysSinceLastService || 0)
+                    ) {
+                        return (
+                            (b.daysSinceLastService || 0) -
+                            (a.daysSinceLastService || 0)
+                        )
+                    }
+
+                    return (
+                        b.missingDepartmentsCount -
+                        a.missingDepartmentsCount
+                    )
+                })
+                .slice(0, 10),
+        [filteredRows]
+    )
 
     if (loading) {
         return (
-            <div style={{ padding: parentPadding, minHeight: '100vh' }} aria-busy="true" aria-label="Loading SME risk register">
-                <Row gutter={[16, 16]}>
-                    {[0, 1, 2, 3, 4].map(item => (
-                        <Col key={item} xs={24} sm={12} xl={item === 4 ? 24 : 6}>
-                            <Card><Skeleton active title={{ width: 110 }} paragraph={{ rows: 1 }} /></Card>
+            <div
+                style={{
+                    padding: parentPadding,
+                    minHeight: '100vh'
+                }}
+                aria-busy="true"
+                aria-label="Loading SME risk register"
+            >
+                <Row gutter={[12, 12]}>
+                    {[0, 1, 2, 3].map(item => (
+                        <Col key={item} xs={12} xl={6}>
+                            <Card>
+                                <Skeleton
+                                    active
+                                    title={{ width: 100 }}
+                                    paragraph={{ rows: 1 }}
+                                />
+                            </Card>
                         </Col>
                     ))}
                 </Row>
+
                 <Card style={{ marginTop: 16 }}>
-                    <Skeleton active title={{ width: 220 }} paragraph={{ rows: 1 }} />
+                    <Skeleton
+                        active
+                        title={{ width: 180 }}
+                        paragraph={{ rows: 1 }}
+                    />
+
+                    <div style={{ height: 12 }} />
+
+                    {[0, 1, 2, 3, 4].map(item => (
+                        <div
+                            key={item}
+                            style={{
+                                padding: '14px 0',
+                                borderTop:
+                                    item === 0
+                                        ? undefined
+                                        : '1px solid rgba(0,0,0,.06)'
+                            }}
+                        >
+                            <Skeleton
+                                active
+                                avatar
+                                title={{ width: '36%' }}
+                                paragraph={{
+                                    rows: 1,
+                                    width: ['72%']
+                                }}
+                            />
+                        </div>
+                    ))}
                 </Card>
-                <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-                    <Col xs={24} xl={10}>
-                        <Card>
-                            <Skeleton active title={{ width: 180 }} paragraph={{ rows: 8 }} />
-                        </Card>
-                    </Col>
-                    <Col xs={24} xl={14}>
-                        <Card>
-                            <Skeleton active title={{ width: 220 }} paragraph={{ rows: 8 }} />
-                        </Card>
-                    </Col>
-                </Row>
             </div>
         )
     }
 
     return (
-        <div style={{ padding: parentPadding, minHeight: '100vh' }}>
+        <div
+            style={{
+                padding: parentPadding,
+                minHeight: '100vh'
+            }}
+        >
             <RegisterMetricsRow
                 metrics={metrics}
                 isDepartmentScopedView={isDepartmentScopedView}
@@ -169,8 +273,15 @@ export default function SMERiskRegisterPage({ programId: programIdProp, parentPa
             <div style={{ height: 16 }} />
 
             <MotionCard
-                styles={{ body: { padding: 0 } }}
-                filterBarProps={{ marginBottom: 0, padding: 16 }}
+                styles={{
+                    body: {
+                        padding: 0
+                    }
+                }}
+                filterBarProps={{
+                    marginBottom: 0,
+                    padding: 14
+                }}
                 filterBar={
                     <RegisterFilterBar
                         isDepartmentScopedView={isDepartmentScopedView}
@@ -181,55 +292,42 @@ export default function SMERiskRegisterPage({ programId: programIdProp, parentPa
                         coverageFilter={coverageFilter}
                         onCoverageFilterChange={setCoverageFilter}
                         serviceRecencyFilter={serviceRecencyFilter}
-                        onServiceRecencyFilterChange={setServiceRecencyFilter}
+                        onServiceRecencyFilterChange={
+                            setServiceRecencyFilter
+                        }
                         onOpenAnalytics={() => setAnalyticsOpen(true)}
                     />
                 }
+            >
+                <RegisterTable
+                    loading={false}
+                    rows={filteredRows}
+                    isDepartmentScopedView={isDepartmentScopedView}
+                    onViewRow={setSelectedRow}
+                />
+            </MotionCard>
+
+            <SMEDetailModal
+                open={Boolean(selectedRow)}
+                row={selectedRow}
+                onClose={() => setSelectedRow(null)}
+                isDepartmentScopedView={isDepartmentScopedView}
+                resolvedProgramId={resolvedProgramId}
+                scopedDepartmentId={scopedDepartment?.departmentId}
+                scopedDepartmentName={scopedDepartment?.departmentName}
+                getSMEChallenges={getSMEChallenges}
+                getCommunicationAttempts={getCommunicationAttempts}
+                getReminderEmails={getReminderEmails}
+                getBounceStatus={getBounceStatus}
             />
-
-            <div style={{ height: 16 }} />
-
-            <Row gutter={[16, 16]} align="top">
-                <Col xs={24} xl={10}>
-                    <MotionCard>
-                        <RegisterTable
-                            loading={false}
-                            rows={filteredRows}
-                            isDepartmentScopedView={isDepartmentScopedView}
-                            expectedDepartmentsLabel={expectedDepartmentsLabel}
-                            servicedDepartmentsLabel={servicedDepartmentsLabel}
-                            missingDepartmentsLabel={missingDepartmentsLabel}
-                            selectedKey={selectedRow?.key}
-                            onViewRow={setSelectedRow}
-                        />
-                    </MotionCard>
-                </Col>
-                <Col xs={24} xl={14}>
-                    <SMEDetailModal
-                        row={selectedRow}
-                        isDepartmentScopedView={isDepartmentScopedView}
-                        resolvedProgramId={resolvedProgramId}
-                        scopedDepartmentId={scopedDepartment?.departmentId}
-                        scopedDepartmentName={scopedDepartment?.departmentName}
-                        getSMEChallenges={getSMEChallenges}
-                        getCommunicationAttempts={getCommunicationAttempts}
-                        getReminderEmails={getReminderEmails}
-                        getBounceStatus={getBounceStatus}
-                    />
-                </Col>
-            </Row>
 
             <AnalyticsModal
                 open={analyticsOpen}
                 onClose={() => setAnalyticsOpen(false)}
                 isDepartmentScopedView={isDepartmentScopedView}
                 departmentScopeLabel={departmentScopeLabel}
-                metrics={metrics}
-                missingDeptChartData={missingDeptChartData}
-                servicedTouchRows={servicedTouchRows}
-                neglectedRows={neglectedRows}
+                rows={filteredRows}
             />
-
         </div>
     )
 }

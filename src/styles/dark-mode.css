@@ -304,7 +304,7 @@ html[data-theme="dark"] .workspace-more-card-arrow {
 }
 
 html[data-theme="dark"] .workspace-bottom-nav {
-    border-top-color: var(--app-border);
+    border-color: var(--app-border);
     background: rgba(20, 24, 31, 0.94);
     box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.45);
 }

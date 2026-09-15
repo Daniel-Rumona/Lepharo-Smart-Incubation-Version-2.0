@@ -335,7 +335,6 @@ async function getTemplateById(templateId?: string | null) {
  *  =========================== */
 export const IncubateeDashboard: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
-    const userRole = user?.role
     const screens = useBreakpoint()
     const navigate = useNavigate()
     const { activeProgramId } = useActiveProgramId()
@@ -860,30 +859,30 @@ export const IncubateeDashboard: React.FC = () => {
             async snap => {
                 const currentRevision = ++revision
                 try {
-                const hydrated = await hydrateAppointmentViews(
-                    snap.docs.map(d => ({ id: d.id, data: d.data() as any }))
-                )
-                const hydratedRows = hydrated
-                    .map(d => normalizeAppointmentRecord(d.id, d) as Appointment)
-                if (disposed || currentRevision !== revision) return
-                setAllParticipantAppointments(hydratedRows)
-                const rows = hydratedRows
-                    .filter(a => {
-                        if (['cancelled', 'canceled', 'completed'].includes(String(a.status || '').toLowerCase())) return false
-                        const date = (a.date && fmtDateStr(a.date)) || '-'
-                        if (date === '-') return true // keep if missing date, still show it
-                        if (date > todayStr) return true
-                        if (date < todayStr) return false
+                    const hydrated = await hydrateAppointmentViews(
+                        snap.docs.map(d => ({ id: d.id, data: d.data() as any }))
+                    )
+                    const hydratedRows = hydrated
+                        .map(d => normalizeAppointmentRecord(d.id, d) as Appointment)
+                    if (disposed || currentRevision !== revision) return
+                    setAllParticipantAppointments(hydratedRows)
+                    const rows = hydratedRows
+                        .filter(a => {
+                            if (['cancelled', 'canceled', 'completed'].includes(String(a.status || '').toLowerCase())) return false
+                            const date = (a.date && fmtDateStr(a.date)) || '-'
+                            if (date === '-') return true // keep if missing date, still show it
+                            if (date > todayStr) return true
+                            if (date < todayStr) return false
 
-                        // Same day: only hide it once its end (or start) time has actually passed.
-                        const timeStr = fmtTimeFromAny(a.endTime) || fmtTimeFromAny(a.startTime)
-                        if (!timeStr) return true
-                        const cutoff = dayjs(`${date} ${timeStr}`, 'YYYY-MM-DD HH:mm')
-                        return !cutoff.isValid() || cutoff.isAfter(dayjs())
-                    })
-                setAppointments(rows)
-                setAppointmentsLoading(false)
-                setAppointmentError('')
+                            // Same day: only hide it once its end (or start) time has actually passed.
+                            const timeStr = fmtTimeFromAny(a.endTime) || fmtTimeFromAny(a.startTime)
+                            if (!timeStr) return true
+                            const cutoff = dayjs(`${date} ${timeStr}`, 'YYYY-MM-DD HH:mm')
+                            return !cutoff.isValid() || cutoff.isAfter(dayjs())
+                        })
+                    setAppointments(rows)
+                    setAppointmentsLoading(false)
+                    setAppointmentError('')
                 } catch (error) {
                     if (disposed || currentRevision !== revision) return
                     console.error('Dashboard appointment hydration failed:', error)
@@ -1078,7 +1077,7 @@ export const IncubateeDashboard: React.FC = () => {
                             title: item.interventionTitle,
                             subIntervention:
                                 subIntervention &&
-                                subIntervention.toLowerCase() !== String(item.interventionTitle || '').trim().toLowerCase()
+                                    subIntervention.toLowerCase() !== String(item.interventionTitle || '').trim().toLowerCase()
                                     ? subIntervention
                                     : '',
                             facilitator: facilitator || 'Not assigned yet',
@@ -1623,8 +1622,8 @@ export const IncubateeDashboard: React.FC = () => {
 
         if (!user?.signatureURL) {
             Modal.confirm({
-            okButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
-            cancelButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
+                okButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
+                cancelButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
                 title: 'Signature required',
                 content:
                     'You must add your signature in Account Settings before you can confirm intervention completion.',
@@ -1826,80 +1825,80 @@ export const IncubateeDashboard: React.FC = () => {
     }, [scheduleRows])
 
     const renderScheduleActions = (r: ScheduleRow) => {
-                const isPending = String(r.confirmState || 'pending').toLowerCase() === 'pending'
-                const isConfirmed = String(r.confirmState || '').toLowerCase() === 'confirmed'
-                const hasFoodMenu =
-                    r.raw?.deliveryMethod === 'in_person' &&
-                    r.raw?.foodMenuEnabled &&
-                    getFoodMenuItems(r.raw as Appointment).length > 0
-                const hasFoodSelection =
-                    (getFoodSelectionsForParticipant(r.raw as Appointment, participantId) || []).length > 0
+        const isPending = String(r.confirmState || 'pending').toLowerCase() === 'pending'
+        const isConfirmed = String(r.confirmState || '').toLowerCase() === 'confirmed'
+        const hasFoodMenu =
+            r.raw?.deliveryMethod === 'in_person' &&
+            r.raw?.foodMenuEnabled &&
+            getFoodMenuItems(r.raw as Appointment).length > 0
+        const hasFoodSelection =
+            (getFoodSelectionsForParticipant(r.raw as Appointment, participantId) || []).length > 0
 
-                return (
-                    <Space data-guide="incubatee-schedule-actions" wrap style={{ marginTop: 8 }}>
+        return (
+            <Space data-guide="incubatee-schedule-actions" wrap style={{ marginTop: 8 }}>
+                <Button
+                    size="small"
+                    onClick={() => {
+                        setSelectedAppt(r.raw as Appointment)
+                        setApptDetailsOpen(true)
+                    }}
+                >
+                    Details
+                </Button>
+
+                {r.link ? (
+                    <Button
+                        size="small"
+                        shape="round"
+                        variant="filled"
+                        color="green"
+                        style={{ border: '1px solid green' }}
+                        icon={<EyeOutlined />}
+                        onClick={() => window.open(r.link, '_blank')}
+                    >
+                        Open Link
+                    </Button>
+                ) : null}
+
+                {isConfirmed && hasFoodMenu ? (
+                    <Button
+                        size="small"
+                        shape="round"
+                        onClick={() => openAppointmentFoodMenu(r.raw as Appointment)}
+                    >
+                        {hasFoodSelection ? 'Update Food' : 'Choose Food'}
+                    </Button>
+                ) : null}
+
+                {isPending && (
+                    <>
                         <Button
                             size="small"
-                            onClick={() => {
-                                setSelectedAppt(r.raw as Appointment)
-                                setApptDetailsOpen(true)
-                            }}
+                            shape="round"
+                            variant="filled"
+                            color="geekblue"
+                            style={{ border: '1px solid dodgerblue' }}
+                            type="primary"
+                            icon={<CheckCircleOutlined />}
+                            onClick={() => handleConfirmAppointment(r.raw as Appointment)}
                         >
-                            Details
+                            Confirm
                         </Button>
-
-                        {r.link ? (
-                            <Button
-                                size="small"
-                                shape="round"
-                                variant="filled"
-                                color="green"
-                                style={{ border: '1px solid green' }}
-                                icon={<EyeOutlined />}
-                                onClick={() => window.open(r.link, '_blank')}
-                            >
-                                Open Link
-                            </Button>
-                        ) : null}
-
-                        {isConfirmed && hasFoodMenu ? (
-                            <Button
-                                size="small"
-                                shape="round"
-                                onClick={() => openAppointmentFoodMenu(r.raw as Appointment)}
-                            >
-                                {hasFoodSelection ? 'Update Food' : 'Choose Food'}
-                            </Button>
-                        ) : null}
-
-                        {isPending && (
-                            <>
-                                <Button
-                                    size="small"
-                                    shape="round"
-                                    variant="filled"
-                                    color="geekblue"
-                                    style={{ border: '1px solid dodgerblue' }}
-                                    type="primary"
-                                    icon={<CheckCircleOutlined />}
-                                    onClick={() => handleConfirmAppointment(r.raw as Appointment)}
-                                >
-                                    Confirm
-                                </Button>
-                                <Button
-                                    size="small"
-                                    danger
-                                    shape="round"
-                                    variant="filled"
-                                    style={{ border: '1px solid red' }}
-                                    icon={<CloseOutlined />}
-                                    onClick={() => openDeclineAppointment(r.id)}
-                                >
-                                    Decline
-                                </Button>
-                            </>
-                        )}
-                    </Space>
-                )
+                        <Button
+                            size="small"
+                            danger
+                            shape="round"
+                            variant="filled"
+                            style={{ border: '1px solid red' }}
+                            icon={<CloseOutlined />}
+                            onClick={() => openDeclineAppointment(r.id)}
+                        >
+                            Decline
+                        </Button>
+                    </>
+                )}
+            </Space>
+        )
     }
 
     /** -----------------
@@ -1978,231 +1977,231 @@ export const IncubateeDashboard: React.FC = () => {
                             {(pendingInterventions.length > 0 || hasUrgentAction || pendingDpConfirmations.length > 0) && (
                                 <Col span={24}>
                                     <div className={pendingInterventions.length > 0 && (hasUrgentAction || pendingDpConfirmations.length > 0) ? 'incubatee-action-layout' : 'incubatee-action-layout incubatee-action-layout-single'}>
-                            {/* Completion decisions are placed first so they are visible above the fold. */}
-                            {pendingInterventions.length > 0 && (
-                                <div className="incubatee-completion-column">
-                                    <Card
-                                        data-guide="incubatee-pending-completions"
-                                        className="incubatee-dashboard-pending-card"
-                                        size="small"
-                                        style={{
-                                            boxShadow: '0 8px 24px rgba(0,0,0,0.09)',
-                                            borderRadius: 12,
-                                            border: '1px solid #d6e4ff'
-                                        }}
-                                        title={
-                                            <Space>
-                                            <CheckCircleOutlined />
-                                            <span>Pending Completion Confirmations</span>
-                                            {pendingInterventions.length > 0 && (
-                                                <Tag color="orange">{pendingInterventions.length}</Tag>
-                                            )}
-                                        </Space>
-                                    }
-                                >
-                                    {screens.md ? (
-                                            <Table
-                                                className="incubatee-dashboard-pending-table"
-                                                size="small"
-                                                dataSource={pendingInterventions}
-                                                columns={pendingColumns as any}
-                                                rowKey="id"
-                                                scroll={{ x: 'max-content' }}
-                                                pagination={{
-                                                    pageSize: 3,
-                                                    hideOnSinglePage: true,
-                                                    responsive: true,
-                                                    showSizeChanger: false,
-                                                    position: ['bottomCenter']
-                                                }}
-                                            />
-                                        ) : (
-                                            <List
-                                                className='incubatee-dashboard-mobile-list'
-                                                itemLayout="vertical"
-                                                dataSource={pendingInterventions}
-                                                pagination={{
-                                                    pageSize: 3,
-                                                    hideOnSinglePage: true,
-                                                    size: 'small'
-                                                }}
-                                                renderItem={(item: any) => (
-                                                    <List.Item className='incubatee-dashboard-mobile-card'>
-                                                        <List.Item.Meta
-                                                            title={
-                                                                <Space direction="vertical" size={0}>
-                                                                    <Text strong>{item.title}</Text>
-                                                                    {item.subIntervention && (
-                                                                        <Text type="secondary" style={{ fontSize: 12 }}>
-                                                                            {item.subIntervention}
-                                                                        </Text>
-                                                                    )}
-                                                                </Space>
-                                                            }
-                                                            description={
-                                                                <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                                                                    <Space wrap>
-                                                                        <Text type="secondary">
-                                                                            Facilitator: {item.facilitator || 'Not assigned yet'}
-                                                                        </Text>
-                                                                        <Text type="secondary">Due: {item.date || '-'}</Text>
-                                                                    </Space>
-                                                                    <div
-                                                                        data-guide="incubatee-completion-actions"
-                                                                        className='incubatee-dashboard-card-actions'
-                                                                    >
-                                                                        <Button
-                                                                            size="small"
-                                                                            type="primary"
-                                                                            icon={<CheckCircleOutlined />}
-                                                                            onClick={() => {
-                                                                                requireSignatureForCompletion(() => {
-                                                                                    setSelectedIntervention(item.full)
-                                                                                    setCompletionReviewStep(0)
-                                                                                    setConfirmModalVisible(true)
-                                                                                })
-                                                                            }}
-                                                                        >
-                                                                            Confirm
-                                                                        </Button>
-                                                                        <Button
-                                                                            size="small"
-                                                                            danger
-                                                                            icon={<CloseOutlined />}
-                                                                            onClick={() => {
-                                                                                setSelectedIntervention(item.full)
-                                                                                setIsRejectModalVisible(true)
-                                                                            }}
-                                                                        >
-                                                                            Reject
-                                                                        </Button>
-                                                                    </div>
-                                                                </Space>
-                                                            }
-                                                        />
-                                                    </List.Item>
-                                                )}
-                                            />
-                                        )}
-                                </Card>
-                                </div>
-                            )}
-
-                            <div className="incubatee-action-sidebar">
-                            {/* Urgent documents sit beside confirmations on desktop. */}
-                            {hasUrgentAction && (
-                                <div>
-                                    <Card
-                                        data-guide="incubatee-urgent-action"
-                                        size="small"
-                                        hoverable
-                                        title="Urgent Action"
-                                        extra={
-                                            <Space>
-                                                {otherUnsignedCount > 0 && (
-                                                    <Button
-                                                        size="small"
-                                                        onClick={() => navigate('/incubatee/documents/compliance')}
-                                                        icon={<FileDoneOutlined />}
-                                                    >
-                                                        View All
-                                                    </Button>
-                                                )}
-                                                <Tag color="red">{urgentItems.length}</Tag>
-                                            </Space>
-                                        }
-                                        style={{
-                                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                            transition: 'all 0.3s ease',
-                                            borderRadius: 12,
-                                            border: '1px solid #d6e4ff'
-                                        }}
-                                    >
-                                        <List
-                                            className='incubatee-urgent-list'
-                                            itemLayout="horizontal"
-                                            dataSource={urgentItems.slice(0, 3)}
-                                            renderItem={(it: UrgentItem) => (
-                                                <List.Item
-                                                    actions={[
-                                                        <Button key="go" type="primary" size="small" onClick={it.onClick}>
-                                                            {it.cta}
-                                                        </Button>
-                                                    ]}
-                                                >
-                                                    <List.Item.Meta
-                                                        title={
-                                                            <>
-                                                                {it.title}{' '}
-                                                                <Tag color={it.kind === 'survey' ? 'blue' : 'purple'}>
-                                                                    {it.tag || (it.kind === 'survey' ? 'Survey' : 'Contract')}
-                                                                </Tag>
-                                                            </>
-                                                        }
-                                                        description={it.subtitle}
-                                                    />
-                                                </List.Item>
-                                            )}
-                                        />
-                                    </Card>
-                                </div>
-                            )}
-
-                            {pendingDpConfirmations.length > 0 && (
-                                <div>
-                                    <Card
-                                        data-guide="incubatee-pending-dp-confirmations"
-                                        size="small"
-                                        title={
-                                            <Space size={6} wrap>
-                                                <FileDoneOutlined />
-                                                <span>Pending DP Confirmations</span>
-                                                <Tag color="orange">{pendingDpConfirmations.length}</Tag>
-                                            </Space>
-                                        }
-                                        extra={
-                                            <Button
-                                                type="link"
-                                                size="small"
-                                                onClick={() => navigate('/incubatee/roadmap')}
-                                            >
-                                                View all
-                                            </Button>
-                                        }
-                                        style={{
-                                            width: '100%',
-                                            maxWidth: '100%',
-                                            borderRadius: 12,
-                                            border: '1px solid #d6e4ff',
-                                            boxShadow: '0 8px 24px rgba(0,0,0,0.09)'
-                                        }}
-                                    >
-                                        <List
-                                            size="small"
-                                            dataSource={pendingDpConfirmations.slice(0, 3)}
-                                            renderItem={item => (
-                                                <List.Item
+                                        {/* Completion decisions are placed first so they are visible above the fold. */}
+                                        {pendingInterventions.length > 0 && (
+                                            <div className="incubatee-completion-column">
+                                                <Card
+                                                    data-guide="incubatee-pending-completions"
+                                                    className="incubatee-dashboard-pending-card"
+                                                    size="small"
                                                     style={{
-                                                        display: 'flex',
-                                                        justifyContent: 'space-between',
-                                                        gap: 16,
-                                                        paddingInline: 0
+                                                        boxShadow: '0 8px 24px rgba(0,0,0,0.09)',
+                                                        borderRadius: 12,
+                                                        border: '1px solid #d6e4ff'
                                                     }}
+                                                    title={
+                                                        <Space>
+                                                            <CheckCircleOutlined />
+                                                            <span>Pending Completion Confirmations</span>
+                                                            {pendingInterventions.length > 0 && (
+                                                                <Tag color="orange">{pendingInterventions.length}</Tag>
+                                                            )}
+                                                        </Space>
+                                                    }
                                                 >
-                                                    <Text strong>{item.departmentName}</Text>
-                                                    <Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
-                                                        {item.departmentCompletedAt
-                                                            ? dayjs(item.departmentCompletedAt).format('DD MMM YYYY')
-                                                            : 'Date unavailable'}
-                                                    </Text>
-                                                </List.Item>
-                                            )}
-                                        />
-                                    </Card>
-                                </div>
-                            )}
+                                                    {screens.md ? (
+                                                        <Table
+                                                            className="incubatee-dashboard-pending-table"
+                                                            size="small"
+                                                            dataSource={pendingInterventions}
+                                                            columns={pendingColumns as any}
+                                                            rowKey="id"
+                                                            scroll={{ x: 'max-content' }}
+                                                            pagination={{
+                                                                pageSize: 3,
+                                                                hideOnSinglePage: true,
+                                                                responsive: true,
+                                                                showSizeChanger: false,
+                                                                position: ['bottomCenter']
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <List
+                                                            className='incubatee-dashboard-mobile-list'
+                                                            itemLayout="vertical"
+                                                            dataSource={pendingInterventions}
+                                                            pagination={{
+                                                                pageSize: 3,
+                                                                hideOnSinglePage: true,
+                                                                size: 'small'
+                                                            }}
+                                                            renderItem={(item: any) => (
+                                                                <List.Item className='incubatee-dashboard-mobile-card'>
+                                                                    <List.Item.Meta
+                                                                        title={
+                                                                            <Space direction="vertical" size={0}>
+                                                                                <Text strong>{item.title}</Text>
+                                                                                {item.subIntervention && (
+                                                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                                        {item.subIntervention}
+                                                                                    </Text>
+                                                                                )}
+                                                                            </Space>
+                                                                        }
+                                                                        description={
+                                                                            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                                                                <Space wrap>
+                                                                                    <Text type="secondary">
+                                                                                        Facilitator: {item.facilitator || 'Not assigned yet'}
+                                                                                    </Text>
+                                                                                    <Text type="secondary">Due: {item.date || '-'}</Text>
+                                                                                </Space>
+                                                                                <div
+                                                                                    data-guide="incubatee-completion-actions"
+                                                                                    className='incubatee-dashboard-card-actions'
+                                                                                >
+                                                                                    <Button
+                                                                                        size="small"
+                                                                                        type="primary"
+                                                                                        icon={<CheckCircleOutlined />}
+                                                                                        onClick={() => {
+                                                                                            requireSignatureForCompletion(() => {
+                                                                                                setSelectedIntervention(item.full)
+                                                                                                setCompletionReviewStep(0)
+                                                                                                setConfirmModalVisible(true)
+                                                                                            })
+                                                                                        }}
+                                                                                    >
+                                                                                        Confirm
+                                                                                    </Button>
+                                                                                    <Button
+                                                                                        size="small"
+                                                                                        danger
+                                                                                        icon={<CloseOutlined />}
+                                                                                        onClick={() => {
+                                                                                            setSelectedIntervention(item.full)
+                                                                                            setIsRejectModalVisible(true)
+                                                                                        }}
+                                                                                    >
+                                                                                        Reject
+                                                                                    </Button>
+                                                                                </div>
+                                                                            </Space>
+                                                                        }
+                                                                    />
+                                                                </List.Item>
+                                                            )}
+                                                        />
+                                                    )}
+                                                </Card>
+                                            </div>
+                                        )}
 
-                            </div>
+                                        <div className="incubatee-action-sidebar">
+                                            {/* Urgent documents sit beside confirmations on desktop. */}
+                                            {hasUrgentAction && (
+                                                <div>
+                                                    <Card
+                                                        data-guide="incubatee-urgent-action"
+                                                        size="small"
+                                                        hoverable
+                                                        title="Urgent Action"
+                                                        extra={
+                                                            <Space>
+                                                                {otherUnsignedCount > 0 && (
+                                                                    <Button
+                                                                        size="small"
+                                                                        onClick={() => navigate('/incubatee/documents/compliance')}
+                                                                        icon={<FileDoneOutlined />}
+                                                                    >
+                                                                        View All
+                                                                    </Button>
+                                                                )}
+                                                                <Tag color="red">{urgentItems.length}</Tag>
+                                                            </Space>
+                                                        }
+                                                        style={{
+                                                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+                                                            transition: 'all 0.3s ease',
+                                                            borderRadius: 12,
+                                                            border: '1px solid #d6e4ff'
+                                                        }}
+                                                    >
+                                                        <List
+                                                            className='incubatee-urgent-list'
+                                                            itemLayout="horizontal"
+                                                            dataSource={urgentItems.slice(0, 3)}
+                                                            renderItem={(it: UrgentItem) => (
+                                                                <List.Item
+                                                                    actions={[
+                                                                        <Button key="go" type="primary" size="small" onClick={it.onClick}>
+                                                                            {it.cta}
+                                                                        </Button>
+                                                                    ]}
+                                                                >
+                                                                    <List.Item.Meta
+                                                                        title={
+                                                                            <>
+                                                                                {it.title}{' '}
+                                                                                <Tag color={it.kind === 'survey' ? 'blue' : 'purple'}>
+                                                                                    {it.tag || (it.kind === 'survey' ? 'Survey' : 'Contract')}
+                                                                                </Tag>
+                                                                            </>
+                                                                        }
+                                                                        description={it.subtitle}
+                                                                    />
+                                                                </List.Item>
+                                                            )}
+                                                        />
+                                                    </Card>
+                                                </div>
+                                            )}
+
+                                            {pendingDpConfirmations.length > 0 && (
+                                                <div>
+                                                    <Card
+                                                        data-guide="incubatee-pending-dp-confirmations"
+                                                        size="small"
+                                                        title={
+                                                            <Space size={6} wrap>
+                                                                <FileDoneOutlined />
+                                                                <span>Pending DP Confirmations</span>
+                                                                <Tag color="orange">{pendingDpConfirmations.length}</Tag>
+                                                            </Space>
+                                                        }
+                                                        extra={
+                                                            <Button
+                                                                type="link"
+                                                                size="small"
+                                                                onClick={() => navigate('/incubatee/roadmap')}
+                                                            >
+                                                                View all
+                                                            </Button>
+                                                        }
+                                                        style={{
+                                                            width: '100%',
+                                                            maxWidth: '100%',
+                                                            borderRadius: 12,
+                                                            border: '1px solid #d6e4ff',
+                                                            boxShadow: '0 8px 24px rgba(0,0,0,0.09)'
+                                                        }}
+                                                    >
+                                                        <List
+                                                            size="small"
+                                                            dataSource={pendingDpConfirmations.slice(0, 3)}
+                                                            renderItem={item => (
+                                                                <List.Item
+                                                                    style={{
+                                                                        display: 'flex',
+                                                                        justifyContent: 'space-between',
+                                                                        gap: 16,
+                                                                        paddingInline: 0
+                                                                    }}
+                                                                >
+                                                                    <Text strong>{item.departmentName}</Text>
+                                                                    <Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
+                                                                        {item.departmentCompletedAt
+                                                                            ? dayjs(item.departmentCompletedAt).format('DD MMM YYYY')
+                                                                            : 'Date unavailable'}
+                                                                    </Text>
+                                                                </List.Item>
+                                                            )}
+                                                        />
+                                                    </Card>
+                                                </div>
+                                            )}
+
+                                        </div>
                                     </div>
                                 </Col>
                             )}
@@ -2234,8 +2233,10 @@ export const IncubateeDashboard: React.FC = () => {
                             {complianceError || requirementsError ? <Alert type="error" showIcon message={complianceError || requirementsError} /> :
                                 <List loading={complianceLoading || requirementsLoading}
                                     dataSource={outstandingComplianceRows}
-                                    locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                        description={!acceptedApp ? 'No accepted programme application found.' : complianceRows.length ? 'All required compliance documents are up to date.' : 'No compliance document requirements configured yet.'} /> }}
+                                    locale={{
+                                        emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                            description={!acceptedApp ? 'No accepted programme application found.' : complianceRows.length ? 'All required compliance documents are up to date.' : 'No compliance document requirements configured yet.'} />
+                                    }}
                                     renderItem={row => <List.Item key={row.key}>
                                         <List.Item.Meta title={row.title}
                                             description={row.expiry ? `Expiry: ${dayjs(row.expiry).format('D MMM YYYY')}` : undefined} />

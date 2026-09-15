@@ -1,900 +1,820 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
-    Card,
-    Row,
-    Col,
-    Statistic,
-    Typography,
-    List,
-    Tag,
-    Space,
-    Tabs,
-    Progress,
     Button,
-    Table,
-    Avatar,
-    Drawer,
-    message,
-    Spin,
+    Col,
+    Empty,
     Input,
+    List,
     Modal,
-    Empty
+    Progress,
+    Row,
+    Space,
+    Tag,
+    Typography,
+    message
 } from 'antd'
 import {
     BarChartOutlined,
-    TeamOutlined,
-    RiseOutlined,
-    ClockCircleOutlined,
     CheckCircleOutlined,
-    WarningOutlined,
-    DollarOutlined,
-    FundOutlined,
-    PieChartOutlined,
-    ProjectOutlined,
+    CheckOutlined,
+    CloseOutlined,
     FileTextOutlined,
-    CloseCircleOutlined,
-    CalendarOutlined,
-    ApartmentOutlined,
-    BellOutlined,
-    AreaChartOutlined
+    RiseOutlined,
+    TeamOutlined,
+    EyeOutlined
 } from '@ant-design/icons'
-import { useEffect } from 'react'
-// Collection-aware approve/reject updaters
 import {
-    addDoc,
     collection,
+    doc,
     getDocs,
     query,
-    where,
-    doc,
-    updateDoc
+    serverTimestamp,
+    updateDoc,
+    where
 } from 'firebase/firestore'
-import { db } from '@/firebase'
 import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
+
+import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import SectorAnalysis from '@/components/dashboards/director/charts/SectorAnalysis'
-import PortfolioCompanies from '@/components/dashboards/director/charts/PortfolioCompanies'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 
-const { Title, Text, Paragraph } = Typography
-const { TabPane } = Tabs
+const { Text, Title } = Typography
 
-const sampleFinancialData = [
-    {
-        category: 'Project Management',
-        allocated: 120000,
-        spent: 95000,
-        remaining: 25000
-    },
-    {
-        category: 'Facilities',
-        allocated: 200000,
-        spent: 170000,
-        remaining: 30000
-    },
-    {
-        category: 'Program Marketing',
-        allocated: 80000,
-        spent: 65000,
-        remaining: 15000
-    },
-    { category: 'Events', allocated: 50000, spent: 42000, remaining: 8000 },
-    {
-        category: 'Technology',
-        allocated: 150000,
-        spent: 110000,
-        remaining: 40000
-    },
-    {
-        category: 'General Admin',
-        allocated: 180000,
-        spent: 160000,
-        remaining: 20000
-    }
-]
-
-const sampleKPIData = [
-    {
-        metric: 'Revenue Growth',
-        target: 25,
-        actual: 32,
-        unit: '%',
-        status: 'Exceeding'
-    },
-    {
-        metric: 'Funding Secured',
-        target: 5000000,
-        actual: 4200000,
-        unit: '$',
-        status: 'On Track'
-    },
-    {
-        metric: 'Job Creation',
-        target: 120,
-        actual: 97,
-        unit: 'jobs',
-        status: 'At Risk'
-    },
-    {
-        metric: 'Market Expansion',
-        target: 3,
-        actual: 4,
-        unit: 'markets',
-        status: 'Exceeding'
-    },
-    {
-        metric: 'Product Launches',
-        target: 12,
-        actual: 10,
-        unit: 'products',
-        status: 'On Track'
-    }
-]
-
-const sampleResourcesData = [
-    { resource: 'Mentors', allocated: 45, utilized: 38, utilization: 84 },
-    { resource: 'Meeting Rooms', allocated: 8, utilized: 7, utilization: 92 },
-    { resource: 'Event Spaces', allocated: 3, utilized: 2, utilization: 65 },
-    { resource: 'Lab Equipment', allocated: 12, utilized: 8, utilization: 72 },
-    {
-        resource: 'Software Licenses',
-        allocated: 200,
-        utilized: 185,
-        utilization: 93
-    }
-]
-
-const sampleAnalytics = {
-    totalIncubatees: 35,
-    activeProjects: 28,
-    complianceRate: 84,
-    averageProgress: 72,
-    pendingApprovals: 7,
-    upcomingDeadlines: 12,
-    successRate: 76,
-    avgFundingSecured: 850000,
-    activeMentors: 42,
-    resourceUtilization: 78,
-    totalBudget: 1500000,
-    budgetUtilized: 1150000,
-    roi: 2.4
+type DashboardInvoice = {
+    id: string
+    source: 'resourceRequests' | 'consolidatedMOVs'
+    title?: string
+    resourceName?: string
+    department?: string
+    departmentName?: string
+    requestedBy?: string
+    requesterName?: string
+    createdBy?: string
+    createdAt?: any
+    invoiceFile?: string
+    invoiceUrl?: string
+    invoiceAttachment?: any
+    invoiceAttachement?: any
+    invoiceNumber?: string
+    supplier?: string
+    amount?: number
+    description?: string
+    demo?: boolean
+    [key: string]: any
 }
 
-// Sample portfolio data
-const samplePortfolioData = [
-    {
-        id: 1,
-        name: 'TechInnovate',
-        sector: 'FinTech',
-        stage: 'Growth',
-        valuation: 4500000,
-        investment: 750000,
-        progress: 72,
-        metrics: {
-            revenue: 1200000,
-            customers: 5800,
-            employees: 32,
-            growthRate: 68
-        },
-        status: 'Active',
-        risk: 'Low'
-    },
-    {
-        id: 2,
-        name: 'GreenSolutions',
-        sector: 'CleanEnergy',
-        stage: 'Early Growth',
-        valuation: 2800000,
-        investment: 500000,
-        progress: 56,
-        metrics: {
-            revenue: 840000,
-            customers: 1200,
-            employees: 18,
-            growthRate: 42
-        },
-        status: 'Active',
-        risk: 'Medium'
-    },
-    {
-        id: 3,
-        name: 'HealthPlus',
-        sector: 'HealthTech',
-        stage: 'Seed',
-        valuation: 1200000,
-        investment: 300000,
-        progress: 45,
-        metrics: {
-            revenue: 320000,
-            customers: 1500,
-            employees: 12,
-            growthRate: 85
-        },
-        status: 'Warning',
-        risk: 'High'
-    },
-    {
-        id: 4,
-        name: 'EduConnect',
-        sector: 'EdTech',
-        stage: 'Growth',
-        valuation: 3800000,
-        investment: 650000,
-        progress: 81,
-        metrics: {
-            revenue: 950000,
-            customers: 8500,
-            employees: 27,
-            growthRate: 74
-        },
-        status: 'Active',
-        risk: 'Low'
-    },
-    {
-        id: 5,
-        name: 'AgriTech Systems',
-        sector: 'Agriculture',
-        stage: 'Seed',
-        valuation: 950000,
-        investment: 250000,
-        progress: 38,
-        metrics: {
-            revenue: 180000,
-            customers: 450,
-            employees: 8,
-            growthRate: 28
-        },
-        status: 'Warning',
-        risk: 'High'
-    }
-]
-
-const sampleSectorData = [
-    {
-        sector: 'FinTech',
-        companies: 8,
-        totalInvestment: 3200000,
-        averageValuation: 4100000,
-        performance: 72
-    },
-    {
-        sector: 'HealthTech',
-        companies: 6,
-        totalInvestment: 2400000,
-        averageValuation: 2800000,
-        performance: 65
-    },
-    {
-        sector: 'CleanEnergy',
-        companies: 5,
-        totalInvestment: 2100000,
-        averageValuation: 3100000,
-        performance: 58
-    },
-    {
-        sector: 'EdTech',
-        companies: 7,
-        totalInvestment: 2800000,
-        averageValuation: 3600000,
-        performance: 81
-    },
-    {
-        sector: 'Agriculture',
-        companies: 4,
-        totalInvestment: 1500000,
-        averageValuation: 1200000,
-        performance: 42
-    },
-    {
-        sector: 'E-commerce',
-        companies: 5,
-        totalInvestment: 1900000,
-        averageValuation: 2500000,
-        performance: 63
-    }
-]
-
-
-const tsToDate = (ts: any): Date | null => {
-    // Firestore Timestamp or already a Date
-    if (!ts) return null
-    if (typeof ts?.toDate === 'function') return ts.toDate()
-    if (ts instanceof Date) return ts
-    return null
+type DepartmentOverdueRow = {
+    key: string
+    department: string
+    count: number
 }
 
-const pickDepartment = (i: any): string =>
-    i?.department || i?.assignedDepartment || i?.areaOfSupport || 'Unknown'
+const DEMO_INVOICES: DashboardInvoice[] = [
+    {
+        id: 'demo-invoice-001',
+        source: 'resourceRequests',
+        resourceName: 'QMS Certification Support',
+        departmentName: 'Training Academy',
+        requestedBy: 'Nomsa Dlamini',
+        supplier: 'Quality Systems Africa',
+        invoiceNumber: 'QSA-INV-2084',
+        amount: 48500,
+        description: 'QMS certification training and assessment support for the current SME cohort.',
+        createdAt: '2026-09-12T10:30:00+02:00',
+        demo: true
+    },
+    {
+        id: 'demo-invoice-002',
+        source: 'consolidatedMOVs',
+        title: 'Monthly Bookkeeping Intervention',
+        departmentName: 'Financial Compliance',
+        requestedBy: 'Thabo Molefe',
+        supplier: 'Mahlangu Advisory Services',
+        invoiceNumber: 'MAS-0914-44',
+        amount: 32750,
+        description: 'Monthly bookkeeping and financial compliance interventions completed for participating SMEs.',
+        createdAt: '2026-09-11T14:10:00+02:00',
+        demo: true
+    },
+    {
+        id: 'demo-invoice-003',
+        source: 'resourceRequests',
+        resourceName: 'Marketing-in-a-Box Production',
+        departmentName: 'Marketing and Communication',
+        requestedBy: 'Kagiso Mokoena',
+        supplier: 'Brandworks Studio',
+        invoiceNumber: 'BWS-7781',
+        amount: 61400,
+        description: 'Design and production costs for SME marketing collateral and branded materials.',
+        createdAt: '2026-09-10T09:20:00+02:00',
+        demo: true
+    },
+    {
+        id: 'demo-invoice-004',
+        source: 'consolidatedMOVs',
+        title: 'HSE Compliance Workshop',
+        departmentName: 'HSE and Labour Compliance',
+        requestedBy: 'Lerato Nkosi',
+        supplier: 'SafeWork Consulting',
+        invoiceNumber: 'SWC-2609-18',
+        amount: 28900,
+        description: 'HSE and labour compliance workshop delivery with supporting intervention evidence.',
+        createdAt: '2026-09-09T16:45:00+02:00',
+        demo: true
+    }
+]
+
+const DEMO_DEPARTMENT_OVERDUE: DepartmentOverdueRow[] = [
+    { key: 'hse', department: 'HSE and Labour Compliance', count: 7 },
+    { key: 'training', department: 'Training Academy', count: 6 },
+    { key: 'finance', department: 'Financial Compliance', count: 5 },
+    { key: 'market', department: 'Market Linkages', count: 4 },
+    { key: 'marketing', department: 'Marketing and Communication', count: 3 },
+    { key: 'pds', department: 'Personal Development Services', count: 3 },
+    { key: 'rom', department: 'ROM', count: 2 },
+    { key: 'legal', department: 'Legal Advisory Services', count: 2 },
+    { key: 'wellness', department: 'Wellness Services', count: 1 }
+]
+
+const tsToDate = (value: any): Date | null => {
+    if (!value) return null
+    if (typeof value?.toDate === 'function') return value.toDate()
+    if (value instanceof Date) return value
+
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase()
+
+const getInvoiceUrl = (item: DashboardInvoice): string | undefined => {
+    const attachment = item.invoiceAttachment || item.invoiceAttachement
+
+    return (
+        item.invoiceFile ||
+        item.invoiceUrl ||
+        (typeof attachment === 'string' ? attachment : attachment?.url)
+    )
+}
+
+const getInvoiceTitle = (item: DashboardInvoice) =>
+    item.resourceName ||
+    item.title ||
+    item.departmentName ||
+    item.department ||
+    `Invoice ${item.id}`
+
+const getRequestedBy = (item: DashboardInvoice) =>
+    item.requestedBy || item.requesterName || item.createdBy || 'Unknown'
+
+const getDepartmentName = (
+    intervention: any,
+    departmentNamesById: Record<string, string>
+) => {
+    return (
+        intervention?.snapshot?.departmentName ||
+        intervention?.departmentName ||
+        departmentNamesById[String(intervention?.departmentId || '')] ||
+        intervention?.department ||
+        intervention?.assignedDepartment ||
+        intervention?.areaOfSupport ||
+        'Unknown Department'
+    )
+}
+
+const getProgressPercentage = (intervention: any) => {
+    const raw = intervention?.progress?.percentage ?? intervention?.progressPercentage ?? 0
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 0
+}
+
+const formatCurrency = (value?: number) =>
+    new Intl.NumberFormat('en-ZA', {
+        style: 'currency',
+        currency: 'ZAR',
+        maximumFractionDigits: 0
+    }).format(Number(value || 0))
+
+const sectionCardStyle: React.CSSProperties = {
+    height: '100%',
+    borderRadius: 14,
+    border: '1px solid #e6efff',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.08)'
+}
+
+const metricCardStyle: React.CSSProperties = {
+    minHeight: 112,
+    padding: 20,
+    borderRadius: 14,
+    border: '1px solid #e6efff',
+    background: '#fff',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.08)'
+}
 
 export const DirectorDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState('overview')
-    const [programs, setPrograms] = useState<any[]>([])
-    const [incubatees, setIncubatees] = useState<any[]>([])
-    const [invoicesNeedingApproval, setInvoicesNeedingApproval] = useState<any[]>(
-        []
-    )
-    const [invoiceViewer, setInvoiceViewer] = useState<{
-        open: boolean
-        url?: string
-        title?: string
-    }>({ open: false })
-
-    const [complianceRecords, setComplianceRecords] = useState<any[]>([])
-    const [drawerVisible, setDrawerVisible] = useState(false)
-    const [drawerContent, setDrawerContent] = useState<React.ReactNode>(null)
-    const [notifications, setNotifications] = useState<any[]>([])
-    const [notificationDrawerVisible, setNotificationDrawerVisible] =
-        useState(false)
-    const [overdueInterventions, setOverdueInterventions] = useState<any[]>([])
-    const [pendingApplications, setPendingApplications] = useState<any[]>([])
-    const [loading, setLoading] = useState(false)
     const { user: currentUser } = useFullIdentity()
-    const [requestsNeedingCEOApproval, setRequestsNeedingCEOApproval] = useState<
-        any[]
-    >([])
 
-    useEffect(() => {
-        if (!currentUser?.email) return
-
-        const fetchInvoicesNeedingApproval = async () => {
-            try {
-                // 1) resourceRequests with status pending_ceo_approval
-                const rrSnap = await getDocs(
-                    query(
-                        collection(db, 'resourceRequests'),
-
-                        where('status', '==', 'pending_ceo_approval')
-                    )
-                )
-                const rr = rrSnap.docs.map(d => ({
-                    id: d.id,
-                    source: 'resourceRequests',
-                    ...d.data()
-                }))
-
-                // 2) consolidatedMOVs with same status AND has invoiceAttachment (or invoiceAttachement)
-                const movSnap = await getDocs(
-                    query(
-                        collection(db, 'consolidatedMOVs'),
-
-                        where('status', '==', 'pending_ceo_approval')
-                    )
-                )
-                const movAll = movSnap.docs.map(d => ({
-                    id: d.id,
-                    source: 'consolidatedMOVs',
-                    ...d.data()
-                }))
-
-                const movWithInvoice = movAll.filter(m =>
-                    Boolean(m.invoiceAttachment || m.invoiceAttachement)
-                )
-
-                // Merge & sort (optional: newest first if you have createdAt)
-                const merged = [...rr, ...movWithInvoice].sort((a, b) => {
-                    const aTime = tsToDate(a.createdAt)?.getTime() || 0
-                    const bTime = tsToDate(b.createdAt)?.getTime() || 0
-                    return bTime - aTime
-                })
-
-                setInvoicesNeedingApproval(merged)
-            } catch (err) {
-                console.error('Failed to fetch invoices needing approval:', err)
-            }
-        }
-
-        fetchInvoicesNeedingApproval()
-    }, [currentUser])
-
-    // PROGRAMS
-    useEffect(() => {
-
-        const fetchPrograms = async () => {
-            const q = query(
-                collection(db, 'programs')
-            )
-            const programSnap = await getDocs(q)
-            setPrograms(programSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })))
-        }
-        fetchPrograms()
+    const demoMode = useMemo(() => {
+        if (typeof window === 'undefined') return false
+        return new URLSearchParams(window.location.search).get('demo') === '1'
     }, [])
 
-    // PARTICIPANTS
+    const [loading, setLoading] = useState(true)
+    const [programs, setPrograms] = useState<any[]>([])
+    const [incubatees, setIncubatees] = useState<any[]>([])
+    const [assignedInterventions, setAssignedInterventions] = useState<any[]>([])
+    const [departmentOverdue, setDepartmentOverdue] = useState<DepartmentOverdueRow[]>([])
+    const [invoicesNeedingApproval, setInvoicesNeedingApproval] = useState<DashboardInvoice[]>([])
+    const [invoiceViewer, setInvoiceViewer] = useState<{
+        open: boolean
+        item?: DashboardInvoice
+    }>({ open: false })
+
     useEffect(() => {
-        const fetchParticipants = async () => {
-            const q = query(
-                collection(db, 'applications'),
-                where('applicationStatus', '==', 'accepted'),
-            )
-            const participantSnap = await getDocs(q)
-            setIncubatees(
-                participantSnap.docs.map(doc => {
-                    const data = doc.data()
-                    const docs = data.complianceDocuments || []
-                    const validDocs = docs.filter(doc => doc.status === 'valid')
-                    const totalTypes = 7
-                    const complianceRate = Math.round(
-                        (validDocs.length / totalTypes) * 100
+        const loadDashboard = async () => {
+            if (demoMode) {
+                setPrograms([
+                    { id: 'demo-program-1', status: 'Active' },
+                    { id: 'demo-program-2', status: 'Active' },
+                    { id: 'demo-program-3', status: 'Active' }
+                ])
+                setIncubatees(
+                    Array.from({ length: 42 }, (_, index) => ({
+                        id: `demo-sme-${index + 1}`,
+                        complianceRate: index % 5 === 0 ? 72 : 89
+                    }))
+                )
+                setAssignedInterventions(
+                    Array.from({ length: 56 }, (_, index) => ({
+                        id: `demo-intervention-${index + 1}`,
+                        progress: { percentage: 58 + (index % 35) }
+                    }))
+                )
+                setDepartmentOverdue(DEMO_DEPARTMENT_OVERDUE)
+                setInvoicesNeedingApproval(DEMO_INVOICES)
+                setLoading(false)
+                return
+            }
+
+            setLoading(true)
+
+            try {
+                const [
+                    programSnap,
+                    participantSnap,
+                    departmentSnap,
+                    interventionSnap,
+                    resourceRequestSnap,
+                    movSnap
+                ] = await Promise.all([
+                    getDocs(collection(db, 'programs')),
+                    getDocs(
+                        query(
+                            collection(db, 'applications'),
+                            where('applicationStatus', '==', 'accepted')
+                        )
+                    ),
+                    getDocs(collection(db, 'departments')),
+                    getDocs(collection(db, 'assignedInterventions')),
+                    getDocs(
+                        query(
+                            collection(db, 'resourceRequests'),
+                            where('status', '==', 'pending_ceo_approval')
+                        )
+                    ),
+                    getDocs(
+                        query(
+                            collection(db, 'consolidatedMOVs'),
+                            where('status', '==', 'pending_ceo_approval')
+                        )
                     )
+                ])
+
+                const nextPrograms = programSnap.docs.map(programDoc => ({
+                    id: programDoc.id,
+                    ...programDoc.data()
+                }))
+
+                const nextIncubatees = participantSnap.docs.map(participantDoc => {
+                    const data = participantDoc.data() as any
+                    const documents = Array.isArray(data.complianceDocuments)
+                        ? data.complianceDocuments
+                        : []
+                    const validDocuments = documents.filter(
+                        (item: any) => normalizeText(item?.status) === 'valid'
+                    )
+                    const complianceRate = Number.isFinite(Number(data.complianceRate))
+                        ? Number(data.complianceRate)
+                        : Math.round((validDocuments.length / 7) * 100)
+
                     return {
-                        id: doc.id,
+                        id: participantDoc.id,
                         ...data,
                         complianceRate
                     }
                 })
-            )
-        }
-        fetchParticipants()
-    }, [])
 
-    // Load notifications on mount
-    useEffect(() => {
-        if (!currentUser?.uid) return
-        const fetchNotifications = async () => {
-            const q = query(
-                collection(db, 'notifications'),
-                where('recipientIds', 'array-contains', currentUser.uid)
-            )
-            const snapshot = await getDocs(q)
-            setNotifications(
-                snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-            )
-        }
-        fetchNotifications()
-    }, [currentUser])
-
-    useEffect(() => {
-        const fetchApplications = async () => {
-            setLoading(true)
-            try {
-                const applicationSnap = await getDocs(collection(db, 'applications'))
-
-                const now = dayjs()
-
-                const pendingApps = applicationSnap.docs
-                    .map(doc => ({ id: doc.id, ...doc.data() }))
-                    .filter(app => app.applicationStatus?.toLowerCase() === 'pending')
-
-                setPendingApplications(pendingApps)
-                setPendingApplications(pendingApps)
-            } catch (err) {
-                console.error('Failed to fetch overview data:', err)
-            } finally {
-                setLoading(false)
-            }
-        }
-
-        fetchApplications()
-    }, [])
-
-    useEffect(() => {
-        const fetchOverdueInterventions = async () => {
-            setLoading(true)
-            try {
-                const email = currentUser?.email
-                if (!email) return
-
-
-                // 1) Get consultant ids for this company (fallback to empty)
-                const consultantSnap = await getDocs(
-                    query(
-                        collection(db, 'coordinators'),
-
-                    )
+                const departmentNamesById = departmentSnap.docs.reduce<Record<string, string>>(
+                    (acc, departmentDoc) => {
+                        const data = departmentDoc.data() as any
+                        acc[departmentDoc.id] =
+                            data.name || data.departmentName || data.title || 'Unnamed Department'
+                        return acc
+                    },
+                    {}
                 )
-                const consultantIds = consultantSnap.docs.map(d => d.id)
 
-                // 3) Pull assignedInterventions
-                const aiSnap = await getDocs(collection(db, 'assignedInterventions'))
-                const all = aiSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+                const nextAssignedInterventions = interventionSnap.docs.map(interventionDoc => ({
+                    id: interventionDoc.id,
+                    ...interventionDoc.data()
+                }))
+
+                const overdueCounts = new Map<string, number>()
+
+                Object.entries(departmentNamesById).forEach(([departmentId, name]) => {
+                    overdueCounts.set(`${departmentId}:${name}`, 0)
+                })
 
                 const now = new Date()
-                const overdue = all
-                    .filter(i => {
-                        // consultant/company filter
-                        const belongsToCompany = i.assigneeId && consultantIds.includes(i.assigneeId)
 
-                        const due = tsToDate(i.dueDate)
-                        const notDone = i.assigneeCompletionStatus !== 'completed'
-                        return belongsToCompany && !!due && due < now && notDone
-                    })
-                    .map(i => ({
-                        ...i,
-                        department: pickDepartment(i) // <- enrich
+                nextAssignedInterventions.forEach(intervention => {
+                    const dueDate = tsToDate(intervention.dueDate)
+                    const status = normalizeText(intervention.status)
+                    const completionStatus = normalizeText(
+                        intervention.completionStatus || intervention.assigneeCompletionStatus
+                    )
+
+                    const isComplete =
+                        status === 'completed' ||
+                        status === 'cancelled' ||
+                        completionStatus === 'confirmed'
+
+                    if (!dueDate || dueDate >= now || isComplete) return
+
+                    const departmentName = getDepartmentName(intervention, departmentNamesById)
+                    const departmentId = String(intervention.departmentId || departmentName)
+                    const key = `${departmentId}:${departmentName}`
+
+                    overdueCounts.set(key, (overdueCounts.get(key) || 0) + 1)
+                })
+
+                const nextDepartmentOverdue = Array.from(overdueCounts.entries())
+                    .map(([key, count]) => ({
+                        key,
+                        department: key.split(':').slice(1).join(':') || 'Unknown Department',
+                        count
                     }))
+                    .sort((a, b) => b.count - a.count || a.department.localeCompare(b.department))
 
-                setOverdueInterventions(overdue)
-            } catch (err) {
-                console.error('Failed to fetch overdue interventions:', err)
+                const resourceRequests = resourceRequestSnap.docs.map(invoiceDoc => ({
+                    id: invoiceDoc.id,
+                    source: 'resourceRequests' as const,
+                    ...invoiceDoc.data()
+                }))
+
+                const consolidatedMovInvoices = movSnap.docs
+                    .map(invoiceDoc => ({
+                        id: invoiceDoc.id,
+                        source: 'consolidatedMOVs' as const,
+                        ...invoiceDoc.data()
+                    }))
+                    .filter(item => Boolean(getInvoiceUrl(item)))
+
+                const mergedInvoices = [...resourceRequests, ...consolidatedMovInvoices].sort(
+                    (a, b) => {
+                        const aTime = tsToDate(a.createdAt)?.getTime() || 0
+                        const bTime = tsToDate(b.createdAt)?.getTime() || 0
+                        return bTime - aTime
+                    }
+                )
+
+                setPrograms(nextPrograms)
+                setIncubatees(nextIncubatees)
+                setAssignedInterventions(nextAssignedInterventions)
+                setDepartmentOverdue(nextDepartmentOverdue)
+                setInvoicesNeedingApproval(mergedInvoices)
+            } catch (error) {
+                console.error('Failed to load director dashboard:', error)
+                message.error('Could not load the director dashboard.')
             } finally {
                 setLoading(false)
             }
         }
 
-        fetchOverdueInterventions()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+        loadDashboard()
+    }, [demoMode])
 
-    // Safely pick an invoice URL from either collection shape
-    const getInvoiceUrl = (item: any): string | undefined => {
-        return (
-            item.invoiceFile || // resourceRequests
-            item.invoiceUrl || // fallback
-            item?.invoiceAttachment?.url || // consolidatedMOVs
-            item?.invoiceAttachement?.url // misspelling safeguard
+    const totalIncubatees = incubatees.length
+
+    const activePrograms = useMemo(
+        () =>
+            programs.filter(program => {
+                if (program?.isActive === true) return true
+                return normalizeText(program?.status) === 'active'
+            }).length,
+        [programs]
+    )
+
+    const overallComplianceRate = useMemo(() => {
+        if (!incubatees.length) return 0
+
+        const total = incubatees.reduce(
+            (sum, incubatee) => sum + Number(incubatee.complianceRate || 0),
+            0
+        )
+
+        return Math.round(total / incubatees.length)
+    }, [incubatees])
+
+    const averageProgress = useMemo(() => {
+        if (!assignedInterventions.length) return 0
+
+        const total = assignedInterventions.reduce(
+            (sum, intervention) => sum + getProgressPercentage(intervention),
+            0
+        )
+
+        return Math.round(total / assignedInterventions.length)
+    }, [assignedInterventions])
+
+    const totalOverdue = useMemo(
+        () => departmentOverdue.reduce((sum, item) => sum + item.count, 0),
+        [departmentOverdue]
+    )
+
+    const maxDepartmentOverdue = useMemo(
+        () => Math.max(1, ...departmentOverdue.map(item => item.count)),
+        [departmentOverdue]
+    )
+
+    const removeInvoiceLocally = (item: DashboardInvoice) => {
+        setInvoicesNeedingApproval(previous =>
+            previous.filter(
+                current => !(current.id === item.id && current.source === item.source)
+            )
+        )
+
+        setInvoiceViewer(current =>
+            current.item?.id === item.id && current.item?.source === item.source
+                ? { open: false }
+                : current
         )
     }
 
-    const approveInvoice = async (item: any) => {
+    const approveInvoice = async (item: DashboardInvoice) => {
+        if (demoMode || item.demo) {
+            removeInvoiceLocally(item)
+            message.success('Demo invoice approved.')
+            return
+        }
+
         try {
-            const by = currentUser?.email || 'unknown'
-            const now = new Date()
+            const approvedBy = currentUser?.email || currentUser?.uid || 'unknown'
 
-            if (item.source === 'resourceRequests') {
-                await updateDoc(doc(db, 'resourceRequests', item.id), {
-                    status: 'invoice_approved',
-                    ceoApprovedAt: now,
-                    ceoApprovedBy: by
-                })
-            } else if (item.source === 'consolidatedMOVs') {
-                await updateDoc(doc(db, 'consolidatedMOVs', item.id), {
-                    status: 'invoice_approved',
-                    ceoApprovedAt: now,
-                    ceoApprovedBy: by
-                })
-            }
+            await updateDoc(doc(db, item.source, item.id), {
+                status: 'invoice_approved',
+                ceoApprovedAt: serverTimestamp(),
+                ceoApprovedBy: approvedBy
+            })
 
+            removeInvoiceLocally(item)
             message.success('Invoice approved.')
-            // remove from local list
-            setInvoicesNeedingApproval(prev => prev.filter(x => x.id !== item.id))
-        } catch (e) {
-            console.error(e)
+        } catch (error) {
+            console.error('Failed to approve invoice:', error)
             message.error('Failed to approve invoice.')
         }
     }
 
-    const rejectInvoice = async (item: any, reason: string) => {
+    const rejectInvoice = async (item: DashboardInvoice, reason: string) => {
+        if (demoMode || item.demo) {
+            removeInvoiceLocally(item)
+            message.success('Demo invoice rejected.')
+            return
+        }
+
         try {
-            const by = currentUser?.email || 'unknown'
-            const now = new Date()
+            const rejectedBy = currentUser?.email || currentUser?.uid || 'unknown'
 
-            if (item.source === 'resourceRequests') {
-                await updateDoc(doc(db, 'resourceRequests', item.id), {
-                    status: 'invoice_rejected',
-                    ceoRejectedAt: now,
-                    ceoRejectedBy: by,
-                    ceoRejectReason: reason || ''
-                })
-            } else if (item.source === 'consolidatedMOVs') {
-                await updateDoc(doc(db, 'consolidatedMOVs', item.id), {
-                    status: 'invoice_rejected',
-                    ceoRejectedAt: now,
-                    ceoRejectedBy: by,
-                    ceoRejectReason: reason || ''
-                })
-            }
+            await updateDoc(doc(db, item.source, item.id), {
+                status: 'invoice_rejected',
+                ceoRejectedAt: serverTimestamp(),
+                ceoRejectedBy: rejectedBy,
+                ceoRejectReason: reason.trim()
+            })
 
+            removeInvoiceLocally(item)
             message.success('Invoice rejected.')
-            setInvoicesNeedingApproval(prev => prev.filter(x => x.id !== item.id))
-        } catch (e) {
-            console.error(e)
+        } catch (error) {
+            console.error('Failed to reject invoice:', error)
             message.error('Failed to reject invoice.')
         }
     }
 
-    const promptReject = (item: any) => {
-        let input = ''
-        const modal = Modal.confirm({
-            title: 'Reject Invoice',
+    const promptReject = (item: DashboardInvoice) => {
+        let reason = ''
+
+        Modal.confirm({
+            title: 'Reject invoice',
             content: (
                 <Input.TextArea
                     rows={3}
-                    placeholder='Reason (optional)'
-                    onChange={e => (input = e.target.value)}
+                    placeholder='Reason for rejection'
+                    onChange={event => {
+                        reason = event.target.value
+                    }}
                 />
             ),
-            okText: 'Reject',
-            okButtonProps: { danger: true },
-            onOk: () => rejectInvoice(item, input)
+            okText: 'Reject invoice',
+            okButtonProps: { danger: true, shape: 'round' },
+            cancelButtonProps: { shape: 'round' },
+            cancelText: 'Cancel',
+            onOk: () => rejectInvoice(item, reason)
         })
     }
 
-    const getRelevantOpsUsers = async () => {
-        const opsSnap = await getDocs(
-            query(
-                collection(db, 'users'),
-                where('role', '==', 'operations'),
-            )
-        )
-        return opsSnap.docs.map(doc => doc.id) // these are user IDs
-    }
-
-    const getOverallComplianceRate = () => {
-        if (incubatees.length === 0) return 0
-        const total = incubatees.reduce(
-            (sum, p) => sum + (p.complianceRate || 0),
-            0
-        )
-        return Math.round(total / incubatees.length)
-    }
-
-    const getComplianceRate = (participant: any): number => {
-        const docs = participant.complianceDocuments || []
-        const totalRequired = 7 // adjust to match your required doc count
-        const validDocs = docs.filter(doc => doc.status === 'valid')
-        return Math.round((validDocs.length / totalRequired) * 100)
-    }
-
-    const sendNotification = async (payload: any) => {
-        console.log('[🔔 Sending Notification]', payload) // ✅ Add this
-
-        try {
-            await addDoc(collection(db, 'notifications'), {
-                ...payload,
-                createdAt: new Date(),
-                readBy: {}
-            })
-            message.success('Reminder sent.')
-        } catch (err) {
-            console.error('[❌ Failed to send notification]', err)
-            message.error('Could not send notification.')
-        }
-    }
-
-    const remindUser = (intervention: any) => {
-        if (!intervention.assignedRole || !intervention.assignedTo) {
-            console.warn('[⚠️ Missing assignment info] intervention:', intervention)
-            return message.warning(
-                'intervention must have an assigned user and role.'
-            )
-        }
-
-        const isOverdue = dayjs(intervention.dueDate.toDate()).isBefore(
-            dayjs(),
-            'day'
-        )
-        const formattedDate = dayjs(intervention.dueDate.toDate()).format(
-            'YYYY-MM-DD'
-        )
-
-        const role = intervention.assignedRole
-        const messageText = isOverdue
-            ? `🚨 Your intervention "${intervention.title}" is OVERDUE (was due ${formattedDate}). Please take action.`
-            : `⏳ Reminder: Your intervention "${intervention.title}" is due on ${formattedDate}.`
-
-        sendNotification({
-            message: {
-                [role]: messageText
-            },
-            recipientRoles: [role],
-            recipientIds: [intervention.assignedTo]
-        })
-    }
-
-    const overallCompliance = () => {
-        if (!complianceRecords.length) return 0
-        const avg =
-            complianceRecords.reduce((acc, r) => acc + (r.complianceRate || 0), 0) /
-            complianceRecords.length
-        return Math.round(avg)
-    }
-
-    // Format currency values
-    const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat('en-ZA', {
-            style: 'currency',
-            currency: 'ZAR',
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0
-        }).format(value)
-    }
-
-    // Main Dashboard Overview
-    const renderDashboardOverview = () => {
-        return (
-            <>
-                <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-                    <Col xs={24} sm={12} md={8} lg={6}>
-                        <Card
-                            style={{
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                transition: 'all 0.3s ease',
-                                borderRadius: 12,
-                                border: '1px solid #d6e4ff'
-                            }}
-                        >
-                            <Statistic
-                                title='Total Incubatees'
-                                value={incubatees.length}
-                                prefix={<TeamOutlined />}
-                            />
-                        </Card>
+    const renderDemoInvoicePreview = (item: DashboardInvoice) => (
+        <div style={{ maxWidth: 680, margin: '0 auto' }}>
+            <div
+                style={{
+                    padding: 24,
+                    border: '1px solid #e8e8e8',
+                    borderRadius: 14,
+                    background: '#fff'
+                }}
+            >
+                <Row justify='space-between' align='top' gutter={[16, 16]}>
+                    <Col>
+                        <Title level={4} style={{ margin: 0 }}>
+                            Invoice
+                        </Title>
+                        <Text type='secondary'>{item.invoiceNumber}</Text>
                     </Col>
-                    <Col xs={24} sm={12} md={8} lg={6}>
-                        <Card
-                            style={{
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                transition: 'all 0.3s ease',
-                                borderRadius: 12,
-                                border: '1px solid #d6e4ff'
-                            }}
-                        >
-                            <Statistic
-                                title='Active Programs'
-                                value={programs.filter(p => p.status === 'Active').length}
-                                prefix={<BarChartOutlined />}
-                                valueStyle={{ color: '#3f8600' }}
-                            />
-                        </Card>
-                    </Col>
-                    <Col xs={24} sm={12} md={8} lg={6}>
-                        <Card
-                            style={{
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                transition: 'all 0.3s ease',
-                                borderRadius: 12,
-                                border: '1px solid #d6e4ff'
-                            }}
-                        >
-                            <Statistic
-                                title='Compliance Rate'
-                                value={overallCompliance()}
-                                suffix='%'
-                                prefix={<CheckCircleOutlined />}
-                                valueStyle={{
-                                    color: overallCompliance() > 80 ? '#3f8600' : '#cf1322'
-                                }}
-                            />
-                        </Card>
-                    </Col>
-                    <Col xs={24} sm={12} md={8} lg={6}>
-                        <Card
-                            style={{
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                transition: 'all 0.3s ease',
-                                borderRadius: 12,
-                                border: '1px solid #d6e4ff'
-                            }}
-                        >
-                            <Statistic
-                                title='Average Progress'
-                                value={sampleAnalytics.averageProgress}
-                                suffix='%'
-                                prefix={<RiseOutlined />}
-                            />
-                        </Card>
+                    <Col>
+                        <Tag color='gold'>Awaiting Director Approval</Tag>
                     </Col>
                 </Row>
-                <Spin spinning={loading}>
-                    <Row gutter={[16, 16]}>
-                        <Col xs={24} md={12}>
-                            <Card
-                                style={{
-                                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                    transition: 'all 0.3s ease',
-                                    borderRadius: 12,
-                                    border: '1px solid #d6e4ff'
-                                }}
-                                title='🔴 Overdue Interventions'
-                            >
-                                <List
-                                    dataSource={overdueInterventions}
-                                    locale={{ emptyText: 'No overdue interventions 🎉' }}
-                                    pagination={{
-                                        pageSize: 5,
-                                        responsive: true,
-                                        showSizeChanger: false
-                                    }}
-                                    renderItem={(item: any) => (
-                                        <List.Item
-                                            style={{
-                                                display: 'flex',
-                                                flexWrap: 'wrap', // ✅ ensures responsiveness on small screens
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center'
-                                            }}
-                                        >
-                                            <div style={{ flex: 1, minWidth: 200 }}>
-                                                <Text strong>
-                                                    {item.interventionTitle ||
-                                                        item.title ||
-                                                        'Untitled Intervention'}
-                                                </Text>
-                                                <br />
-                                                <Text type='secondary'>
-                                                    Due:{' '}
-                                                    {tsToDate(item.dueDate)
-                                                        ? dayjs(tsToDate(item.dueDate)!).format(
-                                                            'YYYY-MM-DD'
-                                                        )
-                                                        : 'Unknown'}
-                                                </Text>
-                                            </div>
 
-                                            <Space wrap style={{ marginTop: 8 }}>
-                                                <Tag color='red'>Overdue</Tag>
-                                                {item.beneficiaryName && (
-                                                    <Tag>{item.beneficiaryName}</Tag>
-                                                )}
-                                                <Tag color='geekblue'>{pickDepartment(item)}</Tag>
-                                            </Space>
-                                        </List.Item>
-                                    )}
-                                />
-                            </Card>
-                        </Col>
+                <div style={{ marginTop: 28 }}>
+                    <Text type='secondary'>Supplier</Text>
+                    <div>
+                        <Text strong>{item.supplier || 'Demo Supplier'}</Text>
+                    </div>
+                </div>
 
-                        <Col xs={24} md={12}>
-                            <Card
-                                style={{
-                                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                    transition: 'all 0.3s ease',
-                                    borderRadius: 12,
-                                    border: '1px solid #d6e4ff'
-                                }}
-                                title='🧾 Invoices Needing Approval'
-                            >
-                                <List
-                                    dataSource={invoicesNeedingApproval}
-                                    locale={{ emptyText: 'No invoices awaiting CEO approval 🎉' }}
-                                    pagination={{
-                                        pageSize: 5,
-                                        responsive: true,
-                                        showSizeChanger: false
-                                    }}
-                                    renderItem={(item: any) => {
-                                        const hasAttachment = Boolean(
-                                            item.invoiceAttachment || item.invoiceAttachement
+                <Row gutter={[16, 16]} style={{ marginTop: 20 }}>
+                    <Col xs={24} sm={12}>
+                        <Text type='secondary'>Department</Text>
+                        <div>
+                            <Text strong>{item.departmentName || item.department || 'Unknown'}</Text>
+                        </div>
+                    </Col>
+                    <Col xs={24} sm={12}>
+                        <Text type='secondary'>Requested by</Text>
+                        <div>
+                            <Text strong>{getRequestedBy(item)}</Text>
+                        </div>
+                    </Col>
+                </Row>
+
+                <div
+                    style={{
+                        marginTop: 24,
+                        padding: 18,
+                        borderRadius: 12,
+                        background: '#fafafa',
+                        border: '1px solid #f0f0f0'
+                    }}
+                >
+                    <Text type='secondary'>Description</Text>
+                    <div style={{ marginTop: 4 }}>
+                        <Text>{item.description || getInvoiceTitle(item)}</Text>
+                    </div>
+                </div>
+
+                <Row justify='space-between' align='bottom' style={{ marginTop: 28 }}>
+                    <Col>
+                        <Text type='secondary'>Submitted</Text>
+                        <div>
+                            <Text strong>
+                                {item.createdAt
+                                    ? dayjs(tsToDate(item.createdAt)).format('DD MMM YYYY, HH:mm')
+                                    : 'Not available'}
+                            </Text>
+                        </div>
+                    </Col>
+                    <Col style={{ textAlign: 'right' }}>
+                        <Text type='secondary'>Total</Text>
+                        <Title level={3} style={{ margin: 0 }}>
+                            {formatCurrency(item.amount)}
+                        </Title>
+                    </Col>
+                </Row>
+            </div>
+        </div>
+    )
+
+    return (
+        <>
+            <Helmet>
+                <title>Director Dashboard | Incubation Platform</title>
+            </Helmet>
+
+            <div style={{ padding: 24, minHeight: '100vh' }}>
+                <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                    <Col xs={24} sm={12} xl={6}>
+                        <MotionCard.Metric
+                            loading={loading}
+                            icon={<TeamOutlined />}
+                            iconBg='rgba(22,119,255,.12)'
+                            title='Total SMEs'
+                            value={totalIncubatees}
+                            subtitle='Accepted into programmes'
+                        />
+                    </Col>
+
+                    <Col xs={24} sm={12} xl={6}>
+                        <MotionCard.Metric
+                            loading={loading}
+                            icon={<BarChartOutlined />}
+                            iconBg='rgba(82,196,26,.12)'
+                            title='Active Programmes'
+                            value={activePrograms}
+                            subtitle='Currently running'
+                        />
+                    </Col>
+
+                    <Col xs={24} sm={12} xl={6}>
+                        <MotionCard.Metric
+                            loading={loading}
+                            icon={<CheckCircleOutlined />}
+                            iconBg='rgba(19,194,194,.12)'
+                            title='Compliance Rate'
+                            value={`${overallComplianceRate}%`}
+                            subtitle='Average across SMEs'
+                        />
+                    </Col>
+
+                    <Col xs={24} sm={12} xl={6}>
+                        <MotionCard.Metric
+                            loading={loading}
+                            icon={<RiseOutlined />}
+                            iconBg='rgba(114,46,209,.12)'
+                            title='Average Progress'
+                            value={`${averageProgress}%`}
+                            subtitle='Across assigned interventions'
+                        />
+                    </Col>
+                </Row>
+
+                <Row gutter={[16, 16]}>
+                    <Col xs={24} xl={11}>
+                        <MotionCard
+                            title={
+                                <Space size={8}>
+                                    <BarChartOutlined />
+                                    <span>Overdue Interventions by Department</span>
+                                </Space>
+                            }
+                            extra={
+                                <Space size={6}>
+                                    <Text type='secondary'>Total overdue</Text>
+                                    <Tag color={totalOverdue > 0 ? 'red' : 'green'}>
+                                        {totalOverdue}
+                                    </Tag>
+                                </Space>
+                            }
+                            loading={loading}
+                            style={sectionCardStyle}
+                        >
+                            {departmentOverdue.length === 0 ? (
+                                <Empty description='No department data available' />
+                            ) : (
+                                <Space direction='vertical' size={16} style={{ width: '100%' }}>
+                                    {departmentOverdue.map(item => {
+                                        const relativePercent = Math.round(
+                                            (item.count / maxDepartmentOverdue) * 100
                                         )
 
-                                        const url =
-                                            item.invoiceFile ||
-                                            item.invoiceUrl ||
-                                            item?.invoiceAttachment?.url ||
-                                            item?.invoiceAttachement?.url
-
-                                        const primary =
-                                            item.resourceName ||
-                                            item.title ||
-                                            item.department ||
-                                            `Invoice ${item.id}`
-
-                                        const requestedBy =
-                                            item.requestedBy ||
-                                            item.requesterName ||
-                                            item.createdBy ||
-                                            'Unknown'
-
                                         return (
-                                            <List.Item
-                                                style={{
-                                                    display: 'flex',
-                                                    flexWrap: 'wrap',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center'
-                                                }}
-                                            >
-                                                {/* LEFT SIDE: Text */}
-                                                <div style={{ flex: 1, minWidth: 220 }}>
-                                                    <Text strong>{primary}</Text>
-                                                    <br />
-                                                    <Text type='secondary'>
-                                                        Requested By: {requestedBy}
-                                                    </Text>
-                                                </div>
-
-                                                {/* RIGHT SIDE: Tags + Buttons */}
+                                            <div key={item.key} style={{ width: '100%' }}>
                                                 <div
                                                     style={{
                                                         display: 'flex',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'flex-end',
-                                                        gap: 8,
-                                                        minWidth: 240
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center',
+                                                        gap: 12,
+                                                        marginBottom: 6
                                                     }}
                                                 >
-                                                    <Space wrap>
-                                                        <Tag color='volcano'>Awaiting Approval</Tag>
+                                                    <Text
+                                                        ellipsis={{ tooltip: item.department }}
+                                                        style={{ minWidth: 0, flex: 1 }}
+                                                    >
+                                                        {item.department}
+                                                    </Text>
+                                                    <Text strong>{item.count}</Text>
+                                                </div>
+                                                <Progress
+                                                    percent={relativePercent}
+                                                    showInfo={false}
+                                                    size='small'
+                                                    status={item.count > 0 ? 'exception' : 'success'}
+                                                />
+                                            </div>
+                                        )
+                                    })}
+                                </Space>
+                            )}
+
+                            <Text
+                                type='secondary'
+                                style={{ display: 'block', marginTop: 16, fontSize: 12 }}
+                            >
+                                Bar length is relative to the department with the highest overdue count.
+                            </Text>
+                        </MotionCard>
+                    </Col>
+
+                    <Col xs={24} xl={13}>
+                        <MotionCard
+                            title={
+                                <Space size={8}>
+                                    <FileTextOutlined />
+                                    <span>Invoices Awaiting Approval</span>
+                                </Space>
+                            }
+                            extra={<Tag color='gold'>{invoicesNeedingApproval.length} pending</Tag>}
+                            loading={loading}
+                            style={sectionCardStyle}
+                        >
+                            <List
+                                dataSource={invoicesNeedingApproval}
+                                locale={{ emptyText: 'No invoices awaiting approval' }}
+                                pagination={
+                                    invoicesNeedingApproval.length > 5
+                                        ? {
+                                            pageSize: 5,
+                                            showSizeChanger: false,
+                                            position: 'bottom',
+                                            align: 'center'
+                                        }
+                                        : false
+                                }
+                                renderItem={item => {
+                                    const url = getInvoiceUrl(item)
+                                    const department =
+                                        item.departmentName || item.department || 'Department not set'
+
+                                    return (
+                                        <List.Item
+                                            style={{
+                                                paddingInline: 0,
+                                                alignItems: 'center',
+                                                gap: 16
+                                            }}
+                                            actions={[
+                                                <Button
+                                                    shape='round'
+                                                    key='view'
+                                                    size='small'
+                                                    icon={<EyeOutlined />}
+                                                    onClick={() => {
+                                                        if (!item.demo && !url) {
+                                                            message.warning('No invoice attachment is available.')
+                                                            return
+                                                        }
+                                                        setInvoiceViewer({ open: true, item })
+                                                    }}
+                                                >
+                                                    View
+                                                </Button>,
+                                                <Button
+                                                    shape='round'
+                                                    key='approve'
+                                                    size='small'
+                                                    type='primary'
+                                                    icon={<CheckOutlined />}
+                                                    onClick={() => approveInvoice(item)}
+                                                >
+                                                    Approve
+                                                </Button>,
+                                                <Button
+                                                    shape='round'
+                                                    key='reject'
+                                                    size='small'
+                                                    danger
+                                                    icon={<CloseOutlined />}
+                                                    onClick={() => promptReject(item)}
+                                                >
+                                                    Reject
+                                                </Button>
+                                            ]}
+                                        >
+                                            <List.Item.Meta
+                                                title={
+                                                    <Space size={8} wrap>
+                                                        <Text strong>{getInvoiceTitle(item)}</Text>
                                                         <Tag
                                                             color={
                                                                 item.source === 'resourceRequests'
@@ -903,118 +823,109 @@ export const DirectorDashboard: React.FC = () => {
                                                             }
                                                         >
                                                             {item.source === 'resourceRequests'
-                                                                ? 'Resource'
+                                                                ? 'Resource Request'
                                                                 : 'MOV'}
                                                         </Tag>
-                                                        <Tag color={hasAttachment ? 'green' : 'red'}>
-                                                            {hasAttachment
-                                                                ? 'Invoice Attached'
-                                                                : 'Missing Invoice'}
-                                                        </Tag>
                                                     </Space>
-
-                                                    <Space>
-                                                        <Button
-                                                            key='view'
-                                                            type='link'
-                                                            onClick={() => {
-                                                                if (!url)
-                                                                    return message.warning('No invoice attached.')
-                                                                setInvoiceViewer({
-                                                                    open: true,
-                                                                    url,
-                                                                    title: primary
-                                                                })
-                                                            }}
-                                                        >
-                                                            View
-                                                        </Button>
-                                                        <Button
-                                                            key='approve'
-                                                            type='primary'
-                                                            onClick={() => approveInvoice(item)}
-                                                        >
-                                                            Approve
-                                                        </Button>
-                                                        <Button
-                                                            key='reject'
-                                                            danger
-                                                            onClick={() => promptReject(item)}
-                                                        >
-                                                            Reject
-                                                        </Button>
+                                                }
+                                                description={
+                                                    <Space size={[8, 4]} wrap>
+                                                        <Text type='secondary'>{department}</Text>
+                                                        <Text type='secondary'>•</Text>
+                                                        <Text type='secondary'>
+                                                            Requested by {getRequestedBy(item)}
+                                                        </Text>
+                                                        {item.amount ? (
+                                                            <>
+                                                                <Text type='secondary'>•</Text>
+                                                                <Text strong>{formatCurrency(item.amount)}</Text>
+                                                            </>
+                                                        ) : null}
                                                     </Space>
-                                                </div>
-                                            </List.Item>
-                                        )
-                                    }}
-                                />
-                            </Card>
-                        </Col>
-                    </Row>
-                </Spin>
-            </>
-        )
-    }
-
-    return (
-        <>
-            <Helmet>
-                <title>Director Dashboard | Incubation Platform</title>
-            </Helmet>
-            <div style={{ padding: '24px', minHeight: '100vh' }}>
-                {renderDashboardOverview()}
-            </div>
-            <Drawer
-                title='Director Notifications'
-                placement='right'
-                width={400}
-                onClose={() => setNotificationDrawerVisible(false)}
-                open={notificationDrawerVisible}
-            >
-                <List
-                    itemLayout='horizontal'
-                    dataSource={notifications}
-                    renderItem={item => (
-                        <List.Item>
-                            <List.Item.Meta
-                                title={item.message?.director || 'Untitled'}
-                                description={new Date(
-                                    item.createdAt?.seconds * 1000
-                                ).toLocaleString()}
+                                                }
+                                            />
+                                        </List.Item>
+                                    )
+                                }}
                             />
-                        </List.Item>
-                    )}
-                />
-            </Drawer>
+                        </MotionCard>
+                    </Col>
+                </Row>
+            </div>
 
-            <Drawer
-                title='Details'
-                placement='bottom'
-                height={320}
-                onClose={() => setDrawerVisible(false)}
-                open={drawerVisible}
-            >
-                {drawerContent}
-            </Drawer>
-
-            <Drawer
-                title={invoiceViewer.title || 'Invoice'}
-                placement='right'
-                width={720}
-                onClose={() => setInvoiceViewer({ open: false })}
+            <Modal
+                title={invoiceViewer.item ? getInvoiceTitle(invoiceViewer.item) : 'Invoice'}
                 open={invoiceViewer.open}
+                onCancel={() => setInvoiceViewer({ open: false })}
+                width={900}
+                centered
+                destroyOnHidden
+                styles={{
+                    body: {
+                        maxHeight: '72vh',
+                        overflowY: 'auto'
+                    },
+                    footer: {
+                        marginTop: 18
+                    }
+                }}
+                footer={
+                    invoiceViewer.item ? (
+                        <Row gutter={12}>
+                            <Col span={12}>
+                                <Button
+                                    shape='round'
+                                    danger
+                                    block
+                                    size='large'
+                                    icon={<CloseOutlined />}
+                                    onClick={() =>
+                                        promptReject(invoiceViewer.item as DashboardInvoice)
+                                    }
+                                >
+                                    Reject
+                                </Button>
+                            </Col>
+
+                            <Col span={12}>
+                                <Button
+                                    shape='round'
+                                    type='primary'
+                                    block
+                                    size='large'
+                                    icon={<CheckOutlined />}
+                                    onClick={() =>
+                                        approveInvoice(invoiceViewer.item as DashboardInvoice)
+                                    }
+                                >
+                                    Approve
+                                </Button>
+                            </Col>
+                        </Row>
+                    ) : null
+                }
             >
-                {invoiceViewer.url ? (
-                    <iframe
-                        title='invoice'
-                        src={invoiceViewer.url}
-                        style={{ width: '100%', height: '80vh', border: 0 }}
-                    />
+                {invoiceViewer.item ? (
+                    invoiceViewer.item.demo ? (
+                        renderDemoInvoicePreview(invoiceViewer.item)
+                    ) : getInvoiceUrl(invoiceViewer.item) ? (
+                        <iframe
+                            title='Invoice preview'
+                            src={getInvoiceUrl(invoiceViewer.item)}
+                            style={{
+                                width: '100%',
+                                height: '62vh',
+                                border: 0,
+                                borderRadius: 10
+                            }}
+                        />
+                    ) : (
+                        <Empty description='No invoice attachment available' />
+                    )
                 ) : (
-                    <Empty description='No invoice attached' />
+                    <Empty description='No invoice selected' />
                 )}
-            </Drawer>
+            </Modal>
         </>
     )
 }

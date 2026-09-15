@@ -54,6 +54,7 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MovDocumentView } from '@/components/movs/MovDocumentView'
+import { ConsolidatedMOVReviewModal } from '@/components/movs/ConsolidatedMOVReviewModal'
 import { PreIncPoeButton } from '@/components/movs/PreIncPoeButton'
 import { filterMovRecords } from '@/utils/reportVisibility'
 import { MetricsGrid } from '@/components/dashboards/metrics/MetricsGrid'
@@ -62,7 +63,7 @@ import { roundBtn } from '@/components/shared/StyledButton'
 import { workflowQueryService } from '@/services/workflowQueryService'
 import { getPreIncAgreementUrl, hasPreIncAgreementEvidence, isOnboardingMov } from '@/services/movService'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Option } = Select
 const POE_PAGE_SIZE = 4
 
@@ -1083,14 +1084,6 @@ const CoordinatorMOVApprovals: React.FC = () => {
         }
     }
 
-    const groupByDept = (interventions: any[] = []) =>
-        interventions.reduce((acc: Record<string, any[]>, mov: any) => {
-            const dept = mov?.departmentName || 'Department'
-            if (!acc[dept]) acc[dept] = []
-            acc[dept].push(mov)
-            return acc
-        }, {})
-
     const statusTag = (record: any) => {
         const hod = getApproval(record, 'hod_submission')
         const v = getApproval(record, 'validation')
@@ -1315,6 +1308,46 @@ const CoordinatorMOVApprovals: React.FC = () => {
         user?.digitalSignature ||
         ''
 
+    const rowActionPillStyle: React.CSSProperties = {
+        ...roundBtn,
+        height: 30,
+        paddingInline: 12,
+        marginInlineStart: 0
+    }
+
+    const getCoordinatorPoeCount = (mov: MovDoc) => {
+        const direct = Array.isArray(mov.poeUrls) ? uniq(mov.poeUrls).length : 0
+        const resources = collectPoeUrlsFromRecord(mov).length
+        if (direct || resources) return Math.max(direct, resources)
+        return hasPreIncAgreementEvidence(mov) ? 1 : 0
+    }
+
+    const hasCoordinatorOpenRowQuery = (mov: MovDoc) =>
+        (packQueries || []).some(
+            q =>
+                q.targetType === 'poe' &&
+                String(q.movRowId || '') === String(mov.id || '') &&
+                isOpenStatus(q.status)
+        )
+
+    const getCoordinatorReviewState = (mov: MovDoc) => {
+        const hasEvidence = getCoordinatorPoeCount(mov) > 0
+
+        if (hasCoordinatorOpenRowQuery(mov)) {
+            return { label: 'Query Open', color: 'volcano', tone: 'error' as const }
+        }
+
+        if (!hasEvidence) {
+            return { label: 'Evidence Missing', color: 'orange', tone: 'warning' as const }
+        }
+
+        if (selectedHasCC) {
+            return { label: 'Confirmed', color: 'green', tone: 'success' as const }
+        }
+
+        return { label: 'Ready for Confirmation', color: 'blue', tone: 'processing' as const }
+    }
+
 
     // A 1px borderColor override alone reads too close to the card's own hover
     // border, so a hovered-but-unselected card can look "selected" too. Selection
@@ -1532,17 +1565,169 @@ const CoordinatorMOVApprovals: React.FC = () => {
             </motion.div>
 
             {/* Review modal */}
-            <Modal
-                centered
+            <ConsolidatedMOVReviewModal
                 open={modalVisible}
-                title="Review Consolidated MOV"
-                onCancel={() => {
+                pack={selected}
+                onClose={() => {
                     setModalVisible(false)
                     setSelected(null)
                     setPackQueries([])
                 }}
-                width={1350}
-                styles={{ footer: modalFooterStyle }}
+                warningMessage={
+                    !selectedHasCC
+                        ? 'By confirming, you confirm the submitted information is truthful and complete.'
+                        : undefined
+                }
+                monthFormatter={(month) =>
+                    dayjs(month, ['YYYY-MM', 'YYYY-MM-DD']).isValid()
+                        ? dayjs(month, ['YYYY-MM', 'YYYY-MM-DD']).format('MMM YYYY')
+                        : String(month || '—')
+                }
+                summaryItems={[
+                    { label: 'HOD Approval', value: hodName },
+                    {
+                        label: 'Center Coordinator Confirmation',
+                        value: selectedHasCC ? ccName : 'Pending confirmation'
+                    },
+                    { label: 'M&E Validation', value: validationName }
+                ]}
+                summaryAlerts={
+                    openQueriesOnSelected > 0 ? (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            message={`There ${openQueriesOnSelected === 1 ? 'is' : 'are'} ${openQueriesOnSelected} open ${openQueriesOnSelected === 1 ? 'query' : 'queries'} raised by you on this pack.`}
+                            action={
+                                <Button size="small" onClick={() => setQueriesModalOpen(true)}>
+                                    View My Queries
+                                </Button>
+                            }
+                        />
+                    ) : null
+                }
+                columns={[
+                    {
+                        title: 'SME / Intervention',
+                        key: 'details',
+                        render: (_: any, mov: MovDoc) => (
+                            <div style={{ minWidth: 0 }}>
+                                <Text strong style={{ display: 'block' }}>
+                                    {mov.smmeCompanyName || mov.smmeName || 'SME'}
+                                </Text>
+                                <Text type="secondary" style={{ display: 'block', marginTop: 2 }}>
+                                    {mov.interventionTitle || 'Intervention'}
+                                </Text>
+                            </div>
+                        )
+                    },
+                    {
+                        title: 'Facilitator / Completed',
+                        key: 'delivery',
+                        width: 210,
+                        render: (_: any, mov: MovDoc) => {
+                            const source =
+                                mov.interventionDate ||
+                                (mov as any)?.periodStart ||
+                                (mov as any)?.assignmentCreatedAt ||
+                                (mov as any)?.createdAt
+                            const date = typeof source?.toDate === 'function' ? source.toDate() : source
+
+                            return (
+                                <div>
+                                    <Text strong style={{ display: 'block' }}>
+                                        {mov.facilitatorName || '—'}
+                                    </Text>
+                                    <Text type="secondary" style={{ display: 'block', marginTop: 2 }}>
+                                        {dayjs(date).isValid() ? dayjs(date).format('DD MMM YYYY') : '—'}
+                                    </Text>
+                                </div>
+                            )
+                        }
+                    },
+                    {
+                        title: 'Status',
+                        key: 'status',
+                        width: 175,
+                        render: (_: any, mov: MovDoc) => {
+                            const state = getCoordinatorReviewState(mov)
+                            return (
+                                <Tag
+                                    color={state.color}
+                                    style={{ margin: 0, borderRadius: 999, fontWeight: 600 }}
+                                >
+                                    {state.label}
+                                </Tag>
+                            )
+                        }
+                    },
+                    {
+                        title: 'Actions',
+                        key: 'actions',
+                        width: 290,
+                        render: (_: any, mov: MovDoc) => {
+                            const poeCount = getCoordinatorPoeCount(mov)
+
+                            return (
+                                <Space size={6} wrap>
+                                    <Button
+                                        size="small"
+                                        style={rowActionPillStyle}
+                                        color="blue"
+                                        variant="filled"
+                                        onClick={() => {
+                                            setMovToView(mov)
+                                            setMovViewerOpen(true)
+                                        }}
+                                    >
+                                        Open
+                                    </Button>
+
+                                    <Button
+                                        size="small"
+                                        style={rowActionPillStyle}
+                                        color="cyan"
+                                        variant="filled"
+                                        disabled={!poeCount}
+                                        onClick={() => openPoeViewer(mov)}
+                                    >
+                                        POEs ({poeCount})
+                                    </Button>
+
+                                    <Button
+                                        size="small"
+                                        style={rowActionPillStyle}
+                                        color="orange"
+                                        variant="filled"
+                                        onClick={() => openPoeQuery(mov)}
+                                    >
+                                        Query
+                                    </Button>
+                                </Space>
+                            )
+                        }
+                    }
+                ]}
+                getRowTone={(mov: MovDoc) => getCoordinatorReviewState(mov).tone}
+                signatureItems={[
+                    {
+                        label: 'HOD',
+                        name: hodName,
+                        signatureUrl: hodSigUrl
+                    },
+                    {
+                        label: 'Center Coordinator',
+                        name: selectedHasCC ? ccName : 'Pending confirmation',
+                        signatureUrl: ccSigUrl,
+                        emptySignatureText: selectedHasCC ? 'Signature missing' : 'Pending confirmation',
+                        align: 'right'
+                    },
+                    {
+                        label: 'M&E Validation',
+                        name: validationName,
+                        signatureUrl: validationSigUrl,
+                        align: 'center'
+                    }
+                ]}
                 footer={[
                     <Button
                         key="close"
@@ -1568,291 +1753,24 @@ const CoordinatorMOVApprovals: React.FC = () => {
                     >
                         Raise Query
                     </Button>,
-                    <Tooltip key="confirmTip" title={confirmDisabled ? confirmDisabledReason : ''}>
-                        <Button
-                            key="ok"
-                            icon={<CheckCircleOutlined />}
-                            style={modalFooterButtonStyle}
-                            type="primary"
-                            onClick={handleConfirm}
-                            disabled={confirmDisabled}
-                        >
-                            Confirm
-                        </Button>
-                    </Tooltip>
+                    ...(
+                        !confirmDisabled
+                            ? [
+                                <Button
+                                    key="confirm"
+                                    icon={<CheckCircleOutlined />}
+                                    style={modalFooterButtonStyle}
+                                    type="primary"
+                                    onClick={handleConfirm}
+                                >
+                                    Confirm Pack
+                                </Button>
+                            ]
+                            : []
+                    )
                 ]}
-            >
-                <Alert
-                    type="warning"
-                    message="By confirming, you confirm the submitted information is truthful and complete."
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                />
 
-                <Row
-                    align="middle"
-                    justify="center"
-                    style={{
-                        marginBottom: 20,
-                        border: '1px solid #d9d9d9',
-                        borderRadius: 12,
-                        padding: '12px 16px',
-                        textAlign: 'center',
-                        background: '#fafafa'
-                    }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                        <img src="/assets/images/lepharo.png" alt="Company Logo" style={{ height: 60 }} />
-                        <div>
-                            <Title level={4} style={{ margin: 0 }}>
-                                {selected?.department}
-                            </Title>
-                            <Text strong>{selected?.month ? dayjs(selected?.month).format('MMMM YYYY') : '—'}</Text>
-                        </div>
-                    </div>
-                </Row>
-
-                <Card size="small" style={{ marginBottom: 20, border: '1px solid #d6e4ff' }}>
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                        <Row>
-                            <Col span={24}>
-                                <Space size="large" wrap>
-                                    <div>
-                                        <Text type="secondary">HOD Approval:</Text>{' '}
-                                        <Text strong>{hodName}</Text>
-                                    </div>
-                                    <div>
-                                        <Text type="secondary">Center Coordinator Confirmation:</Text>{' '}
-                                        <Text strong>{selectedHasCC ? ccName : 'Pending confirmation'}</Text>
-                                    </div>
-                                    <div>
-                                        <Text type="secondary">M&E Validation:</Text>{' '}
-                                        <Text strong>{validationName}</Text>
-                                    </div>
-                                </Space>
-                            </Col>
-                        </Row>
-
-                        {openQueriesOnSelected > 0 ? (
-                            <Alert
-                                type="warning"
-                                showIcon
-                                message={`There ${openQueriesOnSelected === 1 ? 'is' : 'are'} ${openQueriesOnSelected} open ${openQueriesOnSelected === 1 ? 'query' : 'queries'} raised by you on this pack.`}
-                                action={
-                                    <Button size="small" onClick={() => setQueriesModalOpen(true)}>
-                                        View My Queries
-                                    </Button>
-                                }
-                            />
-                        ) : null}
-                    </Space>
-                </Card>
-
-                {Object.entries(groupByDept(selected?.interventions)).map(([deptName, deptMovs]: [string, any[]], idx) => (
-                    <div key={idx} style={{ marginBottom: 32 }}>
-                        <Table
-                            bordered
-                            size="small"
-                            pagination={{ pageSize: 5, showSizeChanger: false, position: ['bottomCenter'] }}
-                            dataSource={deptMovs}
-                            rowKey={(mov: any) => mov.id || `${mov.smmeCompanyName}-${mov.interventionTitle}-${mov.interventionDate}`}
-                            columns={[
-                                { title: 'Beneficiary', dataIndex: 'smmeCompanyName' },
-                                { title: 'Intervention', dataIndex: 'interventionTitle' },
-                                { title: 'Facilitator', dataIndex: 'facilitatorName' },
-                                {
-                                    title: 'Date Completed',
-                                    dataIndex: 'interventionDate',
-                                    render: (val: any, row: any) => {
-                                        const source = val || row?.periodStart || row?.assignmentCreatedAt || row?.createdAt
-                                        const date = typeof source?.toDate === 'function' ? source.toDate() : source
-                                        return dayjs(date).isValid() ? dayjs(date).format('YYYY-MM-DD') : '—'
-                                    }
-                                },
-                                {
-                                    title: 'Facilitator Signature',
-                                    dataIndex: 'facilitatorSignatureUrl',
-                                    render: (url?: string) =>
-                                        url ? (
-                                            <img
-                                                src={url}
-                                                alt="Facilitator Signature"
-                                                style={{
-                                                    maxHeight: 48,
-                                                    maxWidth: 180,
-                                                    objectFit: 'contain',
-                                                    border: '1px solid #eee',
-                                                    borderRadius: 4,
-                                                    padding: 2
-                                                }}
-                                            />
-                                        ) : (
-                                            '—'
-                                        )
-                                },
-                                {
-                                    title: 'SMME Signature',
-                                    dataIndex: 'smmeSignatureUrl',
-                                    render: (url?: string) =>
-                                        url ? (
-                                            <img
-                                                src={url}
-                                                alt="SMME Signature"
-                                                style={{
-                                                    maxHeight: 48,
-                                                    maxWidth: 180,
-                                                    objectFit: 'contain',
-                                                    border: '1px solid #eee',
-                                                    borderRadius: 4,
-                                                    padding: 2
-                                                }}
-                                            />
-                                        ) : (
-                                            '—'
-                                        )
-                                },
-                                {
-                                    title: 'POE',
-                                    render: (_: any, mov: MovDoc) => {
-                                        const urls =
-                                            (Array.isArray(mov.poeUrls) && mov.poeUrls.length
-                                                ? uniq(mov.poeUrls)
-                                                : collectPoeUrlsFromRecord(mov)) || []
-                                        // ROM onboarding MOVs prove completion via a signed
-                                        // Pre-Incubation Agreement rather than an uploaded POE
-                                        // file, so urls is legitimately empty for them - show
-                                        // that evidence here instead of just "None".
-                                        const preIncEvidence = !urls.length && hasPreIncAgreementEvidence(mov)
-
-                                        return (
-                                            <Space size={8} wrap>
-                                                {urls.length ? (
-                                                    <Button
-                                                        style={roundBtn}
-                                                        color="blue"
-                                                        variant="filled"
-                                                        onClick={() => openPoeViewer(mov)}
-                                                    >
-                                                        {urls.length > 1
-                                                            ? `View POEs (${urls.length})`
-                                                            : 'View POE'}
-                                                    </Button>
-                                                ) : preIncEvidence ? (
-                                                    <PreIncPoeButton mov={mov} compact />
-                                                ) : (
-                                                    <span style={{ color: '#999' }}>None</span>
-                                                )}
-
-                                                <Button
-                                                    size="small"
-                                                    style={roundBtn}
-                                                    color="orange"
-                                                    variant="filled"
-                                                    icon={<InfoCircleOutlined />}
-                                                    onClick={() => openPoeQuery(mov)}
-                                                >
-                                                    Query POE
-                                                </Button>
-                                            </Space>
-                                        )
-                                    }
-                                },
-                                {
-                                    title: 'Actions',
-                                    render: (_: any, mov: MovDoc) => (
-                                        <Space>
-                                            <Button size="small" style={roundBtn} onClick={() => { setMovToView(mov); setMovViewerOpen(true); }}>
-                                                View MOV
-                                            </Button>
-                                        </Space>
-                                    )
-                                }
-                            ]}
-                        />
-                    </div>
-                ))}
-
-                <Card size="small" style={{ marginBottom: 20, border: '1px solid #d6e4ff' }}>
-                    <Row gutter={[16, 16]} align="top">
-                        <Col xs={24} md={8}>
-                            <Text strong>HOD:</Text> <Text>{hodName}</Text>
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Signature:</Text>{' '}
-                                {hodSigUrl ? (
-                                    <img
-                                        src={hodSigUrl}
-                                        alt="HOD Signature"
-                                        style={{
-                                            maxHeight: 48,
-                                            maxWidth: 180,
-                                            objectFit: 'contain',
-                                            border: '1px solid #eee',
-                                            borderRadius: 4,
-                                            padding: 2,
-                                            verticalAlign: 'middle',
-                                            marginLeft: 8
-                                        }}
-                                    />
-                                ) : (
-                                    <Text style={{ marginLeft: 8 }}>—</Text>
-                                )}
-                            </div>
-                        </Col>
-
-                        <Col xs={24} md={8} style={{ textAlign: 'right' }}>
-                            <Text strong>Center Coordinator:</Text> <Text>{selectedHasCC ? ccName : 'Pending confirmation'}</Text>
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Signature:</Text>{' '}
-                                {ccSigUrl ? (
-                                    <img
-                                        src={ccSigUrl}
-                                        alt="CC Signature"
-                                        style={{
-                                            maxHeight: 48,
-                                            maxWidth: 180,
-                                            objectFit: 'contain',
-                                            border: '1px solid #eee',
-                                            borderRadius: 4,
-                                            padding: 2,
-                                            verticalAlign: 'middle',
-                                            marginLeft: 8
-                                        }}
-                                    />
-                                ) : (
-                                    <Text style={{ marginLeft: 8 }}>
-                                        {selectedHasCC ? 'Signature missing' : 'Pending confirmation'}
-                                    </Text>
-                                )}
-                            </div>
-                        </Col>
-
-                        <Col xs={24} md={8} style={{ textAlign: 'center' }}>
-                            <Text strong>M&E Validation:</Text> <Text>{validationName}</Text>
-                            <div style={{ marginTop: 8 }}>
-                                <Text type="secondary">Signature:</Text>{' '}
-                                {validationSigUrl ? (
-                                    <img
-                                        src={validationSigUrl}
-                                        alt="M&E Signature"
-                                        style={{
-                                            maxHeight: 48,
-                                            maxWidth: 180,
-                                            objectFit: 'contain',
-                                            border: '1px solid #eee',
-                                            borderRadius: 4,
-                                            padding: 2,
-                                            verticalAlign: 'middle',
-                                            marginLeft: 8
-                                        }}
-                                    />
-                                ) : (
-                                    <Text style={{ marginLeft: 8 }}>—</Text>
-                                )}
-                            </div>
-                        </Col>
-                    </Row>
-                </Card>
-            </Modal>
+            />
 
             <Modal
                 open={poeViewerOpen}

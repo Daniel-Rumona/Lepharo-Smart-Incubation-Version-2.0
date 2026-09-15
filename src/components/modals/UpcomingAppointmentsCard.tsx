@@ -1268,18 +1268,22 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
                     <Space direction="vertical" size={14} style={{ width: '100%' }}>
                         <div
                             style={{
-                                display: 'flex',
-                                gap: 8,
-                                overflow: 'hidden'
+                                display: 'grid',
+                                gridTemplateColumns: `repeat(${weekDays.length}, minmax(0, 1fr))`,
+                                gap: isMobile ? 6 : 9,
+                                width: '100%',
+                                padding: '2px 0 6px'
                             }}
                         >
-                            {Array.from({ length: 7 }).map((_, index) => (
+                            {weekDays.map((_, index) => (
                                 <Skeleton.Button
                                     key={index}
                                     active
+                                    block
                                     style={{
-                                        width: 56,
-                                        height: index % 3 === 0 ? 72 : 60,
+                                        width: '100%',
+                                        minWidth: 0,
+                                        height: 60,
                                         borderRadius: 13
                                     }}
                                 />

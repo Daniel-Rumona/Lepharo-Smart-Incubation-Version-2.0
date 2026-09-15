@@ -1,4 +1,5 @@
 import { getAuth } from 'firebase/auth'
+import type { CatalogGuide } from '@/components/guide-me/guideCatalog'
 
 const AI_BASE_URL = String(
     import.meta.env.VITE_AI_BACKEND_URL ||
@@ -81,8 +82,29 @@ export type AskAssistantParams = {
 export type AskAssistantResult = {
     answer: string
     chart: ChartSpec | null
+    guide: CatalogGuide | null
     sources: string[]
     sessionId?: string
+}
+
+const normaliseGuide = (raw: unknown): CatalogGuide | null => {
+    if (!raw || typeof raw !== 'object') return null
+    const value = raw as Record<string, unknown>
+
+    const pageId = typeof value.pageId === 'string' ? value.pageId : null
+    const guideId = typeof value.guideId === 'string' ? value.guideId : null
+    const route = typeof value.route === 'string' ? value.route : null
+
+    if (!pageId || !guideId || !route) return null
+
+    return {
+        pageId,
+        guideId,
+        route,
+        pageTitle: typeof value.title === 'string' ? value.title : '',
+        title: typeof value.title === 'string' ? value.title : '',
+        description: ''
+    }
 }
 
 export async function askAssistant(params: AskAssistantParams): Promise<AskAssistantResult> {
@@ -121,6 +143,7 @@ export async function askAssistant(params: AskAssistantParams): Promise<AskAssis
             String(data.answer || data.reply || '').trim() ||
             'I could not find enough data to answer that.',
         chart: normaliseChart(data.chart),
+        guide: normaliseGuide(data.guide),
         sources: Array.isArray(data.sources) ? data.sources.filter((s: unknown) => typeof s === 'string') : [],
         sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined
     }

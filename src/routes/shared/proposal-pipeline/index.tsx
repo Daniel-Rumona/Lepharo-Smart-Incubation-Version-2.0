@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import dayjs from 'dayjs'
 import {
-    Alert, Avatar, Badge, Button, Checkbox, Col, DatePicker, Descriptions, Divider,
-    Drawer, Empty, Form, Input, InputNumber, List, Modal, Popconfirm, Progress,
-    Row, Select, Space, Spin, Steps, Table, Tabs, Tag, Timeline,
+    Alert, AutoComplete, Avatar, Badge, Button, Checkbox, Col, DatePicker, Descriptions, Divider,
+    Empty, Form, Input, InputNumber, List, Modal, Popconfirm, Progress,
+    Row, Segmented, Select, Space, Spin, Steps, Table, Tag, Timeline, Tooltip,
     Typography, Upload, message
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import type { UploadFile } from 'antd/es/upload/interface'
 import {
-    ArrowRightOutlined, CheckCircleFilled, ClockCircleOutlined, DeleteOutlined,
-    DownloadOutlined, EditOutlined, EyeOutlined, FileAddOutlined,
+    ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, CheckCircleFilled, ClockCircleOutlined,
+    DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileAddOutlined,
     FileTextOutlined, GlobalOutlined, PlusOutlined, SafetyCertificateOutlined,
     SearchOutlined, TeamOutlined, UploadOutlined, UserOutlined, WarningFilled
 } from '@ant-design/icons'
@@ -24,11 +23,11 @@ import {
 } from '@/services/proposalService'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import {
-    PROPOSAL_CATEGORIES, PROPOSAL_SCOPES, PROPOSAL_STATUSES
+    PROPOSAL_CATEGORIES, PROPOSAL_OWNER_TYPES, PROPOSAL_SCOPES, PROPOSAL_STAGE_GROUPS, PROPOSAL_STATUSES
 } from '@/types/proposal'
 import type {
     Proposal, ProposalActor, ProposalContributor, ProposalDocument, ProposalHistoryEntry,
-    ProposalInput, ProposalReference, ProposalStatus
+    ProposalInput, ProposalOwner, ProposalOwnerType, ProposalReference, ProposalStatus
 } from '@/types/proposal'
 import './proposal-pipeline.css'
 
@@ -99,6 +98,149 @@ const STATUS_TRANSITIONS: Record<ProposalStatus, ProposalStatus[]> = {
 
 const nextStatuses = (current: ProposalStatus) => STATUS_TRANSITIONS[current]
 
+// The forward move for the row "Advance" action. Each target is also an
+// allowed transition above; Rejected proposals re-open into preparation.
+const ADVANCE_TO: Partial<Record<ProposalStatus, ProposalStatus>> = {
+    Draft: 'In preparation',
+    'In preparation': 'Submitted',
+    Submitted: 'Under review',
+    'Under review': 'Accepted',
+    Accepted: 'SLA signed',
+    'SLA signed': 'Awaiting order number',
+    'Awaiting order number': 'Implementation planning',
+    'Implementation planning': 'Ready for activation',
+    'Ready for activation': 'Active',
+    Rejected: 'In preparation'
+}
+
+const ownerIcon = (type?: ProposalOwnerType) =>
+    type === 'Department' ? <TeamOutlined /> : type === 'Centre' ? <BankOutlined /> : <UserOutlined />
+
+const PROPOSAL_FORM_STEPS = [
+    {
+        title: 'Proposal and client',
+        icon: <FileTextOutlined />,
+        description: 'What is being proposed, to whom, and what it is worth.',
+        fields: ['title', 'estimatedValue', 'clientName', 'category', 'clientContact', 'clientEmail']
+    },
+    {
+        title: 'Ownership and timeline',
+        icon: <UserOutlined />,
+        description: 'Who leads the proposal and when it is due.',
+        fields: [
+            'originatorName', 'ownerType', 'ownerName', 'ownerDepartmentId', 'ownerCentreId',
+            'proposedDate', 'submissionDeadline', 'status'
+        ]
+    },
+    {
+        title: 'Scope and footprint',
+        icon: <GlobalOutlined />,
+        description: 'Where the work will be delivered and which departments take part.',
+        fields: ['scope', 'province', 'centres', 'departments']
+    },
+    {
+        title: 'Summary and documents',
+        icon: <UploadOutlined />,
+        description: 'Add context, contributors and any supporting files.',
+        fields: ['description', 'contributorIds']
+    }
+]
+
+const PROPOSAL_DOCUMENT_CATEGORIES = [
+    { key: 'Proposal', description: 'The proposal or bid document itself' },
+    { key: 'Financial', description: 'Budgets, quotations and pricing schedules' },
+    { key: 'Compliance', description: 'Registration, tax and regulatory certificates' },
+    { key: 'Agreement', description: 'SLAs, contracts and signed agreements' },
+    { key: 'Evidence', description: 'Any other supporting evidence' }
+]
+
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024
+
+type PendingDocument = { category: string; file: File }
+
+/**
+ * Documents grouped by category, used both when creating/editing a proposal
+ * (pending files, uploaded on save) and in the details view (uploaded now).
+ * Documents saved under a category outside the list, such as older
+ * "Supporting document" uploads, appear in an "Other" group.
+ */
+const DocumentCategoryRows = ({
+    documents = [],
+    pendingFiles = [],
+    onAdd,
+    onRemovePending,
+    renderDocumentActions
+}: {
+    documents?: ProposalDocument[]
+    pendingFiles?: PendingDocument[]
+    onAdd: (category: string, file: File) => void
+    onRemovePending?: (pending: PendingDocument) => void
+    renderDocumentActions: (document: ProposalDocument) => React.ReactNode
+}) => {
+    const knownCategories = PROPOSAL_DOCUMENT_CATEGORIES.map(category => category.key)
+    const otherDocuments = documents.filter(document => !knownCategories.includes(document.category))
+    const rows = [
+        ...PROPOSAL_DOCUMENT_CATEGORIES.map(category => ({
+            ...category,
+            canUpload: true,
+            documents: documents.filter(document => document.category === category.key)
+        })),
+        ...(otherDocuments.length
+            ? [{ key: 'Other', description: 'Earlier uploads without a category', canUpload: false, documents: otherDocuments }]
+            : [])
+    ]
+
+    return <div className='proposal-document-rows'>
+        {rows.map(row => {
+            const pending = pendingFiles.filter(item => item.category === row.key)
+            const count = row.documents.length + pending.length
+            return <div className='proposal-document-row' key={row.key}>
+                <div className='proposal-document-row-head'>
+                    <span className='proposal-document-row-icon'><FileTextOutlined /></span>
+                    <span className='proposal-document-row-copy'>
+                        <strong>{row.key}{count > 0 && <Badge count={count} size='small' className='proposal-document-count' />}</strong>
+                        <small>{row.description}</small>
+                    </span>
+                    {row.canUpload && <Upload multiple showUploadList={false}
+                        beforeUpload={file => {
+                            if (file.size > MAX_DOCUMENT_BYTES) {
+                                message.error(`${file.name} is larger than the 25 MB limit.`)
+                                return Upload.LIST_IGNORE
+                            }
+                            onAdd(row.key, file as File)
+                            return false
+                        }}>
+                        <Button size='small' icon={<UploadOutlined />}>Add</Button>
+                    </Upload>}
+                </div>
+                {count > 0 && <ul className='proposal-document-files'>
+                    {row.documents.map(document => <li key={document.id}>
+                        <span className='proposal-document-file-name' title={document.name}>{document.name}</span>
+                        <span className='proposal-document-file-meta'>{dateLabel(document.uploadedAt)}</span>
+                        <Space size={4}>{renderDocumentActions(document)}</Space>
+                    </li>)}
+                    {pending.map(item => <li key={`${item.file.name}-${item.file.size}`}>
+                        <span className='proposal-document-file-name' title={item.file.name}>{item.file.name}</span>
+                        <Tag color='gold'>Uploads on save</Tag>
+                        {onRemovePending && <Button size='small' type='text' danger icon={<DeleteOutlined />}
+                            aria-label={`Remove ${item.file.name}`} onClick={() => onRemovePending(item)} />}
+                    </li>)}
+                </ul>}
+            </div>
+        })}
+    </div>
+}
+
+// Step index for the edit modal's opening section picker.
+const EDIT_SECTION_PICKER = -1
+
+const ProposalStepHeading = ({ index }: { index: number }) => (
+    <div className='proposal-form-step-heading'>
+        <strong>{PROPOSAL_FORM_STEPS[index].title}</strong>
+        <span>{PROPOSAL_FORM_STEPS[index].description}</span>
+    </div>
+)
+
 export default function ProposalPipeline() {
     const { actor: signedInActor } = useFullIdentity()
     const actor = useMemo(() => actorFromIdentity(signedInActor), [signedInActor])
@@ -107,7 +249,8 @@ export default function ProposalPipeline() {
     const [branches, setBranches] = useState<ProposalReference[]>([])
     const [departments, setDepartments] = useState<ProposalReference[]>([])
     const [people, setPeople] = useState<ProposalContributor[]>([])
-    const [supportingFiles, setSupportingFiles] = useState<File[]>([])
+    const [pendingDocuments, setPendingDocuments] = useState<PendingDocument[]>([])
+    const [editDocuments, setEditDocuments] = useState<ProposalDocument[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [referenceWarning, setReferenceWarning] = useState('')
@@ -116,8 +259,10 @@ export default function ProposalPipeline() {
     const [history, setHistory] = useState<ProposalHistoryEntry[]>([])
     const [detailsLoading, setDetailsLoading] = useState(false)
     const [detailsOpen, setDetailsOpen] = useState(false)
+    const [detailsSection, setDetailsSection] = useState('overview')
     const [proposalModalOpen, setProposalModalOpen] = useState(false)
-    const [statusModalOpen, setStatusModalOpen] = useState(false)
+    const [proposalStep, setProposalStep] = useState(0)
+    const [statusProposal, setStatusProposal] = useState<Proposal | null>(null)
     const [activationOpen, setActivationOpen] = useState(false)
     const [editingProposal, setEditingProposal] = useState<Proposal | null>(null)
     const [search, setSearch] = useState('')
@@ -128,6 +273,7 @@ export default function ProposalPipeline() {
     const selectedProvince = Form.useWatch('province', form)
     const allCentres = Form.useWatch('allCentres', form)
     const allDepartments = Form.useWatch('allDepartments', form)
+    const ownerType: ProposalOwnerType = Form.useWatch('ownerType', form) || 'Individual'
 
     useEffect(() => {
         if (!actor || isIncubatee) {
@@ -191,15 +337,6 @@ export default function ProposalPipeline() {
         label: `${person.name}${person.email ? ` · ${person.email}` : ''}`
     })), [people])
 
-    const supportingUploadFiles: UploadFile[] = supportingFiles.map((file, index) => ({
-        uid: `${file.name}-${file.size}-${index}`,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        status: 'done',
-        originFileObj: file as UploadFile['originFileObj']
-    }))
-
     const visibleProposals = useMemo(() => {
         const queryText = search.trim().toLowerCase()
         return proposals.filter(proposal => {
@@ -240,18 +377,7 @@ export default function ProposalPipeline() {
     }, [proposals])
 
     const stageCards = useMemo(() => {
-        const definitions: Array<{ label: string; statuses: ProposalStatus[]; color: string }> = [
-            { label: 'Draft', statuses: ['Draft', 'In preparation'], color: '#64748b' },
-            { label: 'Submitted', statuses: ['Submitted'], color: '#2563eb' },
-            { label: 'Under review', statuses: ['Under review'], color: '#7c3aed' },
-            { label: 'Accepted', statuses: ['Accepted', 'SLA signed'], color: '#059669' },
-            {
-                label: 'Activation',
-                statuses: ['Awaiting order number', 'Implementation planning', 'Ready for activation', 'Active'],
-                color: '#d97706'
-            }
-        ]
-        return definitions.map(definition => {
+        return PROPOSAL_STAGE_GROUPS.map(definition => {
             const records = proposals.filter(item => definition.statuses.includes(item.status))
             return {
                 ...definition,
@@ -280,13 +406,16 @@ export default function ProposalPipeline() {
 
     const openDetails = (proposal: Proposal) => {
         setSelectedProposal(proposal)
+        setDetailsSection('overview')
         setDetailsOpen(true)
         refreshDetails(proposal)
     }
 
     const openCreate = () => {
         setEditingProposal(null)
-        setSupportingFiles([])
+        setProposalStep(0)
+        setPendingDocuments([])
+        setEditDocuments([])
         form.resetFields()
         form.setFieldsValue({
             category: 'RFP',
@@ -300,6 +429,7 @@ export default function ProposalPipeline() {
             contributorIds: [],
             proposedDate: dayjs(),
             originatorName: actor?.name,
+            ownerType: 'Individual',
             ownerName: actor?.name
         })
         setProposalModalOpen(true)
@@ -307,7 +437,12 @@ export default function ProposalPipeline() {
 
     const openEdit = (proposal: Proposal) => {
         setEditingProposal(proposal)
-        setSupportingFiles([])
+        setProposalStep(EDIT_SECTION_PICKER)
+        setDetailsOpen(false)
+        setPendingDocuments([])
+        setEditDocuments([])
+        listProposalDocuments(proposal).then(setEditDocuments).catch(error =>
+            console.error('[ProposalPipeline] Could not load documents for editing', error))
         form.resetFields()
         const proposalProvince = proposal.province ||
             branches.find(branch => branch.id === proposal.centres[0]?.id)?.province || null
@@ -333,7 +468,12 @@ export default function ProposalPipeline() {
             status: proposal.status,
             description: proposal.description,
             originatorName: proposal.originator.name,
-            ownerName: proposal.owner.name,
+            ownerType: proposal.owner.type || 'Individual',
+            ownerName: proposal.owner.type === 'Individual' || !proposal.owner.type
+                ? proposal.owner.name
+                : undefined,
+            ownerDepartmentId: proposal.owner.type === 'Department' ? proposal.owner.id : undefined,
+            ownerCentreId: proposal.owner.type === 'Centre' ? proposal.owner.id : undefined,
             centres: proposal.centres.map(item => item.id),
             departments: proposal.departments.map(item => item.id),
             proposedDate: datePickerValue(proposal.proposedDate),
@@ -393,9 +533,64 @@ export default function ProposalPipeline() {
     const referencesFromIds = (ids: string[] | undefined, options: ProposalReference[]) =>
         (ids || []).map(id => options.find(option => option.id === id) || { id, name: id })
 
+    const isLastProposalStep = proposalStep === PROPOSAL_FORM_STEPS.length - 1
+
+    const goToPreviousStep = () => {
+        if (proposalStep === 0) {
+            setProposalModalOpen(false)
+            return
+        }
+        setProposalStep(step => step - 1)
+    }
+
+    const goToNextStep = async () => {
+        if (isLastProposalStep) {
+            await saveProposal()
+            return
+        }
+        try {
+            await form.validateFields(PROPOSAL_FORM_STEPS[proposalStep].fields)
+            setProposalStep(step => step + 1)
+        } catch {
+            // Field errors are shown inline on the current step.
+        }
+    }
+
     const saveProposal = async () => {
         if (!actor) return
-        const values = await form.validateFields()
+        let values: any
+        try {
+            values = await form.validateFields()
+        } catch (error: any) {
+            // Jump back to the first step that still has an invalid field.
+            const firstError = error?.errorFields?.[0]?.name?.[0]
+            const stepIndex = PROPOSAL_FORM_STEPS.findIndex(step => step.fields.includes(firstError))
+            if (stepIndex >= 0) setProposalStep(stepIndex)
+            return
+        }
+        const owner = ((): ProposalOwner => {
+            if (values.ownerType === 'Department' || values.ownerType === 'Centre') {
+                const options = values.ownerType === 'Department' ? departments : branches
+                const id = values.ownerType === 'Department' ? values.ownerDepartmentId : values.ownerCentreId
+                const reference = options.find(option => option.id === id)
+                return {
+                    type: values.ownerType,
+                    id,
+                    name: reference?.name || id,
+                    email: null,
+                    role: 'Proposal owner'
+                }
+            }
+            const name = String(values.ownerName || '').trim()
+            const person = people.find(candidate => candidate.name === name)
+            return {
+                type: 'Individual',
+                id: person?.id || null,
+                name,
+                email: person?.email || null,
+                role: 'Proposal owner'
+            }
+        })()
         const input: ProposalInput = {
             title: values.title.trim(),
             clientName: values.clientName.trim(),
@@ -410,7 +605,7 @@ export default function ProposalPipeline() {
             status: values.status,
             description: values.description?.trim() || null,
             originator: { name: values.originatorName.trim(), role: 'Originator' },
-            owner: { name: values.ownerName.trim(), role: 'Proposal owner' },
+            owner,
             contributors: (values.contributorIds || []).map((id: string) =>
                 people.find(person => (person.id || person.email || person.name) === id)
             ).filter(Boolean) as ProposalContributor[],
@@ -432,9 +627,9 @@ export default function ProposalPipeline() {
 
             let uploadFailures = 0
             if (proposalId) {
-                for (const file of supportingFiles) {
+                for (const { file, category } of pendingDocuments) {
                     try {
-                        await uploadProposalDocument({ id: proposalId }, file, 'Supporting document', actor)
+                        await uploadProposalDocument({ id: proposalId }, file, category, actor)
                     } catch (error) {
                         console.error('[ProposalPipeline] Supporting document upload failed', error)
                         uploadFailures += 1
@@ -446,10 +641,10 @@ export default function ProposalPipeline() {
                 ? `${editingProposal.proposalNumber} updated`
                 : 'Proposal created and added to the live pipeline')
             if (uploadFailures) {
-                message.warning(`${uploadFailures} supporting document${uploadFailures === 1 ? '' : 's'} could not be uploaded.`)
+                message.warning(`${uploadFailures} document${uploadFailures === 1 ? '' : 's'} could not be uploaded.`)
             }
             setProposalModalOpen(false)
-            setSupportingFiles([])
+            setPendingDocuments([])
             form.resetFields()
         } catch (error: any) {
             console.error('[ProposalPipeline] Save failed', error)
@@ -459,21 +654,48 @@ export default function ProposalPipeline() {
         }
     }
 
+    // Advance presets the next forward status; the full update picks the first allowed one.
+    const openStatusModal = (proposal: Proposal) => {
+        statusForm.setFieldsValue({
+            status: ADVANCE_TO[proposal.status] || nextStatuses(proposal.status)[0],
+            note: ''
+        })
+        setStatusProposal(proposal)
+    }
+
     const saveStatus = async () => {
-        if (!actor || !selectedProposal) return
+        if (!actor || !statusProposal) return
         const values = await statusForm.validateFields()
+        const note = values.note?.trim() || `Status changed from ${statusProposal.status} to ${values.status}`
         setSaving(true)
         try {
-            await changeProposalStatus(selectedProposal, values.status, values.note, actor)
-            message.success(`Status updated to ${values.status}`)
-            setStatusModalOpen(false)
+            await changeProposalStatus(statusProposal, values.status, note, actor)
+            message.success(`${statusProposal.proposalNumber} moved to ${values.status}`)
+            if (detailsOpen && selectedProposal?.id === statusProposal.id) {
+                await refreshDetails({ ...statusProposal, status: values.status })
+            }
+            setStatusProposal(null)
             statusForm.resetFields()
-            await refreshDetails({ ...selectedProposal, status: values.status })
         } catch (error: any) {
             message.error(error?.message || 'Could not update the proposal status.')
         } finally {
             setSaving(false)
         }
+    }
+
+    const renderAdvanceButton = (proposal: Proposal, block = false) => {
+        const target = ADVANCE_TO[proposal.status]
+        if (!target) {
+            return <Tooltip title='This proposal is at the end of the pipeline'>
+                <Button block={block} icon={<CheckCircleFilled />} disabled>Complete</Button>
+            </Tooltip>
+        }
+        return <Tooltip title={`Move to ${target}`}>
+            <Button block={block} type='primary' ghost onClick={() => openStatusModal(proposal)}
+                icon={<ArrowRightOutlined />} iconPosition='end'>
+                {proposal.status === 'Rejected' ? 'Reopen' : 'Advance'}
+            </Button>
+        </Tooltip>
     }
 
     const handleDocumentUpload = async (file: File, category: string) => {
@@ -510,8 +732,7 @@ export default function ProposalPipeline() {
             title: 'Proposal', key: 'proposal', width: 330,
             render: (_, proposal) => (
                 <Space size={12}>
-                    <Avatar shape='square' size={38}
-                        style={{ background: '#eef2ff', color: '#4f46e5' }}
+                    <Avatar shape='square' size={38} className='proposal-row-avatar'
                         icon={<FileTextOutlined />} />
                     <div>
                         <Button type='link' className='proposal-title-button'
@@ -531,8 +752,14 @@ export default function ProposalPipeline() {
             render: value => <Space size={5}><GlobalOutlined />{value}</Space>
         },
         {
-            title: 'Owner', dataIndex: 'owner', width: 150,
-            render: value => value?.name || 'Not assigned'
+            title: 'Owner', dataIndex: 'owner', width: 170,
+            render: (value: ProposalOwner) => value?.name
+                ? <Tooltip title={`${value.type || 'Individual'} owner`}>
+                    <Space size={6} className='proposal-owner-cell'>
+                        {ownerIcon(value.type)}<span>{value.name}</span>
+                    </Space>
+                </Tooltip>
+                : 'Not assigned'
         },
         {
             title: 'Value', dataIndex: 'estimatedValue', width: 125, align: 'right',
@@ -543,11 +770,18 @@ export default function ProposalPipeline() {
             render: (value: ProposalStatus) => <Tag color={statusColor[value]}>{value}</Tag>
         },
         {
-            title: '', key: 'actions', fixed: 'right', width: 160,
+            title: '', key: 'actions', fixed: 'right', width: 230,
             render: (_, proposal) => (
-                <Space>
-                    <Button icon={<EyeOutlined />} onClick={() => openDetails(proposal)}>View</Button>
-                    <Button icon={<EditOutlined />} onClick={() => openEdit(proposal)} />
+                <Space size={6}>
+                    {renderAdvanceButton(proposal)}
+                    <Tooltip title='View'>
+                        <Button icon={<EyeOutlined />} aria-label='View proposal'
+                            onClick={() => openDetails(proposal)} />
+                    </Tooltip>
+                    <Tooltip title='Edit'>
+                        <Button icon={<EditOutlined />} aria-label='Edit proposal'
+                            onClick={() => openEdit(proposal)} />
+                    </Tooltip>
                 </Space>
             )
         }
@@ -597,31 +831,33 @@ export default function ProposalPipeline() {
                             iconBg='rgba(217,119,6,.12)' /></Col>
                 </Row>
 
-                <MotionCard className='proposal-pipeline-card' title='Proposal pipeline'>
-                    <div className='proposal-stage-grid'>
-                        {stageCards.map((stage, index) => (
-                            <button type='button' className='proposal-stage' key={stage.label}
-                                style={{ '--stage-color': stage.color } as React.CSSProperties}
-                                onClick={() => setStatusFilter(stage.label)}>
-                                <span className='proposal-stage-count'>{stage.count}</span>
-                                <strong>{stage.label}</strong>
-                                <small>{money(stage.value)}</small>
+                <div className='proposal-stage-grid'>
+                    {stageCards.map((stage, index) => {
+                        const isActive = statusFilter === stage.label
+                        return (
+                            <Fragment key={stage.label}>
+                                <button type='button' aria-pressed={isActive}
+                                    className={`proposal-stage${isActive ? ' proposal-stage-active' : ''}`}
+                                    style={{ '--stage-color': stage.color } as React.CSSProperties}
+                                    onClick={() => setStatusFilter(isActive ? 'All' : stage.label)}>
+                                    <span className='proposal-stage-count'>{stage.count}</span>
+                                    <span className='proposal-stage-copy'>
+                                        <strong>{stage.label}</strong>
+                                        <small>{money(stage.value)}</small>
+                                    </span>
+                                </button>
                                 {index < stageCards.length - 1 &&
-                                    <ArrowRightOutlined className='proposal-stage-arrow' />}
-                            </button>
-                        ))}
-                    </div>
-                </MotionCard>
+                                    <ArrowRightOutlined className='proposal-stage-arrow' aria-hidden />}
+                            </Fragment>
+                        )
+                    })}
+                </div>
 
                 <MotionCard className='proposal-list-card' filterBar={
                     <div className='proposal-filter-bar'>
-                        <Space wrap>
-                            <Input allowClear prefix={<SearchOutlined />} placeholder='Search proposals'
-                                value={search} onChange={event => setSearch(event.target.value)}
-                                style={{ width: 220 }} />
-                            <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 180 }}
-                                options={['All', ...PROPOSAL_STATUSES].map(value => ({ label: value, value }))} />
-                        </Space>
+                        <Input allowClear prefix={<SearchOutlined />} placeholder='Search proposals'
+                            value={search} onChange={event => setSearch(event.target.value)}
+                            className='proposal-search' />
                         <Button type='primary' icon={<PlusOutlined />} onClick={openCreate}>Submit proposal</Button>
                     </div>}>
                     <Table rowKey='id' columns={columns} dataSource={visibleProposals}
@@ -637,151 +873,236 @@ export default function ProposalPipeline() {
                 <Modal title={<Space><FileAddOutlined />
                     {editingProposal ? `Edit ${editingProposal.proposalNumber}` : 'Create proposal'}
                 </Space>} open={proposalModalOpen}
-                    onCancel={() => setProposalModalOpen(false)} onOk={saveProposal}
-                    okText={editingProposal ? 'Save changes' : 'Create proposal'}
-                    confirmLoading={saving} width={860}>
+                    onCancel={() => setProposalModalOpen(false)}
+                    width={760} className='proposal-form-modal'
+                    footer={editingProposal
+                        ? proposalStep === EDIT_SECTION_PICKER
+                            ? <Button block onClick={() => setProposalModalOpen(false)}>Cancel</Button>
+                            : <div className='proposal-step-footer'>
+                                <Button block icon={<ArrowLeftOutlined />} disabled={saving}
+                                    onClick={() => setProposalStep(EDIT_SECTION_PICKER)}>Sections</Button>
+                                <Button block type='primary' loading={saving}
+                                    onClick={saveProposal}>Save changes</Button>
+                            </div>
+                        : <div className='proposal-step-footer'>
+                            <Button block icon={proposalStep > 0 ? <ArrowLeftOutlined /> : undefined}
+                                disabled={saving} onClick={goToPreviousStep}>
+                                {proposalStep > 0 ? 'Back' : 'Cancel'}
+                            </Button>
+                            <Button block type='primary' loading={saving} onClick={goToNextStep}
+                                icon={isLastProposalStep ? undefined : <ArrowRightOutlined />} iconPosition='end'>
+                                {isLastProposalStep ? 'Create proposal' : 'Next'}
+                            </Button>
+                        </div>}>
                     <Form form={form} layout='vertical'>
                         <Form.Item name='allCentres' valuePropName='checked' hidden><Checkbox /></Form.Item>
                         <Form.Item name='allDepartments' valuePropName='checked' hidden><Checkbox /></Form.Item>
-                        <Row gutter={16}>
-                            <Col xs={24} md={16}><Form.Item name='title' label='Proposal title'
-                                rules={[{ required: true }]}><Input /></Form.Item></Col>
-                            <Col xs={24} md={8}><Form.Item name='estimatedValue'
-                                label='Estimated value' rules={[{ required: true }]}>
-                                <InputNumber min={0} prefix='R' style={{ width: '100%' }} />
-                            </Form.Item></Col>
-                            <Col xs={24} md={12}><Form.Item name='clientName'
-                                label='Client / prospective client' rules={[{ required: true }]}>
-                                <Input />
-                            </Form.Item></Col>
-                            <Col xs={12} md={6}><Form.Item name='category' label='Category'
-                                rules={[{ required: true }]}>
-                                <Select options={PROPOSAL_CATEGORIES.map(value => ({ label: value, value }))} />
-                            </Form.Item></Col>
-                            <Col xs={12} md={6}><Form.Item name='scope' label='Scope'
-                                rules={[{ required: true }]}>
-                                <Select onChange={handleScopeChange}
-                                    options={PROPOSAL_SCOPES.map(value => ({ label: value, value }))} />
-                            </Form.Item></Col>
-                            <Col xs={24} md={12}><Form.Item name='clientContact' label='Client contact'>
-                                <Input />
-                            </Form.Item></Col>
-                            <Col xs={24} md={12}><Form.Item name='clientEmail' label='Client email'
-                                rules={[{ type: 'email' }]}><Input /></Form.Item></Col>
-                            <Col xs={24} md={12}><Form.Item name='originatorName'
-                                label='Originated by' rules={[{ required: true }]}>
-                                <Input prefix={<UserOutlined />} />
-                            </Form.Item></Col>
-                            <Col xs={24} md={12}><Form.Item name='ownerName'
-                                label='Proposal owner' rules={[{ required: true }]}>
-                                <Input prefix={<UserOutlined />} />
-                            </Form.Item></Col>
-                            <Col xs={24} md={12}><Form.Item name='proposedDate' label='Proposal date'>
-                                <DatePicker style={{ width: '100%' }} />
-                            </Form.Item></Col>
-                            <Col xs={24} md={12}><Form.Item name='submissionDeadline'
-                                label='Submission deadline'><DatePicker style={{ width: '100%' }} />
-                            </Form.Item></Col>
-                            {selectedScope === 'Provincial' && <Col xs={24} md={12}>
-                                <Form.Item name='province' label='Province' rules={[{ required: true }]}>
-                                    <Select placeholder='Select a province' onChange={handleProvinceChange}
-                                        options={provinces.map(value => ({ label: value, value }))} />
-                                </Form.Item>
-                            </Col>}
-                            {['National', 'Provincial'].includes(selectedScope) && <Col span={24}>
-                                <div className='proposal-select-all-control'>
-                                    <Checkbox checked={Boolean(allCentres)}
-                                        disabled={selectedScope === 'Provincial' && !selectedProvince}
-                                        onChange={event => handleAllCentresChange(event.target.checked)}>
-                                        {selectedScope === 'National'
-                                            ? `All centres (${branches.length})`
-                                            : `All centres in ${selectedProvince || 'selected province'} (${selectableCentres.length})`}
-                                    </Checkbox>
-                                    {allCentres && <Tag color='blue'>All centres selected</Tag>}
+                        {/* Editing opens on a section picker so any section is one click away. */}
+                        {editingProposal && proposalStep === EDIT_SECTION_PICKER &&
+                            <div className='proposal-form-step'>
+                                <div className='proposal-form-step-heading'>
+                                    <strong>What would you like to edit?</strong>
+                                    <span>Choose a section to open it directly.</span>
                                 </div>
-                            </Col>}
-                            <Col span={24}><Form.Item name='centres' label='Participating centres'
-                                rules={[{ required: true, message: 'Select at least one participating centre' }]}>
-                                <Select mode='multiple' showSearch optionFilterProp='label'
-                                    disabled={Boolean(allCentres) || (selectedScope === 'Provincial' && !selectedProvince)}
-                                    placeholder={allCentres ? 'All eligible centres selected' : 'Search and select centres'}
-                                    maxTagCount='responsive'
-                                    options={selectableCentres.map(item => ({
-                                        label: `${item.name}${item.province ? ` · ${item.province}` : ''}`,
-                                        value: item.id
+                                <div className='proposal-section-picker'>
+                                    {PROPOSAL_FORM_STEPS.map((step, index) => (
+                                        <button type='button' key={step.title}
+                                            className='proposal-section-option'
+                                            onClick={() => setProposalStep(index)}>
+                                            <span className='proposal-section-option-icon'>{step.icon}</span>
+                                            <span className='proposal-section-option-copy'>
+                                                <strong>{step.title}</strong>
+                                                <small>{step.description}</small>
+                                            </span>
+                                            <ArrowRightOutlined className='proposal-section-option-arrow' />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>}
+                        {/* Every step stays mounted so the whole form validates on save;
+                            only the active one is shown, and it fades in when revealed. */}
+                        <div className='proposal-form-step' hidden={proposalStep !== 0}>
+                            <ProposalStepHeading index={0} />
+                            <Row gutter={16}>
+                                <Col xs={24} md={16}><Form.Item name='title' label='Proposal title'
+                                    rules={[{ required: true }]}><Input /></Form.Item></Col>
+                                <Col xs={24} md={8}><Form.Item name='estimatedValue'
+                                    label='Estimated value' rules={[{ required: true }]}>
+                                    <InputNumber min={0} prefix='R' style={{ width: '100%' }} />
+                                </Form.Item></Col>
+                                <Col xs={24} md={12}><Form.Item name='clientName'
+                                    label='Client / prospective client' rules={[{ required: true }]}>
+                                    <Input />
+                                </Form.Item></Col>
+                                <Col xs={24} md={12}><Form.Item name='category' label='Category'
+                                    rules={[{ required: true }]}>
+                                    <Select options={PROPOSAL_CATEGORIES.map(value => ({ label: value, value }))} />
+                                </Form.Item></Col>
+                                <Col xs={24} md={12}><Form.Item name='clientContact' label='Client contact'>
+                                    <Input />
+                                </Form.Item></Col>
+                                <Col xs={24} md={12}><Form.Item name='clientEmail' label='Client email'
+                                    rules={[{ type: 'email' }]}><Input /></Form.Item></Col>
+                            </Row>
+                        </div>
+
+                        <div className='proposal-form-step' hidden={proposalStep !== 1}>
+                            <ProposalStepHeading index={1} />
+                            <Row gutter={16}>
+                                <Col xs={24} md={12}><Form.Item name='originatorName'
+                                    label='Originated by' rules={[{ required: true }]}>
+                                    <Input prefix={<UserOutlined />} />
+                                </Form.Item></Col>
+                                <Col xs={24} md={12}><Form.Item name='ownerType' label='Owned by'
+                                    rules={[{ required: true }]}>
+                                    <Segmented block options={PROPOSAL_OWNER_TYPES.map(value => ({
+                                        value, label: value, icon: ownerIcon(value)
                                     }))} />
-                            </Form.Item></Col>
-                            <Col span={24}>
-                                <div className='proposal-select-all-control'>
-                                    <Checkbox checked={Boolean(allDepartments)}
-                                        onChange={event => handleAllDepartmentsChange(event.target.checked)}>
-                                        All departments ({departments.length})
-                                    </Checkbox>
-                                    {allDepartments && <Tag color='purple'>All departments selected</Tag>}
-                                </div>
-                            </Col>
-                            <Col span={24}><Form.Item name='departments' label='Intervention departments'>
-                                <Select mode='multiple' showSearch optionFilterProp='label'
-                                    disabled={Boolean(allDepartments)} maxTagCount='responsive'
-                                    placeholder={allDepartments ? 'All departments selected' : 'Search and select departments'}
-                                    options={departments.map(item => ({ label: item.name, value: item.id }))} />
-                            </Form.Item></Col>
-                            <Col span={24}><Form.Item name='description' label='Proposal summary'>
+                                </Form.Item></Col>
+                                <Col span={24}>
+                                    {ownerType === 'Individual' && <Form.Item name='ownerName'
+                                        label='Proposal owner' rules={[{ required: true, whitespace: true }]}
+                                        extra='Pick a system user or type a name.'>
+                                        <AutoComplete options={people.map(person => ({ value: person.name }))}
+                                            filterOption={(input, option) =>
+                                                String(option?.value || '').toLowerCase().includes(input.toLowerCase())}>
+                                            <Input prefix={<UserOutlined />} />
+                                        </AutoComplete>
+                                    </Form.Item>}
+                                    {ownerType === 'Department' && <Form.Item name='ownerDepartmentId'
+                                        label='Owning department'
+                                        rules={[{ required: true, message: 'Select the owning department' }]}>
+                                        <Select showSearch optionFilterProp='label' placeholder='Search departments'
+                                            options={departments.map(item => ({ label: item.name, value: item.id }))} />
+                                    </Form.Item>}
+                                    {ownerType === 'Centre' && <Form.Item name='ownerCentreId'
+                                        label='Owning centre'
+                                        rules={[{ required: true, message: 'Select the owning centre' }]}>
+                                        <Select showSearch optionFilterProp='label' placeholder='Search centres'
+                                            options={branches.map(item => ({
+                                                label: `${item.name}${item.province ? ` · ${item.province}` : ''}`,
+                                                value: item.id
+                                            }))} />
+                                    </Form.Item>}
+                                </Col>
+                                <Col xs={24} md={12}><Form.Item name='proposedDate' label='Proposal date'>
+                                    <DatePicker style={{ width: '100%' }} />
+                                </Form.Item></Col>
+                                <Col xs={24} md={12}><Form.Item name='submissionDeadline'
+                                    label='Submission deadline'><DatePicker style={{ width: '100%' }} />
+                                </Form.Item></Col>
+                                <Col xs={24} md={12}><Form.Item name='status' label='Current status'
+                                    rules={[{ required: true }]}>
+                                    <Select options={PROPOSAL_STATUSES.filter(value => value !== 'Archived')
+                                        .map(value => ({ label: value, value }))} />
+                                </Form.Item></Col>
+                            </Row>
+                        </div>
+
+                        <div className='proposal-form-step' hidden={proposalStep !== 2}>
+                            <ProposalStepHeading index={2} />
+                            <Row gutter={16}>
+                                <Col xs={24} md={12}><Form.Item name='scope' label='Scope'
+                                    rules={[{ required: true }]}>
+                                    <Select onChange={handleScopeChange}
+                                        options={PROPOSAL_SCOPES.map(value => ({ label: value, value }))} />
+                                </Form.Item></Col>
+                                {selectedScope === 'Provincial' && <Col xs={24} md={12}>
+                                    <Form.Item name='province' label='Province' rules={[{ required: true }]}>
+                                        <Select placeholder='Select a province' onChange={handleProvinceChange}
+                                            options={provinces.map(value => ({ label: value, value }))} />
+                                    </Form.Item>
+                                </Col>}
+                                {['National', 'Provincial'].includes(selectedScope) && <Col span={24}>
+                                    <div className='proposal-select-all-control'>
+                                        <Checkbox checked={Boolean(allCentres)}
+                                            disabled={selectedScope === 'Provincial' && !selectedProvince}
+                                            onChange={event => handleAllCentresChange(event.target.checked)}>
+                                            {selectedScope === 'National'
+                                                ? `All centres (${branches.length})`
+                                                : `All centres in ${selectedProvince || 'selected province'} (${selectableCentres.length})`}
+                                        </Checkbox>
+                                        {allCentres && <Tag color='blue'>All centres selected</Tag>}
+                                    </div>
+                                </Col>}
+                                <Col span={24}><Form.Item name='centres' label='Participating centres'
+                                    rules={[{ required: true, message: 'Select at least one participating centre' }]}>
+                                    <Select mode='multiple' showSearch optionFilterProp='label'
+                                        disabled={Boolean(allCentres) || (selectedScope === 'Provincial' && !selectedProvince)}
+                                        placeholder={allCentres ? 'All eligible centres selected' : 'Search and select centres'}
+                                        maxTagCount='responsive'
+                                        options={selectableCentres.map(item => ({
+                                            label: `${item.name}${item.province ? ` · ${item.province}` : ''}`,
+                                            value: item.id
+                                        }))} />
+                                </Form.Item></Col>
+                                <Col span={24}>
+                                    <div className='proposal-select-all-control'>
+                                        <Checkbox checked={Boolean(allDepartments)}
+                                            onChange={event => handleAllDepartmentsChange(event.target.checked)}>
+                                            All departments ({departments.length})
+                                        </Checkbox>
+                                        {allDepartments && <Tag color='purple'>All departments selected</Tag>}
+                                    </div>
+                                </Col>
+                                <Col span={24}><Form.Item name='departments' label='Intervention departments'>
+                                    <Select mode='multiple' showSearch optionFilterProp='label'
+                                        disabled={Boolean(allDepartments)} maxTagCount='responsive'
+                                        placeholder={allDepartments ? 'All departments selected' : 'Search and select departments'}
+                                        options={departments.map(item => ({ label: item.name, value: item.id }))} />
+                                </Form.Item></Col>
+                            </Row>
+                        </div>
+
+                        <div className='proposal-form-step' hidden={proposalStep !== 3}>
+                            <ProposalStepHeading index={3} />
+                            <Form.Item name='description' label='Proposal summary'>
                                 <Input.TextArea rows={3} />
-                            </Form.Item></Col>
-                            <Col span={24}><Form.Item name='contributorIds' label='Contributors'
+                            </Form.Item>
+                            <Form.Item name='contributorIds' label='Contributors'
                                 extra='Search for and add existing system users by name or email.'>
                                 <Select mode='multiple' showSearch allowClear optionFilterProp='label'
                                     placeholder='Search by name or email'
                                     maxTagCount='responsive' options={contributorOptions} />
-                            </Form.Item></Col>
-                            <Col span={24}><Form.Item label='Supporting documents'
-                                extra='Attach proposal, financial, compliance, agreement, or supporting evidence files.'>
-                                <Upload.Dragger multiple fileList={supportingUploadFiles}
-                                    beforeUpload={file => {
-                                        if (file.size > 25 * 1024 * 1024) {
-                                            message.error(`${file.name} is larger than the 25 MB limit.`)
-                                            return Upload.LIST_IGNORE
-                                        }
-                                        setSupportingFiles(current => current.some(item =>
-                                            item.name === file.name && item.size === file.size
-                                        ) ? current : [...current, file as File])
-                                        return false
-                                    }}
-                                    onRemove={file => {
-                                        setSupportingFiles(current => current.filter((_, index) =>
-                                            `${file.name}-${file.size}-${index}` !== file.uid
-                                        ))
-                                        return true
-                                    }}>
-                                    <p className='ant-upload-drag-icon'><UploadOutlined /></p>
-                                    <p className='ant-upload-text'>Click or drag supporting documents here</p>
-                                    <p className='ant-upload-hint'>Files are uploaded when the proposal is saved.</p>
-                                </Upload.Dragger>
-                            </Form.Item></Col>
-                            <Col xs={24} md={12}><Form.Item name='status' label='Current status'
-                                rules={[{ required: true }]}>
-                                <Select options={PROPOSAL_STATUSES.filter(value => value !== 'Archived')
-                                    .map(value => ({ label: value, value }))} />
-                            </Form.Item></Col>
-                        </Row>
+                            </Form.Item>
+                            <Form.Item label='Documents'
+                                extra='Files are uploaded to their category when the proposal is saved.'>
+                                <DocumentCategoryRows
+                                    documents={editDocuments}
+                                    pendingFiles={pendingDocuments}
+                                    onAdd={(category, file) => setPendingDocuments(current =>
+                                        current.some(item => item.category === category &&
+                                            item.file.name === file.name && item.file.size === file.size)
+                                            ? current
+                                            : [...current, { category, file }])}
+                                    onRemovePending={pending => setPendingDocuments(current =>
+                                        current.filter(item => item !== pending))}
+                                    renderDocumentActions={document =>
+                                        <Button size='small' icon={<DownloadOutlined />}
+                                            onClick={() => window.open(document.url, '_blank')}>Open</Button>} />
+                            </Form.Item>
+                        </div>
                     </Form>
                 </Modal>
 
-                <Drawer title={selectedProposal ? <div>
+                <Modal title={selectedProposal ? <div>
                     <Text type='secondary'>{selectedProposal.proposalNumber}</Text>
                     <Title level={4} style={{ margin: '2px 0 0' }}>{selectedProposal.title}</Title>
                 </div> : 'Proposal details'} open={detailsOpen}
-                    onClose={() => setDetailsOpen(false)} width={760}
-                    extra={selectedProposal && <Space>
-                        <Button icon={<EditOutlined />} onClick={() => openEdit(selectedProposal)}>Edit</Button>
-                        <Button type='primary' onClick={() => {
+                    onCancel={() => setDetailsOpen(false)} width={760}
+                    className='proposal-details-modal'
+                    footer={selectedProposal && <div className='proposal-details-footer'>
+                        <Button block icon={<EditOutlined />}
+                            onClick={() => openEdit(selectedProposal)}>Edit</Button>
+                        {renderAdvanceButton(selectedProposal, true)}
+                        <Button block type='primary' icon={<SafetyCertificateOutlined />} onClick={() => {
                             setActivationOpen(true)
                             setDetailsOpen(false)
                         }}>Preview activation</Button>
-                    </Space>}>
+                    </div>}>
                     {selectedProposal && <Spin spinning={detailsLoading}>
-                        <Tabs defaultActiveKey='overview' items={[
+                        {(() => {
+                            const sections = [
                             {
                                 key: 'overview', label: 'Overview', children: <>
                                     <Descriptions bordered column={2} size='small'>
@@ -795,65 +1116,67 @@ export default function ProposalPipeline() {
                                             {selectedProposal.allCentres && <Tag color='blue'>All centres</Tag>}
                                         </Space></Descriptions.Item>
                                         <Descriptions.Item label='Originator'>{selectedProposal.originator.name}</Descriptions.Item>
-                                        <Descriptions.Item label='Owner'>{selectedProposal.owner.name}</Descriptions.Item>
+                                        <Descriptions.Item label='Owner'><Space size={6}>
+                                            {ownerIcon(selectedProposal.owner.type)}
+                                            <span>{selectedProposal.owner.name}</span>
+                                            <Tag>{selectedProposal.owner.type || 'Individual'}</Tag>
+                                        </Space></Descriptions.Item>
                                         <Descriptions.Item label='Last updated' span={2}>{dateLabel(selectedProposal.updatedAt)}</Descriptions.Item>
                                     </Descriptions>
+                                    {/* "All" selections collapse to one tag rather than listing every record. */}
                                     <Divider orientation='left'>Delivery footprint</Divider>
-                                    <Space wrap>{selectedProposal.centres.length
-                                        ? selectedProposal.centres.map(item =>
-                                            <Tag icon={<GlobalOutlined />} color='blue' key={item.id}>{item.name}</Tag>)
-                                        : <Text type='secondary'>No centres assigned</Text>}</Space>
+                                    <Space wrap>{selectedProposal.allCentres
+                                        ? <Tag icon={<GlobalOutlined />} color='blue'>
+                                            {selectedProposal.province
+                                                ? `All centres in ${selectedProposal.province}`
+                                                : 'All centres'} ({selectedProposal.centres.length})
+                                        </Tag>
+                                        : selectedProposal.centres.length
+                                            ? selectedProposal.centres.map(item =>
+                                                <Tag icon={<GlobalOutlined />} color='blue' key={item.id}>{item.name}</Tag>)
+                                            : <Text type='secondary'>No centres assigned</Text>}</Space>
                                     <Divider orientation='left'>Participating departments</Divider>
-                                    {selectedProposal.allDepartments && <Tag color='purple'
-                                        style={{ marginBottom: 8 }}>All departments</Tag>}
-                                    <Space wrap>{selectedProposal.departments.length
-                                        ? selectedProposal.departments.map(item =>
-                                            <Tag icon={<TeamOutlined />} color='purple' key={item.id}>{item.name}</Tag>)
-                                        : <Text type='secondary'>No departments selected</Text>}</Space>
+                                    <Space wrap>{selectedProposal.allDepartments
+                                        ? <Tag icon={<TeamOutlined />} color='purple'>
+                                            All departments ({selectedProposal.departments.length})
+                                        </Tag>
+                                        : selectedProposal.departments.length
+                                            ? selectedProposal.departments.map(item =>
+                                                <Tag icon={<TeamOutlined />} color='purple' key={item.id}>{item.name}</Tag>)
+                                            : <Text type='secondary'>No departments selected</Text>}</Space>
+                                    {/* Originator and owner are shown above; this lists only added contributors. */}
                                     <Divider orientation='left'>Contributors</Divider>
-                                    <List size='small'
-                                        dataSource={[selectedProposal.originator, selectedProposal.owner, ...selectedProposal.contributors]}
+                                    <List size='small' dataSource={selectedProposal.contributors}
+                                        locale={{ emptyText: 'No contributors added' }}
                                         renderItem={person => <List.Item><List.Item.Meta
                                             avatar={<Avatar icon={<UserOutlined />} />} title={person.name}
                                             description={person.email || undefined} /></List.Item>} />
-                                    <Button block icon={<ClockCircleOutlined />} onClick={() => {
-                                        statusForm.setFieldsValue({
-                                            status: nextStatuses(selectedProposal.status)[0], note: ''
-                                        })
-                                        setStatusModalOpen(true)
-                                    }}>Update pipeline status</Button>
+                                    <Button block icon={<ClockCircleOutlined />}
+                                        onClick={() => openStatusModal(selectedProposal)}>
+                                        Update pipeline status
+                                    </Button>
                                 </>
                             },
                             {
                                 key: 'documents',
-                                label: <Badge count={documents.length} size='small' offset={[8, -3]}>
-                                    <span>Documents</span>
-                                </Badge>,
-                                children: <>
-                                    <Space style={{ marginBottom: 16 }} wrap>
-                                        {['Proposal', 'Financial', 'Compliance', 'Agreement', 'Evidence'].map(category =>
-                                            <Upload key={category} showUploadList={false}
-                                                beforeUpload={file => handleDocumentUpload(file as File, category)}>
-                                                <Button size='small' icon={<UploadOutlined />}>{category}</Button>
-                                            </Upload>)}
-                                    </Space>
-                                    <List dataSource={documents}
-                                        locale={{ emptyText: 'No proposal documents uploaded yet.' }}
-                                        renderItem={document => <List.Item actions={[
-                                            <Button key='open' icon={<DownloadOutlined />}
-                                                onClick={() => window.open(document.url, '_blank')}>Open</Button>,
-                                            document.id !== 'legacy-proposal-document' &&
-                                            <Popconfirm key='remove' title='Remove this document?'
+                                label: <span className='proposal-segment-label'>
+                                    Documents
+                                    {documents.length > 0 && <Badge count={documents.length} size='small'
+                                        className='proposal-document-count' />}
+                                </span>,
+                                children: <DocumentCategoryRows
+                                    documents={documents}
+                                    onAdd={(category, file) => { handleDocumentUpload(file, category) }}
+                                    renderDocumentActions={document => <>
+                                        <Button size='small' icon={<DownloadOutlined />}
+                                            onClick={() => window.open(document.url, '_blank')}>Open</Button>
+                                        {document.id !== 'legacy-proposal-document' &&
+                                            <Popconfirm title='Remove this document?'
                                                 onConfirm={() => removeDocument(document)}>
-                                                <Button danger icon={<DeleteOutlined />} />
-                                            </Popconfirm>
-                                        ].filter(Boolean)}>
-                                            <List.Item.Meta avatar={<Avatar shape='square'
-                                                icon={<FileTextOutlined />} />}
-                                                title={document.name}
-                                                description={`${document.category} · ${document.status || 'Current'} · ${dateLabel(document.uploadedAt)}`} />
-                                        </List.Item>} />
-                                </>
+                                                <Button size='small' danger icon={<DeleteOutlined />}
+                                                    aria-label={`Remove ${document.name}`} />
+                                            </Popconfirm>}
+                                    </>} />
                             },
                             {
                                 key: 'history', label: 'History',
@@ -865,20 +1188,38 @@ export default function ProposalPipeline() {
                                         </Text></div></div>
                                 }))} /> : <Empty description='No history entries yet' />
                             }
-                        ]} />
+                            ]
+                            const active = sections.find(section => section.key === detailsSection) || sections[0]
+                            return <>
+                                <Segmented block className='proposal-details-segmented'
+                                    value={active.key} onChange={value => setDetailsSection(String(value))}
+                                    options={sections.map(section => ({ value: section.key, label: section.label }))} />
+                                {/* Keyed so each section fades in when selected. */}
+                                <div className='proposal-form-step' key={active.key}>{active.children}</div>
+                            </>
+                        })()}
                     </Spin>}
-                </Drawer>
+                </Modal>
 
-                <Modal title='Update proposal status' open={statusModalOpen}
-                    onCancel={() => setStatusModalOpen(false)} onOk={saveStatus}
-                    confirmLoading={saving} okText='Update status'>
+                {/* One status flow: Advance and "Update pipeline status" both open this modal. */}
+                <Modal title={statusProposal
+                    ? `Update status · ${statusProposal.proposalNumber}`
+                    : 'Update proposal status'} open={Boolean(statusProposal)}
+                    onCancel={() => setStatusProposal(null)}
+                    footer={<div className='proposal-step-footer'>
+                        <Button block disabled={saving} onClick={() => setStatusProposal(null)}>Cancel</Button>
+                        <Button block type='primary' loading={saving} onClick={saveStatus}>Update status</Button>
+                    </div>}>
                     <Form form={statusForm} layout='vertical'>
+                        {statusProposal && <Form.Item label='Current status'>
+                            <Tag color={statusColor[statusProposal.status]}>{statusProposal.status}</Tag>
+                        </Form.Item>}
                         <Form.Item name='status' label='New status' rules={[{ required: true }]}>
-                            <Select options={nextStatuses(selectedProposal?.status || 'Draft')
+                            <Select options={nextStatuses(statusProposal?.status || 'Draft')
                                 .map(value => ({ label: value, value }))} />
                         </Form.Item>
                         <Form.Item name='note' label='Progress note'
-                            rules={[{ required: true, min: 5 }]}>
+                            extra='Optional. Recorded in the proposal history.'>
                             <Input.TextArea rows={3} placeholder='What changed, and what happens next?' />
                         </Form.Item>
                     </Form>

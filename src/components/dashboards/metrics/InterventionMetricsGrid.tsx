@@ -14,6 +14,8 @@ export type InterventionMetricKey = 'assigned' | 'in-progress' | 'completed'
 type Props = {
     metrics: InterventionMetricSummary
     loading?: boolean
+    /** Optional operational metrics displayed beside the intervention tiles. */
+    extraMetrics?: DashboardMetric[]
     /**
      * Called when a drillable tile is clicked. Omit to render the tiles as plain
      * figures.
@@ -66,7 +68,7 @@ export const buildInterventionDashboardMetrics = (
             iconBg: 'transparent',
             title: 'In Progress',
             value: displayValue(metrics.inProgress, loading),
-            subtitle: inPeriod ? `Assigned ${inPeriod}` : undefined,
+            subtitle: inPeriod ? `In progress ${inPeriod}` : undefined,
             ...drill('in-progress')
         },
         {
@@ -75,7 +77,7 @@ export const buildInterventionDashboardMetrics = (
             iconBg: 'transparent',
             title: 'Completed',
             value: displayValue(metrics.completed, loading),
-            subtitle: inPeriod ? `Assigned ${inPeriod}` : undefined,
+            subtitle: inPeriod ? `Completed ${inPeriod}` : undefined,
             ...drill('completed')
         }
     ]
@@ -84,11 +86,15 @@ export const buildInterventionDashboardMetrics = (
 const InterventionMetricsGrid: React.FC<Props> = ({
     metrics,
     loading = false,
+    extraMetrics = [],
     onSelect,
     periodLabel
 }) => (
     <MetricsGrid
-        metrics={buildInterventionDashboardMetrics(metrics, loading, onSelect, periodLabel)}
+        metrics={[
+            ...buildInterventionDashboardMetrics(metrics, loading, onSelect, periodLabel),
+            ...extraMetrics
+        ]}
     />
 )
 

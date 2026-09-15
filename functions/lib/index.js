@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.lphWhatsAppGateway = exports.onInquiryCreatedNotifyStaff = exports.adminResetUserPassword = exports.createPlatformUser = exports.healthCheck = exports.googleOAuthCallback = exports.googleOAuthStart = exports.deleteUserCascade = exports.repairMissingInterventionRecords = exports.resendWelcomeEmail = exports.setEmployeeAccountStatus = exports.updateUserEmailCascade = exports.listAuthUsers = void 0;
+exports.academyCoach = exports.academyAction = exports.lphWhatsAppGateway = exports.onInquiryCreatedNotifyStaff = exports.adminResetUserPassword = exports.createPlatformUser = exports.healthCheck = exports.googleOAuthCallback = exports.googleOAuthStart = exports.deleteUserCascade = exports.repairMissingInterventionRecords = exports.resendWelcomeEmail = exports.setEmployeeAccountStatus = exports.updateUserEmailCascade = exports.listAuthUsers = void 0;
 __exportStar(require("./emailFunctions"), exports);
 var adminTools_1 = require("./adminTools");
 Object.defineProperty(exports, "listAuthUsers", { enumerable: true, get: function () { return adminTools_1.listAuthUsers; } });
@@ -41,4 +41,7 @@ Object.defineProperty(exports, "onInquiryCreatedNotifyStaff", { enumerable: true
 __exportStar(require("./pushNotifications"), exports);
 var whatsappGateway_1 = require("./whatsappGateway");
 Object.defineProperty(exports, "lphWhatsAppGateway", { enumerable: true, get: function () { return whatsappGateway_1.lphWhatsAppGateway; } });
+var academy_1 = require("./academy");
+Object.defineProperty(exports, "academyAction", { enumerable: true, get: function () { return academy_1.academyAction; } });
+Object.defineProperty(exports, "academyCoach", { enumerable: true, get: function () { return academy_1.academyCoach; } });
 //# sourceMappingURL=index.js.map

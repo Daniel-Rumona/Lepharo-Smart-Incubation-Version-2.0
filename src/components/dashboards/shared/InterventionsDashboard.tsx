@@ -79,6 +79,8 @@ export type InterventionsDashboardProps = {
 
     /** Set false for departments that do not run appointments. */
     showAppointments?: boolean
+    departmentIds?: string[]
+    scopeControl?: React.ReactNode
 }
 
 /**
@@ -101,7 +103,9 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
     matchesDepartment,
     sideCards,
     children,
-    showAppointments = true
+    showAppointments = true,
+    departmentIds,
+    scopeControl
 }) => {
     const { token } = theme.useToken()
     const { user } = useFullIdentity() as any
@@ -172,7 +176,8 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
             try {
                 const result = await fetchAppointments({
                     programId,
-                    departmentId: user?.departmentId ?? null
+                    departmentId: departmentIds ? undefined : user?.departmentId ?? null,
+                    departmentIds
                 })
                 if (!cancelled) setAppointments(Array.isArray(result) ? result : [])
             } catch (error) {
@@ -185,7 +190,7 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
         return () => {
             cancelled = true
         }
-    }, [programId, user?.departmentId, showAppointments])
+    }, [programId, user?.departmentId, showAppointments, departmentIds])
 
     /** Records behind whichever metric tile was clicked. */
     const drillRows = useMemo(() => {
@@ -368,11 +373,13 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
                 onSelect={setDrillKey}
                 periodLabel={periodLabel}
             />
+            {scopeControl}
 
             <Row gutter={[24, 24]} style={{ marginTop: 16 }}>
                 <Col xs={24} xl={12}>
                     <DepartmentInterventionsStatus
                         departmentName={user?.departmentName}
+                        matchesDepartment={departmentIds ? matchesDepartment : undefined}
                         programId={programId || undefined}
                         title="Where work is stuck"
                         bucketScope="open"
@@ -386,7 +393,8 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
                     <Space direction="vertical" size={24} style={{ width: '100%' }}>
                         {showAppointments ? (
                             <UpcomingAppointmentsCard
-                                departmentId={user?.departmentId}
+                                departmentId={departmentIds ? undefined : user?.departmentId}
+                                departmentIds={departmentIds}
                                 programId={activeProgramId}
                                 daysAhead={7}
                                 limit={8}
@@ -430,7 +438,7 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
                         open={calendarVisible}
                         onClose={() => setCalendarVisible(false)}
                         appointments={appointments}
-                        departmentId={user?.departmentId}
+                        departmentId={departmentIds ? undefined : user?.departmentId}
                         onAppointmentClick={appointment => {
                             setSelectedAppointment(appointment)
                             setAppointmentDetailsVisible(true)

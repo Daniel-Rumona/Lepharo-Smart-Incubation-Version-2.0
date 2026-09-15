@@ -8,7 +8,6 @@ import {
   getDoc,
   query,
   where,
-  orderBy,
   serverTimestamp,
   writeBatch
 } from 'firebase/firestore'
@@ -89,17 +88,16 @@ export const departmentService = {
   // Get departments
   async getDepartments(): Promise<Department[]> {
     try {
-      const q = query(
-        collection(db, 'departments'),
-        where('isActive', '==', true),
-        orderBy('name')
-      )
-      const querySnapshot = await getDocs(q)
+      const collectionRef = collection(db, 'departments')
+      const querySnapshot = await getDocs(collectionRef)
 
-      return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Department))
+      return querySnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Department))
+        .filter(department => department.isActive !== false) // Include departments without isActive field
+        .sort((a, b) => a.name.localeCompare(b.name))
     } catch (error) {
       console.error('Error fetching departments by company:', error)
       throw new Error('Failed to fetch departments')

@@ -10,8 +10,7 @@ import {
     Input,
     Select,
     Tag,
-    Typography,
-    Card
+    Typography
 } from 'antd'
 import {
     PlusOutlined,
@@ -19,18 +18,31 @@ import {
     DeleteOutlined,
     ReloadOutlined,
     FilePdfOutlined,
-    FileProtectOutlined
+    EyeOutlined,
+    FileProtectOutlined,
+    ApartmentOutlined,
+    CheckCircleOutlined,
+    ThunderboltOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { QualityObjectiveForm } from './QualityObjectiveForm'
+import { QualityObjectiveDetail } from './QualityObjectiveDetail'
 import { qualityObjectiveService } from '@/services/qualityObjectiveService'
 import { downloadQualityObjectivePDF } from '@/services/qualityObjectivePdfService'
 import { departmentService } from '@/services/departmentService'
-import { QualityObjective, QualityObjectiveFormData, Department } from '@/types/types'
+import {
+    QualityObjective,
+    QualityObjectiveFormData,
+    Department,
+    getRatingMeta,
+    SMART_CRITERIA_META
+} from '@/types/types'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
 
 const { Search } = Input
-const { Title, Text } = Typography
+const { Text } = Typography
 
 export const QualityObjectiveManagement: React.FC = () => {
     const { user } = useFullIdentity()
@@ -45,6 +57,7 @@ export const QualityObjectiveManagement: React.FC = () => {
     const [searchText, setSearchText] = useState('')
     const [departmentFilter, setDepartmentFilter] = useState<string | undefined>(undefined)
     const [printingId, setPrintingId] = useState<string | null>(null)
+    const [viewing, setViewing] = useState<QualityObjective | null>(null)
 
     const fetchObjectives = async () => {
         try {
@@ -81,7 +94,8 @@ export const QualityObjectiveManagement: React.FC = () => {
                 !search ||
                 qo.departmentName?.toLowerCase().includes(search) ||
                 qo.referenceNumber?.toLowerCase().includes(search) ||
-                qo.objectiveText?.toLowerCase().includes(search)
+                qo.objectiveText?.toLowerCase().includes(search) ||
+                qo.kpaName?.toLowerCase().includes(search)
             const matchesDepartment = !departmentFilter || qo.departmentId === departmentFilter
             return matchesSearch && matchesDepartment
         })
@@ -138,41 +152,75 @@ export const QualityObjectiveManagement: React.FC = () => {
         }
     }
 
+    const departmentsCovered = new Set(objectives.map(o => o.departmentId)).size
+    const ratedCount = objectives.filter(o => !!o.overallRating).length
+    const fullySmartCount = objectives.filter(o => o.smart && SMART_CRITERIA_META.every(c => o.smart[c.key])).length
+
+    const metricCards: DashboardMetric[] = [
+        {
+            key: 'total-objectives',
+            title: 'Quality Objectives',
+            value: objectives.length,
+            subtitle: 'Across all departments',
+            important: true,
+            icon: <FileProtectOutlined style={{ color: '#1677ff' }} />,
+            iconBg: 'rgba(22,119,255,.12)'
+        },
+        {
+            key: 'departments-covered',
+            title: 'Departments Covered',
+            value: `${departmentsCovered} / ${departments.length}`,
+            subtitle: 'Have at least one objective',
+            important: true,
+            icon: <ApartmentOutlined style={{ color: '#722ed1' }} />,
+            iconBg: 'rgba(114,46,209,.12)'
+        },
+        {
+            key: 'rated',
+            title: 'Rated',
+            value: ratedCount,
+            subtitle: `${objectives.length - ratedCount} awaiting a rating`,
+            icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />,
+            iconBg: 'rgba(82,196,26,.12)'
+        },
+        {
+            key: 'fully-smart',
+            title: 'Fully SMART',
+            value: fullySmartCount,
+            subtitle: 'Meet all 5 SMART criteria',
+            icon: <ThunderboltOutlined style={{ color: '#faad14' }} />,
+            iconBg: 'rgba(250,173,20,.12)'
+        }
+    ]
+
     const columns = [
         {
             title: 'Department',
             dataIndex: 'departmentName',
             key: 'departmentName',
             render: (name: string) => <Text strong>{name}</Text>,
-            width: '18%'
+            width: '20%'
         },
         {
-            title: 'Reference No.',
-            dataIndex: 'referenceNumber',
-            key: 'referenceNumber',
-            width: '12%',
-            render: (ref: string, record: QualityObjective) => (
-                <Space direction='vertical' size={0}>
-                    <Text>{ref}</Text>
-                    <Tag color='blue'>Objective {record.objectiveNumber}</Tag>
+            title: 'Objective',
+            key: 'objective',
+            width: '38%',
+            render: (_: any, record: QualityObjective) => (
+                <Space direction='vertical' size={0} style={{ maxWidth: '100%' }}>
+                    <Space size={6} wrap>
+                        <Text strong>{record.referenceNumber}</Text>
+                        <Tag color='blue'>Objective {record.objectiveNumber}</Tag>
+                    </Space>
+                    <Text ellipsis={{ tooltip: record.objectiveText }} style={{ maxWidth: 380, display: 'inline-block' }}>
+                        {record.objectiveText}
+                    </Text>
                 </Space>
             )
         },
         {
-            title: 'Quality Objective',
-            dataIndex: 'objectiveText',
-            key: 'objectiveText',
-            render: (text: string) => (
-                <Text ellipsis={{ tooltip: text }} style={{ maxWidth: 360, display: 'inline-block' }}>
-                    {text}
-                </Text>
-            ),
-            width: '35%'
-        },
-        {
             title: 'Period',
             key: 'period',
-            width: '15%',
+            width: '18%',
             render: (_: any, record: QualityObjective) => (
                 <Text>
                     {record.periodStart ? dayjs(record.periodStart).format('DD MMM YYYY') : '-'}
@@ -182,10 +230,19 @@ export const QualityObjectiveManagement: React.FC = () => {
             )
         },
         {
-            title: 'Steps',
-            key: 'steps',
-            width: '8%',
-            render: (_: any, record: QualityObjective) => <Tag>{record.steps?.length || 0}</Tag>
+            title: 'Rating',
+            key: 'rating',
+            width: '12%',
+            render: (_: any, record: QualityObjective) => {
+                const meta = getRatingMeta(record.overallRating)
+                return meta ? (
+                    <Tooltip title={meta.description}>
+                        <Tag color={meta.color}>{meta.shortLabel}</Tag>
+                    </Tooltip>
+                ) : (
+                    <Tag>Not rated</Tag>
+                )
+            }
         },
         {
             title: 'Actions',
@@ -193,6 +250,14 @@ export const QualityObjectiveManagement: React.FC = () => {
             width: '12%',
             render: (_: any, record: QualityObjective) => (
                 <Space size='small'>
+                    <Tooltip title='View'>
+                        <Button
+                            type='text'
+                            icon={<EyeOutlined />}
+                            onClick={() => setViewing(record)}
+                            size='small'
+                        />
+                    </Tooltip>
                     <Tooltip title='Print / Export PDF'>
                         <Button
                             type='text'
@@ -228,58 +293,53 @@ export const QualityObjectiveManagement: React.FC = () => {
     ]
 
     return (
-        <div>
-            <Card>
-                <div style={{ marginBottom: 16 }}>
-                    <Title level={3}>
-                        <FileProtectOutlined style={{ marginRight: 8 }} />
-                        Quality Objectives
-                    </Title>
-                    <Text type='secondary'>
-                        Define each department's yearly quality objectives, steps, responsible persons, and
-                        target/completion dates (LEP-QMS 024 F). Directors and HR manage these centrally.
-                    </Text>
-                </div>
+        <div style={{ padding: '12px 24px 24px' }}>
+            <MetricsGrid metrics={metricCards} />
 
-                <div
-                    style={{
-                        marginBottom: 16,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
-                        gap: 16
-                    }}
-                >
-                    <Space wrap>
-                        <Button type='primary' icon={<PlusOutlined />} onClick={() => showModal()}>
-                            Add Quality Objective
-                        </Button>
-                        <Button icon={<ReloadOutlined />} onClick={fetchObjectives} loading={loading}>
-                            Refresh
-                        </Button>
-                    </Space>
+            <div style={{ height: 16 }} />
 
-                    <Space wrap>
-                        <Select
-                            placeholder='Filter by department'
-                            allowClear
-                            style={{ width: 220 }}
-                            value={departmentFilter}
-                            onChange={setDepartmentFilter}
-                            options={departments.map(d => ({ value: d.id, label: d.name }))}
-                        />
-                        <Search
-                            placeholder='Search by department, reference no, or objective'
-                            value={searchText}
-                            onChange={e => setSearchText(e.target.value)}
-                            onSearch={setSearchText}
-                            style={{ width: 320 }}
-                            allowClear
-                        />
-                    </Space>
-                </div>
+            <MotionCard
+                filterBarProps={{ marginBottom: 16, padding: 14 }}
+                filterBar={
+                    <div
+                        style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 12
+                        }}
+                    >
+                        <Space wrap>
+                            <Select
+                                placeholder='Filter by department'
+                                allowClear
+                                style={{ width: 220 }}
+                                value={departmentFilter}
+                                onChange={setDepartmentFilter}
+                                options={departments.map(d => ({ value: d.id, label: d.name }))}
+                            />
+                            <Search
+                                placeholder='Search by department, reference no, or objective'
+                                value={searchText}
+                                onChange={e => setSearchText(e.target.value)}
+                                onSearch={setSearchText}
+                                style={{ width: 320 }}
+                                allowClear
+                            />
+                        </Space>
 
+                        <Space wrap>
+                            <Button type='primary' icon={<PlusOutlined />} onClick={() => showModal()}>
+                                Add Quality Objective
+                            </Button>
+                            <Button icon={<ReloadOutlined />} onClick={fetchObjectives} loading={loading}>
+                                Refresh
+                            </Button>
+                        </Space>
+                    </div>
+                }
+            >
                 <Table
                     dataSource={filtered}
                     columns={columns}
@@ -291,26 +351,39 @@ export const QualityObjectiveManagement: React.FC = () => {
                         pageSizeOptions: ['10', '20', '50'],
                         showTotal: total => `Total ${total} quality objectives`
                     }}
-                    scroll={{ x: 1100 }}
+                    scroll={{ x: 900 }}
                 />
+            </MotionCard>
 
-                <Modal
-                    title={isEditMode ? 'Edit Quality Objective' : 'Add Quality Objective'}
-                    open={isModalVisible}
+            <Modal
+                title={isEditMode ? 'Edit Quality Objective' : 'Add Quality Objective'}
+                open={isModalVisible}
+                onCancel={handleCancel}
+                footer={null}
+                maskClosable={false}
+                width={960}
+                centered
+                destroyOnClose
+            >
+                <QualityObjectiveForm
+                    initialValues={current}
+                    onSubmit={handleSubmit}
                     onCancel={handleCancel}
-                    footer={null}
-                    maskClosable={false}
-                    width={960}
-                    destroyOnClose
-                >
-                    <QualityObjectiveForm
-                        initialValues={current}
-                        onSubmit={handleSubmit}
-                        onCancel={handleCancel}
-                        isEditMode={isEditMode}
-                    />
-                </Modal>
-            </Card>
+                    isEditMode={isEditMode}
+                />
+            </Modal>
+
+            <QualityObjectiveDetail
+                objective={viewing}
+                open={!!viewing}
+                onClose={() => setViewing(null)}
+                onEdit={objective => {
+                    setViewing(null)
+                    showModal(true, objective)
+                }}
+                onPrint={handlePrint}
+                printing={!!viewing && printingId === viewing.id}
+            />
         </div>
     )
 }

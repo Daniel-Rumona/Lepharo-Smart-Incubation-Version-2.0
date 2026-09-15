@@ -155,7 +155,7 @@ const PRIMARY_NAV_KEYS: Partial<Record<UserRole, string[]>> = {
     projectadmin: ["dashboard", "sme-incubatees", "kpis-tracker", "interventions"],
     coordinator: ["dashboard", "allocated-active", "appointments", "coordinator-movs"],
     funder: ["dashboard", "incubatees", "analytics"],
-    director: ["dashboard", "kpis-tracker", "reports", "interventions-db"],
+    director: ["dashboard", "kpis-tracker", "quality-objectives", "reports"],
     incubatee: ["dashboard", "interventions-tracker", "appointments-tracker", "roadmap"],
     receptionist: ["dashboard", "inquiries", "follow-ups", "calendar"],
 };
@@ -165,7 +165,7 @@ const OPERATIONS_PRIMARY_KEYS: Record<string, string[]> = {
     "M&E": ["dashboard", "kpis-tracker", "monitoring-participants", "reports"],
     IHF: ["dashboard", "requested", "invoices", "reported"],
     "Stakeholder Engagement": ["dashboard", "engagement", "reports", "timesheet"],
-    DEFAULT: ["dashboard", "hod-active", "appointments", "reports"],
+    DEFAULT: ["dashboard", "assignments", "appointments", "reports"],
 };
 
 const NAV_DESCRIPTIONS: Record<string, string> = {
@@ -1370,12 +1370,6 @@ export const CustomLayout: React.FC = () => {
                 icon: <FileTextOutlined />,
             },
             {
-                key: "documentation",
-                to: "/operations/documentation",
-                label: "Documents Hub",
-                icon: <FileSearchOutlined />,
-            },
-            {
                 key: "reports",
                 to: "/director/reports",
                 label: "Analytics",
@@ -1401,28 +1395,10 @@ export const CustomLayout: React.FC = () => {
                 ],
             },
             {
-                key: "interventions-db",
-                to: "/interventions",
-                label: "Interventions Overview",
-                icon: <DatabaseOutlined />,
-            },
-            {
-                key: "user-management",
-                to: "/admin",
-                label: "User Management",
-                icon: <UserOutlined />,
-            },
-            {
                 key: "quality-objectives",
                 to: "/director/hr/quality-objectives",
                 label: "Quality Objectives",
                 icon: <FileProtectOutlined />,
-            },
-            {
-                key: "system",
-                to: "/system",
-                label: "System Setup",
-                icon: <BankOutlined />,
             },
         ],
 
@@ -1487,6 +1463,12 @@ export const CustomLayout: React.FC = () => {
                 label: "Library",
                 to: "/incubatee/library",
                 icon: <BookOutlined />,
+            },
+            {
+                key: "academy-courses",
+                label: "Courses",
+                to: "/academy",
+                icon: <ReadOutlined />,
             },
             {
                 key: "roadmap",
@@ -1632,12 +1614,6 @@ export const CustomLayout: React.FC = () => {
                 label: "Employees",
                 icon: <TeamOutlined />,
             },
-            // {
-            //     key: "employee-performance",
-            //     to: "/operations/hr/performance",
-            //     label: "Performance",
-            //     icon: <TrophyOutlined />,
-            // },
             {
                 key: "quality-objectives",
                 to: "/operations/hr/quality-objectives",
@@ -1674,6 +1650,12 @@ export const CustomLayout: React.FC = () => {
                 to: "/operations/surveys",
                 label: "Surveys Portal",
                 icon: <LinkOutlined />,
+            },
+            {
+                key: "course-builder",
+                to: "/operations/training/courses",
+                label: "Courses",
+                icon: <ReadOutlined />,
             },
             {
                 key: "engagement",
@@ -2355,6 +2337,7 @@ export const CustomLayout: React.FC = () => {
         "Training Academy": {
             topLevel: [
                 ...SHARED_OPERATIONS_TOP,
+                "course-builder",
                 "coordinators",
                 "surveys-portal",
                 "interventions",
@@ -2701,7 +2684,7 @@ export const CustomLayout: React.FC = () => {
       Routes that read the reporting period directly rather than through a
       department dashboard.
     */
-    const ROUTES_WITH_PERIOD_FILTER = ["/projectadmin"];
+    const ROUTES_WITH_PERIOD_FILTER = ["/projectadmin", "/operations"];
 
     /*
       Extend one of these lists as each page is migrated. A page that consumes
@@ -2768,9 +2751,16 @@ export const CustomLayout: React.FC = () => {
     }, [flatNavigation, primaryCoveredRouteSet]);
 
     const hasMoreDestinations = moreSections.some((section) => section.items.length > 0);
+    // With only a couple of destinations (e.g. directors) section tabs add
+    // nothing, so the launcher lists them side by side without sections.
+    const allMoreItems = useMemo(
+        () => moreSections.flatMap((section) => section.items),
+        [moreSections]
+    );
+    const flattenMore = allMoreItems.length <= 2;
     const selectedMoreSection =
         moreSections.find((section) => section.title === moreSection) || moreSections[0];
-    const selectedMoreItems = selectedMoreSection?.items || [];
+    const selectedMoreItems = flattenMore ? allMoreItems : selectedMoreSection?.items || [];
     const morePageSize = isMobile ? 3 : MORE_PAGE_SIZE;
     const pagedMoreItems = selectedMoreItems.slice(
         (morePage - 1) * morePageSize,
@@ -3075,7 +3065,7 @@ export const CustomLayout: React.FC = () => {
 
     return (
         <Layout className="workspace-shell" style={{ minHeight: "100vh", background: pageBg }}>
-            <div className="workspace-header-wrap">
+            {!/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && <div className="workspace-header-wrap">
                 <header className={`workspace-topbar ${isMobile ? "workspace-topbar-mobile workspace-topbar-nonav" : ""}`}>
                     <button
                         type="button"
@@ -3153,7 +3143,7 @@ export const CustomLayout: React.FC = () => {
                         </Tooltip>
                     </div>
                 </header>
-            </div>
+            </div>}
 
             <Content
                 style={{
@@ -3162,7 +3152,7 @@ export const CustomLayout: React.FC = () => {
                     minHeight: 0,
                     // Clears the fixed mobile bottom nav so the last row of a
                     // page is never trapped underneath it.
-                    paddingBottom: isMobile
+                    paddingBottom: isMobile && !/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname)
                         ? "calc(84px + env(safe-area-inset-bottom))"
                         : 0,
                     overflow:
@@ -3199,7 +3189,7 @@ export const CustomLayout: React.FC = () => {
             </Content>
 
             {/* ---- Mobile bottom navigation ---- */}
-            {isMobile && (
+            {isMobile && !/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && (
                 <nav className="workspace-bottom-nav" aria-label="Primary navigation" role="tablist">
                     {renderNavItems("bottom")}
                 </nav>
@@ -3224,7 +3214,7 @@ export const CustomLayout: React.FC = () => {
                 styles={{ body: { overflow: "hidden" } }}
             >
                 <div className="workspace-more-content">
-                    <div className="workspace-more-segmented" role="tablist">
+                    {!flattenMore && <div className="workspace-more-segmented" role="tablist">
                         {moreSections.map((section) => {
                             const isActive = selectedMoreSection?.title === section.title;
                             return (
@@ -3244,7 +3234,7 @@ export const CustomLayout: React.FC = () => {
                                 </button>
                             );
                         })}
-                    </div>
+                    </div>}
 
                     <section className="workspace-more-section">
                         <div className="workspace-more-grid">

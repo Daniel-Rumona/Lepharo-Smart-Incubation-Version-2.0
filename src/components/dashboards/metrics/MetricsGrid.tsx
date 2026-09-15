@@ -35,7 +35,9 @@ const desktopSpanFor = (count: number) => {
     if (count === 2) return 12
     if (count === 3) return 8
     if (count === 4) return 6
-    return 6
+    // Five operational metrics should remain a single, compact row rather
+    // than pushing the fifth card below the primary four.
+    return 4
 }
 
 /**
@@ -61,6 +63,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
         : metrics
 
     const span = desktopSpan ?? desktopSpanFor(metrics.length)
+    const useFluidDesktopColumns = !isMobile && !desktopSpan && metrics.length === 5
 
     return (
         <Row gutter={gutter}>
@@ -78,7 +81,13 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 const displaySubtitle = isMobile && mobileSubtitle !== undefined ? mobileSubtitle : cardProps.subtitle
 
                 return (
-                    <Col key={key} xs={12} md={span}>
+                    <Col
+                        key={key}
+                        xs={12}
+                        md={useFluidDesktopColumns ? undefined : span}
+                        flex={useFluidDesktopColumns ? '1 1 0' : undefined}
+                        style={useFluidDesktopColumns ? { minWidth: 0, maxWidth: 'none' } : undefined}
+                    >
                         <MotionCard styles={{ body: { padding: 0 } }}>
                             <MotionCard.Metric
                                 {...cardProps}

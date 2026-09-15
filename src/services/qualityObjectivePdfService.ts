@@ -5,7 +5,7 @@
 
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { QualityObjective } from '@/types/types'
+import { QualityObjective, getRatingMeta, SMART_CRITERIA_META } from '@/types/types'
 
 const LOGO_PATH = '/assets/images/lepharo.png'
 
@@ -107,6 +107,23 @@ function addDepartmentPeriodBlock(pdf: jsPDF, pageWidth: number, margin: number,
   return startY + boxHeight
 }
 
+function addKpaBlock(pdf: jsPDF, pageWidth: number, margin: number, objective: QualityObjective, startY: number): number {
+  pdf.setFontSize(9)
+  pdf.setFont('helvetica', 'bold')
+  pdf.text(`KPA: ${objective.kpaName || '-'}`, margin + 2, startY)
+  pdf.text(`Weighting: ${objective.weighting ?? 0}%`, pageWidth - margin - 2, startY, { align: 'right' })
+
+  pdf.setFont('helvetica', 'normal')
+  const smart = objective.smart
+  const smartLine = SMART_CRITERIA_META
+    .map(c => `${smart && smart[c.key] ? '[x]' : '[ ]'} ${c.label}`)
+    .join('   ')
+  pdf.setFontSize(8)
+  pdf.text(smartLine, margin + 2, startY + 5)
+
+  return startY + 9
+}
+
 function addObjectiveStatement(pdf: jsPDF, pageWidth: number, margin: number, objective: QualityObjective, startY: number): number {
   pdf.setFontSize(10)
   pdf.setFont('helvetica', 'bold')
@@ -121,6 +138,7 @@ function addObjectiveStatement(pdf: jsPDF, pageWidth: number, margin: number, ob
 }
 
 function addSignOffTable(pdf: jsPDF, margin: number, startY: number, objective: QualityObjective): void {
+  const ratingMeta = getRatingMeta(objective.overallRating)
   autoTable(pdf, {
     startY,
     body: [
@@ -128,7 +146,8 @@ function addSignOffTable(pdf: jsPDF, margin: number, startY: number, objective: 
       ['Approved by CEO', objective.approvedByCEO, '', ''],
       ['Sign', '', '', ''],
       ['Acknowledged by HOD', objective.acknowledgedByHOD, '', ''],
-      ['Sign', '', '', '']
+      ['Sign', '', '', ''],
+      ['Overall rating', ratingMeta?.label || 'Not rated', 'Comments', objective.ratingComments || '']
     ],
     theme: 'grid',
     styles: { fontSize: 9, cellPadding: 2 },
@@ -149,10 +168,37 @@ export async function generateQualityObjectivePDF(objective: QualityObjective): 
 
   await addHeader(pdf, pageWidth, margin, objective)
   let y = addDepartmentPeriodBlock(pdf, pageWidth, margin, objective, 32)
-  y = addObjectiveStatement(pdf, pageWidth, margin, objective, y)
+  y = addKpaBlock(pdf, pageWidth, margin, objective, y + 6)
+  y = addObjectiveStatement(pdf, pageWidth, margin, objective, y - 6)
+
+  if (objective.kpis && objective.kpis.length > 0) {
+    autoTable(pdf, {
+      startY: y,
+      head: [['KPI', 'Target', 'Actual', 'Weighting', 'Rating']],
+      body: objective.kpis.map(kpi => [
+        kpi.description,
+        kpi.targetValue,
+        kpi.actualValue || '-',
+        `${kpi.weighting}%`,
+        getRatingMeta(kpi.rating)?.shortLabel || '-'
+      ]),
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2, valign: 'top' },
+      headStyles: { fillColor: [220, 230, 245], textColor: 20, fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 68 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 30 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 28 }
+      },
+      margin: { left: margin, right: margin }
+    })
+    y = (pdf as any).lastAutoTable.finalY + 4
+  }
 
   autoTable(pdf, {
-    startY: y + 2,
+    startY: y,
     head: [['Reference Number', 'Means/Steps', 'Responsible Person', 'Target date', 'Completion date']],
     body: objective.steps.map((step, index) => [
       index === 0 ? objective.referenceNumber : '',

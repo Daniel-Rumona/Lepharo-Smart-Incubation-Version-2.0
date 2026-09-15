@@ -7,16 +7,21 @@ import {
   getDoc,
   query,
   where,
-  orderBy,
   serverTimestamp
 } from 'firebase/firestore'
 import { db } from '@/firebase'
-import { QualityObjective, QualityObjectiveFormData, QualityObjectiveStep } from '@/types/types'
+import { QualityObjective, QualityObjectiveFormData, QualityObjectiveStep, QualityObjectiveKPI } from '@/types/types'
 
 const withStepIds = (steps: Omit<QualityObjectiveStep, 'id'>[]): QualityObjectiveStep[] =>
   steps.map((step, index) => ({
     id: `step-${Date.now()}-${index}`,
     ...step
+  }))
+
+const withKpiIds = (kpis: Omit<QualityObjectiveKPI, 'id'>[]): QualityObjectiveKPI[] =>
+  kpis.map((kpi, index) => ({
+    id: `kpi-${Date.now()}-${index}`,
+    ...kpi
   }))
 
 export const qualityObjectiveService = {
@@ -32,9 +37,15 @@ export const qualityObjectiveService = {
         referenceNumber: data.referenceNumber,
         objectiveNumber: data.objectiveNumber,
         objectiveText: data.objectiveText,
+        kpaName: data.kpaName,
+        weighting: data.weighting,
+        smart: data.smart,
+        kpis: withKpiIds(data.kpis),
         periodStart: data.periodStart,
         periodEnd: data.periodEnd,
         steps: withStepIds(data.steps),
+        overallRating: data.overallRating ?? null,
+        ratingComments: data.ratingComments || '',
         preparedBy: data.preparedBy,
         preparedDate: data.preparedDate,
         approvedByCEO: data.approvedByCEO,
@@ -78,7 +89,6 @@ export const qualityObjectiveService = {
       const q = query(
         collection(db, 'qualityObjectives'),
         where('isActive', '==', true),
-        orderBy('departmentName')
       )
       const querySnapshot = await getDocs(q)
 
@@ -137,11 +147,12 @@ export const qualityObjectiveService = {
   // Update a quality objective
   async updateQualityObjective(id: string, updates: Partial<QualityObjectiveFormData>): Promise<void> {
     try {
-      const { steps, ...rest } = updates
+      const { steps, kpis, ...rest } = updates
       const docRef = doc(db, 'qualityObjectives', id)
       await updateDoc(docRef, {
         ...rest,
         ...(steps ? { steps: withStepIds(steps) } : {}),
+        ...(kpis ? { kpis: withKpiIds(kpis) } : {}),
         updatedAt: serverTimestamp()
       })
     } catch (error) {

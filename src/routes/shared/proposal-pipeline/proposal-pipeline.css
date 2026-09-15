@@ -1,7 +1,8 @@
 .proposal-page {
     min-height: 100%;
     padding: 24px;
-    background: #f7f8fb;
+    background: var(--app-bg);
+    color: var(--app-text);
 }
 
 .proposal-stat-row {
@@ -10,8 +11,6 @@
 
 .proposal-stat-row .ant-card {
     height: 100%;
-    border-color: #eaecf0;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, .03);
 }
 
 .stat-link {
@@ -20,18 +19,19 @@
     font-size: 12px;
 }
 
-.proposal-pipeline-card,
 .proposal-list-card {
     margin-bottom: 16px;
-    border-color: #eaecf0;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, .03);
 }
 
 .proposal-filter-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 12px;
+}
+
+.proposal-filter-bar .proposal-search {
+    flex: 1;
+    min-width: 0;
 }
 
 .proposal-all-centres-control,
@@ -42,74 +42,356 @@
     gap: 10px;
 }
 
+/* Stage cards sit in one row with an arrow between each pair. */
 .proposal-stage-grid {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 12px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .proposal-stage {
     --stage-color: #64748b;
-    min-height: 98px;
-    border: 1px solid color-mix(in srgb, var(--stage-color) 20%, white);
+    flex: 1 1 0;
+    min-width: 0;
+    border: 1px solid color-mix(in srgb, var(--stage-color) 24%, var(--app-border));
     border-radius: 10px;
-    padding: 15px;
-    background: color-mix(in srgb, var(--stage-color) 7%, white);
-    color: #273142;
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--stage-color) 8%, var(--app-surface));
+    color: var(--app-text);
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    gap: 10px;
     cursor: pointer;
-    position: relative;
     text-align: left;
-    transition: transform .16s ease, box-shadow .16s ease;
+    transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
 }
 
 .proposal-stage:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(15, 23, 42, .08);
+    box-shadow: var(--app-shadow);
+}
+
+.proposal-stage:focus-visible {
+    outline: 2px solid var(--stage-color);
+    outline-offset: 2px;
+}
+
+.proposal-stage-active {
+    border-color: var(--stage-color);
+    background: color-mix(in srgb, var(--stage-color) 16%, var(--app-surface));
+    box-shadow: inset 0 0 0 1px var(--stage-color);
 }
 
 .proposal-stage-count {
     color: var(--stage-color);
-    font-size: 23px;
+    flex: none;
+    font-size: 26px;
     font-weight: 700;
     line-height: 1;
 }
 
+html[data-theme="dark"] .proposal-stage-count {
+    color: color-mix(in srgb, var(--stage-color) 65%, white);
+}
+
+.proposal-stage-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
 .proposal-stage strong {
-    margin-top: 7px;
-    font-size: 13px;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .proposal-stage small {
-    margin-top: 2px;
-    color: #7c8595;
+    overflow: hidden;
+    color: var(--app-text-muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .proposal-stage-arrow {
-    color: var(--stage-color);
-    position: absolute;
-    right: 14px;
-    top: 16px;
+    flex: none;
+    color: var(--app-text-subtle);
+    font-size: 12px;
+}
+
+.proposal-row-avatar.ant-avatar {
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
 }
 
 .proposal-title-button {
     height: auto;
     max-width: 260px;
     padding: 0;
-    color: #202938;
+    color: var(--app-text);
     font-weight: 600;
     white-space: normal;
     text-align: left;
 }
 
+/* Stepped proposal form: only the active step is shown, and it fades in. */
+.proposal-form-step {
+    animation: proposal-step-in .28s ease both;
+}
+
+.proposal-form-step-heading {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.proposal-form-step-heading strong {
+    color: var(--app-text);
+    font-size: 15px;
+}
+
+.proposal-form-step-heading span {
+    color: var(--app-text-muted);
+    font-size: 13px;
+}
+
+.proposal-details-segmented {
+    margin-bottom: 16px;
+}
+
+.proposal-segment-label {
+    display: inline-flex;
+    align-items: center;
+}
+
+/* Documents grouped by category, shared by the proposal form and details view. */
+.proposal-document-rows {
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.proposal-document-row + .proposal-document-row {
+    border-top: 1px solid var(--app-border);
+}
+
+.proposal-document-row-head {
+    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.proposal-document-row-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+    display: grid;
+    place-items: center;
+}
+
+.proposal-document-row-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.proposal-document-row-copy strong {
+    color: var(--app-text);
+    font-size: 13px;
+}
+
+.proposal-document-row-copy small {
+    color: var(--app-text-muted);
+    font-size: 12px;
+}
+
+.proposal-document-count {
+    margin-left: 6px;
+}
+
+.proposal-document-count .ant-badge-count {
+    background: var(--app-accent);
+    box-shadow: none;
+}
+
+.proposal-document-files {
+    margin: 0;
+    padding: 0 12px 10px 54px;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.proposal-document-files li {
+    min-width: 0;
+    border-radius: 8px;
+    padding: 5px 6px 5px 10px;
+    background: var(--app-surface-sunken);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.proposal-document-file-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--app-text);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.proposal-document-file-meta {
+    flex: none;
+    color: var(--app-text-subtle);
+    font-size: 12px;
+}
+
+.proposal-document-files .ant-tag {
+    margin: 0;
+}
+
+@media (max-width: 640px) {
+    .proposal-document-files {
+        padding-left: 12px;
+    }
+
+    .proposal-document-file-meta {
+        display: none;
+    }
+}
+
+.proposal-section-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.proposal-section-option {
+    min-width: 0;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    padding: 14px;
+    background: var(--app-surface);
+    color: var(--app-text);
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .16s ease, background .16s ease;
+}
+
+.proposal-section-option:hover,
+.proposal-section-option:focus-visible {
+    border-color: var(--app-accent);
+    background: var(--app-accent-soft);
+    outline: none;
+}
+
+.proposal-section-option-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+    display: grid;
+    place-items: center;
+    font-size: 16px;
+}
+
+.proposal-section-option-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.proposal-section-option-copy strong {
+    font-size: 13px;
+}
+
+.proposal-section-option-copy small {
+    color: var(--app-text-muted);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.proposal-section-option-arrow {
+    color: var(--app-text-subtle);
+}
+
+@media (max-width: 640px) {
+    .proposal-section-picker {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.proposal-owner-cell > .ant-space-item:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.proposal-details-footer {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.proposal-details-footer .ant-btn {
+    margin-inline-start: 0 !important;
+}
+
+@media (max-width: 640px) {
+    .proposal-details-footer {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.proposal-step-footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+@keyframes proposal-step-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .proposal-form-step {
+        animation: none;
+    }
+}
+
 .activation-modal-summary {
     margin-bottom: 18px;
-    border: 1px solid #e7eaf0;
+    border: 1px solid var(--app-border);
     border-radius: 12px;
     padding: 16px 18px;
-    background: #f8fafc;
+    background: var(--app-surface-sunken);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -133,7 +415,7 @@
 
 .activation-step-description small {
     margin-top: 2px;
-    color: #9aa1ad;
+    color: var(--app-text-subtle);
     font-size: 11px;
 }
 
@@ -168,24 +450,16 @@
     }
 
     .proposal-stage-grid {
-        grid-template-columns: repeat(5, 150px);
         overflow-x: auto;
         padding-bottom: 6px;
+    }
+
+    .proposal-stage {
+        flex: 0 0 156px;
     }
 }
 
 @media (max-width: 640px) {
-    .proposal-filter-bar {
-        align-items: stretch;
-        flex-direction: column;
-    }
-
-    .proposal-filter-bar > .ant-space,
-    .proposal-filter-bar .ant-input-affix-wrapper,
-    .proposal-filter-bar .ant-select {
-        width: 100% !important;
-    }
-
     .activation-modal-summary,
     .activation-progress {
         align-items: flex-start;

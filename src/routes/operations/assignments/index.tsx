@@ -1095,9 +1095,9 @@ export const InterventionsAssignments: React.FC = () => {
                         {
                             element: guideTarget("assignment-filters"),
                             popover: {
-                                title: "Find beneficiaries",
+                                title: "Find SMEs and interventions",
                                 description:
-                                    "These filters change with the selected workspace. Beneficiaries use coverage filters, Assignment Statuses use dates, and Intervention Demand uses intervention-level filters.",
+                                    "These filters change with the selected workspace. SMEs use coverage filters, Assignment Statuses use dates, and Intervention Demand uses intervention-level filters.",
                                 side: "bottom",
                                 align: "start",
                             },
@@ -5077,7 +5077,7 @@ export const InterventionsAssignments: React.FC = () => {
 
     const progressCards = [
         {
-            title: "Total Beneficiaries",
+            title: "Total SMEs",
             value: `${activeSmeCount}`,
             icon: <PayCircleOutlined style={{ fontSize: 18, color: "#722ed1" }} />,
             iconBg: "rgba(114,46,209,.12)",
@@ -5345,35 +5345,20 @@ export const InterventionsAssignments: React.FC = () => {
     const assignmentFilterBar = (
         <Row
             data-guide="assignment-filters"
-            gutter={[12, 12]}
+            gutter={12}
             align="middle"
-            style={{ width: "100%", margin: 0 }}
+            wrap={false}
+            style={{
+                width: "100%",
+                margin: 0,
+            }}
         >
-            <Col span={24} data-guide="assignment-views">
-                <Segmented
-                    block
-                    value={viewMode}
-                    onChange={(value) => setViewMode(value as any)}
-                    options={[
-                        { label: "Beneficiaries", value: "beneficiaries" },
-                        ...(hasGroupedInterventions ? [{
-                            label: (
-                                <span data-guide="grouped-view-option">
-                                    Grouped Interventions
-                                </span>
-                            ),
-                            value: "groups",
-                        }] : []),
-                        { label: "Assignment Statuses", value: "range" },
-                        { label: "Intervention Demand", value: "demand" },
-                    ]}
-                />
-            </Col>
+            {/* BENEFICIARIES */}
             {viewMode === "beneficiaries" && (
                 <>
-                    <Col xs={24} md={8}>
+                    <Col flex="1 1 360px" style={{ minWidth: 0 }}>
                         <Input.Search
-                            placeholder="Search beneficiary..."
+                            placeholder="Search SME..."
                             allowClear
                             value={searchText}
                             onChange={(event) => setSearchText(event.target.value)}
@@ -5381,13 +5366,13 @@ export const InterventionsAssignments: React.FC = () => {
                         />
                     </Col>
 
-                    <Col xs={24} md={6}>
+                    <Col flex="0 1 220px" style={{ minWidth: 170 }}>
                         <Select
                             value={beneficiaryCoverageFilter}
                             onChange={setBeneficiaryCoverageFilter}
                             style={{ width: "100%" }}
                             options={[
-                                { label: "All Beneficiaries", value: "all" },
+                                { label: "All SMEs", value: "all" },
                                 {
                                     label: "Needs Assignment",
                                     value: "needs-assignment",
@@ -5400,9 +5385,10 @@ export const InterventionsAssignments: React.FC = () => {
                 </>
             )}
 
+            {/* GROUPS */}
             {viewMode === "groups" && (
                 <>
-                    <Col xs={24} md={8}>
+                    <Col flex="1 1 320px" style={{ minWidth: 0 }}>
                         <Input.Search
                             placeholder="Search intervention, facilitator or cycle..."
                             allowClear
@@ -5412,7 +5398,7 @@ export const InterventionsAssignments: React.FC = () => {
                         />
                     </Col>
 
-                    <Col xs={24} md={6}>
+                    <Col flex="0 1 180px" style={{ minWidth: 150 }}>
                         <Select
                             value={groupProgressFilter}
                             onChange={setGroupProgressFilter}
@@ -5427,9 +5413,10 @@ export const InterventionsAssignments: React.FC = () => {
                 </>
             )}
 
+            {/* RANGE */}
             {viewMode === "range" && (
                 <>
-                    <Col xs={24} md={8}>
+                    <Col flex="1 1 360px" style={{ minWidth: 0 }}>
                         <DatePicker.RangePicker
                             value={dateRange}
                             onChange={(value) => {
@@ -5441,7 +5428,7 @@ export const InterventionsAssignments: React.FC = () => {
                         />
                     </Col>
 
-                    <Col xs={24} md={6}>
+                    <Col flex="0 1 220px" style={{ minWidth: 170 }}>
                         <Select
                             value={rangeStatusFilter}
                             onChange={setRangeStatusFilter}
@@ -5452,9 +5439,10 @@ export const InterventionsAssignments: React.FC = () => {
                 </>
             )}
 
+            {/* DEMAND */}
             {viewMode === "demand" && (
                 <>
-                    <Col xs={24} md={8}>
+                    <Col flex="1 1 360px" style={{ minWidth: 0 }}>
                         <Input.Search
                             placeholder="Search intervention..."
                             allowClear
@@ -5464,66 +5452,85 @@ export const InterventionsAssignments: React.FC = () => {
                         />
                     </Col>
 
-                    <Col xs={24} md={6}>
+                    <Col flex="0 1 220px" style={{ minWidth: 170 }}>
                         <Select
                             value={demandCoverageFilter}
                             onChange={setDemandCoverageFilter}
                             style={{ width: "100%" }}
                             options={[
-                                { label: "All Interventions", value: "all" },
+                                {
+                                    label: "All Interventions",
+                                    value: "all",
+                                },
                                 {
                                     label: "Needs Allocation",
                                     value: "needs-allocation",
                                 },
-                                { label: "Has Open Work", value: "open" },
-                                { label: "Fully Completed", value: "completed" },
+                                {
+                                    label: "Has Open Work",
+                                    value: "open",
+                                },
+                                {
+                                    label: "Fully Completed",
+                                    value: "completed",
+                                },
                             ]}
                         />
                     </Col>
                 </>
             )}
 
-            <Col xs={24} md={10}>
-                <Row
-                    gutter={[8, 8]}
-                    justify={screens.md ? "end" : "start"}
+            {/* ACTIONS */}
+            <Col flex="none">
+                <div
+                    style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "flex-end",
+                        gap: 8,
+                        whiteSpace: "nowrap",
+                    }}
                 >
-                    <Col xs={24} sm={8}>
+                    {viewMode === "groups" && (
                         <Button
-                            block
-                            onClick={resetViewFilters}
-                            icon={<ReloadOutlined />}
-                            style={{ border: "1px solid orange" }}
+                            type="primary"
                             shape="round"
-                            color="orange"
-                            variant="filled"
+                            icon={<TeamOutlined />}
+                            onClick={() => {
+                                convertSinglesForm.resetFields();
+                                setConvertSinglesModalVisible(true);
+                            }}
+                            disabled={!singleAssignmentGroupOptions.length}
+                            style={{
+                                minWidth: 190,
+                            }}
                         >
-                            Reset
+                            Create Group from Singles
                         </Button>
-                    </Col>
+                    )}
 
-                    <Col xs={24} sm={16}>
-                        <Tooltip
-                            title={
-                                totalRequired === 0
-                                    ? "No required interventions for this department."
-                                    : undefined
-                            }
+                    <Tooltip
+                        title={
+                            totalRequired === 0
+                                ? "No required interventions for this department."
+                                : undefined
+                        }
+                    >
+                        <Button
+                            data-guide="assign-new-intervention"
+                            type="primary"
+                            style={{
+                                ...roundBtn,
+                                minWidth: 205,
+                            }}
+                            icon={<CheckCircleOutlined />}
+                            onClick={openAssignNew}
+                            disabled={totalRequired === 0}
                         >
-                            <Button
-                                data-guide="assign-new-intervention"
-                                block
-                                type="primary"
-                                style={roundBtn}
-                                icon={<CheckCircleOutlined />}
-                                onClick={openAssignNew}
-                                disabled={totalRequired === 0}
-                            >
-                                Assign New Intervention
-                            </Button>
-                        </Tooltip>
-                    </Col>
-                </Row>
+                            Assign New Intervention
+                        </Button>
+                    </Tooltip>
+                </div>
             </Col>
         </Row>
     );
@@ -5533,9 +5540,6 @@ export const InterventionsAssignments: React.FC = () => {
     return (
         <div
             style={{
-                // Fills the height the shell's Content gives us instead of
-                // forcing a full viewport on top of the header, which pushed the
-                // page down and left it stuck against the bottom.
                 padding: isMobile ? "5px 12px" : "6px 24px",
                 flex: 1,
                 minHeight: 0,
@@ -5570,23 +5574,38 @@ export const InterventionsAssignments: React.FC = () => {
 
             <MotionCard
                 loading={loading}
+                filterBar={
+                    <Col span={24} data-guide="assignment-views">
+                        <Segmented
+                            block
+                            value={viewMode}
+                            onChange={(value) => setViewMode(value as any)}
+                            options={[
+                                { label: "SMEs", value: "beneficiaries" },
+                                ...(hasGroupedInterventions ? [{
+                                    label: (
+                                        <span data-guide="grouped-view-option">
+                                            Grouped Interventions
+                                        </span>
+                                    ),
+                                    value: "groups",
+                                }] : []),
+                                { label: "Assignment Statuses", value: "range" },
+                                { label: "Intervention Demand", value: "demand" },
+                            ]}
+                        />
+                    </Col>}
+                filterBarProps={{ marginBottom: 0 }}
+                style={{ marginBottom: 12 }}
+            >
+            </MotionCard>
+
+            <MotionCard
+                loading={loading}
                 filterBar={assignmentFilterBar}
             >
                 {viewMode === "groups" ? (
                     <Space direction="vertical" style={{ width: "100%" }} size={12}>
-                        <Button
-                            type="primary"
-                            shape="round"
-                            icon={<TeamOutlined />}
-                            onClick={() => {
-                                convertSinglesForm.resetFields();
-                                setConvertSinglesModalVisible(true);
-                            }}
-                            disabled={!singleAssignmentGroupOptions.length}
-                        >
-                            Create Group from Singles
-                        </Button>
-
                         <div data-guide="grouped-interventions-table">
                             <Table
                                 rowKey="groupKey"
@@ -6016,7 +6035,7 @@ export const InterventionsAssignments: React.FC = () => {
                         <Form.Item
                             className="guide-assignment-beneficiary"
                             name="participants"
-                            label="Select Multiple Beneficiaries"
+                            label="Select Multiple SMEs"
                             hidden={lockSource === "manage"}
                             rules={[
                                 {
