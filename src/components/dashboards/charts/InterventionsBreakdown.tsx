@@ -6,8 +6,8 @@ import {
     Empty,
     Grid,
     List,
+    Skeleton,
     Space,
-    Spin,
     Table,
     Tag,
     Tooltip,
@@ -1175,8 +1175,30 @@ const DepartmentInterventionsStatus: React.FC<Props> = ({
             ) : null}
 
             {loading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
-                    <Spin />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {Array.from({ length: 5 }).map((_, index) => (
+                            <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <Skeleton.Input
+                                    active
+                                    size="small"
+                                    style={{ width: 120 + (index % 3) * 20 }}
+                                />
+                                <Skeleton.Input
+                                    active
+                                    size="small"
+                                    style={{
+                                        flex: 1,
+                                        height: 16,
+                                        borderRadius: 999,
+                                        maxWidth: `${90 - index * 12}%`
+                                    }}
+                                />
+                            </div>
+                        ))}
+                    </div>
+
+                    <Skeleton active title={false} paragraph={{ rows: 3 }} />
                 </div>
             ) : chartRows.length === 0 ? (
                 <Empty

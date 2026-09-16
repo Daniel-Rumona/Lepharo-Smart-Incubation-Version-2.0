@@ -14,6 +14,7 @@ function normalizeCourse(course) {
         ...course,
         modules,
         sequential: course.sequential ?? true,
+        accessCondition: course.accessCondition ?? "always",
         items: course.items.map((item) => ({
             ...item,
             moduleId: modules.some((m) => m.id === item.moduleId)

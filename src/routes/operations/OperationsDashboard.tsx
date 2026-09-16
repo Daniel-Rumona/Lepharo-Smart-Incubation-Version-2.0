@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
+    Alert,
     Button,
     Modal,
     Row,
@@ -95,7 +96,12 @@ type AssignedIntervention = {
     dueDate?: any
 }
 
-type DepartmentDoc = { id: string; name?: string; departmentName?: string }
+type DepartmentDoc = {
+    id: string
+    name?: string
+    departmentName?: string
+    interventionsDepartment?: boolean
+}
 type ApplicationDoc = {
     participantId?: string
     participantID?: string
@@ -205,6 +211,23 @@ const getProgramBranchReference = (program: ProgramDoc): BranchReference => {
     }
 }
 
+const DATA_FETCH_TIMEOUT_MS = 20000
+const DATA_FETCH_MAX_ATTEMPTS = 2
+const DATA_FETCH_RETRY_DELAY_MS = 1500
+
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+// Firestore reads have no built-in timeout, so a stalled query (bad network,
+// a momentarily offline client) would otherwise leave the dashboard on its
+// loading skeleton forever. This bounds the wait and gives the caller a
+// rejected promise to react to instead.
+const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout>
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} took longer than ${ms / 1000}s`)), ms)
+    })
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) as Promise<T>
+}
 
 export const OperationsDashboard: React.FC = () => {
     const { activeProgramId } = useActiveProgramId()
@@ -214,9 +237,12 @@ export const OperationsDashboard: React.FC = () => {
 
     /* ----------------------------- state ---------------------------- */
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [reloadToken, setReloadToken] = useState(0)
     const [assigned, setAssigned] = useState<AssignedIntervention[]>([])
     const [totalRequired, setTotalRequired] = useState(0)
     const [deptMap, setDeptMap] = useState<Record<string, string>>({})
+    const [interventionDeptIds, setInterventionDeptIds] = useState<Set<string>>(new Set())
     const [appMap, setAppMap] = useState<
         Record<string, BranchReference & { programId: string }>
     >({})
@@ -242,7 +268,11 @@ export const OperationsDashboard: React.FC = () => {
     useEffect(() => {
         const run = async () => {
             setLoading(true)
+            setLoadError(null)
 
+            let lastError: unknown = null
+
+            for (let attempt = 1; attempt <= DATA_FETCH_MAX_ATTEMPTS; attempt++) {
             try {
                 const ivQuery = query(
                     collection(db, 'assignedInterventions'),
@@ -251,23 +281,6 @@ export const OperationsDashboard: React.FC = () => {
                         : [])
                 )
 
-                const ivSnap = await getDocs(ivQuery)
-                const ivs: AssignedIntervention[] = ivSnap.docs.map(d => ({
-                    id: d.id,
-                    ...(d.data() as any)
-                }))
-                setAssigned(ivs)
-
-                const depSnap = await getDocs(
-                    collection(db, 'departments')
-                )
-                const depNameMap: Record<string, string> = {}
-                depSnap.docs.forEach(d => {
-                    const data = d.data() as DepartmentDoc
-                    depNameMap[d.id] = data.name || data.departmentName || 'Unspecified'
-                })
-                setDeptMap(depNameMap)
-
                 const movQuery = query(
                     collection(db, 'consolidatedMOVs'),
                     ...(activeProgramId && activeProgramId !== 'all'
@@ -275,7 +288,55 @@ export const OperationsDashboard: React.FC = () => {
                         : [])
                 )
 
-                const movSnap = await getDocs(movQuery)
+                const appQuery = query(
+                    collection(db, 'applications'),
+                    where('applicationStatus', '==', 'accepted'),
+                    ...(activeProgramId && activeProgramId !== 'all'
+                        ? [where('programId', '==', activeProgramId)]
+                        : [])
+                )
+
+                const programsFetch = activeProgramId && activeProgramId !== 'all'
+                    ? getDoc(doc(db, 'programs', activeProgramId)).then(snap => [snap])
+                    : getDocs(collection(db, 'programs')).then(snap => snap.docs)
+
+                // These reads are independent of each other, so they run
+                // concurrently instead of waiting on one another in sequence.
+                // Bounded by a timeout so a stalled query can't leave the
+                // dashboard on its loading skeleton indefinitely.
+                const [ivSnap, depSnap, movSnap, programDocs, appSnap, brSnap, appointmentRows] =
+                    await withTimeout(
+                        Promise.all([
+                            getDocs(ivQuery),
+                            getDocs(collection(db, 'departments')),
+                            getDocs(movQuery),
+                            programsFetch,
+                            getDocs(appQuery),
+                            getDocs(collection(db, 'branches')),
+                            fetchAppointments({ programId: activeProgramId })
+                        ]),
+                        DATA_FETCH_TIMEOUT_MS,
+                        'Dashboard data'
+                    )
+
+                const ivs: AssignedIntervention[] = ivSnap.docs.map(d => ({
+                    id: d.id,
+                    ...(d.data() as any)
+                }))
+                setAssigned(ivs)
+
+                const depNameMap: Record<string, string> = {}
+                const nextInterventionDeptIds = new Set<string>()
+                depSnap.docs.forEach(d => {
+                    const data = d.data() as DepartmentDoc
+                    depNameMap[d.id] = data.name || data.departmentName || 'Unspecified'
+                    if (data.interventionsDepartment === true) {
+                        nextInterventionDeptIds.add(d.id)
+                    }
+                })
+                setDeptMap(depNameMap)
+                setInterventionDeptIds(nextInterventionDeptIds)
+
                 const submittedPacks = movSnap.docs
                     .map(d => ({
                         id: d.id,
@@ -291,11 +352,6 @@ export const OperationsDashboard: React.FC = () => {
 
                 setMonthlyMovSubmissions(submittedPacks)
 
-                const programDocs = activeProgramId && activeProgramId !== 'all'
-                    ? [await getDoc(doc(db, 'programs', activeProgramId))]
-                    : (await getDocs(
-                        collection(db, 'programs')
-                    )).docs
                 const nextProgramBranchMap: Record<string, BranchReference> = {}
                 programDocs.forEach(programDoc => {
                     if (!programDoc.exists()) return
@@ -304,15 +360,6 @@ export const OperationsDashboard: React.FC = () => {
                 })
                 setProgramBranchMap(nextProgramBranchMap)
 
-                const appQuery = query(
-                    collection(db, 'applications'),
-                    where('applicationStatus', '==', 'accepted'),
-                    ...(activeProgramId && activeProgramId !== 'all'
-                        ? [where('programId', '==', activeProgramId)]
-                        : [])
-                )
-
-                const appSnap = await getDocs(appQuery)
                 const requiredCount = appSnap.docs.reduce((total, snapshot) => {
                     const data = snapshot.data() as any
                     return total + (Array.isArray(data?.interventions?.required)
@@ -348,9 +395,6 @@ export const OperationsDashboard: React.FC = () => {
                 })
                 setAppMap(participantBranchMap)
 
-                const brSnap = await getDocs(
-                    collection(db, 'branches')
-                )
                 const branchNameMap: Record<string, string> = {}
                 brSnap.docs.forEach(d => {
                     const b = d.data() as BranchDoc
@@ -358,21 +402,36 @@ export const OperationsDashboard: React.FC = () => {
                 })
                 setBranchMap(branchNameMap)
 
-                const appointmentRows = await fetchAppointments({
-                    programId: activeProgramId
-                })
                 setAppointments(appointmentRows)
+                lastError = null
+                break
             } catch (e) {
-                console.error('Error loading dashboard datasets:', e)
+                lastError = e
+                console.error(
+                    `Error loading dashboard datasets (attempt ${attempt}/${DATA_FETCH_MAX_ATTEMPTS}):`,
+                    e
+                )
+                if (attempt < DATA_FETCH_MAX_ATTEMPTS) {
+                    await delay(DATA_FETCH_RETRY_DELAY_MS)
+                }
+            }
+            }
+
+            if (lastError) {
                 setAppointments([])
                 setMonthlyMovSubmissions([])
-            } finally {
-                setLoading(false)
+                setLoadError(
+                    lastError instanceof Error
+                        ? lastError.message
+                        : 'Failed to load dashboard data.'
+                )
             }
+
+            setLoading(false)
         }
 
         run()
-    }, [activeProgramId])
+    }, [activeProgramId, reloadToken])
 
     useEffect(() => {
         let cancelled = false
@@ -432,14 +491,15 @@ export const OperationsDashboard: React.FC = () => {
         () =>
             Array.from(
                 new Set(
-                    Object.values(deptMap)
-                        .map(name => String(name || '').trim())
+                    Object.entries(deptMap)
+                        .filter(([id]) => interventionDeptIds.has(id))
+                        .map(([, name]) => String(name || '').trim())
                         .filter(name => name && name !== 'Unspecified')
                 )
             ).sort((a, b) =>
                 a.localeCompare(b, undefined, { sensitivity: 'base' })
             ),
-        [deptMap]
+        [deptMap, interventionDeptIds]
     )
 
     /* ---------------------------- metrics --------------------------- */
@@ -764,6 +824,26 @@ export const OperationsDashboard: React.FC = () => {
             <Helmet>
                 <title>Operations Dashboard</title>
             </Helmet>
+
+            {loadError && (
+                <Alert
+                    type='error'
+                    showIcon
+                    style={{ marginBottom: 24 }}
+                    message='Some dashboard data failed to load'
+                    description={loadError}
+                    action={
+                        <Button
+                            size='small'
+                            danger
+                            loading={loading}
+                            onClick={() => setReloadToken(token => token + 1)}
+                        >
+                            Retry
+                        </Button>
+                    }
+                />
+            )}
 
             <div style={{ marginBottom: 24 }}>
                 <InterventionMetricsGrid

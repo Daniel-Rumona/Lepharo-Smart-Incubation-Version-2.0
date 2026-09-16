@@ -61,6 +61,7 @@ export function useLeaveConfirmGuard(when: boolean, message: string) {
                 content: message,
                 okText: 'Leave',
                 cancelText: 'Stay',
+                centered: true,
                 onOk: () => {
                     // allow the back navigation by removing listeners then going back one more time
                     cleanup()
@@ -116,6 +117,7 @@ export function useLeaveConfirmGuard(when: boolean, message: string) {
                 content: message,
                 okText: 'Leave',
                 cancelText: 'Stay',
+                centered: true,
                 onOk: () => {
                     cleanup()
                     // navigate by setting location (works with any router)

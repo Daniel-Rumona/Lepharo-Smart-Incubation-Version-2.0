@@ -716,6 +716,7 @@ export async function fetchAppointments(filters: AppointmentQuery): Promise<Appo
         return []
     const constraints: QueryConstraint[] = []
     if (filters.departmentId) constraints.push(where('departmentId', '==', filters.departmentId))
+    if (filters.programId) constraints.push(where('programId', '==', filters.programId))
     const snap = await getDocs(query(collection(db, 'appointments'), ...constraints))
     const canonicalViews = await hydrateAppointmentViews(
         snap.docs.map((item) => ({ id: item.id, data: item.data() as any }))

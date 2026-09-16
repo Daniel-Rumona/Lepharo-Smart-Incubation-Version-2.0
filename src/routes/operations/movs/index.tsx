@@ -22,7 +22,8 @@ import {
     Dropdown,
     Skeleton,
     Grid,
-    Avatar
+    Avatar,
+    theme
 } from 'antd'
 import {
     EyeOutlined,
@@ -38,7 +39,9 @@ import {
     DownloadOutlined,
     ReloadOutlined,
     InboxOutlined,
-    DownOutlined
+    DownOutlined,
+    SearchOutlined,
+    ClockCircleOutlined
 } from '@ant-design/icons'
 import {
     collection,
@@ -60,6 +63,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { Packer } from 'docx'
 import { buildMovDoc, buildConsolidatedDoc } from '@/docx/movBuilder'
 import { MovDocumentView } from '@/components/movs/MovDocumentView'
+import { LightSurface } from '@/components/shared/LightSurface'
 import { PreIncPoeButton } from '@/components/movs/PreIncPoeButton'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MetricsGrid } from '@/components/dashboards/metrics/MetricsGrid'
@@ -265,6 +269,7 @@ const clip = (s?: string) => (s ? `${s.slice(0, 10)}…${s.slice(-6)}` : '—')
 
 const MOVApprovalsForm: React.FC = () => {
     const screens = useBreakpoint()
+    const { token } = theme.useToken()
     const { user } = useFullIdentity()
     const userRole = (user?.role || '').toLowerCase()
     const isHOD = userRole === 'operations'
@@ -1393,8 +1398,11 @@ const MOVApprovalsForm: React.FC = () => {
             const facilitatorMatch =
                 next.facilitator === 'all' || (mov as any).facilitatorName === next.facilitator
 
+            const beneficiaryQuery = String(next.beneficiary || '').trim().toLowerCase()
             const beneficiaryMatch =
-                next.beneficiary === 'all' || (mov as any).smmeCompanyName === next.beneficiary
+                !beneficiaryQuery ||
+                beneficiaryQuery === 'all' ||
+                String((mov as any).smmeCompanyName || '').toLowerCase().includes(beneficiaryQuery)
 
             const tableDate = resolveMovAssignmentDate(mov)
 
@@ -2217,17 +2225,15 @@ const MOVApprovalsForm: React.FC = () => {
         [movs]
     )
 
-    const uniqueBeneficiaries = useMemo(
-        () => Array.from(new Set(movs.map(m => (m as any).smmeCompanyName).filter(Boolean))),
-        [movs]
-    )
-
     const movMetrics = useMemo(() => {
         const total = filtered.length
         const approved = filtered.filter(m => (m as any).approvedByHod === true).length
         const queried = filtered.filter(m => (m as any).status === 'queried').length
+        const awaiting = Math.max(0, total - approved - queried)
 
-        return [
+        const activeBorder = { border: `2px solid ${token.colorPrimary}` }
+
+        const metrics = [
             {
                 key: 'total-movs',
                 label: 'Total MOVs',
@@ -2245,15 +2251,35 @@ const MOVApprovalsForm: React.FC = () => {
                 icon: <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />
             },
             {
+                key: 'awaiting-review',
+                label: 'Awaiting Review',
+                value: awaiting,
+                color: '#1677ff',
+                bg: '#e6f0ff',
+                icon: <ClockCircleOutlined style={{ fontSize: 24, color: '#1677ff' }} />,
+                onClick: () => toggleStatusFilter('awaiting'),
+                wrapperStyle: filters.status === 'awaiting' ? activeBorder : undefined
+            }
+        ]
+
+        // A "Queried MOVs" tile with nothing in it is a dashboard permanently
+        // reporting good news no one needs reminding of - drop it and let the
+        // other tiles reclaim the row instead.
+        if (queried > 0) {
+            metrics.push({
                 key: 'queried-movs',
                 label: 'Queried MOVs',
                 value: queried,
                 color: '#fa8c16',
                 bg: '#fff7e6',
-                icon: <ExclamationCircleOutlined style={{ fontSize: 24, color: '#fa8c16' }} />
-            }
-        ]
-    }, [filtered])
+                icon: <ExclamationCircleOutlined style={{ fontSize: 24, color: '#fa8c16' }} />,
+                onClick: () => toggleStatusFilter('queried'),
+                wrapperStyle: filters.status === 'queried' ? activeBorder : undefined
+            })
+        }
+
+        return metrics
+    }, [filtered, filters.status, token.colorPrimary])
 
     const consolidatedMetrics = useMemo(() => {
         const total = consolidated.length
@@ -2763,7 +2789,9 @@ const MOVApprovalsForm: React.FC = () => {
                         value: metric.value,
                         icon: metric.icon,
                         iconBg: metric.bg,
-                        subtitle: ''
+                        subtitle: '',
+                        onClick: (metric as any).onClick,
+                        wrapperStyle: (metric as any).wrapperStyle
                     }))}
                     />
                 </div>
@@ -2817,15 +2845,19 @@ const MOVApprovalsForm: React.FC = () => {
                             <Row data-guide="mov-filter-bar" gutter={[16, 16]} align="middle">
                                 {viewKey === 'movs' && <>
                                     <Col xs={24} sm={12} lg={5}>
+                                        <Input
+                                            allowClear
+                                            prefix={<SearchOutlined style={{ color: token.colorTextTertiary }} />}
+                                            placeholder="Search beneficiaries"
+                                            style={{ width: '100%' }}
+                                            value={filters.beneficiary === 'all' ? '' : filters.beneficiary}
+                                            onChange={e => handleFilterChange('beneficiary', e.target.value || 'all')}
+                                        />
+                                    </Col>
+                                    <Col xs={24} sm={12} lg={5}>
                                         <Select showSearch optionFilterProp="children" placeholder="All Facilitators" style={{ width: '100%' }} allowClear value={filters.facilitator === 'all' ? undefined : filters.facilitator} onChange={val => handleFilterChange('facilitator', val || 'all')}>
                                             <Option value="all">All Facilitators</Option>
                                             {uniqueFacilitators.map(f => <Option key={f} value={f}>{f}</Option>)}
-                                        </Select>
-                                    </Col>
-                                    <Col xs={24} sm={12} lg={5}>
-                                        <Select showSearch optionFilterProp="children" placeholder="All Beneficiaries" style={{ width: '100%' }} allowClear value={filters.beneficiary === 'all' ? undefined : filters.beneficiary} onChange={val => handleFilterChange('beneficiary', val || 'all')}>
-                                            <Option value="all">All Beneficiaries</Option>
-                                            {uniqueBeneficiaries.map(b => <Option key={b} value={b}>{b}</Option>)}
                                         </Select>
                                     </Col>
                                     <Col xs={24} sm={12} lg={5}><RangePicker style={{ width: '100%' }} value={filters.dateRange as [Dayjs, Dayjs] | []} placeholder={['Assigned from', 'Assigned to']} allowClear onChange={val => handleFilterChange('dateRange', val || [])} /></Col>
@@ -2883,7 +2915,7 @@ const MOVApprovalsForm: React.FC = () => {
                 open={modalVisible}
                 title={
                     <Space size={10}>
-                        <FileDoneOutlined style={{ color: '#1677ff' }} />
+                        <FileDoneOutlined style={{ color: token.colorPrimary }} />
                         <span>MOV Document Preview</span>
                     </Space>
                 }
@@ -2896,7 +2928,7 @@ const MOVApprovalsForm: React.FC = () => {
                 styles={{
                     body: {
                         padding: 0,
-                        background: '#f1f3f6'
+                        background: token.colorBgLayout
                     }
                 }}
             >
@@ -2907,37 +2939,47 @@ const MOVApprovalsForm: React.FC = () => {
                                 maxHeight: 'none',
                                 overflowY: 'visible',
                                 padding: screens.xs ? 8 : 28,
-                                background: '#dfe3e8',
-                                border: '1px solid #cfd5dc',
+                                background: token.colorFillTertiary,
+                                border: `1px solid ${token.colorBorderSecondary}`,
                                 borderRadius: 8,
-                                boxShadow: 'inset 0 1px 3px rgba(15,23,42,.08)'
+                                boxShadow: 'inset 0 1px 3px rgba(0,0,0,.12)'
                             }}
                         >
-                            <div
-                                data-guide="mov-document-preview"
+                            {/*
+                                The MOV document replicates a printed form (fixed
+                                black text on white, plus signer-status cell
+                                colours that mirror the exported Word doc), so it
+                                is pinned to light mode with LightSurface rather
+                                than following the app theme - same treatment as
+                                any other document/contract preview.
+                            */}
+                            <LightSurface
+                                className="mov-document-preview-surface"
                                 style={{
                                     maxWidth: 1120,
                                     minWidth: screens.xs ? 0 : 860,
                                     margin: '0 auto',
                                     background: '#fff',
-                                    boxShadow: '0 8px 28px rgba(15,23,42,.16)',
-                                    border: '1px solid #e5e7eb'
+                                    boxShadow: '0 8px 28px rgba(0,0,0,.22)',
+                                    border: `1px solid ${token.colorBorderSecondary}`
                                 }}
                             >
-                                {openingMovId ? (
-                                    <div style={{ padding: screens.xs ? 16 : 28 }}>
-                                        <Skeleton
-                                            active
-                                            title={{ width: '42%' }}
-                                            paragraph={{ rows: 10 }}
-                                        />
-                                    </div>
-                                ) : (
-                                    <div data-guide="mov-document-ready">
-                                        <MovDocumentView mov={selectedMOV} />
-                                    </div>
-                                )}
-                            </div>
+                                <div data-guide="mov-document-preview">
+                                    {openingMovId ? (
+                                        <div style={{ padding: screens.xs ? 16 : 28 }}>
+                                            <Skeleton
+                                                active
+                                                title={{ width: '42%' }}
+                                                paragraph={{ rows: 10 }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div data-guide="mov-document-ready">
+                                            <MovDocumentView mov={selectedMOV} />
+                                        </div>
+                                    )}
+                                </div>
+                            </LightSurface>
                         </div>
 
                         <Divider style={{ margin: '16px 0' }} />

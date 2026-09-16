@@ -1,5 +1,6 @@
 import React, {
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState
@@ -293,6 +294,39 @@ const Chat: React.FC = () => {
         .split(/\s+/)[0] || 'there'
     const hasConversation = state.messages.length > 0
 
+    // Docking the composer reliably needs .chat-page pinned to the exact
+    // viewport region below whatever chrome the shared layout shell
+    // (src/components/layout/index.tsx) is currently showing above it —
+    // inheriting that height via CSS (percentage height, then flex-grow)
+    // repeatedly failed to actually fill the screen in this app's layout,
+    // so instead we measure the real shared topbar and pin directly to the
+    // viewport, independent of any ancestor's own sizing.
+    const [topOffset, setTopOffset] = useState(0)
+
+    useLayoutEffect(() => {
+        const headerEl = document.querySelector('.workspace-header-wrap')
+
+        const measure = () => {
+            setTopOffset(headerEl ? headerEl.getBoundingClientRect().height : 0)
+        }
+
+        measure()
+
+        if (!headerEl || typeof ResizeObserver === 'undefined') {
+            window.addEventListener('resize', measure)
+            return () => window.removeEventListener('resize', measure)
+        }
+
+        const observer = new ResizeObserver(measure)
+        observer.observe(headerEl)
+        window.addEventListener('resize', measure)
+
+        return () => {
+            observer.disconnect()
+            window.removeEventListener('resize', measure)
+        }
+    }, [isMobile])
+
     useEffect(() => {
         const element = messagesRef.current
         if (element) element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
@@ -355,15 +389,30 @@ const Chat: React.FC = () => {
     }
 
     return (
-        <div className='chat-page'>
+        <div
+            className='chat-page'
+            style={{ '--chat-top-offset': `${topOffset}px` } as React.CSSProperties}
+        >
             <style>{`
         .chat-page {
-          flex: 1 1 auto;
-          min-height: 0;
+          /* Pinned straight to the viewport below the real (measured, not
+             guessed) height of the shared layout's top bar — see the
+             useLayoutEffect above. Inheriting height from the ancestor
+             chain (percentage height, then flex-grow) repeatedly failed to
+             actually fill the screen in this app's layout, on both mobile
+             and desktop, so this sidesteps that chain entirely. --chat-top-
+             offset is 0 on immersive mobile chat, where the shared top bar
+             is hidden and .chat-mobile-header takes its place instead. */
+          position: fixed;
+          top: var(--chat-top-offset, 0px);
+          left: 0;
+          right: 0;
+          bottom: 0;
           box-sizing: border-box;
           padding: 0;
           background: var(--app-surface);
           overflow: hidden;
+          z-index: 10;
         }
         .chat-shell {
           width: 100%;
@@ -533,6 +582,7 @@ const Chat: React.FC = () => {
           display: flex;
           flex-direction: column;
           align-items: center;
+          justify-content: center;
           gap: 13px;
           pointer-events: none;
         }
@@ -752,22 +802,6 @@ const Chat: React.FC = () => {
           place-items: center;
         }
         @media (max-width: 767px) {
-          /* Two attempts at inheriting height from the ancestor chain
-             (percentage height, then flex-grow) both failed to actually
-             fill the screen in practice — something in that chain still
-             isn't resolving the way it should on paper. Immersive mobile
-             chat has no other on-screen chrome left to coexist with (the
-             shared top bar and bottom nav are already hidden for this
-             route), so sidestep the ancestor chain entirely: pin straight
-             to the viewport with position: fixed + 100dvh, which needs
-             nothing from any parent. */
-          .chat-page {
-            position: fixed;
-            inset: 0;
-            height: 100dvh;
-            flex: none;
-            z-index: 10;
-          }
           /* The hover-to-preview marker rail doesn't translate to touch —
              hide it and reclaim the left gutter it was reserving. */
           .chat-marker-rail { display: none; }

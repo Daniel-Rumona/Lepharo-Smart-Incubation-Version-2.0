@@ -548,6 +548,10 @@
 .cb-add-main > .anticon { margin-left: auto; color: var(--cb-muted); }
 .cb-add-ai { display: flex; gap: 6px; flex-wrap: wrap; padding-left: 50px; }
 .cb-settings-modal { display: grid; gap: 16px; margin-top: 8px; }
+.cb-radio-stack.ant-radio-group { display: grid; gap: 6px; }
+.cb-radio-stack .ant-radio-wrapper { margin: 0; }
+.cb-radio-stack .ant-tag { margin-left: 6px; }
+.cb-publish-audience { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--cb-line); }
 .cb-issues { display: grid; gap: 4px; }
 .cb-issue {
   font: inherit;

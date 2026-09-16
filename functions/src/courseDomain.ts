@@ -42,6 +42,8 @@ export type Item = {
   /** Written by AI and not yet reviewed by the author. Does not block publishing. */
   aiDraft?: boolean;
 };
+/** When learners can open the course at all, independent of the item-by-item sequential rule. */
+export type AccessCondition = "always" | "afterIntervention" | "afterAppointment";
 export type Course = {
   title: string;
   description: string;
@@ -51,7 +53,10 @@ export type Course = {
   items: Item[];
   modules?: Module[];
   sequential?: boolean;
+  accessCondition?: AccessCondition;
 };
+/** Who a published version is visible to. Set at publish time, enforced by the catalog listing. */
+export type PublishAudience = { mode: "all" | "selected"; participantIds: string[] };
 export type SavedCourse = Course & {
   deletedAt?: string | null;
   localRecovery?: boolean;
@@ -60,6 +65,7 @@ export type SavedCourse = Course & {
   updatedAt: string;
   revision?: number;
   publishedRevision?: number;
+  publishTo?: PublishAudience;
 };
 export type IssueCode =
   | "courseTitle"
@@ -128,6 +134,7 @@ export function normalizeCourse<T extends Course>(course: T): T {
     ...course,
     modules,
     sequential: course.sequential ?? true,
+    accessCondition: course.accessCondition ?? "always",
     items: course.items.map((item) => ({
       ...item,
       moduleId: modules.some((m) => m.id === item.moduleId)

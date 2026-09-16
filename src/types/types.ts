@@ -184,3 +184,6 @@ export * from './mov';
 
 // Re-export Quality Objective types for convenience
 export * from './qualityObjective';
+
+// Re-export KPI Agreement types for convenience
+export * from './kpiAgreement';

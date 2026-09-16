@@ -1031,27 +1031,29 @@ const MyCalendarPage: React.FC = () => {
                     ]}
                 />
                 <Row gutter={[16, 16]} align="middle" justify="space-between" className="smart-calendar-topbar">
-                    <Col xs={24} xl={10}>
-                        <div className="smart-calendar-title-wrap">
-                            <div className="smart-calendar-title-icon">
-                                {workspaceView === 'calendar'
-                                    ? <CalendarOutlined />
-                                    : <NotificationOutlined />}
-                            </div>
-                            <div>
-                                <Title level={4} style={{ margin: 0 }}>
-                                    {workspaceView === 'calendar' ? 'My calendar' : 'Notice board'}
-                                </Title>
-                                <Text type="secondary">
+                    {!isMobile && (
+                        <Col xs={24} xl={10}>
+                            <div className="smart-calendar-title-wrap">
+                                <div className="smart-calendar-title-icon">
                                     {workspaceView === 'calendar'
-                                        ? isIncubatee
-                                            ? 'Appointments and events that include you'
-                                            : 'Events, appointments, and due tasks'
-                                        : 'Announcements for your branch and programme'}
-                                </Text>
+                                        ? <CalendarOutlined />
+                                        : <NotificationOutlined />}
+                                </div>
+                                <div>
+                                    <Title level={4} style={{ margin: 0 }}>
+                                        {workspaceView === 'calendar' ? 'My calendar' : 'Notice board'}
+                                    </Title>
+                                    <Text type="secondary">
+                                        {workspaceView === 'calendar'
+                                            ? isIncubatee
+                                                ? 'Appointments and events that include you'
+                                                : 'Events, appointments, and due tasks'
+                                            : 'Announcements for your branch and programme'}
+                                    </Text>
+                                </div>
                             </div>
-                        </div>
-                    </Col>
+                        </Col>
+                    )}
 
                     <Col xs={24} xl={14}>
                         {workspaceView === 'calendar' && <div className="smart-calendar-actions">
@@ -1071,43 +1073,75 @@ const MyCalendarPage: React.FC = () => {
                                     padding: '10px 12px',
                                     border: '1px solid #e6efff',
                                     borderRadius: 14,
-                                    background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
-                                    boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)'
+                                    boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+                                    width: '100%'
                                 }}
                             >
-                                <Space size={8} style={{ color: '#1677ff', fontWeight: 600 }}>
+                                <Space
+                                    size={8}
+                                    style={{
+                                        color: '#1677ff',
+                                        fontWeight: 600,
+                                        flex: '0 0 auto'
+                                    }}
+                                >
                                     <FilterOutlined />
                                     <span>Filters</span>
                                 </Space>
 
-                                <div style={{ minWidth: 190 }}>
-                                    <Select
-                                        value={typeFilter}
-                                        onChange={(value) => setTypeFilter(value)}
-                                        style={{ width: '100%' }}
-                                        options={typeFilterOptions}
-                                        optionLabelProp="label"
-                                        suffixIcon={<AppstoreOutlined />}
-                                        popupMatchSelectWidth={false}
-                                        size="large"
-                                    />
-                                </div>
+                                {/* Type + Delivery */}
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        gap: 10,
+                                        flex: '1 1 380px',
+                                        minWidth: 0
+                                    }}
+                                >
+                                    <div
+                                        style={{
+                                            flex: 1,
+                                            minWidth: 0
+                                        }}
+                                    >
+                                        <Select
+                                            value={typeFilter}
+                                            onChange={(value) => setTypeFilter(value)}
+                                            style={{ width: '100%' }}
+                                            options={typeFilterOptions}
+                                            optionLabelProp="label"
+                                            suffixIcon={<AppstoreOutlined />}
+                                            popupMatchSelectWidth={false}
+                                            size="large"
+                                        />
+                                    </div>
 
-                                <div style={{ minWidth: 200 }}>
-                                    <Select
-                                        value={deliveryFilter}
-                                        onChange={(value) => setDeliveryFilter(value)}
-                                        style={{ width: '100%' }}
-                                        options={deliveryFilterOptions}
-                                        optionLabelProp="label"
-                                        suffixIcon={<ClockCircleOutlined />}
-                                        popupMatchSelectWidth={false}
-                                        size="large"
-                                    />
+                                    <div
+                                        style={{
+                                            flex: 1,
+                                            minWidth: 0
+                                        }}
+                                    >
+                                        <Select
+                                            value={deliveryFilter}
+                                            onChange={(value) => setDeliveryFilter(value)}
+                                            style={{ width: '100%' }}
+                                            options={deliveryFilterOptions}
+                                            optionLabelProp="label"
+                                            suffixIcon={<ClockCircleOutlined />}
+                                            popupMatchSelectWidth={false}
+                                            size="large"
+                                        />
+                                    </div>
                                 </div>
 
                                 {canFilterByDepartment ? (
-                                    <div style={{ minWidth: 240 }}>
+                                    <div
+                                        style={{
+                                            flex: '1 1 240px',
+                                            minWidth: 0
+                                        }}
+                                    >
                                         <Select
                                             value={departmentFilter}
                                             onChange={(value) => setDepartmentFilter(value)}
@@ -1135,7 +1169,6 @@ const MyCalendarPage: React.FC = () => {
                                     </div>
                                 ) : null}
                             </div>
-
                             <Segmented
                                 className="smart-calendar-segmented"
                                 value={viewMode}
@@ -1187,7 +1220,7 @@ const MyCalendarPage: React.FC = () => {
                 ) : calendarEvents.length === 0 ? (
                     <div className="smart-calendar-empty-wrap">
                         <Empty
-                            description="No events, appointments, or tasks found"
+                            description={isIncubatee ? "No events or appointments found" : "No events, appointments, or tasks found"}
                             image={Empty.PRESENTED_IMAGE_SIMPLE}
                         />
                     </div>

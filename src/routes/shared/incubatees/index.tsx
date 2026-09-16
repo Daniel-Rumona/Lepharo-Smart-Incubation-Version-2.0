@@ -22,7 +22,8 @@ import {
     Modal,
     Form,
     InputNumber,
-    Popconfirm
+    Popconfirm,
+    theme
 } from 'antd'
 import {
     TeamOutlined,
@@ -183,6 +184,7 @@ type Application = {
     companyName?: string
     businessName?: string
     smmeNo?: string
+    idNumber?: string
     sector?: string
     town?: string
     province?: string
@@ -222,6 +224,8 @@ type Participant = {
     town?: string
     province?: string
     location?: string
+    idNumber?: string
+    nationalId?: string
     registrationNumber?: string
     blackOwnedPercent?: number
     femaleOwnedPercent?: number
@@ -259,6 +263,7 @@ type SmeRow = {
     programId?: string
     smmeNo?: string
     registrationNumber?: string
+    idNumber?: string
     companyName: string
     sector?: string
     gender?: string
@@ -707,6 +712,7 @@ const SMEOverview: React.FC = () => {
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
     const navigate = useNavigate()
     const isQuantilytixViewer = isQuantilytixDomain(user?.email)
+    const { token } = theme.useToken()
 
     const guideRegistration = useMemo<PageGuideRegistration>(
         () => ({
@@ -1329,6 +1335,7 @@ const SMEOverview: React.FC = () => {
                         programId: app.programId,
                         smmeNo: String(app.smmeNo || '').trim() || undefined,
                         registrationNumber: String(participant?.registrationNumber || '').trim() || undefined,
+                        idNumber: String(participant?.idNumber || participant?.nationalId || app.idNumber || '').trim() || undefined,
                         companyName,
                         sector: participant?.sector || (app as any).sector,
                         gender: participant?.gender || (app as any).gender,
@@ -2505,6 +2512,7 @@ const SMEOverview: React.FC = () => {
                     <Descriptions.Item label='Company'>{selectedRow.companyName}</Descriptions.Item>
                     <Descriptions.Item label='SME Number'>{selectedRow.smmeNo || '—'}</Descriptions.Item>
                     <Descriptions.Item label='Registration Number'>{selectedRow.registrationNumber || '—'}</Descriptions.Item>
+                    <Descriptions.Item label='ID Number'>{selectedRow.idNumber || '—'}</Descriptions.Item>
                     <Descriptions.Item label='Sector'>{selectedRow.sector || '—'}</Descriptions.Item>
                     <Descriptions.Item label='Group'>{selectedRow.group || '—'}</Descriptions.Item>
                     <Descriptions.Item label='Recruited'>{formatDateTime(selectedRow.recruitedAt)}</Descriptions.Item>
@@ -3055,22 +3063,31 @@ const SMEOverview: React.FC = () => {
                 filterBar={
                     <Row
                         data-guide='sme-overview-filters'
-                        gutter={[12, 12]}
+                        gutter={[10, 10]}
                         align='middle'
-                        justify='space-between'
                         style={{ width: '100%' }}
                     >
-                        <Col xs={24} xl={18}>
-                            <Row gutter={[12, 12]} align='middle'>
-                                <Col xs={24} sm={12} lg={showHubFilter && hubOptions.length > 0 ? 6 : 7}>
+                        {/* Filters */}
+                        <Col xs={24} xl={17}>
+                            <Row gutter={[8, 8]} align='middle'>
+                                <Col
+                                    xs={24}
+                                    sm={12}
+                                    lg={showHubFilter && hubOptions.length > 0 ? 6 : 7}
+                                >
                                     <Search
                                         allowClear
-                                        placeholder='Search by company name'
+                                        placeholder='Search company'
                                         onChange={e => setSearchText(e.target.value)}
                                         style={{ width: '100%' }}
                                     />
                                 </Col>
-                                <Col xs={12} sm={6} lg={showHubFilter && hubOptions.length > 0 ? 3 : 4}>
+
+                                <Col
+                                    xs={12}
+                                    sm={6}
+                                    lg={showHubFilter && hubOptions.length > 0 ? 3 : 4}
+                                >
                                     <Select
                                         allowClear
                                         placeholder='Gender'
@@ -3080,7 +3097,12 @@ const SMEOverview: React.FC = () => {
                                         options={genderOptions}
                                     />
                                 </Col>
-                                <Col xs={12} sm={6} lg={showHubFilter && hubOptions.length > 0 ? 3 : 4}>
+
+                                <Col
+                                    xs={12}
+                                    sm={6}
+                                    lg={showHubFilter && hubOptions.length > 0 ? 3 : 4}
+                                >
                                     <Select
                                         allowClear
                                         placeholder='Group'
@@ -3090,26 +3112,35 @@ const SMEOverview: React.FC = () => {
                                         options={groupOptions}
                                     />
                                 </Col>
-                                {showHubFilter && hubOptions.length > 0 && <Col xs={12} sm={6} lg={3}>
-                                    <Select
-                                        allowClear
-                                        placeholder='Hub'
-                                        style={{ width: '100%' }}
-                                        value={hubFilter}
-                                        onChange={setHubFilter}
-                                        options={hubOptions}
-                                    />
-                                </Col>}
+
+                                {showHubFilter && hubOptions.length > 0 && (
+                                    <Col xs={12} sm={6} lg={3}>
+                                        <Select
+                                            allowClear
+                                            placeholder='Hub'
+                                            style={{ width: '100%' }}
+                                            value={hubFilter}
+                                            onChange={setHubFilter}
+                                            options={hubOptions}
+                                        />
+                                    </Col>
+                                )}
+
                                 <Col xs={24} sm={12} lg={9}>
                                     <RangePicker
                                         picker='month'
                                         allowClear={false}
                                         value={reportingRange}
-                                        placeholder={['Reporting from', 'Reporting to']}
-                                        disabledDate={current => current && current.isAfter(dayjs().endOf('month'))}
+                                        placeholder={['From', 'To']}
+                                        disabledDate={current =>
+                                            current && current.isAfter(dayjs().endOf('month'))
+                                        }
                                         onChange={dates => {
                                             if (dates?.[0] && dates?.[1]) {
-                                                setReportingRange([dates[0].startOf('month'), dates[1].endOf('month')])
+                                                setReportingRange([
+                                                    dates[0].startOf('month'),
+                                                    dates[1].endOf('month')
+                                                ])
                                             }
                                         }}
                                         style={{ width: '100%' }}
@@ -3117,19 +3148,36 @@ const SMEOverview: React.FC = () => {
                                 </Col>
                             </Row>
                         </Col>
-                        <Col xs={24} xl={6}>
-                            <Space wrap style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
-                                {hasOnboardingAccess && <Button
-                                    data-guide='sme-add-action'
-                                    type='primary'
-                                    shape='round'
-                                    icon={<PlusOutlined />}
-                                    disabled={!activeProgramId || isAllPrograms}
-                                    onClick={() => navigate(`/operations/participants/new/${activeProgramId}`)}
-                                >
-                                    Add SME
-                                </Button>
-                                }
+
+                        {/* Actions */}
+                        <Col xs={24} xl={7}>
+                            <Space
+                                size={6}
+                                wrap={false}
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'flex-end',
+                                    width: '100%',
+                                    whiteSpace: 'nowrap'
+                                }}
+                            >
+                                {hasOnboardingAccess && (
+                                    <Button
+                                        data-guide='sme-add-action'
+                                        type='primary'
+                                        shape='round'
+                                        icon={<PlusOutlined />}
+                                        disabled={!activeProgramId || isAllPrograms}
+                                        onClick={() =>
+                                            navigate(
+                                                `/operations/participants/new/${activeProgramId}`
+                                            )
+                                        }
+                                    >
+                                        Add SME
+                                    </Button>
+                                )}
+
                                 {isQuantilytixViewer && (
                                     <Button
                                         shape='round'
@@ -3137,15 +3185,18 @@ const SMEOverview: React.FC = () => {
                                         disabled={!activeProgramId || isAllPrograms}
                                         onClick={() => setDummySmeModalVisible(true)}
                                     >
-                                        Add Dummy SME
+                                        Dummy
                                     </Button>
                                 )}
+
                                 <Button
                                     data-guide='sme-export-all'
                                     shape='round'
                                     icon={<DownloadOutlined />}
                                     onClick={handleExportAll}
-                                >Export All SMEs</Button>
+                                >
+                                    Export SMEs
+                                </Button>
                             </Space>
                         </Col>
                     </Row>
@@ -3184,11 +3235,13 @@ const SMEOverview: React.FC = () => {
                                             }}
                                             style={{
                                                 cursor: 'pointer',
-                                                border: selected ? '1px solid #1677ff' : '1px solid #edf1f7',
-                                                background: selected ? 'linear-gradient(135deg, #f0f6ff 0%, #ffffff 100%)' : '#fff',
+                                                border: selected ? `1px solid ${token.colorPrimary}` : `1px solid ${token.colorBorderSecondary}`,
+                                                background: selected
+                                                    ? `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgContainer} 100%)`
+                                                    : token.colorBgContainer,
                                                 boxShadow: selected
-                                                    ? '0 8px 22px rgba(22,119,255,.14)'
-                                                    : '0 5px 16px rgba(15,23,42,.05)'
+                                                    ? `0 8px 22px ${token.colorPrimaryBorder}`
+                                                    : token.boxShadowTertiary
                                             }}
                                         >
                                             <Space direction='vertical' size={8} style={{ width: '100%' }}>
@@ -3211,7 +3264,7 @@ const SMEOverview: React.FC = () => {
                                                         shape='circle'
                                                         title='Export SME'
                                                         icon={<DownloadOutlined />}
-                                                        style={{ border: '1px solid dodgerblue', color: 'dodgerblue' }}
+                                                        style={{ border: `1px solid ${token.colorPrimary}`, color: token.colorPrimary }}
                                                         onClick={event => {
                                                             event.stopPropagation()
                                                             handleExportSingle(record)
@@ -3227,7 +3280,7 @@ const SMEOverview: React.FC = () => {
                                                     display: 'flex',
                                                     justifyContent: 'space-between',
                                                     gap: 12,
-                                                    color: 'rgba(0,0,0,.55)',
+                                                    color: token.colorTextSecondary,
                                                     fontSize: 12
                                                 }}>
                                                     <span>{record.province || record.town || 'No location'}</span>

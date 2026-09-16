@@ -23,7 +23,8 @@ import {
     Grid,
     Alert,
     Result,
-    theme
+    theme,
+    Radio
 } from 'antd'
 import {
     SearchOutlined,
@@ -225,10 +226,10 @@ const requirementStatusLabel = (
                 documentRecord.romSignatureUrl ||
                 documentRecord.fullyConfirmedAt
             )
-            return confirmed ? 'Confirmed' : 'Awaiting Operations confirmation'
+            return confirmed ? 'Confirmed' : 'Awaiting ROM confirmation'
         }
         if (!documentRecord || status === 'missing') return 'Awaiting SME signature'
-        if (status === 'pending') return 'Awaiting Operations signature'
+        if (status === 'pending') return 'Awaiting ROM signature'
     }
     return complianceStatusLabel(status)
 }
@@ -2468,6 +2469,7 @@ const ComplianceTrackingPage: React.FC = () => {
                             <Space style={{ whiteSpace: 'nowrap' }}>
                                 {(hasOpenableFile(d) || (d && isAgreement && isPreIncubation(r.req, d))) && (
                                     <Button
+                                        shape='round'
                                         onClick={async () => {
                                             const u = await resolveDocUrl(d)
                                             if (u) {
@@ -2488,6 +2490,7 @@ const ComplianceTrackingPage: React.FC = () => {
 
                                 {d && (hasOpenableFile(d) || isAgreement) && (
                                     <Button
+                                        shape='round'
                                         data-guide='download-document-action'
                                         icon={<DownloadOutlined />}
                                         onClick={() => isAgreement
@@ -2500,6 +2503,7 @@ const ComplianceTrackingPage: React.FC = () => {
 
                                 {(r.req.type ?? 'upload') === 'upload' && (
                                     <Button
+                                        shape='round'
                                         data-guide='upload-document-action'
                                         type={d ? 'default' : 'primary'}
                                         icon={<UploadOutlined />}
@@ -2527,6 +2531,7 @@ const ComplianceTrackingPage: React.FC = () => {
                                             }
                                         >
                                             <Button
+                                                shape='round'
                                                 data-guide='verify-document-action'
                                                 icon={<CheckCircleOutlined />}
                                                 disabled={isQueried || isInvalid}
@@ -2544,6 +2549,7 @@ const ComplianceTrackingPage: React.FC = () => {
                                             }
                                         >
                                             <Button
+                                                shape='round'
                                                 data-guide='verify-document-action'
                                                 icon={<RobotOutlined />}
                                                 disabled={d.id.startsWith('flat_') || !!aiVerifyingDocIds[d.id]}
@@ -2557,6 +2563,7 @@ const ComplianceTrackingPage: React.FC = () => {
                                         {isQueried ? (
                                             <>
                                                 <Button
+                                                    shape='round'
                                                     icon={<InfoCircleOutlined />}
                                                     onClick={() => {
                                                         setViewReason({
@@ -2572,6 +2579,7 @@ const ComplianceTrackingPage: React.FC = () => {
                                             </>
                                         ) : (
                                             <Button
+                                                shape='round'
                                                 data-guide='invalidate-document-action'
                                                 danger
                                                 icon={<CloseCircleOutlined />}
@@ -2596,7 +2604,7 @@ const ComplianceTrackingPage: React.FC = () => {
                                             </Tag>
                                         ) : (
                                             <Tag color='orange'>
-                                                {isGapAgreement ? 'Awaiting Operations confirmation' : 'Awaiting Operations signature'}
+                                                {isGapAgreement ? 'Awaiting ROM confirmation' : 'Awaiting ROM signature'}
                                             </Tag>
                                         )}
 
@@ -2787,7 +2795,7 @@ const ComplianceTrackingPage: React.FC = () => {
                                             ) : (
                                                 <>
                                                     <Tag color='orange'>
-                                                        {isGapAgreement ? 'Awaiting Operations confirmation' : 'Awaiting Operations signature'}
+                                                        {isGapAgreement ? 'Awaiting ROM confirmation' : 'Awaiting ROM signature'}
                                                     </Tag>
                                                     {(isGapAgreement ? canSeeOnboardingDocuments : isROMDept) && (
                                                         isGapAgreement ? (
@@ -2968,6 +2976,19 @@ const ComplianceTrackingPage: React.FC = () => {
     const selectedEditorTemplate = availableRequirementTemplates.find(
         template => template.optionValue === selectedEditorTemplateKey
     )
+
+    const visibleEditorTemplateOptions = useMemo(() => {
+        const currentTemplateKey = editingRequirement
+            ? requirementOptionValue(editingRequirement)
+            : null
+
+        return editorTemplateOptions.filter(
+            option =>
+                !option.disabled ||
+                option.value === currentTemplateKey
+        )
+    }, [editorTemplateOptions, editingRequirement])
+
 
     return (
         <div
@@ -3187,27 +3208,47 @@ const ComplianceTrackingPage: React.FC = () => {
                         open={reqModalOpen}
                         onCancel={() => {
                             setReqModalOpen(false)
-                            setDraftRequirements((deptRequired || []).map(requirement => ({ ...requirement })))
+                            setDraftRequirements(
+                                (deptRequired || []).map(requirement => ({ ...requirement }))
+                            )
                         }}
                         width={820}
-                        styles={{ body: { maxHeight: '68vh', overflowY: 'auto', paddingRight: 4 } }}
+                        styles={{
+                            body: {
+                                maxHeight: '68vh',
+                                overflowY: 'auto',
+                                overflowX: 'hidden',
+                                paddingRight: 4
+                            }
+                        }}
                         footer={
-                            <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    gap: 12,
+                                    width: '100%'
+                                }}
+                            >
                                 <Button
                                     block
+                                    shape='round'
                                     style={{ flex: 1 }}
                                     onClick={() => {
                                         setReqModalOpen(false)
-                                        setDraftRequirements((deptRequired || []).map(requirement => ({ ...requirement })))
+                                        setDraftRequirements(
+                                            (deptRequired || []).map(requirement => ({ ...requirement }))
+                                        )
                                     }}
                                     disabled={savingReqs}
                                 >
                                     Cancel
                                 </Button>
+
                                 <Button
                                     className='guide-save-compliance-documents'
                                     type='primary'
                                     block
+                                    shape='round'
                                     style={{ flex: 1 }}
                                     onClick={saveRequirements}
                                     loading={savingReqs}
@@ -3217,11 +3258,24 @@ const ComplianceTrackingPage: React.FC = () => {
                             </div>
                         }
                     >
-                        <Space direction='vertical' size={18} style={{ width: '100%' }}>
+                        <Space
+                            direction='vertical'
+                            size={18}
+                            style={{ width: '100%' }}
+                        >
                             <div>
-                                <Text strong style={{ display: 'block', fontSize: 16 }}>
-                                    {departmentInfo?.name || currentUser?.department || 'Department'} requirements
+                                <Text
+                                    strong
+                                    style={{
+                                        display: 'block',
+                                        fontSize: 16
+                                    }}
+                                >
+                                    {departmentInfo?.name ||
+                                        currentUser?.department ||
+                                        'Department'} requirements
                                 </Text>
+
                                 <Text type='secondary'>
                                     Manage the documents this department monitors for {programName}.
                                 </Text>
@@ -3229,12 +3283,22 @@ const ComplianceTrackingPage: React.FC = () => {
 
                             <Row gutter={[12, 12]}>
                                 {draftRequirements.map((requirement, index) => (
-                                    <Col xs={24} md={12} key={`${requirementOptionValue(requirement)}-${index}`}>
+                                    <Col
+                                        xs={24}
+                                        md={12}
+                                        key={`${requirementOptionValue(requirement)}-${index}`}
+                                    >
                                         <Card
                                             size='small'
-                                            styles={{ body: { padding: 16 } }}
+                                            styles={{
+                                                body: {
+                                                    padding: 14,
+                                                    height: '100%'
+                                                }
+                                            }}
                                             style={{
                                                 height: '100%',
+                                                borderRadius: 12,
                                                 borderColor: token.colorBorderSecondary,
                                                 background: token.colorBgContainer
                                             }}
@@ -3242,54 +3306,136 @@ const ComplianceTrackingPage: React.FC = () => {
                                             <div
                                                 style={{
                                                     display: 'flex',
-                                                    alignItems: 'flex-start',
-                                                    justifyContent: 'space-between',
-                                                    gap: 12
+                                                    flexDirection: 'column',
+                                                    gap: 12,
+                                                    minWidth: 0
                                                 }}
                                             >
-                                                <Space align='start' size={12}>
+                                                {/* Document */}
+                                                <div
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 10,
+                                                        minWidth: 0
+                                                    }}
+                                                >
                                                     <MotionCard.IconChip
                                                         size={38}
                                                         radius={11}
                                                         bg={token.colorFillSecondary}
-                                                        icon={<FileTextOutlined style={{ color: token.colorPrimary }} />}
+                                                        icon={
+                                                            <FileTextOutlined
+                                                                style={{
+                                                                    color: token.colorPrimary
+                                                                }}
+                                                            />
+                                                        }
                                                     />
-                                                    <div style={{ minWidth: 0 }}>
-                                                        <Text strong style={{ display: 'block' }} ellipsis={{ tooltip: requirement.title }}>
+
+                                                    <div
+                                                        style={{
+                                                            minWidth: 0,
+                                                            flex: 1
+                                                        }}
+                                                    >
+                                                        <Text
+                                                            strong
+                                                            ellipsis={{
+                                                                tooltip: requirement.title
+                                                            }}
+                                                            style={{
+                                                                display: 'block',
+                                                                fontSize: 13
+                                                            }}
+                                                        >
                                                             {requirement.title}
                                                         </Text>
-                                                        <Space size={6} wrap style={{ marginTop: 8 }}>
-                                                            <Tag color={(requirement.type ?? 'upload') === 'agreement' ? 'purple' : 'blue'}>
-                                                                {(requirement.type ?? 'upload') === 'agreement' ? 'Agreement' : 'Upload'}
-                                                            </Tag>
-                                                            <Tag>
-                                                                {requirement.hasExpiry
-                                                                    ? `${requirement.expiryMonths || '—'} month expiry`
-                                                                    : 'No expiry'}
-                                                            </Tag>
-                                                        </Space>
                                                     </div>
-                                                </Space>
+                                                </div>
 
-                                                <Space size={4}>
-                                                    <Tooltip title='Edit document'>
-                                                        <Button
-                                                            type='text'
-                                                            shape='circle'
-                                                            icon={<EditOutlined />}
-                                                            onClick={() => openDocumentEditor(index)}
-                                                        />
-                                                    </Tooltip>
-                                                    <Tooltip title='Delete document'>
-                                                        <Button
-                                                            type='text'
-                                                            shape='circle'
-                                                            danger
-                                                            icon={<DeleteOutlined />}
-                                                            onClick={() => removeDraftRequirement(index)}
-                                                        />
-                                                    </Tooltip>
-                                                </Space>
+                                                {/* Metadata + Actions */}
+                                                <div
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        flexWrap: 'wrap',
+                                                        gap: 8,
+                                                        width: '100%'
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            flexWrap: 'wrap',
+                                                            gap: 6,
+                                                            minWidth: 0
+                                                        }}
+                                                    >
+                                                        <Tag
+                                                            color={
+                                                                (requirement.type ?? 'upload') === 'agreement'
+                                                                    ? 'purple'
+                                                                    : 'blue'
+                                                            }
+                                                            style={{
+                                                                marginInlineEnd: 0,
+                                                                borderRadius: 999
+                                                            }}
+                                                        >
+                                                            {(requirement.type ?? 'upload') === 'agreement'
+                                                                ? 'Agreement'
+                                                                : 'Upload'}
+                                                        </Tag>
+
+                                                        <Tag
+                                                            style={{
+                                                                marginInlineEnd: 0,
+                                                                borderRadius: 999
+                                                            }}
+                                                        >
+                                                            {requirement.hasExpiry
+                                                                ? `${requirement.expiryMonths || '—'} month expiry`
+                                                                : 'No expiry'}
+                                                        </Tag>
+                                                    </div>
+
+                                                    <div
+                                                        style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 6,
+                                                            marginLeft: 'auto'
+                                                        }}
+                                                    >
+                                                        <Tooltip title='Edit document'>
+                                                            <Button
+                                                                size='small'
+                                                                shape='circle'
+                                                                icon={<EditOutlined />}
+                                                                onClick={() => openDocumentEditor(index)}
+                                                                style={{
+                                                                    borderColor: token.colorBorder,
+                                                                    color: token.colorPrimary
+                                                                }}
+                                                            />
+                                                        </Tooltip>
+
+                                                        <Tooltip title='Delete document'>
+                                                            <Button
+                                                                size='small'
+                                                                shape='circle'
+                                                                danger
+                                                                icon={<DeleteOutlined />}
+                                                                onClick={() =>
+                                                                    removeDraftRequirement(index)
+                                                                }
+                                                            />
+                                                        </Tooltip>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </Card>
                                     </Col>
@@ -3319,8 +3465,15 @@ const ComplianceTrackingPage: React.FC = () => {
                             </Row>
 
                             {!draftRequirements.length && (
-                                <Text type='secondary' style={{ textAlign: 'center' }}>
-                                    No documents have been added yet. Add the first document to begin monitoring compliance.
+                                <Text
+                                    type='secondary'
+                                    style={{
+                                        display: 'block',
+                                        textAlign: 'center'
+                                    }}
+                                >
+                                    No documents have been added yet. Add the first document to
+                                    begin monitoring compliance.
                                 </Text>
                             )}
                         </Space>
@@ -3329,24 +3482,42 @@ const ComplianceTrackingPage: React.FC = () => {
                     <Modal
                         className='guide-document-editor-modal'
                         centered
-                        title={editingRequirement ? 'Edit Required Document' : 'Add Required Document'}
+                        title={
+                            editingRequirement
+                                ? 'Edit Required Document'
+                                : 'Add Required Document'
+                        }
                         open={documentEditorOpen}
                         onCancel={closeDocumentEditor}
                         width={540}
-                        destroyOnHidden
                         footer={
-                            <div style={{ display: 'flex', gap: 12, width: '100%' }}>
-                                <Button block style={{ flex: 1 }} onClick={closeDocumentEditor}>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    gap: 12,
+                                    width: '100%'
+                                }}
+                            >
+                                <Button
+                                    block
+                                    shape='round'
+                                    style={{ flex: 1 }}
+                                    onClick={closeDocumentEditor}
+                                >
                                     Cancel
                                 </Button>
+
                                 <Button
                                     data-guide='save-compliance-document-draft'
                                     type='primary'
                                     block
+                                    shape='round'
                                     style={{ flex: 1 }}
                                     onClick={saveDocumentDraft}
                                 >
-                                    {editingRequirement ? 'Update Document' : 'Add Document'}
+                                    {editingRequirement
+                                        ? 'Update Document'
+                                        : 'Add Document'}
                                 </Button>
                             </div>
                         }
@@ -3359,14 +3530,23 @@ const ComplianceTrackingPage: React.FC = () => {
                             <Form.Item
                                 name='templateKey'
                                 label='Document Title'
-                                rules={[{ required: true, message: 'Select a document.' }]}
+                                rules={[
+                                    {
+                                        required: true,
+                                        message: 'Select a document.'
+                                    }
+                                ]}
                             >
                                 <Select
                                     showSearch
                                     optionFilterProp='label'
-                                    placeholder={editorTemplateOptions.length ? 'Select document' : 'No documents available'}
-                                    options={editorTemplateOptions}
-                                    disabled={!editorTemplateOptions.length}
+                                    placeholder={
+                                        visibleEditorTemplateOptions.length
+                                            ? 'Select document'
+                                            : 'No documents available'
+                                    }
+                                    options={visibleEditorTemplateOptions}
+                                    disabled={!visibleEditorTemplateOptions.length}
                                 />
                             </Form.Item>
 
@@ -3374,33 +3554,68 @@ const ComplianceTrackingPage: React.FC = () => {
                                 <Alert
                                     type='info'
                                     showIcon
-                                    style={{ marginBottom: 18 }}
-                                    message={(selectedEditorTemplate.type ?? 'upload') === 'agreement'
-                                        ? 'Agreement document'
-                                        : 'Upload document'}
-                                    description={(selectedEditorTemplate.type ?? 'upload') === 'agreement'
-                                        ? 'The SME completes this document through the agreement workflow.'
-                                        : 'The SME or authorised staff can upload this document for compliance review.'}
+                                    style={{
+                                        marginBottom: 18,
+                                        borderRadius: 10
+                                    }}
+                                    message={
+                                        (selectedEditorTemplate.type ?? 'upload') === 'agreement'
+                                            ? 'Agreement document'
+                                            : 'Upload document'
+                                    }
+                                    description={
+                                        (selectedEditorTemplate.type ?? 'upload') === 'agreement'
+                                            ? 'The SME completes this document through the agreement workflow.'
+                                            : 'The SME or authorised staff can upload this document for compliance review.'
+                                    }
                                 />
                             )}
 
-                            <Form.Item
-                                name='hasExpiry'
-                                label='Expiry'
-                                valuePropName='checked'
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: 16,
+                                    marginBottom: selectedEditorHasExpiry ? 18 : 0,
+                                    padding: '4px 0'
+                                }}
                             >
-                                <Switch checkedChildren='Has expiry' unCheckedChildren='No expiry' />
-                            </Form.Item>
+                                <Text strong>
+                                    Does this document expire?
+                                </Text>
+
+                                <Form.Item
+                                    name='hasExpiry'
+                                    noStyle
+                                >
+                                    <Radio.Group>
+                                        <Radio value={true}>
+                                            Yes
+                                        </Radio>
+
+                                        <Radio value={false}>
+                                            No
+                                        </Radio>
+                                    </Radio.Group>
+                                </Form.Item>
+                            </div>
 
                             {selectedEditorHasExpiry && (
                                 <Form.Item
                                     name='expiryMonths'
-                                    label='Expiry Months'
-                                    rules={[{ required: true, message: 'Enter the expiry period in months.' }]}
+                                    label='Expiry Period'
+                                    rules={[
+                                        {
+                                            required: true,
+                                            message: 'Enter the expiry period in months.'
+                                        }
+                                    ]}
                                 >
                                     <InputNumber
                                         min={1}
                                         precision={0}
+                                        addonAfter='months'
                                         style={{ width: '100%' }}
                                         placeholder='e.g. 12'
                                     />

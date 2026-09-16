@@ -19,6 +19,7 @@ import InterventionMetricsGrid, {
     type InterventionMetricKey
 } from '../metrics/InterventionMetricsGrid'
 import DepartmentInterventionsStatus from '../charts/InterventionsBreakdown'
+import MovSubmissionStatusCard from '../metrics/MovSubmissionStatusCard'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
 import AppointmentsCalendarModal from '@/components/modals/AppointmentsCalender'
 import AppointmentDetailsModal from '@/components/modals/AppointmentDetails'
@@ -401,6 +402,12 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
                                 onViewCalendar={() => setCalendarVisible(true)}
                             />
                         ) : null}
+
+                        <MovSubmissionStatusCard
+                            departmentName={user?.departmentName}
+                            programId={programId}
+                            dateRange={range}
+                        />
 
                         {sideCards}
                     </Space>

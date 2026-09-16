@@ -43,6 +43,20 @@ AVAILABLE_ACTIONS: dict[str, dict[str, Any]] = {
             "reason": "The user's stated reason, when present.",
         },
     },
+    "get_food_menu": {
+        "kind": "read",
+        "description": "Retrieve the food menu for the trusted appointment's session.",
+        "requiresTrustedAppointmentId": True,
+        "arguments": {},
+    },
+    "select_food_items": {
+        "kind": "mutation",
+        "description": "Record the SME's food selections for the trusted appointment from the retrieved food menu.",
+        "requiresTrustedAppointmentId": True,
+        "arguments": {
+            "items": "The names of the chosen menu items, exactly as shown in the retrieved food menu.",
+        },
+    },
 }
 
 

@@ -25,6 +25,8 @@ import {
 } from '@ant-design/icons'
 import {
     collection,
+    doc,
+    getDoc,
     getDocs,
     query,
     where
@@ -50,6 +52,7 @@ type ApplicationRecord = {
     applicationStatus?: string
     complianceScore?: number
     growthPlanDocUrl?: string
+    gapCompleted?: boolean
     [key: string]: any
 }
 
@@ -101,10 +104,15 @@ const getStatusLabel = (status?: string) => {
     )
 }
 
-/** Accepted, but the SME hasn't submitted the GAP analysis for it yet. */
+/**
+ * The SME hasn't submitted the GAP analysis for this application yet.
+ * Not gated on acceptance — without a GAP submission the application itself
+ * is still incomplete, whether it's pending a decision or already accepted.
+ * Once rejected there's nothing left to complete.
+ */
 const needsGapCompletion = (application: ApplicationRecord) =>
-    normalizeApplicationStatus(application.applicationStatus) === 'accepted' &&
-    !hasSmeGapSubmission({ application })
+    normalizeApplicationStatus(application.applicationStatus) !== 'rejected' &&
+    !application.gapCompleted
 
 const ApplicationTracker = () => {
     const screens = useBreakpoint()
@@ -185,11 +193,35 @@ const ApplicationTracker = () => {
                     )
                 )
 
-                const apps: ApplicationRecord[] =
-                    appsSnap.docs.map(applicationDoc => ({
-                        id: applicationDoc.id,
-                        ...applicationDoc.data()
-                    }))
+                const apps: ApplicationRecord[] = await Promise.all(
+                    appsSnap.docs.map(async applicationDoc => {
+                        const data = applicationDoc.data() as any
+                        let participant: any = null
+
+                        if (data.participantId) {
+                            try {
+                                const participantDoc = await getDoc(
+                                    doc(db, 'participants', data.participantId)
+                                )
+                                if (participantDoc.exists()) {
+                                    participant = participantDoc.data()
+                                }
+                            } catch (err) {
+                                console.error('Error loading participant:', err)
+                            }
+                        }
+
+                        return {
+                            id: applicationDoc.id,
+                            ...data,
+                            gapCompleted: hasSmeGapSubmission({
+                                application: data,
+                                participant,
+                                agreement: data.signedAgreements?.['gap-analysis']
+                            })
+                        }
+                    })
+                )
 
                 setApplications(apps)
                 setMobilePage(1)

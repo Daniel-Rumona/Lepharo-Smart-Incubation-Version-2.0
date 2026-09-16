@@ -78,6 +78,15 @@ export const academyAction = onCall({ timeoutSeconds: 60 }, async (request) => {
       const revision = Number(draft.publishedRevision || 0) + 1,
         revisionId = `${id}_${revision}`;
       const now = new Date().toISOString();
+      const publishTo =
+        draft.publishTo?.mode === "selected"
+          ? {
+              mode: "selected" as const,
+              participantIds: Array.isArray(draft.publishTo.participantIds)
+                ? draft.publishTo.participantIds.filter((v: unknown) => typeof v === "string")
+                : [],
+            }
+          : { mode: "all" as const, participantIds: [] };
       tx.create(
         db.doc(`academyKeys/${revisionId}`),
         clean({ ...course, owner: uid, courseId: id, revision })
@@ -92,6 +101,7 @@ export const academyAction = onCall({ timeoutSeconds: 60 }, async (request) => {
         owner: uid,
         revision,
         publishedAt: now,
+        publishTo,
       });
       tx.update(ref, { publishedRevision: revision });
       return { revision };

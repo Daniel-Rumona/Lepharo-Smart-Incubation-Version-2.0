@@ -517,7 +517,13 @@ const InterventionsTrackingView: React.FC = () => {
         .map(i => ({ id: i.id, title: i.interventionTitle || i.title }))
 
     const deriveDisplayStatus = (intervention: AssignedIntervention): string => {
-        if (!intervention.assigneeId && !intervention.interventionId)
+        // No facilitator/coordinator assigned yet = no real assignedInterventions
+        // doc exists for this plan item. interventionId alone isn't a safe
+        // signal here — plan-sourced placeholder rows carry the catalog
+        // intervention's id too, so checking it as well used to make an
+        // unassigned plan item fall through into lifecycle statuses like
+        // "Awaiting Appointment Response".
+        if (!intervention.assigneeId)
             return 'Pending Assignment'
         const lifecycle = resolveAssignmentLifecycle(intervention)
         if (lifecycle.key === 'awaiting-participant-acceptance') {

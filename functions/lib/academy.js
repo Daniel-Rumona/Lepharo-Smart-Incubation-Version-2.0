@@ -65,6 +65,14 @@ exports.academyAction = (0, https_1.onCall)({ timeoutSeconds: 60 }, async (reque
                 bad(issues[0].message);
             const revision = Number(draft.publishedRevision || 0) + 1, revisionId = `${id}_${revision}`;
             const now = new Date().toISOString();
+            const publishTo = draft.publishTo?.mode === "selected"
+                ? {
+                    mode: "selected",
+                    participantIds: Array.isArray(draft.publishTo.participantIds)
+                        ? draft.publishTo.participantIds.filter((v) => typeof v === "string")
+                        : [],
+                }
+                : { mode: "all", participantIds: [] };
             tx.create(firebase_1.db.doc(`academyKeys/${revisionId}`), clean({ ...course, owner: uid, courseId: id, revision }));
             tx.create(firebase_1.db.doc(`academyVersions/${revisionId}`), clean({ ...(0, courseDomain_1.publicCourse)(course), owner: uid, courseId: id, revision }));
             tx.set(firebase_1.db.doc(`academyCatalog/${id}`), {
@@ -73,6 +81,7 @@ exports.academyAction = (0, https_1.onCall)({ timeoutSeconds: 60 }, async (reque
                 owner: uid,
                 revision,
                 publishedAt: now,
+                publishTo,
             });
             tx.update(ref, { publishedRevision: revision });
             return { revision };

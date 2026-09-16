@@ -21,12 +21,14 @@ APPOINTMENT = {
 
 
 def decision(action_type=None, *, intent="appointment_query", confidence=0.97,
-             arguments=None, mode=None, awaiting=None, reply="I can help with that."):
+             arguments=None, mode=None, awaiting=None, reply="I can help with that.",
+             tool_call_type=None):
     return AgentDecision(
         intent=intent,
         confidence=confidence,
-        responseMode=mode or ("action" if action_type else "conversation"),
+        responseMode=mode or ("tool_call" if tool_call_type else ("action" if action_type else "conversation")),
         action=(AgentActionSelection(type=action_type, arguments=arguments or {}) if action_type else None),
+        toolCall=({"type": tool_call_type, "arguments": {}} if tool_call_type else None),
         conversation=AgentConversationSelection(awaiting=awaiting),
         reply=reply,
     )
@@ -37,8 +39,8 @@ class StubReasoner:
         self.result = result
         self.calls = []
 
-    def decide(self, message, trusted_context, conversation):
-        self.calls.append((message, trusted_context, conversation))
+    def decide(self, message, trusted_context, conversation, tool_results):
+        self.calls.append((message, trusted_context, conversation, tool_results))
         return self.result
 
 
@@ -67,19 +69,19 @@ class WhatsAppAgentPolicyTests(unittest.TestCase):
         )
         for index, text in enumerate(phrases):
             with self.subTest(text=text):
-                result, _ = self.send(text, decision("get_upcoming_appointments"), user_id=f"upcoming-{index}")
+                result, _ = self.send(text, decision(tool_call_type="get_upcoming_appointments"), user_id=f"upcoming-{index}")
                 self.assertEqual(result.intent, "appointment_query")
-                self.assertEqual(result.action.type, "get_upcoming_appointments")
-                self.assertIsNone(result.action.appointmentId)
+                self.assertEqual(result.toolCall.type, "get_upcoming_appointments")
+                self.assertIsNone(result.action)
 
     def test_exact_reported_failing_case(self):
         result, reasoner = self.send(
             "What are my upcoming appointments",
-            decision("get_upcoming_appointments", confidence=0.98),
+            decision(tool_call_type="get_upcoming_appointments", confidence=0.98),
             context={"engine": "LPH"},
             user_id="+263714551735",
         )
-        self.assertEqual(result.action.type, "get_upcoming_appointments")
+        self.assertEqual(result.toolCall.type, "get_upcoming_appointments")
         self.assertIsNone(reasoner.calls[0][1]["type"])
 
     def test_read_detail_requires_trusted_target(self):
@@ -90,11 +92,58 @@ class WhatsAppAgentPolicyTests(unittest.TestCase):
     def test_known_appointment_read_uses_trusted_target(self):
         result, _ = self.send(
             "How do I join?",
-            decision("get_meeting_link", intent="appointment_meeting_link_request"),
+            decision(tool_call_type="get_meeting_link", intent="appointment_meeting_link_request"),
             context=APPOINTMENT,
         )
-        self.assertEqual(result.action.type, "get_meeting_link")
-        self.assertEqual(result.action.appointmentId, "abc123")
+        self.assertEqual(result.toolCall.type, "get_meeting_link")
+        self.assertIsNone(result.action)
+
+    def test_read_request_yields_tool_call_then_final_reply_from_result(self):
+        first, _ = self.send(
+            "What's next on my calendar?",
+            decision(tool_call_type="get_upcoming_appointments"),
+        )
+        self.assertIsNone(first.action)
+        self.assertEqual(first.toolCall.type, "get_upcoming_appointments")
+
+        final_decision = AgentDecision(
+            intent="appointment_query",
+            confidence=0.95,
+            responseMode="conversation",
+            action=None,
+            toolCall=None,
+            conversation=AgentConversationSelection(awaiting=None),
+            reply="Your next appointment is Financial Compliance on Friday.",
+        )
+        second, reasoner = self.send(
+            "What's next on my calendar?",
+            final_decision,
+            context={
+                "engine": "LPH",
+                "toolResults": [
+                    {"type": "get_upcoming_appointments", "result": {"appointments": []}},
+                ],
+            },
+        )
+        self.assertIsNone(second.toolCall)
+        self.assertIsNone(second.action)
+        self.assertIn("Financial Compliance", second.reply)
+        self.assertEqual(reasoner.calls[0][3][0]["type"], "get_upcoming_appointments")
+
+    def test_tool_call_round_cap_forces_a_final_reply(self):
+        result, _ = self.send(
+            "What's next on my calendar?",
+            decision(tool_call_type="get_upcoming_appointments"),
+            context={
+                "engine": "LPH",
+                "toolResults": [
+                    {"type": "get_upcoming_appointments", "result": {"appointments": []}}
+                ]
+                * 3,
+            },
+        )
+        self.assertIsNone(result.toolCall)
+        self.assertIsNone(result.action)
 
     def test_acceptance_paraphrases_in_rsvp_context(self):
         for index, text in enumerate(("Yes", "Sounds good", "I can make it", "See you then", "Yebo, I'll come")):
@@ -167,6 +216,38 @@ class WhatsAppAgentPolicyTests(unittest.TestCase):
         self.assertEqual(result.action.requestedTimeText, "2pm")
         self.assertIsNone(result.action.requestedDate)
 
+    def test_food_menu_request_yields_tool_call(self):
+        result, _ = self.send(
+            "What's on the menu for my session?",
+            decision(tool_call_type="get_food_menu"),
+            context=APPOINTMENT,
+        )
+        self.assertIsNone(result.action)
+        self.assertEqual(result.toolCall.type, "get_food_menu")
+
+    def test_food_selection_without_named_items_asks_for_choice(self):
+        result, _ = self.send(
+            "I'll have something",
+            decision("select_food_items", intent="appointment_food_selection", arguments={"items": []}),
+            context=APPOINTMENT,
+        )
+        self.assertIsNone(result.action)
+        self.assertEqual(result.conversation.awaiting, "food_item_selection")
+
+    def test_food_selection_with_named_items_emits_action(self):
+        result, _ = self.send(
+            "I'll have the Chicken Wrap and a Coke",
+            decision(
+                "select_food_items",
+                intent="appointment_food_selection",
+                arguments={"items": ["Chicken Wrap", "Coke"]},
+            ),
+            context=APPOINTMENT,
+        )
+        self.assertEqual(result.action.type, "select_food_items")
+        self.assertEqual(result.action.appointmentId, "abc123")
+        self.assertEqual(result.action.foodItems, ["Chicken Wrap", "Coke"])
+
     def test_ambiguous_and_unrelated_messages_emit_no_action(self):
         ambiguous, _ = self.send(
             "Maybe, let me see",
@@ -228,7 +309,7 @@ class GeminiReasonerContractTests(unittest.TestCase):
             "reply": "Let me check.",
         })
         reasoner = GeminiWhatsAppReasoner(_FakeClient([output]), "test-model")
-        result = reasoner.decide("What's next?", {"engine": "LPH"}, {})
+        result = reasoner.decide("What's next?", {"engine": "LPH"}, {}, [])
         self.assertEqual(result.action.type, "get_upcoming_appointments")
 
     def test_invalid_output_is_repaired_once(self):
@@ -242,7 +323,7 @@ class GeminiReasonerContractTests(unittest.TestCase):
         })
         client = _FakeClient(["not json", valid])
         reasoner = GeminiWhatsAppReasoner(client, "test-model")
-        result = reasoner.decide("Hello", {"engine": "LPH"}, {})
+        result = reasoner.decide("Hello", {"engine": "LPH"}, {}, [])
         self.assertEqual(result.intent, "conversation")
         self.assertEqual(client.models.calls, 2)
 

@@ -6,9 +6,11 @@ type GatewayAction =
   | "get_appointment"
   | "get_upcoming_appointments"
   | "get_meeting_link"
+  | "get_food_menu"
   | "appointment_accept"
   | "appointment_decline"
-  | "appointment_reschedule_request";
+  | "appointment_reschedule_request"
+  | "select_food_items";
 
 type GatewayRequest = {
   action?: GatewayAction;
@@ -19,6 +21,7 @@ type GatewayRequest = {
   requestedTime?: string | null;
   requestedDateText?: string | null;
   requestedTimeText?: string | null;
+  foodItems?: string[];
 };
 
 type ParticipantIdentity = {
@@ -125,62 +128,86 @@ const timestampToIso = (value: any): string | null => {
   }
 };
 
-const appointmentSummary = (id: string, data: any) => ({
+// A v5 appointment (SME invitation) carries no schedule/delivery/food data of
+// its own; those live on the appointmentSessions document it points to via
+// appointmentSessionId. Every summary and mutation here works off the joined
+// pair, matching the canonical shapes in src/types/appointment.ts.
+const appointmentSummary = (id: string, data: any, session: any) => ({
   id,
-  participantId: clean(data?.participantId),
-  interventionTitle: clean(data?.snapshot?.interventionTitle) || clean(data?.interventionTitle) || "Appointment",
-  participantName: clean(data?.snapshot?.beneficiaryName) || clean(data?.participantName) || null,
-  assigneeName: clean(data?.snapshot?.assigneeName) || clean(data?.assigneeName) || clean(data?.consultantName) || null,
-  departmentName: clean(data?.snapshot?.departmentName) || clean(data?.departmentName) || null,
-  date: clean(data?.schedule?.dateKey) || clean(data?.date) || null,
-  startTime: timestampToIso(data?.schedule?.startAt || data?.startTime) || clean(data?.schedule?.startTime) || null,
-  endTime: timestampToIso(data?.schedule?.endAt || data?.endTime) || clean(data?.schedule?.endTime) || null,
-  deliveryMode: clean(data?.delivery?.mode) || clean(data?.deliveryMethod) || null,
-  meetingLink: clean(data?.delivery?.meeting?.link) || clean(data?.meetingLink) || null,
-  location: clean(data?.delivery?.location?.venue) || clean(data?.delivery?.location?.address) || clean(data?.location) || null,
+  interventionTitle: clean(data?.interventionTitle) || clean(session?.interventionTitle) || "Appointment",
+  assigneeName: clean(data?.assigneeName) || null,
+  date: session?.startAt?.toDate ? session.startAt.toDate().toISOString().slice(0, 10) : null,
+  startTime: timestampToIso(session?.startAt),
+  endTime: timestampToIso(session?.endAt),
+  deliveryMode: clean(session?.deliveryMethod) || null,
+  meetingLink: clean(session?.meetingLink) || null,
+  location: clean(session?.location) || null,
   status: clean(data?.status) || "scheduled",
-  beneficiaryConfirmation: clean(data?.beneficiaryConfirmation) || clean(data?.userConfirmation) || "pending",
+  smeConfirmation: clean(data?.smeConfirmation) || "pending",
   programId: clean(data?.programId) || null,
 });
+
+async function fetchSessionsByIds(ids: string[]): Promise<Map<string, any>> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  const result = new Map<string, any>();
+  const chunkSize = 10;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    if (!chunk.length) continue;
+    const snapshot = await db.collection("appointmentSessions")
+      .where(admin.firestore.FieldPath.documentId(), "in", chunk)
+      .get();
+    snapshot.docs.forEach((doc) => result.set(doc.id, doc.data() || {}));
+  }
+  return result;
+}
 
 async function appointmentForParticipant(appointmentId: string, identity: ParticipantIdentity) {
   if (!appointmentId) return null;
   const snapshot = await db.collection("appointments").doc(appointmentId).get();
   if (!snapshot.exists) return null;
   const data = snapshot.data() || {};
-  const participantId = clean(data.participantId);
-  if (!identity.participantIds.includes(participantId)) return null;
-  return { ref: snapshot.ref, id: snapshot.id, data };
+  const smeId = clean(data.smeId);
+  if (!identity.participantIds.includes(smeId)) return null;
+  const sessionId = clean(data.appointmentSessionId);
+  const sessionSnapshot = sessionId ? await db.collection("appointmentSessions").doc(sessionId).get() : null;
+  const session = sessionSnapshot?.exists ? sessionSnapshot.data() || {} : {};
+  return { ref: snapshot.ref, id: snapshot.id, data, session };
 }
 
 async function upcomingAppointments(identity: ParticipantIdentity) {
   const rows = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
   for (const participantId of identity.participantIds) {
     const snapshot = await db.collection("appointments")
-      .where("participantId", "==", participantId)
+      .where("smeId", "==", participantId)
       .limit(100)
       .get();
     snapshot.docs.forEach((doc) => rows.set(doc.id, doc));
   }
 
+  const candidates = Array.from(rows.values()).filter((doc) => {
+    const status = clean(doc.data()?.status).toLowerCase();
+    return !["cancelled", "completed"].includes(status);
+  });
+
+  const sessions = await fetchSessionsByIds(
+    candidates.map((doc) => clean(doc.data()?.appointmentSessionId)),
+  );
+
   const now = Date.now();
-  return Array.from(rows.values())
-    .filter((doc) => {
-      const data = doc.data() || {};
-      const status = clean(data.status).toLowerCase();
-      if (["cancelled", "completed"].includes(status)) return false;
-      const start = data?.schedule?.startAt?.toDate?.() || data?.startTime?.toDate?.() || null;
+  return candidates
+    .map((doc) => ({ doc, session: sessions.get(clean(doc.data()?.appointmentSessionId)) || {} }))
+    .filter(({ session }) => {
+      const start = session?.startAt?.toDate?.() || null;
       return !start || start.getTime() >= now - 60 * 60 * 1000;
     })
     .sort((a, b) => {
-      const aData = a.data() || {};
-      const bData = b.data() || {};
-      const aTime = aData?.schedule?.startAt?.toMillis?.() || aData?.startTime?.toMillis?.() || Number.MAX_SAFE_INTEGER;
-      const bTime = bData?.schedule?.startAt?.toMillis?.() || bData?.startTime?.toMillis?.() || Number.MAX_SAFE_INTEGER;
+      const aTime = a.session?.startAt?.toMillis?.() ?? Number.MAX_SAFE_INTEGER;
+      const bTime = b.session?.startAt?.toMillis?.() ?? Number.MAX_SAFE_INTEGER;
       return aTime - bTime;
     })
     .slice(0, 10)
-    .map((doc) => appointmentSummary(doc.id, doc.data()));
+    .map(({ doc, session }) => appointmentSummary(doc.id, doc.data(), session));
 }
 
 export const lphWhatsAppGateway = onRequest(
@@ -239,13 +266,13 @@ export const lphWhatsAppGateway = onRequest(
           ok: true,
           matched: true,
           identity,
-          appointment: appointmentSummary(appointment.id, appointment.data),
+          appointment: appointmentSummary(appointment.id, appointment.data, appointment.session),
         });
         return;
       }
 
       if (action === "get_meeting_link") {
-        const summary = appointmentSummary(appointment.id, appointment.data);
+        const summary = appointmentSummary(appointment.id, appointment.data, appointment.session);
         json(res, 200, {
           ok: true,
           matched: true,
@@ -256,13 +283,26 @@ export const lphWhatsAppGateway = onRequest(
         return;
       }
 
+      if (action === "get_food_menu") {
+        const menu = Array.isArray(appointment.session?.foodMenu) ? appointment.session.foodMenu : [];
+        const selections = Array.isArray(appointment.data?.foodSelections) ? appointment.data.foodSelections : [];
+        json(res, 200, {
+          ok: true,
+          matched: true,
+          identity,
+          foodMenu: menu.map((item: any) => ({
+            id: clean(item?.id),
+            name: clean(item?.name),
+            category: clean(item?.category),
+          })).filter((item: any) => item.id && item.name),
+          foodSelections: selections,
+        });
+        return;
+      }
+
       if (action === "appointment_accept") {
         await appointment.ref.set({
-          beneficiaryConfirmation: "confirmed",
-          userConfirmation: "confirmed",
-          beneficiaryConfirmedAt: admin.firestore.FieldValue.serverTimestamp(),
-          confirmationSource: "whatsapp",
-          confirmationPhone: normalizePhone(phoneNumber),
+          smeConfirmation: "confirmed",
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
         json(res, 200, { ok: true, action, appointmentId, status: "confirmed" });
@@ -276,12 +316,8 @@ export const lphWhatsAppGateway = onRequest(
           return;
         }
         await appointment.ref.set({
-          beneficiaryConfirmation: "declined",
-          userConfirmation: "declined",
-          declineReason: reason,
-          beneficiaryDeclinedAt: admin.firestore.FieldValue.serverTimestamp(),
-          confirmationSource: "whatsapp",
-          confirmationPhone: normalizePhone(phoneNumber),
+          smeConfirmation: "declined",
+          smeDeclineReason: reason,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
         json(res, 200, { ok: true, action, appointmentId, status: "declined" });
@@ -289,22 +325,50 @@ export const lphWhatsAppGateway = onRequest(
       }
 
       if (action === "appointment_reschedule_request") {
+        // The v5 schema has no standalone "reschedule while still pending" state:
+        // smeRescheduleRequest only carries concrete slot proposals attached to a
+        // decline, and WhatsApp has no slot picker to produce those. Recording the
+        // request as a decline with the requested wording folded into the reason
+        // keeps it visible to the programme team without inventing a status the
+        // rest of the app does not know how to read.
+        const whenText = [clean(payload.requestedDateText), clean(payload.requestedTimeText)]
+          .filter(Boolean)
+          .join(" at ");
+        const reasonText = [
+          `Requested reschedule via WhatsApp${whenText ? ` to ${whenText}` : ""}`,
+          clean(payload.reason),
+        ].filter(Boolean).join(" — ");
         await appointment.ref.set({
-          rescheduleRequest: {
-            status: "requested",
-            reasonText: clean(payload.reason) || null,
-            requestedDate: clean(payload.requestedDate) || null,
-            requestedTime: clean(payload.requestedTime) || null,
-            requestedDateText: clean(payload.requestedDateText) || null,
-            requestedTimeText: clean(payload.requestedTimeText) || null,
-            requestedVia: "whatsapp",
-            requestedByParticipantId: identity.id,
-            requestedByName: identity.participantName,
-            requestedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
+          smeConfirmation: "declined",
+          smeDeclineReason: reasonText,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
-        json(res, 200, { ok: true, action, appointmentId, status: "requested" });
+        json(res, 200, { ok: true, action, appointmentId, status: "declined" });
+        return;
+      }
+
+      if (action === "select_food_items") {
+        const menu = Array.isArray(appointment.session?.foodMenu) ? appointment.session.foodMenu : [];
+        const requested = Array.isArray(payload.foodItems) ? payload.foodItems.map(clean).filter(Boolean) : [];
+        const chosen = requested
+          .map((name) => menu.find((item: any) => clean(item?.name).toLowerCase() === name.toLowerCase()))
+          .filter(Boolean)
+          .map((item: any) => clean(item.id))
+          .filter(Boolean);
+        if (!chosen.length) {
+          json(res, 400, {
+            ok: false,
+            error: "no_matching_food_items",
+            foodMenu: menu.map((item: any) => clean(item?.name)).filter(Boolean),
+          });
+          return;
+        }
+        const foodSelections = Array.from(new Set(chosen)).map((menuItemId) => ({ menuItemId, quantity: 1 }));
+        await appointment.ref.set({
+          foodSelections,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        json(res, 200, { ok: true, action, appointmentId, foodSelections });
         return;
       }
 

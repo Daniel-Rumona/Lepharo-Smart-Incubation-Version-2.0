@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, App, Badge, Button, Empty, Grid, Input, Modal, Result, Select, Spin, Switch, Tag } from "antd";
+import { Alert, App, Badge, Button, Empty, Grid, Input, Modal, Radio, Result, Select, Spin, Switch, Tag } from "antd";
 import { ArrowLeftOutlined, EyeOutlined, FileTextOutlined, PlusOutlined } from "@ant-design/icons";
 import { useLocation, useNavigate } from "react-router-dom";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import {
   type AssistAction,
@@ -15,9 +17,11 @@ import {
 import { isExtractableKind } from "@/services/courseContentExtractionService";
 import ExtractContentModal from "../ExtractContentModal";
 import {
+  type AccessCondition,
   type Issue,
   type Item,
   type Kind,
+  type PublishAudience,
   type SavedCourse,
   courseAction,
   isAssessment,
@@ -106,6 +110,9 @@ export default function CourseBuilder({ id }: { id: string }) {
   const [publishing, setPublishing] = useState(false);
   const [missing, setMissing] = useState<SuggestedItem[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [participants, setParticipants] = useState<{ id: string; name: string; email?: string }[]>([]);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
+  const participantsLoaded = useRef(false);
   const jobs = useRef(new Map<string, DraftJob>());
   const goal = useRef<string>((location.state as { goal?: string } | null)?.goal || "");
   const queueStarted = useRef(false);
@@ -123,6 +130,23 @@ export default function CourseBuilder({ id }: { id: string }) {
       setTab(defaultTab(first, readiness!.states[first.id].primary));
     }
   }, [course?.items.length, selected]);
+
+  useEffect(() => {
+    if (review === null || participantsLoaded.current) return;
+    participantsLoaded.current = true;
+    setParticipantsLoading(true);
+    getDocs(collection(db, "participants"))
+      .then((snap) =>
+        setParticipants(
+          snap.docs.map((d) => {
+            const data = d.data() as Record<string, unknown>;
+            return { id: d.id, name: String(data.beneficiaryName || data.name || d.id), email: data.email as string | undefined };
+          })
+        )
+      )
+      .catch(() => undefined)
+      .finally(() => setParticipantsLoading(false));
+  }, [review]);
 
   const context = (current: SavedCourse): CourseAiContext => ({
     title: current.title,
@@ -810,6 +834,22 @@ export default function CourseBuilder({ id }: { id: string }) {
             </div>
             <Switch aria-label="Learners follow the order" checked={course.sequential} onChange={(sequential) => mutate((c) => ({ ...c, sequential }))} />
           </div>
+          <div className="cb-field">
+            <span className="cb-label">When can learners access this course?</span>
+            <Radio.Group
+              className="cb-radio-stack"
+              value={course.accessCondition || "always"}
+              onChange={(e) => mutate((c) => ({ ...c, accessCondition: e.target.value as AccessCondition }))}
+            >
+              <Radio value="always">Always accessible</Radio>
+              <Radio value="afterIntervention" disabled>
+                After completing an intervention <Tag className="cb-hide-xs">Coming soon</Tag>
+              </Radio>
+              <Radio value="afterAppointment" disabled>
+                After completing an appointment <Tag className="cb-hide-xs">Coming soon</Tag>
+              </Radio>
+            </Radio.Group>
+          </div>
           <Alert
             type="info"
             showIcon
@@ -863,6 +903,35 @@ export default function CourseBuilder({ id }: { id: string }) {
             description="Publishing creates a fixed version for new learners. You can keep editing the draft afterwards."
           />
         )}
+        <div className="cb-field cb-publish-audience">
+          <span className="cb-label">Publish to</span>
+          <Radio.Group
+            className="cb-radio-stack"
+            value={course.publishTo?.mode || "all"}
+            onChange={(e) =>
+              mutate((c) => ({
+                ...c,
+                publishTo: { mode: e.target.value as PublishAudience["mode"], participantIds: c.publishTo?.participantIds || [] },
+              }))
+            }
+          >
+            <Radio value="all">All incubatees</Radio>
+            <Radio value="selected">Select participants</Radio>
+          </Radio.Group>
+          {course.publishTo?.mode === "selected" && (
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              loading={participantsLoading}
+              placeholder="Choose who this version is for"
+              optionFilterProp="label"
+              value={course.publishTo?.participantIds || []}
+              onChange={(participantIds) => mutate((c) => ({ ...c, publishTo: { mode: "selected", participantIds } }))}
+              options={participants.map((p) => ({ value: p.id, label: p.email ? `${p.name} (${p.email})` : p.name }))}
+            />
+          )}
+        </div>
       </Modal>
 
       <Modal

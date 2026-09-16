@@ -196,6 +196,7 @@ const InvoicesView = lazy(() => import("./routes/operations/inhouse/verification
 const JobsManagementPage = lazy(() => import("./routes/coordinator/interventions/hse/JobManagement"));
 const KPIManager = lazy(() => import("./routes/kpis"));
 const KPITrackerView = lazy(() => import("./routes/kpis/KPITrackerView"));
+const KpiAgreementManagement = lazy(() => import("./components/kpi-agreements/KpiAgreementManagement").then(m => ({ default: m.KpiAgreementManagement })));
 const LandingPage = lazy(() => import("./routes/landing"));
 const LeaveCalendar = lazy(() => import("./routes/operations/hr/leave/LeaveCalendar"));
 const LibraryPage = lazy(() => import("./routes/shared/library"));
@@ -757,6 +758,7 @@ const App = () => {
                                                         <Route path="kpis">
                                                             <Route path="setup" element={<KPIManager />} />
                                                             <Route path="track" element={<KPITrackerView />} />
+                                                            <Route path="agreements" element={<KpiAgreementManagement />} />
                                                         </Route>
                                                         <Route path="participants" element={<SMEOverview />} />
                                                         <Route path="team" element={<UserManagement />} />

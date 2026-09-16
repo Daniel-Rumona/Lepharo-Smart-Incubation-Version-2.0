@@ -1064,6 +1064,12 @@ export const CustomLayout: React.FC = () => {
                         to: "/kpis/track",
                         icon: <ClockCircleOutlined />,
                     },
+                    {
+                        key: "kpis-agreements",
+                        label: "KPI Agreements",
+                        to: "/kpis/agreements",
+                        icon: <FileProtectOutlined />,
+                    },
                 ],
             },
             {
@@ -1427,6 +1433,12 @@ export const CustomLayout: React.FC = () => {
                         to: "/kpis/track",
                         icon: <ClockCircleOutlined />,
                     },
+                    {
+                        key: "kpis-agreements",
+                        label: "KPI Agreements",
+                        to: "/kpis/agreements",
+                        icon: <FileProtectOutlined />,
+                    },
                 ],
             },
             {
@@ -1567,6 +1579,12 @@ export const CustomLayout: React.FC = () => {
                         label: "KPI Tracker",
                         to: "/kpis/track",
                         icon: <ClockCircleOutlined />,
+                    },
+                    {
+                        key: "kpis-agreements",
+                        label: "KPI Agreements",
+                        to: "/kpis/agreements",
+                        icon: <FileProtectOutlined />,
                     },
                 ],
             },

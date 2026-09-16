@@ -48,16 +48,29 @@ import MetricsGrid from "@/components/dashboards/metrics/MetricsGrid";
 import { MaterialPreview } from "./Materials";
 import "./styles.css";
 export function AcademyCatalog() {
+  const { user } = useFullIdentity();
   const [courses, setCourses] = useState<any[]>([]),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     navigate = useNavigate();
   useEffect(() => {
     getDocs(collection(db, "academyCatalog"))
-      .then((s) => setCourses(s.docs.filter(d => !d.data().deletedAt).map((d) => ({ ...d.data(), id: d.id }))))
+      .then((s) =>
+        setCourses(
+          s.docs
+            .filter((d) => !d.data().deletedAt)
+            .map((d) => ({ ...d.data(), id: d.id }))
+            .filter(
+              (course) =>
+                course.publishTo?.mode !== "selected" ||
+                course.owner === user?.uid ||
+                (user?.participantId && course.publishTo.participantIds?.includes(user.participantId))
+            )
+        )
+      )
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [user?.uid, user?.participantId]);
   return (
     <div style={{ padding: 24 }}>
       <Typography.Title level={3}>Training Academy courses</Typography.Title>
