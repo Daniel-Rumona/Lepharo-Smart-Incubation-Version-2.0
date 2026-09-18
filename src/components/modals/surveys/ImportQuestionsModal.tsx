@@ -146,6 +146,7 @@ const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
 
     return (
         <Modal
+            centered
             open={open}
             onCancel={handleClose}
             title='Import questions from a document'

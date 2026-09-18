@@ -7,7 +7,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import MonitoringReports from './monitoring'
 import HRMReportsPage from './hrm'
 import { StakeholderEngagementAnalytics } from './stakeholder'
-import ReportingDashboard from './universal'
+import ReportingDashboard from './universal/ReportingDashboard'
 import ROMSegmentedReportsPage from './rom'
 import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 

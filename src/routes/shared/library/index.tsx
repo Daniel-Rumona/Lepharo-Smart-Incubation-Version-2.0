@@ -5,8 +5,10 @@ import {
     Card,
     Checkbox,
     Col,
+    Divider,
     Empty,
     Form,
+    Grid,
     Input,
     Modal,
     Row,
@@ -16,7 +18,8 @@ import {
     Tag,
     Typography,
     Upload,
-    message
+    message,
+    theme
 } from 'antd'
 import type { UploadFile } from 'antd/es/upload/interface'
 import {
@@ -31,9 +34,11 @@ import {
     FileTextOutlined,
     FileUnknownOutlined,
     FileWordOutlined,
+    FilterOutlined,
     InboxOutlined,
     PlusOutlined,
     ReadOutlined,
+    ReloadOutlined,
     SearchOutlined,
     UploadOutlined
 } from '@ant-design/icons'
@@ -63,6 +68,7 @@ import {
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
+import DocumentViewer from '@/components/modals/documents/DocumentViewer'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -144,6 +150,11 @@ const formatSize = (bytes?: number) => {
 
 const LibraryPage: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
+    const { token } = theme.useToken()
+    const screens = Grid.useBreakpoint()
+
+    const isMobile = !screens.md
+    const useFilterRail = !!screens.lg
     const [materials, setMaterials] = useState<LibraryMaterial[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -238,6 +249,17 @@ const LibraryPage: React.FC = () => {
             )
         })
     }, [materials, search, departmentFilter, categoryFilter])
+
+    const activeFilterCount =
+        (search.trim() ? 1 : 0) +
+        (departmentFilter !== 'all' ? 1 : 0) +
+        (categoryFilter !== 'all' ? 1 : 0)
+
+    const clearFilters = () => {
+        setSearch('')
+        setDepartmentFilter('all')
+        setCategoryFilter('all')
+    }
 
     const hasVisibleMaterials = filtered.length > 0
     const hasPreviewableMaterial = filtered.some(item =>
@@ -761,320 +783,809 @@ const LibraryPage: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
+        <div
+            style={{
+                padding: isMobile ? '14px 12px 22px' : '22px 24px 28px',
+                minHeight: '100vh',
+                background: token.colorBgLayout
+            }}
+        >
             <Helmet>
                 <title>SME Library | Smart Incubation</title>
             </Helmet>
 
-            {isOperations && !departmentName && (
-                <Alert
-                    style={{ marginBottom: 16 }}
-                    type='warning'
-                    showIcon
-                    message='Department assignment required'
-                    description='Ask an administrator to assign your account to a department before uploading.'
-                />
-            )}
+            <div
+                style={{
+                    width: '100%',
+                    maxWidth: 1500,
+                    margin: '0 auto'
+                }}
+            >
+                {isOperations && !departmentName && (
+                    <Alert
+                        style={{
+                            marginBottom: 16,
+                            borderRadius: 14
+                        }}
+                        type='warning'
+                        showIcon
+                        message='Department assignment required'
+                        description='Ask an administrator to assign your account to a department before uploading.'
+                    />
+                )}
 
-            <MotionCard
-                filterBar={
-                    <Row
-                        data-guide='library-filters'
-                        gutter={[12, 12]}
-                        align='middle'
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: isMobile ? 'flex-start' : 'center',
+                        justifyContent: 'space-between',
+                        gap: 14,
+                        marginBottom: isMobile ? 14 : 18,
+                        flexDirection: isMobile ? 'column' : 'row'
+                    }}
+                >
+                    {isOperations && !useFilterRail ? (
+                        <Button
+                            data-guide='library-upload-action'
+                            type='primary'
+                            size='large'
+                            shape='round'
+                            icon={<PlusOutlined />}
+                            onClick={openUploadModal}
+                            disabled={!departmentName}
+                            style={{
+                                width: isMobile ? '100%' : undefined,
+                                background: ACCENT,
+                                borderColor: ACCENT
+                            }}
+                        >
+                            Upload material
+                        </Button>
+                    ) : null}
+                </div>
+
+                {!useFilterRail ? (
+                    <MotionCard
+                        style={{
+                            marginBottom: 14,
+                            borderRadius: 18
+                        }}
+                        bodyStyle={{
+                            padding: isMobile ? 12 : 14
+                        }}
                     >
-                        <Col xs={24} md={isOperations ? 10 : 12}>
+                        <div
+                            data-guide='library-filters'
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 10
+                            }}
+                        >
                             <Input
                                 size='large'
                                 allowClear
-                                prefix={<SearchOutlined style={{ color: ACCENT }} />}
-                                placeholder='Search titles, descriptions, categories or files'
+                                prefix={
+                                    <SearchOutlined
+                                        style={{
+                                            color: ACCENT
+                                        }}
+                                    />
+                                }
+                                placeholder='Search library'
                                 value={search}
-                                onChange={event => setSearch(event.target.value)}
-                            />
-                        </Col>
-
-                        {isSme && (
-                            <Col xs={24} md={6}>
-                                <Select
-                                    size='large'
-                                    style={{ width: '100%' }}
-                                    value={departmentFilter}
-                                    onChange={setDepartmentFilter}
-                                    options={[
-                                        { value: 'all', label: 'All departments' },
-                                        ...departments.map(value => ({ value, label: value }))
-                                    ]}
-                                />
-                            </Col>
-                        )}
-
-                        <Col xs={24} md={isOperations ? 7 : 6}>
-                            <Select
-                                size='large'
-                                style={{ width: '100%' }}
-                                value={categoryFilter}
-                                onChange={setCategoryFilter}
-                                options={[
-                                    { value: 'all', label: 'All categories' },
-                                    ...CATEGORIES.map(value => ({ value, label: value }))
-                                ]}
-                            />
-                        </Col>
-
-                        {isOperations && (
-                            <Col xs={24} md={7}>
-                                <Button
-                                    data-guide='library-upload-action'
-                                    type='primary'
-                                    size='large'
-                                    block
-                                    icon={<PlusOutlined />}
-                                    onClick={openUploadModal}
-                                    disabled={!departmentName}
-                                    style={{ background: ACCENT, borderColor: ACCENT }}
-                                >
-                                    Upload material
-                                </Button>
-                            </Col>
-                        )}
-                    </Row>
-                }
-                filterBarProps={{
-                    style: {
-                        marginBottom: 0,
-                        background: '#f8fafc',
-                        borderColor: '#d9e8ff'
-                    }
-                }}
-                style={{ marginBottom: 16 }}
-            />
-
-            <div data-guide='library-materials'>
-                <Spin spinning={loading}>
-                    {filtered.length === 0 ? (
-                        <Card variant='borderless'>
-                            <Empty
-                                description={
-                                    materials.length
-                                        ? 'No materials match your filters.'
-                                        : 'No reading material has been uploaded yet.'
+                                onChange={event =>
+                                    setSearch(event.target.value)
                                 }
                             />
-                        </Card>
-                    ) : (
-                        <Row gutter={[16, 16]}>
-                            {filtered.map(item => {
-                                const meta = getFileMeta(item.fileName)
-                                const FileIcon = meta.icon
-                                const canManage = isOperations && item.uploadedBy === user?.id
-                                const downloadable = item.downloadable !== false
 
-                                return (
-                                    <Col xs={24} sm={12} xl={8} key={item.id}>
-                                        <Card
-                                            variant='borderless'
-                                            hoverable
-                                            className='library-card'
+                            <div
+                                style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: isSme
+                                        ? 'repeat(2, minmax(0, 1fr))'
+                                        : 'minmax(0, 1fr)',
+                                    gap: 8
+                                }}
+                            >
+                                {isSme ? (
+                                    <Select
+                                        size='large'
+                                        style={{
+                                            width: '100%'
+                                        }}
+                                        value={departmentFilter}
+                                        onChange={setDepartmentFilter}
+                                        options={[
+                                            {
+                                                value: 'all',
+                                                label: 'All departments'
+                                            },
+                                            ...departments.map(value => ({
+                                                value,
+                                                label: value
+                                            }))
+                                        ]}
+                                    />
+                                ) : null}
+
+                                <Select
+                                    size='large'
+                                    style={{
+                                        width: '100%'
+                                    }}
+                                    value={categoryFilter}
+                                    onChange={setCategoryFilter}
+                                    options={[
+                                        {
+                                            value: 'all',
+                                            label: 'All categories'
+                                        },
+                                        ...CATEGORIES.map(value => ({
+                                            value,
+                                            label: value
+                                        }))
+                                    ]}
+                                />
+                            </div>
+
+                            {activeFilterCount > 0 ? (
+                                <Button
+                                    type='text'
+                                    shape='round'
+                                    icon={<ReloadOutlined />}
+                                    onClick={clearFilters}
+                                    style={{
+                                        alignSelf: 'flex-start',
+                                        paddingInline: 6
+                                    }}
+                                >
+                                    Clear filters
+                                </Button>
+                            ) : null}
+                        </div>
+                    </MotionCard>
+                ) : null}
+
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: useFilterRail
+                            ? '250px minmax(0, 1fr)'
+                            : 'minmax(0, 1fr)',
+                        gap: 18,
+                        alignItems: 'start'
+                    }}
+                >
+                    {useFilterRail ? (
+                        <div
+                            data-guide='library-filters'
+                            style={{
+                                position: 'sticky',
+                                top: 18,
+                                alignSelf: 'start'
+                            }}
+                        >
+                            <MotionCard
+                                size='small'
+                                style={{
+                                    borderRadius: 18
+                                }}
+                                bodyStyle={{
+                                    padding: 14
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: 10,
+                                        marginBottom: 14
+                                    }}
+                                >
+                                    <Space size={7}>
+                                        <FilterOutlined
                                             style={{
-                                                height: '100%',
-                                                borderRadius: 16,
-                                                overflow: 'hidden',
-                                                border: '1px solid #e6edf4',
-                                                background: 'linear-gradient(145deg, #ffffff 0%, #fbfdff 100%)',
-                                                boxShadow: '0 8px 24px rgba(16,42,67,.08)'
+                                                color: ACCENT
                                             }}
-                                            styles={{
-                                                body: {
-                                                    padding: 0,
-                                                    display: 'flex',
-                                                    flexDirection: 'column',
-                                                    height: '100%'
-                                                }
+                                        />
+                                        <Text strong>
+                                            Filter library
+                                        </Text>
+                                    </Space>
+
+                                    {activeFilterCount > 0 ? (
+                                        <Tag
+                                            color='blue'
+                                            style={{
+                                                margin: 0,
+                                                borderRadius: 999
                                             }}
                                         >
-                                            <div
+                                            {activeFilterCount}
+                                        </Tag>
+                                    ) : null}
+                                </div>
+
+                                <Space
+                                    direction='vertical'
+                                    size={12}
+                                    style={{
+                                        width: '100%'
+                                    }}
+                                >
+                                    <div>
+                                        <Text
+                                            type='secondary'
+                                            style={{
+                                                display: 'block',
+                                                fontSize: 11,
+                                                marginBottom: 5
+                                            }}
+                                        >
+                                            Search
+                                        </Text>
+
+                                        <Input
+                                            allowClear
+                                            prefix={
+                                                <SearchOutlined
+                                                    style={{
+                                                        color: ACCENT
+                                                    }}
+                                                />
+                                            }
+                                            placeholder='Title, file or topic'
+                                            value={search}
+                                            onChange={event =>
+                                                setSearch(event.target.value)
+                                            }
+                                        />
+                                    </div>
+
+                                    {isSme ? (
+                                        <div>
+                                            <Text
+                                                type='secondary'
                                                 style={{
-                                                    padding: '18px 18px 0',
-                                                    display: 'flex',
-                                                    alignItems: 'flex-start',
-                                                    gap: 13,
-                                                    minWidth: 0
+                                                    display: 'block',
+                                                    fontSize: 11,
+                                                    marginBottom: 5
                                                 }}
                                             >
-                                                <div
+                                                Department
+                                            </Text>
+
+                                            <Select
+                                                style={{
+                                                    width: '100%'
+                                                }}
+                                                value={departmentFilter}
+                                                onChange={setDepartmentFilter}
+                                                options={[
+                                                    {
+                                                        value: 'all',
+                                                        label: 'All departments'
+                                                    },
+                                                    ...departments.map(value => ({
+                                                        value,
+                                                        label: value
+                                                    }))
+                                                ]}
+                                            />
+                                        </div>
+                                    ) : null}
+
+                                    <div>
+                                        <Text
+                                            type='secondary'
+                                            style={{
+                                                display: 'block',
+                                                fontSize: 11,
+                                                marginBottom: 5
+                                            }}
+                                        >
+                                            Category
+                                        </Text>
+
+                                        <Select
+                                            style={{
+                                                width: '100%'
+                                            }}
+                                            value={categoryFilter}
+                                            onChange={setCategoryFilter}
+                                            options={[
+                                                {
+                                                    value: 'all',
+                                                    label: 'All categories'
+                                                },
+                                                ...CATEGORIES.map(value => ({
+                                                    value,
+                                                    label: value
+                                                }))
+                                            ]}
+                                        />
+                                    </div>
+
+                                    {activeFilterCount > 0 ? (
+                                        <Button
+                                            block
+                                            shape='round'
+                                            icon={<ReloadOutlined />}
+                                            onClick={clearFilters}
+                                        >
+                                            Clear filters
+                                        </Button>
+                                    ) : null}
+
+                                    {isOperations ? (
+                                        <>
+                                            <Divider
+                                                style={{
+                                                    margin: '2px 0'
+                                                }}
+                                            />
+
+                                            <Button
+                                                data-guide='library-upload-action'
+                                                type='primary'
+                                                block
+                                                shape='round'
+                                                icon={<PlusOutlined />}
+                                                onClick={openUploadModal}
+                                                disabled={!departmentName}
+                                                style={{
+                                                    background: ACCENT,
+                                                    borderColor: ACCENT
+                                                }}
+                                            >
+                                                Upload material
+                                            </Button>
+                                        </>
+                                    ) : null}
+                                </Space>
+                            </MotionCard>
+                        </div>
+                    ) : null}
+
+                    <div
+                        data-guide='library-materials'
+                        style={{
+                            minWidth: 0
+                        }}
+                    >
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 12,
+                                marginBottom: 12
+                            }}
+                        >
+                            <div>
+                                <Text
+                                    strong
+                                    style={{
+                                        fontSize: isMobile ? 14 : 15
+                                    }}
+                                >
+                                    {filtered.length}{' '}
+                                    {filtered.length === 1
+                                        ? 'material'
+                                        : 'materials'}
+                                </Text>
+
+                                {activeFilterCount > 0 ? (
+                                    <Text
+                                        type='secondary'
+                                        style={{
+                                            marginLeft: 6,
+                                            fontSize: 12
+                                        }}
+                                    >
+                                        matching your filters
+                                    </Text>
+                                ) : null}
+                            </div>
+
+                            {!isMobile && categoryFilter !== 'all' ? (
+                                <Tag
+                                    color={CATEGORY_COLORS[categoryFilter] || 'default'}
+                                    style={{
+                                        margin: 0,
+                                        borderRadius: 999
+                                    }}
+                                >
+                                    {categoryFilter}
+                                </Tag>
+                            ) : null}
+                        </div>
+
+                        <Spin spinning={loading}>
+                            {filtered.length === 0 ? (
+                                <MotionCard
+                                    size='small'
+                                    style={{
+                                        borderRadius: 18
+                                    }}
+                                    bodyStyle={{
+                                        padding: isMobile ? '34px 16px' : 42
+                                    }}
+                                >
+                                    <Empty
+                                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                        description={
+                                            materials.length
+                                                ? 'No materials match your filters.'
+                                                : 'No reading material has been uploaded yet.'
+                                        }
+                                    />
+
+                                    {materials.length > 0 &&
+                                        activeFilterCount > 0 ? (
+                                        <div
+                                            style={{
+                                                textAlign: 'center',
+                                                marginTop: 10
+                                            }}
+                                        >
+                                            <Button
+                                                shape='round'
+                                                onClick={clearFilters}
+                                            >
+                                                Reset filters
+                                            </Button>
+                                        </div>
+                                    ) : null}
+                                </MotionCard>
+                            ) : (
+                                <Row
+                                    gutter={[
+                                        isMobile ? 10 : 16,
+                                        isMobile ? 10 : 16
+                                    ]}
+                                >
+                                    {filtered.map(item => {
+                                        const meta =
+                                            getFileMeta(item.fileName)
+                                        const FileIcon = meta.icon
+                                        const canManage =
+                                            isOperations &&
+                                            item.uploadedBy === user?.id
+                                        const downloadable =
+                                            item.downloadable !== false
+                                        const previewable =
+                                            isInlinePreviewable(item.fileName)
+
+                                        return (
+                                            <Col
+                                                xs={24}
+                                                md={12}
+                                                lg={12}
+                                                xl={8}
+                                                key={item.id}
+                                            >
+                                                <Card
+                                                    variant='borderless'
+                                                    hoverable={!isMobile}
+                                                    className='library-resource-card'
                                                     style={{
-                                                        width: 48,
-                                                        height: 48,
-                                                        borderRadius: 14,
-                                                        background: meta.bg,
-                                                        display: 'grid',
-                                                        placeItems: 'center',
-                                                        flex: '0 0 auto',
-                                                        border: `1px solid ${meta.color}1f`
+                                                        height: '100%',
+                                                        overflow: 'hidden',
+                                                        borderRadius: isMobile
+                                                            ? 18
+                                                            : 20,
+                                                        border: `1px solid ${token.colorBorderSecondary}`,
+                                                        background: token.colorBgContainer,
+                                                        boxShadow: isMobile
+                                                            ? '0 4px 14px rgba(15,23,42,.055)'
+                                                            : '0 10px 30px rgba(15,23,42,.065)'
+                                                    }}
+                                                    styles={{
+                                                        body: {
+                                                            padding: 0,
+                                                            height: '100%',
+                                                            display: 'flex',
+                                                            flexDirection: 'column'
+                                                        }
                                                     }}
                                                 >
-                                                    <FileIcon style={{ fontSize: 21, color: meta.color }} />
-                                                </div>
-
-                                                <div style={{ minWidth: 0, flex: '1 1 auto' }}>
                                                     <div
                                                         style={{
+                                                            padding: isMobile
+                                                                ? '14px 14px 10px'
+                                                                : '17px 17px 12px',
                                                             display: 'flex',
                                                             alignItems: 'flex-start',
-                                                            justifyContent: 'space-between',
-                                                            gap: 8
+                                                            gap: isMobile ? 11 : 13
                                                         }}
                                                     >
-                                                        <Title
-                                                            level={5}
-                                                            ellipsis={{ rows: 2 }}
-                                                            style={{ margin: 0, wordBreak: 'break-word' }}
-                                                        >
-                                                            {item.title}
-                                                        </Title>
-
-                                                        <Tag
-                                                            bordered={false}
+                                                        <div
                                                             style={{
-                                                                margin: 0,
-                                                                borderRadius: 999,
+                                                                width: isMobile ? 44 : 50,
+                                                                height: isMobile ? 44 : 50,
+                                                                borderRadius: isMobile ? 13 : 15,
+                                                                background: meta.bg,
+                                                                display: 'grid',
+                                                                placeItems: 'center',
                                                                 flex: '0 0 auto',
-                                                                background: downloadable ? '#edf7f2' : '#f3f4f6',
-                                                                color: downloadable ? '#2f7a56' : '#667085'
+                                                                border: `1px solid ${meta.color}24`
                                                             }}
                                                         >
-                                                            {downloadable ? 'Downloadable' : 'View only'}
-                                                        </Tag>
+                                                            <FileIcon
+                                                                style={{
+                                                                    fontSize: isMobile ? 19 : 23,
+                                                                    color: meta.color
+                                                                }}
+                                                            />
+                                                        </div>
+
+                                                        <div
+                                                            style={{
+                                                                minWidth: 0,
+                                                                flex: 1
+                                                            }}
+                                                        >
+                                                            <Title
+                                                                level={5}
+                                                                ellipsis={{
+                                                                    rows: 2,
+                                                                    tooltip: item.title
+                                                                }}
+                                                                style={{
+                                                                    margin: 0,
+                                                                    fontSize: isMobile ? 15 : 16,
+                                                                    lineHeight: 1.35
+                                                                }}
+                                                            >
+                                                                {item.title}
+                                                            </Title>
+
+                                                            <Space
+                                                                size={[5, 5]}
+                                                                wrap
+                                                                style={{
+                                                                    marginTop: 7
+                                                                }}
+                                                            >
+                                                                <Tag
+                                                                    bordered={false}
+                                                                    style={{
+                                                                        margin: 0,
+                                                                        borderRadius: 999,
+                                                                        background: meta.bg,
+                                                                        color: meta.color,
+                                                                        fontWeight: 600
+                                                                    }}
+                                                                >
+                                                                    {meta.label}
+                                                                </Tag>
+
+                                                                <Tag
+                                                                    color={
+                                                                        CATEGORY_COLORS[
+                                                                        item.category
+                                                                        ] || 'default'
+                                                                    }
+                                                                    style={{
+                                                                        margin: 0,
+                                                                        borderRadius: 999
+                                                                    }}
+                                                                >
+                                                                    {item.category}
+                                                                </Tag>
+
+                                                                <Tag
+                                                                    bordered={false}
+                                                                    style={{
+                                                                        margin: 0,
+                                                                        borderRadius: 999,
+                                                                        background: downloadable
+                                                                            ? token.colorSuccessBg
+                                                                            : token.colorFillAlter,
+                                                                        color: downloadable
+                                                                            ? token.colorSuccess
+                                                                            : token.colorTextSecondary
+                                                                    }}
+                                                                >
+                                                                    {downloadable
+                                                                        ? 'Download'
+                                                                        : 'View only'}
+                                                                </Tag>
+                                                            </Space>
+                                                        </div>
                                                     </div>
 
-                                                    <Space size={[6, 6]} wrap style={{ marginTop: 8 }}>
-                                                        <Tag color='blue' style={{ borderRadius: 999 }}>
-                                                            {item.departmentName}
-                                                        </Tag>
-                                                        <Tag
-                                                            color={CATEGORY_COLORS[item.category] || 'default'}
-                                                            style={{ borderRadius: 999 }}
-                                                        >
-                                                            {item.category}
-                                                        </Tag>
-                                                        <Tag
-                                                            bordered={false}
+                                                    <div
+                                                        style={{
+                                                            padding: isMobile
+                                                                ? '0 14px 12px'
+                                                                : '0 17px 14px',
+                                                            flex: 1
+                                                        }}
+                                                    >
+                                                        <Paragraph
+                                                            type='secondary'
+                                                            ellipsis={{
+                                                                rows: isMobile ? 2 : 3,
+                                                                tooltip:
+                                                                    item.description ||
+                                                                    undefined
+                                                            }}
                                                             style={{
-                                                                borderRadius: 999,
-                                                                marginInlineEnd: 0,
-                                                                background: meta.bg,
-                                                                color: meta.color,
-                                                                fontWeight: 600
+                                                                margin: 0,
+                                                                minHeight: isMobile
+                                                                    ? 38
+                                                                    : 58,
+                                                                fontSize: 12.5,
+                                                                lineHeight: 1.55
                                                             }}
                                                         >
-                                                            {meta.label}
-                                                        </Tag>
-                                                    </Space>
-                                                </div>
-                                            </div>
+                                                            {item.description ||
+                                                                'No description provided.'}
+                                                        </Paragraph>
 
-                                            <div style={{ padding: '12px 18px 0', minWidth: 0 }}>
-                                                <Paragraph
-                                                    type='secondary'
-                                                    ellipsis={{ rows: 3 }}
-                                                    style={{ minHeight: 62, marginBottom: 0, fontSize: 13 }}
-                                                >
-                                                    {item.description || 'No description provided.'}
-                                                </Paragraph>
-                                            </div>
-
-                                            <div style={{ marginTop: 'auto' }}>
-                                                <div className='library-card-actions'>
-                                                    <Button
-                                                        data-guide={
-                                                            isInlinePreviewable(item.fileName)
-                                                                ? 'library-preview-action'
-                                                                : 'library-view-action'
-                                                        }
-                                                        type='text'
-                                                        icon={<EyeOutlined />}
-                                                        onClick={() => viewMaterial(item)}
-                                                    >
-                                                        View
-                                                    </Button>
-
-                                                    {isSme && downloadable && (
-                                                        <Button
-                                                            data-guide='library-download-action'
-                                                            type='text'
-                                                            icon={<DownloadOutlined />}
-                                                            onClick={() => downloadMaterial(item)}
+                                                        <div
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'space-between',
+                                                                gap: 10,
+                                                                marginTop: 11,
+                                                                paddingTop: 10,
+                                                                borderTop: `1px solid ${token.colorBorderSecondary}`
+                                                            }}
                                                         >
-                                                            Download
-                                                        </Button>
-                                                    )}
+                                                            <Text
+                                                                type='secondary'
+                                                                ellipsis
+                                                                style={{
+                                                                    minWidth: 0,
+                                                                    fontSize: 11
+                                                                }}
+                                                            >
+                                                                {isSme
+                                                                    ? item.departmentName
+                                                                    : item.fileName}
+                                                            </Text>
 
-                                                    {canManage && (
-                                                        <>
-                                                            <Button
-                                                                data-guide='library-edit-action'
-                                                                type='text'
-                                                                icon={<EditOutlined />}
-                                                                onClick={() => openEditModal(item)}
+                                                            <Text
+                                                                type='secondary'
+                                                                style={{
+                                                                    flex: '0 0 auto',
+                                                                    fontSize: 11
+                                                                }}
                                                             >
-                                                                Edit
-                                                            </Button>
+                                                                {formatSize(item.fileSize)}
+                                                            </Text>
+                                                        </div>
+                                                    </div>
+
+                                                    <div
+                                                        className='library-resource-actions'
+                                                        style={{
+                                                            padding: isMobile
+                                                                ? '10px 12px 12px'
+                                                                : '10px 14px 14px',
+                                                            borderTop: `1px solid ${token.colorBorderSecondary}`,
+                                                            background: token.colorFillAlter
+                                                        }}
+                                                    >
+                                                        <Button
+                                                            data-guide={
+                                                                previewable
+                                                                    ? 'library-preview-action'
+                                                                    : 'library-view-action'
+                                                            }
+                                                            type='primary'
+                                                            block
+                                                            shape='round'
+                                                            icon={<EyeOutlined />}
+                                                            onClick={() =>
+                                                                viewMaterial(item)
+                                                            }
+                                                            style={{
+                                                                background: ACCENT,
+                                                                borderColor: ACCENT
+                                                            }}
+                                                        >
+                                                            {previewable
+                                                                ? 'Open'
+                                                                : downloadable
+                                                                    ? 'Open file'
+                                                                    : 'View'}
+                                                        </Button>
+
+                                                        {isSme && downloadable ? (
                                                             <Button
-                                                                data-guide='library-remove-action'
-                                                                danger
-                                                                type='text'
-                                                                icon={<DeleteOutlined />}
-                                                                onClick={() => removeMaterial(item)}
+                                                                data-guide='library-download-action'
+                                                                block
+                                                                shape='round'
+                                                                icon={<DownloadOutlined />}
+                                                                onClick={() =>
+                                                                    downloadMaterial(item)
+                                                                }
                                                             >
-                                                                Remove
+                                                                Download
                                                             </Button>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </Card>
-                                    </Col>
-                                )
-                            })}
-                        </Row>
-                    )}
-                </Spin>
+                                                        ) : null}
+
+                                                        {canManage ? (
+                                                            <>
+                                                                <Button
+                                                                    data-guide='library-edit-action'
+                                                                    block
+                                                                    shape='round'
+                                                                    icon={<EditOutlined />}
+                                                                    onClick={() =>
+                                                                        openEditModal(item)
+                                                                    }
+                                                                >
+                                                                    Edit
+                                                                </Button>
+
+                                                                <Button
+                                                                    data-guide='library-remove-action'
+                                                                    block
+                                                                    shape='round'
+                                                                    danger
+                                                                    icon={<DeleteOutlined />}
+                                                                    onClick={() =>
+                                                                        removeMaterial(item)
+                                                                    }
+                                                                >
+                                                                    Remove
+                                                                </Button>
+                                                            </>
+                                                        ) : null}
+                                                    </div>
+                                                </Card>
+                                            </Col>
+                                        )
+                                    })}
+                                </Row>
+                            )}
+                        </Spin>
+                    </div>
+                </div>
             </div>
 
             <style>{`
-                .library-card {
-                    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+                .library-resource-card {
+                    transition:
+                        transform .18s ease,
+                        box-shadow .18s ease,
+                        border-color .18s ease;
                 }
 
-                .library-card:hover {
-                    transform: translateY(-4px);
-                    border-color: rgba(23,107,135,.28) !important;
-                    box-shadow: 0 16px 34px rgba(16,42,67,.13) !important;
+                @media (hover: hover) and (pointer: fine) {
+                    .library-resource-card:hover {
+                        transform: translateY(-3px);
+                        border-color: rgba(23,107,135,.30) !important;
+                        box-shadow: 0 16px 38px rgba(15,23,42,.11) !important;
+                    }
                 }
 
-                .library-card-actions {
+                .library-resource-actions {
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-                    border-top: 1px solid #edf1f5;
-                    background: rgba(248,250,252,.72);
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 8px;
                 }
 
-                .library-card-actions .ant-btn {
-                    height: 44px;
-                    border-radius: 0;
+                .library-resource-actions > .ant-btn:only-child {
+                    grid-column: 1 / -1;
                 }
 
-                .library-card-actions .ant-btn + .ant-btn {
-                    border-left: 1px solid #edf1f5;
-                }
+                @media (max-width: 575px) {
+                    .library-resource-actions {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
 
-                .library-preview-frame {
-                    width: 100%;
-                    height: 72vh;
-                    border: 0;
-                    border-radius: 10px;
-                    background: #f5f7fa;
+                    .library-resource-actions .ant-btn {
+                        min-width: 0;
+                    }
                 }
             `}</style>
 
@@ -1392,7 +1903,12 @@ const LibraryPage: React.FC = () => {
                 footer={null}
                 destroyOnHidden
                 centered
-                width='min(1100px, 94vw)'
+                width='min(1180px, 96vw)'
+                styles={{
+                    body: {
+                        paddingTop: 8
+                    }
+                }}
                 title={previewItem?.title || 'Library material'}
             >
                 <Spin spinning={previewLoading}>
@@ -1431,11 +1947,9 @@ const LibraryPage: React.FC = () => {
                                     {previewText}
                                 </pre>
                             ) : previewUrl ? (
-                                <iframe
-                                    className='library-preview-frame'
-                                    src={previewUrl}
-                                    title={previewItem.title}
-                                    sandbox='allow-same-origin'
+                                <DocumentViewer
+                                    file={previewUrl}
+                                    fileName={previewItem.fileName}
                                 />
                             ) : null}
                         </div>

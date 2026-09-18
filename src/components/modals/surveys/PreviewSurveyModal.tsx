@@ -11,7 +11,7 @@ import {
     Rate,
     Select,
     Space,
-    Tag,
+    Tag,
     Typography,
     Upload,
     theme
@@ -20,7 +20,9 @@ import {
     ArrowLeftOutlined,
     ArrowRightOutlined,
     CheckOutlined,
-    InboxOutlined,
+    CloseOutlined,
+    InboxOutlined,
+
     UploadOutlined
 } from '@ant-design/icons'
 import SurveyQuestionFrame from '@/components/surveys/shared/SurveyQuestionFrame'
@@ -64,6 +66,66 @@ const hasAnswer = (
     }
 
     return true
+}
+
+const getChoiceGrid = (
+    count: number
+) => {
+    if (count > 8) {
+        return {
+            columns: 1,
+            getSpan: () => 1
+        }
+    }
+
+    if (count === 1) {
+        return {
+            columns: 1,
+            getSpan: () => 1
+        }
+    }
+
+    if (count === 2) {
+        return {
+            columns: 2,
+            getSpan: () => 1
+        }
+    }
+
+    if (count === 3) {
+        return {
+            columns: 3,
+            getSpan: () => 1
+        }
+    }
+
+    if (count === 5) {
+        return {
+            columns: 6,
+            getSpan: (
+                index: number
+            ) =>
+                index < 3
+                    ? 2
+                    : 3
+        }
+    }
+
+    if (
+        count === 4 ||
+        count === 6 ||
+        count === 8
+    ) {
+        return {
+            columns: 2,
+            getSpan: () => 1
+        }
+    }
+
+    return {
+        columns: 3,
+        getSpan: () => 1
+    }
 }
 
 const PreviewSurveyModal: React.FC<
@@ -172,6 +234,307 @@ const PreviewSurveyModal: React.FC<
             )
         }
 
+        const renderChoiceCards = (
+            field: PreviewSurveyField,
+            options: string[],
+            mode: 'single' | 'multi'
+        ) => {
+            const value = answers[field.id]
+
+            const optionCount = options.length
+            const isScrollable = optionCount > 8
+
+            const choiceGrid =
+                getChoiceGrid(
+                    optionCount
+                )
+
+            const selectedValues =
+                mode === 'multi'
+                    ? Array.isArray(value)
+                        ? value
+                        : []
+                    : []
+
+            const isSelected = (
+                option: string
+            ) =>
+                mode === 'multi'
+                    ? selectedValues.includes(option)
+                    : value === option
+
+            const handleSelect = (
+                option: string
+            ) => {
+                if (mode === 'single') {
+                    setAnswer(option)
+                    return
+                }
+
+                const currentlySelected =
+                    selectedValues.includes(option)
+
+                setAnswer(
+                    currentlySelected
+                        ? selectedValues.filter(
+                            item =>
+                                item !== option
+                        )
+                        : [
+                            ...selectedValues,
+                            option
+                        ]
+                )
+            }
+
+            const getYesNoIcon = (
+                option: string
+            ) => {
+                const normalized =
+                    option
+                        .trim()
+                        .toLowerCase()
+
+                if (
+                    normalized === 'yes'
+                ) {
+                    return (
+                        <CheckOutlined />
+                    )
+                }
+
+                if (
+                    normalized === 'no'
+                ) {
+                    return (
+                        <CloseOutlined />
+                    )
+                }
+
+                return null
+            }
+
+            const isYesNoSet =
+                optionCount === 2 &&
+                options.every(option =>
+                    [
+                        'yes',
+                        'no'
+                    ].includes(
+                        option
+                            .trim()
+                            .toLowerCase()
+                    )
+                )
+
+            return (
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns:
+                            `repeat(${choiceGrid.columns}, minmax(0, 1fr))`,
+                        gap: 10,
+                        width: '100%',
+                        maxHeight:
+                            isScrollable
+                                ? 320
+                                : undefined,
+                        overflowY:
+                            isScrollable
+                                ? 'auto'
+                                : undefined,
+                        paddingRight:
+                            isScrollable
+                                ? 4
+                                : 0
+                    }}
+                >
+                    {options.map(
+                        (option, index) => {
+                            const selected =
+                                isSelected(option)
+
+                            const icon =
+                                getYesNoIcon(
+                                    option
+                                )
+
+                            return (
+                                <button
+                                    key={
+                                        option
+                                    }
+                                    type='button'
+                                    onClick={() =>
+                                        handleSelect(
+                                            option
+                                        )
+                                    }
+                                    style={{
+                                        gridColumn:
+                                            optionCount === 5
+                                                ? `span ${choiceGrid.getSpan(index)}`
+                                                : undefined,
+                                        appearance:
+                                            'none',
+                                        width:
+                                            '100%',
+                                        minHeight:
+                                            isYesNoSet
+                                                ? 82
+                                                : 64,
+                                        borderRadius:
+                                            14,
+                                        border: `1px solid ${selected
+                                            ? token.colorPrimary
+                                            : token.colorBorderSecondary
+                                            }`,
+                                        background:
+                                            selected
+                                                ? token.colorPrimaryBg
+                                                : token.colorBgContainer,
+                                        color:
+                                            selected
+                                                ? token.colorPrimary
+                                                : token.colorText,
+                                        padding:
+                                            isYesNoSet
+                                                ? '14px 16px'
+                                                : '12px 14px',
+                                        cursor:
+                                            'pointer',
+                                        textAlign:
+                                            'left',
+                                        transition:
+                                            'all .2s ease',
+                                        boxShadow:
+                                            selected
+                                                ? '0 6px 18px rgba(22,119,255,.10)'
+                                                : '0 3px 10px rgba(15,23,42,.035)'
+                                    }}
+                                >
+                                    <div
+                                        style={{
+                                            display:
+                                                'flex',
+                                            alignItems:
+                                                'center',
+                                            gap:
+                                                10
+                                        }}
+                                    >
+                                        {icon ? (
+                                            <div
+                                                style={{
+                                                    width:
+                                                        36,
+                                                    height:
+                                                        36,
+                                                    borderRadius:
+                                                        11,
+                                                    display:
+                                                        'grid',
+                                                    placeItems:
+                                                        'center',
+                                                    background:
+                                                        selected
+                                                            ? token.colorPrimary
+                                                            : token.colorFillAlter,
+                                                    color:
+                                                        selected
+                                                            ? token.colorWhite
+                                                            : option
+                                                                .trim()
+                                                                .toLowerCase() ===
+                                                                'yes'
+                                                                ? token.colorSuccess
+                                                                : token.colorError,
+                                                    flex:
+                                                        '0 0 auto',
+                                                    fontSize:
+                                                        16
+                                                }}
+                                            >
+                                                {
+                                                    icon
+                                                }
+                                            </div>
+                                        ) : null}
+
+                                        <div
+                                            style={{
+                                                flex:
+                                                    1,
+                                                minWidth:
+                                                    0
+                                            }}
+                                        >
+                                            <Text
+                                                strong={
+                                                    selected
+                                                }
+                                                style={{
+                                                    color:
+                                                        selected
+                                                            ? token.colorPrimary
+                                                            : token.colorText,
+                                                    fontSize:
+                                                        14
+                                                }}
+                                            >
+                                                {
+                                                    option
+                                                }
+                                            </Text>
+                                        </div>
+
+                                        <div
+                                            style={{
+                                                width:
+                                                    18,
+                                                height:
+                                                    18,
+                                                borderRadius:
+                                                    mode ===
+                                                        'single'
+                                                        ? '50%'
+                                                        : 5,
+                                                border: `2px solid ${selected
+                                                    ? token.colorPrimary
+                                                    : token.colorBorder
+                                                    }`,
+                                                background:
+                                                    selected
+                                                        ? token.colorPrimary
+                                                        : 'transparent',
+                                                display:
+                                                    'grid',
+                                                placeItems:
+                                                    'center',
+                                                flex:
+                                                    '0 0 auto'
+                                            }}
+                                        >
+                                            {selected ? (
+                                                <CheckOutlined
+                                                    style={{
+                                                        color:
+                                                            token.colorWhite,
+                                                        fontSize:
+                                                            10
+                                                    }}
+                                                />
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                </button>
+                            )
+                        }
+                    )}
+                </div>
+            )
+        }
+
         const renderField = (
             field: PreviewSurveyField
         ) => {
@@ -229,77 +592,18 @@ const PreviewSurveyModal: React.FC<
                     )
 
                 case 'select':
-                    return (
-                        <Select
-                            size='large'
-                            value={value}
-                            placeholder={
-                                field.placeholder ||
-                                'Select an option'
-                            }
-                            style={{ width: '100%' }}
-                            options={(field.options || []).map(
-                                option => ({
-                                    label: option,
-                                    value: option
-                                })
-                            )}
-                            onChange={setAnswer}
-                        />
-                    )
-
                 case 'radio':
-                    return (
-                        <Radio.Group
-                            value={value}
-                            onChange={event =>
-                                setAnswer(event.target.value)
-                            }
-                            style={{ width: '100%' }}
-                        >
-                            <Space
-                                direction='vertical'
-                                size={10}
-                                style={{ width: '100%' }}
-                            >
-                                {(field.options || []).map(
-                                    option => (
-                                        <Radio
-                                            key={option}
-                                            value={option}
-                                        >
-                                            {option}
-                                        </Radio>
-                                    )
-                                )}
-                            </Space>
-                        </Radio.Group>
+                    return renderChoiceCards(
+                        field,
+                        field.options || [],
+                        'single'
                     )
 
                 case 'checkbox':
-                    return (
-                        <Checkbox.Group
-                            value={value || []}
-                            onChange={setAnswer}
-                            style={{ width: '100%' }}
-                        >
-                            <Space
-                                direction='vertical'
-                                size={10}
-                                style={{ width: '100%' }}
-                            >
-                                {(field.options || []).map(
-                                    option => (
-                                        <Checkbox
-                                            key={option}
-                                            value={option}
-                                        >
-                                            {option}
-                                        </Checkbox>
-                                    )
-                                )}
-                            </Space>
-                        </Checkbox.Group>
+                    return renderChoiceCards(
+                        field,
+                        field.options || [],
+                        'multi'
                     )
 
                 case 'date':

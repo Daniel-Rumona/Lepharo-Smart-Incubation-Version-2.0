@@ -16,8 +16,6 @@ import {
     Drawer,
     Grid,
     Empty,
-    Radio,
-    Checkbox,
     DatePicker,
     Upload,
     Rate,
@@ -35,7 +33,9 @@ import {
     SendOutlined,
     FileSearchOutlined,
     InboxOutlined,
-    LockOutlined
+    LockOutlined,
+    CheckOutlined,
+    CloseOutlined
 } from '@ant-design/icons'
 import {
     doc,
@@ -72,7 +72,6 @@ import ImportQuestionsModal, {
 import PreviewSurveyModal from '../modals/surveys/PreviewSurveyModal'
 
 const { Title, Text } = Typography
-const { Option } = Select
 
 // ---------- Models ----------
 interface SurveyField {
@@ -213,91 +212,546 @@ const sanitizeName = (s: string) =>
         .replace(/[^a-z0-9_]+/g, '_')
         .replace(/^_+|_+$/g, '')
 
-// ---------- Field Preview ----------
-const FieldPreview: React.FC<{ field: SurveyField }> = ({ field }) => {
-    // Prefilled fields are shown, not configured — the builder has nothing to
-    // preview here beyond where the value will come from.
-    if (field.prefill) {
-        return (
-            <Input
-                disabled
-                placeholder={`${PREFILL_LABELS[field.prefill]} from the SME’s profile`}
-            />
-        )
+const isChoiceField = (
+    type: string
+) =>
+    [
+        'select',
+        'radio',
+        'checkbox'
+    ].includes(type)
+
+const getChoiceGrid = (
+    count: number
+) => {
+    if (count > 8) {
+        return {
+            columns: 1,
+            getSpan: () => 1
+        }
     }
 
-    switch (field.type) {
-        case 'text':
-            return <Input placeholder={field.placeholder} />
-        case 'textarea':
-            return <Input.TextArea rows={4} placeholder={field.placeholder} />
-        case 'number':
-            return <Input type='number' placeholder={field.placeholder} />
-        case 'email':
-            return <Input type='email' placeholder={field.placeholder} />
-        case 'select':
-            return (
-                <Select placeholder={field.placeholder} style={{ width: '100%' }}>
-                    {(field.options || []).map((o, i) => (
-                        <Option key={i} value={o}>
-                            {o}
-                        </Option>
-                    ))}
-                </Select>
-            )
-        case 'checkbox':
-            return (
-                <Checkbox.Group
-                    options={(field.options || []).map(o => ({ label: o, value: o }))}
-                />
-            )
-        case 'radio':
-            return (
-                <Radio.Group>
-                    {(field.options || []).map((o, i) => (
-                        <Radio key={i} value={o}>
-                            {o}
-                        </Radio>
-                    ))}
-                </Radio.Group>
-            )
-        case 'date':
-            return <DatePicker style={{ width: '100%' }} />
-        case 'file':
-            return (
-                <Upload.Dragger
-                    multiple={false}
-                    maxCount={1}
-                    beforeUpload={() => false}
-                    style={{
-                        padding: '10px 0'
-                    }}
-                >
-                    <p className='ant-upload-drag-icon'>
-                        <InboxOutlined />
-                    </p>
+    if (count === 1) {
+        return {
+            columns: 1,
+            getSpan: () => 1
+        }
+    }
 
-                    <p className='ant-upload-text'>
-                        Drag and drop a file here
-                    </p>
+    if (count === 2) {
+        return {
+            columns: 2,
+            getSpan: () => 1
+        }
+    }
 
-                    <p className='ant-upload-hint'>
-                        or click to browse
-                    </p>
-                </Upload.Dragger>
-            )
-        case 'rating':
-            return <Rate />
-        case 'heading':
-            return (
-                <Title level={4} style={{ margin: 0 }}>
-                    {field.label || 'Section'}
-                </Title>
-            )
-        default:
-            return null
+    if (count === 3) {
+        return {
+            columns: 3,
+            getSpan: () => 1
+        }
+    }
+
+    if (count === 5) {
+        return {
+            columns: 6,
+            getSpan: (
+                index: number
+            ) =>
+                index < 3
+                    ? 2
+                    : 3
+        }
+    }
+
+    if (
+        count === 4 ||
+        count === 6 ||
+        count === 8
+    ) {
+        return {
+            columns: 2,
+            getSpan: () => 1
+        }
+    }
+
+    return {
+        columns: 3,
+        getSpan: () => 1
     }
 }
+
+const getYesNoType = (
+    option: string
+): 'yes' | 'no' | null => {
+    const normalized =
+        option
+            .trim()
+            .toLowerCase()
+
+    if (normalized === 'yes') {
+        return 'yes'
+    }
+
+    if (normalized === 'no') {
+        return 'no'
+    }
+
+    return null
+}
+
+
+
+const ChoiceOptionsEditor: React.FC<{
+    field: SurveyField
+    onPatch: (
+        id: string,
+        updates: Partial<SurveyField>
+    ) => void
+}> = ({
+    field,
+    onPatch
+}) => {
+        const { token } =
+            theme.useToken()
+
+        const options =
+            field.options || []
+
+        const isScrollable =
+            options.length > 8
+
+        const choiceGrid =
+            getChoiceGrid(
+                options.length
+            )
+
+        const updateOption = (
+            index: number,
+            value: string
+        ) => {
+            const next = [
+                ...options
+            ]
+
+            next[index] = value
+
+            onPatch(
+                field.id,
+                {
+                    options: next
+                }
+            )
+        }
+
+        const deleteOption = (
+            index: number
+        ) => {
+            const next = [
+                ...options
+            ]
+
+            next.splice(
+                index,
+                1
+            )
+
+            onPatch(
+                field.id,
+                {
+                    options: next
+                }
+            )
+        }
+
+        const addOption = () => {
+            onPatch(
+                field.id,
+                {
+                    options: [
+                        ...options,
+                        `Option ${options.length +
+                        1
+                        }`
+                    ]
+                }
+            )
+        }
+
+        return (
+            <div>
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent:
+                            'space-between',
+                        gap: 12,
+                        marginBottom: 10
+                    }}
+                >
+                    <div>
+                        <Text strong>
+                            Answer options
+                        </Text>
+
+                        <Text
+                            type='secondary'
+                            style={{
+                                display:
+                                    'block',
+                                marginTop: 2,
+                                fontSize: 12
+                            }}
+                        >
+                            {field.type ===
+                                'checkbox'
+                                ? 'Participants can select more than one option'
+                                : 'Participants can select one option'}
+                        </Text>
+                    </div>
+
+                    <Tag
+                        style={{
+                            margin: 0,
+                            borderRadius: 999
+                        }}
+                    >
+                        {options.length}{' '}
+                        option
+                        {options.length === 1
+                            ? ''
+                            : 's'}
+                    </Tag>
+                </div>
+
+                {options.length > 0 ? (
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns:
+                                `repeat(${choiceGrid.columns}, minmax(0, 1fr))`,
+                            gap: 10,
+                            maxHeight:
+                                isScrollable
+                                    ? 330
+                                    : undefined,
+                            overflowY:
+                                isScrollable
+                                    ? 'auto'
+                                    : undefined,
+                            overflowX:
+                                'hidden',
+                            paddingRight:
+                                isScrollable
+                                    ? 5
+                                    : 0
+                        }}
+                    >
+                        {options.map(
+                            (
+                                option,
+                                index
+                            ) => {
+                                const yesNo =
+                                    getYesNoType(
+                                        option
+                                    )
+
+                                return (
+                                    <div
+                                        key={
+                                            index
+                                        }
+                                        style={{
+                                            gridColumn:
+                                                options.length === 5
+                                                    ? `span ${choiceGrid.getSpan(index)}`
+                                                    : undefined,
+                                            minHeight:
+                                                64,
+                                            display:
+                                                'flex',
+                                            alignItems:
+                                                'center',
+                                            gap: 10,
+                                            padding:
+                                                '10px 10px 10px 12px',
+                                            borderRadius:
+                                                14,
+                                            border: `1px solid ${token.colorBorderSecondary}`,
+                                            background:
+                                                token.colorBgContainer,
+                                            boxShadow:
+                                                '0 4px 14px rgba(15,23,42,.035)',
+                                            transition:
+                                                'all .2s ease'
+                                        }}
+                                    >
+                                        {yesNo ? (
+                                            <div
+                                                style={{
+                                                    width:
+                                                        36,
+                                                    height:
+                                                        36,
+                                                    borderRadius:
+                                                        11,
+                                                    display:
+                                                        'grid',
+                                                    placeItems:
+                                                        'center',
+                                                    background:
+                                                        yesNo ===
+                                                            'yes'
+                                                            ? token.colorSuccessBg
+                                                            : token.colorErrorBg,
+                                                    color:
+                                                        yesNo ===
+                                                            'yes'
+                                                            ? token.colorSuccess
+                                                            : token.colorError,
+                                                    flex:
+                                                        '0 0 auto',
+                                                    fontSize:
+                                                        15
+                                                }}
+                                            >
+                                                {yesNo ===
+                                                    'yes' ? (
+                                                    <CheckOutlined />
+                                                ) : (
+                                                    <CloseOutlined />
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div
+                                                style={{
+                                                    width:
+                                                        28,
+                                                    height:
+                                                        28,
+                                                    borderRadius:
+                                                        field.type ===
+                                                            'checkbox'
+                                                            ? 8
+                                                            : '50%',
+                                                    border: `1px solid ${token.colorBorder}`,
+                                                    display:
+                                                        'grid',
+                                                    placeItems:
+                                                        'center',
+                                                    color:
+                                                        token.colorTextSecondary,
+                                                    flex:
+                                                        '0 0 auto',
+                                                    fontSize:
+                                                        11,
+                                                    fontWeight:
+                                                        600
+                                                }}
+                                            >
+                                                {
+                                                    index +
+                                                    1
+                                                }
+                                            </div>
+                                        )}
+
+                                        <Input
+                                            variant='borderless'
+                                            value={
+                                                option
+                                            }
+                                            onChange={event =>
+                                                updateOption(
+                                                    index,
+                                                    event
+                                                        .target
+                                                        .value
+                                                )
+                                            }
+                                            placeholder={`Option ${index +
+                                                1
+                                                }`}
+                                            style={{
+                                                flex: 1,
+                                                minWidth:
+                                                    0,
+                                                padding:
+                                                    '4px 2px',
+                                                fontWeight:
+                                                    500
+                                            }}
+                                        />
+
+                                        <Tooltip title='Delete option'>
+                                            <Button
+                                                type='text'
+                                                shape='circle'
+                                                danger
+                                                size='small'
+                                                icon={
+                                                    <DeleteOutlined />
+                                                }
+                                                onClick={() =>
+                                                    deleteOption(
+                                                        index
+                                                    )
+                                                }
+                                            />
+                                        </Tooltip>
+                                    </div>
+                                )
+                            }
+                        )}
+                    </div>
+                ) : (
+                    <div
+                        style={{
+                            padding: 20,
+                            borderRadius: 14,
+                            border: `1px dashed ${token.colorBorder}`,
+                            background:
+                                token.colorFillAlter,
+                            textAlign:
+                                'center'
+                        }}
+                    >
+                        <Text type='secondary'>
+                            No answer options yet
+                        </Text>
+                    </div>
+                )}
+
+                <Button
+                    block
+                    shape='round'
+                    type='dashed'
+                    icon={
+                        <PlusOutlined />
+                    }
+                    onClick={addOption}
+                    style={{
+                        marginTop: 10
+                    }}
+                >
+                    Add option
+                </Button>
+            </div>
+        )
+    }
+// ---------- Field Preview ----------
+const FieldPreview: React.FC<{
+    field: SurveyField
+}> = ({
+    field
+}) => {
+        if (field.prefill) {
+            return (
+                <Input
+                    disabled
+                    placeholder={`${PREFILL_LABELS[field.prefill]} from the SME’s profile`}
+                />
+            )
+        }
+
+        switch (field.type) {
+            case 'text':
+                return (
+                    <Input
+                        placeholder={
+                            field.placeholder
+                        }
+                    />
+                )
+
+            case 'textarea':
+                return (
+                    <Input.TextArea
+                        rows={4}
+                        placeholder={
+                            field.placeholder
+                        }
+                    />
+                )
+
+            case 'number':
+                return (
+                    <Input
+                        type='number'
+                        placeholder={
+                            field.placeholder
+                        }
+                    />
+                )
+
+            case 'email':
+                return (
+                    <Input
+                        type='email'
+                        placeholder={
+                            field.placeholder
+                        }
+                    />
+                )
+
+            case 'date':
+                return (
+                    <DatePicker
+                        style={{
+                            width: '100%'
+                        }}
+                    />
+                )
+
+            case 'file':
+                return (
+                    <Upload.Dragger
+                        multiple={false}
+                        maxCount={1}
+                        beforeUpload={() =>
+                            false
+                        }
+                        style={{
+                            padding:
+                                '10px 0'
+                        }}
+                    >
+                        <p className='ant-upload-drag-icon'>
+                            <InboxOutlined />
+                        </p>
+
+                        <p className='ant-upload-text'>
+                            Drag and drop a file here
+                        </p>
+
+                        <p className='ant-upload-hint'>
+                            or click to browse
+                        </p>
+                    </Upload.Dragger>
+                )
+
+            case 'rating':
+                return <Rate />
+
+            case 'heading':
+                return (
+                    <Title
+                        level={4}
+                        style={{
+                            margin: 0
+                        }}
+                    >
+                        {field.label ||
+                            'Section'}
+                    </Title>
+                )
+
+            default:
+                return null
+        }
+    }
 
 // ---------- Field Card (center) ----------
 const FieldCard: React.FC<{
@@ -454,9 +908,20 @@ const FieldCard: React.FC<{
                     ) : null}
                 </div>
 
-                {/* LIVE FIELD */}
+                {/* LIVE FIELD / OPTION EDITOR */}
                 {field.type !== 'heading' ? (
-                    <FieldPreview field={field} />
+                    isChoiceField(
+                        field.type
+                    ) ? (
+                        <ChoiceOptionsEditor
+                            field={field}
+                            onPatch={onPatch}
+                        />
+                    ) : (
+                        <FieldPreview
+                            field={field}
+                        />
+                    )
                 ) : null}
 
                 {field.prefill ? (
@@ -539,6 +1004,9 @@ export default function SurveyBuilder() {
 
     const hasMinimumContent =
         surveyData.title.trim().length > 0 && surveyData.fields.length > 0
+    const hasQuestions = surveyData.fields.some(
+        field => field.type !== 'heading'
+    )
     const shouldPromptDraft = isDirty && hasMinimumContent
 
     // selection
@@ -734,13 +1202,6 @@ export default function SurveyBuilder() {
                     : field
             )
         }))
-    }
-
-    const patchFieldOptions = (
-        id: string,
-        options: string[]
-    ) => {
-        patchField(id, { options })
     }
 
     const duplicateField = (id: string) => {
@@ -941,27 +1402,6 @@ export default function SurveyBuilder() {
 
     const surveySettingsContent = (
         <Form layout='vertical'>
-            <Form.Item
-                label='Program'
-                required
-                tooltip='Scope this template to a program'
-            >
-                <Select
-                    placeholder='Select a program'
-                    value={getProgramIdValue(surveyData.programId)}
-                    onChange={(v?: string) =>
-                        setSurveyData(prev => ({ ...prev, programId: v }))
-                    }
-                    allowClear
-                    showSearch
-                    optionFilterProp='label'
-                    options={programs.map(p => ({
-                        value: p.id,
-                        label: p.name || p.title || p.id
-                    }))}
-                />
-            </Form.Item>
-
             <Form.Item label='Title' required>
                 <Input
                     value={surveyData.title}
@@ -983,22 +1423,94 @@ export default function SurveyBuilder() {
                 />
             </Form.Item>
 
-            <Form.Item label='Category'>
-                <Select
-                    value={surveyData.category}
-                    onChange={v => setSurveyData(prev => ({ ...prev, category: v }))}
+            <Form.Item
+                label='Category'
+                required
+            >
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                        gap: 10,
+                        width: '100%'
+                    }}
                 >
-                    {SURVEY_CATEGORIES.map(c => (
-                        <Option key={c} value={c}>
-                            {c}
-                        </Option>
-                    ))}
-                </Select>
-            </Form.Item>
+                    {SURVEY_CATEGORIES.map(category => {
+                        const selected =
+                            surveyData.category === category
 
-            {/* Read-only: the department comes from the signed-in user's scope. */}
-            <Form.Item label='Department'>
-                <Tag color='purple'>{surveyData.department || 'Not set'}</Tag>
+                        return (
+                            <button
+                                key={category}
+                                type='button'
+                                onClick={() =>
+                                    setSurveyData(prev => ({
+                                        ...prev,
+                                        category
+                                    }))
+                                }
+                                style={{
+                                    width: '100%',
+                                    minHeight: 64,
+                                    padding: '12px 14px',
+                                    borderRadius: 14,
+                                    border: `1px solid ${selected
+                                        ? token.colorPrimary
+                                        : token.colorBorderSecondary
+                                        }`,
+                                    background: selected
+                                        ? token.colorPrimaryBg
+                                        : token.colorBgContainer,
+                                    color: selected
+                                        ? token.colorPrimary
+                                        : token.colorText,
+                                    fontWeight: selected
+                                        ? 600
+                                        : 500,
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    transition:
+                                        'all 0.2s ease',
+                                    boxShadow: selected
+                                        ? `0 4px 14px ${token.colorPrimaryBg}`
+                                        : 'none'
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: 10
+                                    }}
+                                >
+                                    <span>
+                                        {category}
+                                    </span>
+
+                                    <div
+                                        style={{
+                                            width: 18,
+                                            height: 18,
+                                            borderRadius: '50%',
+                                            border: `2px solid ${selected
+                                                ? token.colorPrimary
+                                                : token.colorBorder
+                                                }`,
+                                            background: selected
+                                                ? token.colorPrimary
+                                                : 'transparent',
+                                            boxShadow: selected
+                                                ? `inset 0 0 0 4px ${token.colorBgContainer}`
+                                                : 'none',
+                                            flex: '0 0 auto'
+                                        }}
+                                    />
+                                </div>
+                            </button>
+                        )
+                    })}
+                </div>
             </Form.Item>
         </Form>
     )
@@ -1162,6 +1674,8 @@ export default function SurveyBuilder() {
                     <Button
                         type='text'
                         size='small'
+                        shape='circle'
+                        style={{ border: `1px solid ${token.colorBorderSecondary}` }}
                         icon={<PlusOutlined />}
                         onClick={() => setAddModalOpen(true)}
                     />
@@ -1316,106 +1830,6 @@ export default function SurveyBuilder() {
                                 placeholder='Guidance shown under the question'
                             />
                         </div>
-
-                        {[
-                            'select',
-                            'radio',
-                            'checkbox'
-                        ].includes(selectedField.type) ? (
-                            <div>
-                                <Text
-                                    type='secondary'
-                                    style={{
-                                        display: 'block',
-                                        marginBottom: 6,
-                                        fontSize: 12
-                                    }}
-                                >
-                                    Options
-                                </Text>
-
-                                <Space
-                                    direction='vertical'
-                                    size={5}
-                                    style={{ width: '100%' }}
-                                >
-                                    {(selectedField.options || []).map(
-                                        (option, index) => (
-                                            <Space.Compact
-                                                key={index}
-                                                block
-                                            >
-                                                <Input
-                                                    size='small'
-                                                    value={option}
-                                                    onChange={e => {
-                                                        const next = [
-                                                            ...(selectedField.options ||
-                                                                [])
-                                                        ]
-
-                                                        next[index] =
-                                                            e.target.value
-
-                                                        patchFieldOptions(
-                                                            selectedField.id,
-                                                            next
-                                                        )
-                                                    }}
-                                                />
-
-                                                <Button
-                                                    size='small'
-                                                    danger
-                                                    icon={
-                                                        <DeleteOutlined />
-                                                    }
-                                                    onClick={() => {
-                                                        const next = [
-                                                            ...(selectedField.options ||
-                                                                [])
-                                                        ]
-
-                                                        next.splice(
-                                                            index,
-                                                            1
-                                                        )
-
-                                                        patchFieldOptions(
-                                                            selectedField.id,
-                                                            next
-                                                        )
-                                                    }}
-                                                />
-                                            </Space.Compact>
-                                        )
-                                    )}
-
-                                    <Button
-                                        block
-                                        size='small'
-                                        type='dashed'
-                                        icon={<PlusOutlined />}
-                                        onClick={() =>
-                                            patchFieldOptions(
-                                                selectedField.id,
-                                                [
-                                                    ...(selectedField.options ||
-                                                        []),
-                                                    `Option ${(selectedField
-                                                        .options
-                                                        ?.length ||
-                                                        0) + 1
-                                                    }`
-                                                ]
-                                            )
-                                        }
-                                    >
-                                        Add option
-                                    </Button>
-                                </Space>
-                            </div>
-                        ) : null}
                     </Space>
                 ) : (
                     <Empty
@@ -1703,15 +2117,17 @@ export default function SurveyBuilder() {
                             marginLeft: 'auto'
                         }}
                     >
-                        <Button
-                            shape='round'
-                            icon={<EyeOutlined />}
-                            onClick={() =>
-                                setIsPreviewVisible(true)
-                            }
-                        >
-                            Preview
-                        </Button>
+                        {hasQuestions ? (
+                            <Button
+                                shape='round'
+                                icon={<EyeOutlined />}
+                                onClick={() =>
+                                    setIsPreviewVisible(true)
+                                }
+                            >
+                                Preview
+                            </Button>
+                        ) : null}
 
                         <Button
                             shape='round'

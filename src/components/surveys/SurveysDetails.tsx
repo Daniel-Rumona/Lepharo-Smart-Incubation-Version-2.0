@@ -3,8 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
     App,
     Button,
-    Divider,
-    Form,
+    Empty,
     Input,
     Modal,
     Row,
@@ -14,26 +13,39 @@ import {
     Space,
     Table,
     Tag,
-    theme
+    Typography,
+    theme,
+    Avatar,
+    Pagination,
+    Progress
 } from 'antd'
 import {
     AppstoreOutlined,
+    ArrowLeftOutlined,
     BarChartOutlined,
     CalendarOutlined,
+    CheckCircleFilled,
+    ClockCircleOutlined,
     EditOutlined,
     EyeOutlined,
     FileSearchOutlined,
+    FileTextOutlined,
     PlusOutlined,
     SearchOutlined,
     SendOutlined,
     TableOutlined
 } from '@ant-design/icons'
+import {
+    AnimatePresence,
+    motion
+} from 'framer-motion'
 import { Helmet } from 'react-helmet'
 import {
     Timestamp,
     addDoc,
     collection,
     doc,
+    getDoc,
     getDocs,
     onSnapshot,
     query,
@@ -51,6 +63,23 @@ import SurveyResponseViewer from './response/viewer'
 type ViewKey = 'sent' | 'templates'
 type SentStatusFilter = 'completed' | 'pending'
 type TemplateStatusFilter = 'published' | 'draft'
+
+const { Title, Text } = Typography
+const SURVEY_RESPONSE_PAGE_SIZE = 4
+const SEND_SURVEY_PARTICIPANT_PAGE_SIZE = 4
+const SEND_SURVEY_TEMPLATE_PAGE_SIZE = 4
+
+type SendSurveyStep = 'template' | 'participants'
+
+type ParticipantSelectionRow = {
+    key: string
+    participantName: string
+    companyName: string
+    email: string
+    group: string
+    branchId?: string
+    branch: string
+}
 
 type SurveyField = {
     id: string
@@ -259,35 +288,10 @@ const SurveysDetailsPage = () => {
         isAllPrograms
     } = useActiveProgramId()
 
-    const debugPrefix = '[SurveysDetails]'
-
-    useEffect(() => {
-        console.groupCollapsed(`${debugPrefix} Scope`)
-        console.log('User', {
-            id: user?.id,
-            email: user?.email,
-            departmentId: user?.departmentId,
-            departmentName: user?.departmentName
-        })
-        console.log('Program scope', {
-            rawProgramId,
-            activeProgramId,
-            isAllPrograms,
-            windowActiveProgramId:
-                typeof window !== 'undefined'
-                    ? (window as any).__ACTIVE_PROGRAM_ID__
-                    : undefined
-        })
-        console.groupEnd()
-    }, [
-        user?.id,
-        user?.email,
-        user?.departmentId,
-        user?.departmentName,
-        rawProgramId,
-        activeProgramId,
-        isAllPrograms
-    ])
+    const [
+        surveyParticipantPage,
+        setSurveyParticipantPage
+    ] = useState(1)
 
     const [sentSurveys, setSentSurveys] = useState<
         SentSurveyRow[]
@@ -310,6 +314,21 @@ const SurveysDetailsPage = () => {
     const [sendModalOpen, setSendModalOpen] =
         useState(false)
 
+    const [sendSurveyStep, setSendSurveyStep] =
+        useState<SendSurveyStep>('template')
+
+    const [sendParticipantPage, setSendParticipantPage] =
+        useState(1)
+
+    const [sendTemplatePage, setSendTemplatePage] =
+        useState(1)
+
+    const [sendSurveySubmitting, setSendSurveySubmitting] =
+        useState(false)
+
+    const [surveyProgramMeta, setSurveyProgramMeta] =
+        useState<any>(null)
+
     const [participantsList, setParticipantsList] =
         useState<any[]>([])
 
@@ -321,15 +340,13 @@ const SurveysDetailsPage = () => {
     const [
         participantTableData,
         setParticipantTableData
-    ] = useState<any[]>([])
+    ] = useState<ParticipantSelectionRow[]>([])
 
     const [branchesMap, setBranchesMap] =
         useState<Record<string, string>>({})
 
-    const [
-        applicationsMap,
-        setApplicationsMap
-    ] = useState<Record<string, any>>({})
+    const [acceptedApplications, setAcceptedApplications] =
+        useState<any[]>([])
 
     const [
         participantFilters,
@@ -363,7 +380,171 @@ const SurveysDetailsPage = () => {
         TemplateStatusFilter | undefined
     >(undefined)
 
-    const [form] = Form.useForm()
+
+
+    const publishedSurveyTemplates = useMemo(
+        () =>
+            surveyTemplates.filter(
+                template => template.status === 'published'
+            ),
+        [surveyTemplates]
+    )
+
+    const selectedSurveyTemplate = useMemo(
+        () =>
+            surveyTemplates.find(
+                template => template.id === selectedSurveyId
+            ) || null,
+        [surveyTemplates, selectedSurveyId]
+    )
+
+    const selectedSurveyProgramId =
+        activeProgramId ||
+        selectedSurveyTemplate?.programId ||
+        null
+
+    const paginatedSendTemplates = useMemo(() => {
+        const start =
+            (sendTemplatePage - 1) *
+            SEND_SURVEY_TEMPLATE_PAGE_SIZE
+
+        return publishedSurveyTemplates.slice(
+            start,
+            start + SEND_SURVEY_TEMPLATE_PAGE_SIZE
+        )
+    }, [publishedSurveyTemplates, sendTemplatePage])
+
+    const paginatedSendParticipants = useMemo(() => {
+        const start =
+            (sendParticipantPage - 1) *
+            SEND_SURVEY_PARTICIPANT_PAGE_SIZE
+
+        return participantTableData.slice(
+            start,
+            start + SEND_SURVEY_PARTICIPANT_PAGE_SIZE
+        )
+    }, [participantTableData, sendParticipantPage])
+
+    const surveyBranchOptions = useMemo(() => {
+        if (!selectedSurveyProgramId) return []
+
+        const branchIds = Array.from(
+            new Set(
+                acceptedApplications
+                    .filter(
+                        application =>
+                            String(application.programId || '') ===
+                            String(selectedSurveyProgramId)
+                    )
+                    .map(application =>
+                        String(application.branchId || '').trim()
+                    )
+                    .filter(Boolean)
+            )
+        )
+
+        return branchIds.map(branchId => ({
+            value: branchId,
+            label: branchesMap[branchId] || 'Unnamed Branch'
+        }))
+    }, [
+        acceptedApplications,
+        branchesMap,
+        selectedSurveyProgramId
+    ])
+
+    const surveyResponseParticipants =
+        viewSurvey?.participants || []
+
+    const completedSurveyResponseCount =
+        surveyResponseParticipants.filter(
+            participant =>
+                participant.completed === true
+        ).length
+
+    const surveyResponseCompletionRate =
+        surveyResponseParticipants.length > 0
+            ? Math.round(
+                (
+                    completedSurveyResponseCount /
+                    surveyResponseParticipants.length
+                ) * 100
+            )
+            : 0
+
+    const paginatedSurveyResponseParticipants =
+        surveyResponseParticipants.slice(
+            (
+                surveyParticipantPage - 1
+            ) * SURVEY_RESPONSE_PAGE_SIZE,
+            surveyParticipantPage *
+            SURVEY_RESPONSE_PAGE_SIZE
+        )
+
+    useEffect(() => {
+        setSurveyParticipantPage(1)
+        setSelectedParticipant(null)
+    }, [viewSurvey?.id])
+
+    useEffect(() => {
+        let active = true
+
+        const loadSurveyProgram = async () => {
+            if (!selectedSurveyProgramId) {
+                if (active) {
+                    setSurveyProgramMeta(null)
+                    setParticipantFilters(previous => ({
+                        ...previous,
+                        branchId: ''
+                    }))
+                }
+                return
+            }
+
+            try {
+                const snapshot = await getDoc(
+                    doc(db, 'programs', selectedSurveyProgramId)
+                )
+
+                if (!active) return
+
+                const data = snapshot.exists()
+                    ? {
+                        id: snapshot.id,
+                        ...snapshot.data()
+                    }
+                    : null
+
+                setSurveyProgramMeta(data)
+
+                if (!data?.isMultiBranch) {
+                    setParticipantFilters(previous => ({
+                        ...previous,
+                        branchId: ''
+                    }))
+                }
+            } catch (error) {
+                console.error(
+                    'Failed to load survey program details',
+                    error
+                )
+
+                if (active) {
+                    setSurveyProgramMeta(null)
+                    setParticipantFilters(previous => ({
+                        ...previous,
+                        branchId: ''
+                    }))
+                }
+            }
+        }
+
+        loadSurveyProgram()
+
+        return () => {
+            active = false
+        }
+    }, [selectedSurveyProgramId])
 
     // ─────────────────────────────────────────────────────────────
     // Participants
@@ -382,22 +563,6 @@ const SurveysDetailsPage = () => {
                     id: document.id,
                     ...document.data()
                 }))
-
-                console.groupCollapsed(
-                    `${debugPrefix} Participants: ${rows.length} loaded`
-                )
-                console.table(
-                    rows.slice(0, 20).map((participant: any) => ({
-                        id: participant.id,
-                        name:
-                            participant.beneficiaryName ||
-                            participant.name ||
-                            participant.fullName ||
-                            '',
-                        email: participant.email || ''
-                    }))
-                )
-                console.groupEnd()
 
                 setParticipantsList(rows)
             } catch (error) {
@@ -440,67 +605,12 @@ const SurveysDetailsPage = () => {
                         await getDocs(appQuery)
 
                     const applications =
-                        appSnap.docs
-                            .map(document => ({
-                                id: document.id,
-                                ...document.data()
-                            }))
-                            .filter(
-                                (application: any) =>
-                                    activeProgramId
-                                        ? String(
-                                            application.programId ||
-                                            ''
-                                        ) ===
-                                        activeProgramId
-                                        : true
-                            )
-
-                    const nextApplicationsMap: Record<
-                        string,
-                        any
-                    > = {}
-
-                    applications.forEach(
-                        (application: any) => {
-                            if (
-                                application.participantId
-                            ) {
-                                nextApplicationsMap[
-                                    String(
-                                        application.participantId
-                                    )
-                                ] =
-                                    application
-                            }
-                        }
-                    )
-
-                    console.groupCollapsed(
-                        `${debugPrefix} Accepted applications`
-                    )
-                    console.log('Active program filter', {
-                        rawProgramId,
-                        activeProgramId,
-                        isAllPrograms
-                    })
-                    console.log(
-                        'Accepted applications after program filtering:',
-                        applications.length
-                    )
-                    console.table(
-                        applications.slice(0, 30).map((application: any) => ({
-                            id: application.id,
-                            participantId: application.participantId,
-                            email: application.email,
-                            programId: application.programId,
-                            branchId: application.branchId,
-                            applicationStatus: application.applicationStatus
+                        appSnap.docs.map(document => ({
+                            id: document.id,
+                            ...document.data()
                         }))
-                    )
-                    console.groupEnd()
 
-                    setApplicationsMap(nextApplicationsMap)
+                    setAcceptedApplications(applications)
 
                     const branchSnap =
                         await getDocs(
@@ -535,13 +645,13 @@ const SurveysDetailsPage = () => {
                         error
                     )
 
-                    setApplicationsMap({})
+                    setAcceptedApplications([])
                     setBranchesMap({})
                 }
             }
 
         fetchSupportingData()
-    }, [activeProgramId])
+    }, [])
 
     useEffect(() => {
         const normalizedSearch =
@@ -549,79 +659,143 @@ const SurveysDetailsPage = () => {
                 .trim()
                 .toLowerCase()
 
-        const data = participantsList
-            .filter(participant =>
-                Boolean(
-                    applicationsMap[
-                    participant.id
-                    ]
-                )
-            )
-            .filter(participant => {
-                if (!normalizedSearch) {
-                    return true
-                }
+        if (!selectedSurveyProgramId) {
+            setParticipantTableData([])
+            return
+        }
 
-                return String(
-                    participant.beneficiaryName ||
-                    participant.name ||
-                    participant.fullName ||
-                    ''
-                )
-                    .toLowerCase()
-                    .includes(normalizedSearch)
-            })
-            .filter(participant =>
-                participantFilters.branchId
-                    ? String(
-                        applicationsMap[
-                            participant.id
-                        ]?.branchId || ''
-                    ) ===
-                    participantFilters.branchId
-                    : true
+        const applicationByParticipant = new Map<
+            string,
+            any
+        >()
+
+        acceptedApplications
+            .filter(
+                application =>
+                    String(application.programId || '') ===
+                    String(selectedSurveyProgramId)
             )
-            .filter(participant =>
+            .forEach(application => {
+                const participantId = String(
+                    application.participantId || ''
+                ).trim()
+
+                if (participantId) {
+                    applicationByParticipant.set(
+                        participantId,
+                        application
+                    )
+                }
+            })
+
+        const data = participantsList
+            .map(participant => {
+                const application =
+                    applicationByParticipant.get(
+                        String(participant.id)
+                    )
+
+                if (!application) return null
+
+                const participantName = String(
+                    participant.participantName ||
+                    participant.fullName ||
+                    participant.name ||
+                    application.participantName ||
+                    application.fullName ||
+                    ''
+                ).trim() || 'Unnamed Participant'
+
+                const companyName = String(
+                    participant.companyName ||
+                    participant.beneficiaryName ||
+                    participant.businessName ||
+                    application.companyName ||
+                    application.beneficiaryName ||
+                    application.businessName ||
+                    'Unnamed Company'
+                ).trim()
+
+                const email = String(
+                    participant.email ||
+                    participant.participantEmail ||
+                    application.email ||
+                    application.participantEmail ||
+                    ''
+                ).trim()
+
+                const group = String(
+                    application.gapGroup ||
+                    participant.gapGroup ||
+                    participant.group ||
+                    'N/A'
+                ).trim()
+
+                const branchId = String(
+                    application.branchId ||
+                    participant.branchId ||
+                    ''
+                ).trim()
+
+                return {
+                    key: String(participant.id),
+                    participantName,
+                    companyName,
+                    email,
+                    group,
+                    branchId,
+                    branch:
+                        branchesMap[branchId] ||
+                        'Unknown'
+                } as ParticipantSelectionRow
+            })
+            .filter(
+                (row): row is ParticipantSelectionRow =>
+                    Boolean(row)
+            )
+            .filter(row => {
+                if (!normalizedSearch) return true
+
+                return [
+                    row.participantName,
+                    row.companyName,
+                    row.email
+                ].some(value =>
+                    value
+                        .toLowerCase()
+                        .includes(normalizedSearch)
+                )
+            })
+            .filter(row =>
                 participantFilters.gapGroup
-                    ? String(
-                        applicationsMap[
-                            participant.id
-                        ]?.gapGroup || ''
-                    ) ===
+                    ? row.group ===
                     participantFilters.gapGroup
                     : true
             )
-            .map(participant => {
-                const application =
-                    applicationsMap[
-                    participant.id
-                    ]
-
-                return {
-                    key: participant.id,
-                    name:
-                        participant.beneficiaryName ||
-                        participant.name ||
-                        participant.fullName ||
-                        'Unnamed',
-                    branch:
-                        branchesMap[
-                        application?.branchId
-                        ] ||
-                        'Unknown',
-                    group:
-                        application?.gapGroup ||
-                        'N/A'
-                }
-            })
+            .filter(row =>
+                surveyProgramMeta?.isMultiBranch &&
+                    participantFilters.branchId
+                    ? row.branchId ===
+                    participantFilters.branchId
+                    : true
+            )
+            .sort((a, b) =>
+                a.companyName.localeCompare(
+                    b.companyName
+                )
+            )
 
         setParticipantTableData(data)
+        setSendParticipantPage(1)
     }, [
         participantsList,
-        applicationsMap,
+        acceptedApplications,
         branchesMap,
-        participantFilters
+        participantFilters,
+        selectedSurveyProgramId,
+        surveyProgramMeta?.isMultiBranch
     ])
+
 
     // ─────────────────────────────────────────────────────────────
     // Templates
@@ -641,17 +815,6 @@ const SurveysDetailsPage = () => {
                     id: document.id,
                     ...(document.data() as any)
                 }))
-
-                console.groupCollapsed(
-                    `${debugPrefix} Templates: ${rawTemplates.length} raw formTemplates`
-                )
-                console.log('Current scope', {
-                    userDepartmentId: user?.departmentId,
-                    userDepartmentName: user?.departmentName,
-                    rawProgramId,
-                    activeProgramId,
-                    isAllPrograms
-                })
 
                 const diagnostics = rawTemplates.map((template: any) => {
                     const status = String(template.status || '').toLowerCase()
@@ -709,8 +872,6 @@ const SurveysDetailsPage = () => {
                         'QMS TRAINING was not returned by formTemplates at all.'
                     )
                 }
-
-                console.groupEnd()
 
                 const rows = rawTemplates
                     .filter((template: any) => {
@@ -782,21 +943,6 @@ const SurveysDetailsPage = () => {
                         }
                     )
 
-                console.groupCollapsed(
-                    `${debugPrefix} Templates: ${rows.length} visible`
-                )
-                console.table(
-                    rows.map(template => ({
-                        id: template.id,
-                        title: template.title,
-                        status: template.status,
-                        department: template.department,
-                        programId: template.programId,
-                        fields: template.fields.length
-                    }))
-                )
-                console.groupEnd()
-
                 setSurveyTemplates(rows)
             } catch (error) {
                 console.error(
@@ -848,16 +994,6 @@ const SurveysDetailsPage = () => {
             )
         }
 
-        console.groupCollapsed(`${debugPrefix} Sent survey query`)
-        console.log('Query scope', {
-            department: user.departmentId,
-            rawProgramId,
-            activeProgramId,
-            isAllPrograms,
-            programConstraintApplied: !!activeProgramId
-        })
-        console.groupEnd()
-
         const sentFormsQuery = query(
             collection(db, 'sentForms'),
             ...constraints
@@ -867,24 +1003,6 @@ const SurveysDetailsPage = () => {
             sentFormsQuery,
             async snapshot => {
                 try {
-                    console.groupCollapsed(
-                        `${debugPrefix} Sent surveys: ${snapshot.size} sentForms matched`
-                    )
-                    console.table(
-                        snapshot.docs.map(document => {
-                            const data = document.data() as any
-                            return {
-                                id: document.id,
-                                title: data.title,
-                                templateId: data.templateId,
-                                department: data.department,
-                                programId: data.programId,
-                                sentAt: data.sentAt
-                            }
-                        })
-                    )
-                    console.groupEnd()
-
                     const rows =
                         await Promise.all(
                             snapshot.docs.map(
@@ -907,47 +1025,76 @@ const SurveysDetailsPage = () => {
 
                                     const participants =
                                         responseSnap.docs.map(
-                                            response => ({
-                                                id: response.id,
-                                                ...response.data()
-                                            })
-                                        )
+                                            response => {
+                                                const responseData =
+                                                    response.data() as any
 
-                                    console.log(
-                                        `${debugPrefix} Responses for "${sentForm.title || document.id}"`,
-                                        {
-                                            sentFormId: document.id,
-                                            responseCount: participants.length,
-                                            responses: participants.map(
-                                                (participant: any) => ({
-                                                    id: participant.id,
-                                                    participantId:
-                                                        participant.participantId,
-                                                    name: participant.name,
-                                                    completed:
-                                                        participant.completed,
-                                                    answerShape:
-                                                        Array.isArray(
-                                                            participant.answers
-                                                        )
-                                                            ? 'array'
-                                                            : typeof participant.answers,
-                                                    questionCount:
-                                                        Array.isArray(
-                                                            participant.questions
-                                                        )
-                                                            ? participant.questions.length
-                                                            : 0,
-                                                    fieldCount:
-                                                        Array.isArray(
-                                                            participant.fields
-                                                        )
-                                                            ? participant.fields.length
-                                                            : 0
-                                                })
-                                            )
-                                        }
-                                    )
+                                                const participantId =
+                                                    String(
+                                                        responseData.participantId ||
+                                                        response.id
+                                                    )
+
+                                                const participantRecord =
+                                                    participantsList.find(
+                                                        participant =>
+                                                            String(participant.id) ===
+                                                            participantId
+                                                    )
+
+                                                const applicationRecord =
+                                                    acceptedApplications.find(
+                                                        application =>
+                                                            String(
+                                                                application.participantId ||
+                                                                ''
+                                                            ) ===
+                                                            participantId &&
+                                                            String(
+                                                                application.programId ||
+                                                                ''
+                                                            ) ===
+                                                            String(
+                                                                sentForm.programId ||
+                                                                ''
+                                                            )
+                                                    )
+
+                                                return {
+                                                    id: response.id,
+                                                    ...responseData,
+                                                    participantId,
+                                                    participantName:
+                                                        responseData.participantName ||
+                                                        participantRecord?.participantName ||
+                                                        participantRecord?.fullName ||
+                                                        participantRecord?.name ||
+                                                        responseData.name ||
+                                                        'Participant',
+                                                    companyName:
+                                                        responseData.companyName ||
+                                                        participantRecord?.companyName ||
+                                                        participantRecord?.beneficiaryName ||
+                                                        participantRecord?.businessName ||
+                                                        applicationRecord?.companyName ||
+                                                        applicationRecord?.beneficiaryName ||
+                                                        applicationRecord?.businessName ||
+                                                        'Unnamed Company',
+                                                    email:
+                                                        responseData.email ||
+                                                        participantRecord?.email ||
+                                                        participantRecord?.participantEmail ||
+                                                        applicationRecord?.email ||
+                                                        '',
+                                                    group:
+                                                        responseData.group ||
+                                                        applicationRecord?.gapGroup ||
+                                                        participantRecord?.gapGroup ||
+                                                        participantRecord?.group ||
+                                                        'N/A'
+                                                }
+                                            }
+                                        )
 
                                     const completed =
                                         participants.filter(
@@ -1004,12 +1151,76 @@ const SurveysDetailsPage = () => {
         user?.departmentName,
         rawProgramId,
         activeProgramId,
-        isAllPrograms
+        isAllPrograms,
+        participantsList,
+        acceptedApplications
     ])
 
     // ─────────────────────────────────────────────────────────────
     // Send survey
     // ─────────────────────────────────────────────────────────────
+    const closeSendSurveyModal = () => {
+        setSendModalOpen(false)
+        setSendSurveyStep('template')
+        setSelectedSurveyId(null)
+        setSelectedParticipantIds([])
+        setSendParticipantPage(1)
+        setSendTemplatePage(1)
+        setParticipantFilters({
+            search: '',
+            branchId: '',
+            gapGroup: ''
+        })
+    }
+
+    const openSendSurveyModal = (
+        templateId?: string
+    ) => {
+        setSelectedSurveyId(templateId || null)
+        setSurveyProgramMeta(null)
+        setSelectedParticipantIds([])
+        setSendParticipantPage(1)
+        setSendTemplatePage(1)
+        setParticipantFilters({
+            search: '',
+            branchId: '',
+            gapGroup: ''
+        })
+        setSendSurveyStep(
+            templateId
+                ? 'participants'
+                : 'template'
+        )
+        setSendModalOpen(true)
+    }
+
+    const selectSendSurveyTemplate = (
+        templateId: string
+    ) => {
+        setSelectedSurveyId(templateId)
+        setSurveyProgramMeta(null)
+        setSelectedParticipantIds([])
+        setSendParticipantPage(1)
+        setParticipantFilters({
+            search: '',
+            branchId: '',
+            gapGroup: ''
+        })
+        setSendSurveyStep('participants')
+    }
+
+    const toggleSurveyParticipant = (
+        participantId: string
+    ) => {
+        setSelectedParticipantIds(previous =>
+            previous.includes(participantId)
+                ? previous.filter(
+                    id => id !== participantId
+                )
+                : [...previous, participantId]
+        )
+    }
+
     const handleSendSurvey = async () => {
         const selectedTemplate =
             surveyTemplates.find(
@@ -1028,15 +1239,10 @@ const SurveysDetailsPage = () => {
             selectedParticipantIds.length === 0
         ) {
             return message.error(
-                'Select at least one participant'
+                'Select at least one SME'
             )
         }
 
-        /*
-         * If All Programs is selected, the template itself
-         * supplies the program scope. If a specific universal
-         * program is selected, that is the authoritative scope.
-         */
         const surveyProgramId =
             activeProgramId ||
             selectedTemplate.programId ||
@@ -1047,6 +1253,8 @@ const SurveysDetailsPage = () => {
                 'This survey does not have a program assigned.'
             )
         }
+
+        setSendSurveySubmitting(true)
 
         try {
             const surveyDocRef =
@@ -1100,10 +1308,10 @@ const SurveysDetailsPage = () => {
             await Promise.all(
                 selectedParticipantIds.map(
                     participantId => {
-                        const participant: any =
-                            participantsList.find(
+                        const participant =
+                            participantTableData.find(
                                 row =>
-                                    row.id ===
+                                    row.key ===
                                     participantId
                             )
 
@@ -1111,44 +1319,42 @@ const SurveysDetailsPage = () => {
                             return Promise.resolve()
                         }
 
-                        const participantName =
-                            participant.beneficiaryName ??
-                            participant.name ??
-                            participant.fullName ??
-                            'Unnamed'
-
                         return setDoc(
                             doc(
                                 db,
                                 'sentForms',
                                 surveyDocRef.id,
                                 'responses',
-                                participant.id
+                                participant.key
                             ),
                             {
                                 participantId:
-                                    participant.id,
+                                    participant.key,
+                                participantName:
+                                    participant.participantName,
+                                companyName:
+                                    participant.companyName,
+                                email:
+                                    participant.email,
+                                group:
+                                    participant.group,
+                                branchId:
+                                    participant.branchId ||
+                                    null,
+                                branchName:
+                                    participant.branch ||
+                                    null,
+
+                                // Legacy display fallback.
                                 name:
-                                    participantName,
+                                    participant.participantName,
+
                                 completed:
                                     false,
-
-                                /*
-                                 * Rich builder snapshot.
-                                 */
                                 fields:
                                     snapshotFields,
-
-                                /*
-                                 * Backward-compatible response shape
-                                 * for existing response components.
-                                 * Unlike the previous conversion, this
-                                 * preserves required, placeholder,
-                                 * description, name and defaultValue.
-                                 */
                                 questions:
                                     responseQuestions,
-
                                 answers: {}
                             },
                             {
@@ -1163,17 +1369,17 @@ const SurveysDetailsPage = () => {
                 'Survey sent successfully'
             )
 
-            setSendModalOpen(false)
-            setSelectedSurveyId(null)
-            setSelectedParticipantIds([])
-            form.resetFields()
+            closeSendSurveyModal()
         } catch (error) {
             console.error(error)
             message.error(
                 'Failed to send survey'
             )
+        } finally {
+            setSendSurveySubmitting(false)
         }
     }
+
 
     // ─────────────────────────────────────────────────────────────
     // Metrics
@@ -1657,9 +1863,7 @@ const SurveysDetailsPage = () => {
                             <SendOutlined />
                         }
                         onClick={() =>
-                            setSendModalOpen(
-                                true
-                            )
+                            openSendSurveyModal()
                         }
                     >
                         Send New Survey
@@ -1669,31 +1873,10 @@ const SurveysDetailsPage = () => {
         </div>
     )
 
-    useEffect(() => {
-        console.log(`${debugPrefix} Render state`, {
-            mainView,
-            sentSurveys: sentSurveys.length,
-            filteredSentSurveys: filteredSentSurveys.length,
-            surveyTemplates: surveyTemplates.length,
-            filteredTemplates: filteredTemplates.length,
-            participants: participantsList.length,
-            participantTableData: participantTableData.length
-        })
-    }, [
-        mainView,
-        sentSurveys.length,
-        filteredSentSurveys.length,
-        surveyTemplates.length,
-        filteredTemplates.length,
-        participantsList.length,
-        participantTableData.length
-    ])
-
     return (
         <div
             style={{
                 padding: 24,
-                minHeight: 0
             }}
         >
             <Helmet>
@@ -1943,14 +2126,11 @@ const SurveysDetailsPage = () => {
                                                 row.status !==
                                                 'published'
                                             }
-                                            onClick={() => {
-                                                setSelectedSurveyId(
+                                            onClick={() =>
+                                                openSendSurveyModal(
                                                     row.id
                                                 )
-                                                setSendModalOpen(
-                                                    true
-                                                )
-                                            }}
+                                            }
                                         >
                                             Send
                                         </Button>
@@ -1967,338 +2147,1632 @@ const SurveysDetailsPage = () => {
                 open={!!viewSurvey}
                 onCancel={() => {
                     setViewSurvey(null)
-                    setSelectedParticipant(
-                        null
-                    )
+                    setSelectedParticipant(null)
+                    setSurveyParticipantPage(1)
+                }}
+                footer={null}
+                width={820}
+                centered
+                destroyOnClose
+                styles={{
+                    body: {
+                        paddingTop: 10,
+                        overflow: 'hidden'
+                    },
+                    header: {
+                        marginBottom: 0
+                    }
                 }}
                 title={
-                    selectedParticipant
-                        ? viewSurvey?.title ||
-                        'Survey Response'
-                        : 'Survey Insights'
-                }
-                footer={null}
-                width={800}
-                centered
-            >
-                {!selectedParticipant ? (
-                    <Table
-                        rowKey='id'
-                        dataSource={
-                            viewSurvey?.participants ||
-                            []
-                        }
-                        pagination={{
-                            position: [
-                                'bottomCenter'
-                            ],
-                            showSizeChanger:
-                                false
+                    <div
+                        style={{
+                            paddingRight: 30
                         }}
-                        columns={[
-                            {
-                                title:
-                                    'Name',
-                                dataIndex:
-                                    'name'
-                            },
-                            {
-                                title:
-                                    'Status',
-                                render: (
-                                    _,
-                                    participant: any
-                                ) =>
-                                    participant.completed ? (
-                                        <Tag color='green'>
-                                            Completed
-                                        </Tag>
-                                    ) : (
-                                        <Tag color='orange'>
-                                            Pending
-                                        </Tag>
-                                    )
-                            },
-                            {
-                                title:
-                                    'Action',
-                                width: 110,
-                                render: (
-                                    _,
-                                    participant: any
-                                ) => (
-                                    <Button
-                                        shape='round'
-                                        icon={
-                                            <EyeOutlined />
-                                        }
-                                        onClick={() =>
-                                            setSelectedParticipant(
-                                                participant
-                                            )
-                                        }
-                                        disabled={
-                                            !participant.completed
-                                        }
+                    >
+                        <Space
+                            align='center'
+                            size={10}
+                        >
+                            <div
+                                style={{
+                                    width: 38,
+                                    height: 38,
+                                    borderRadius: 12,
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    background: token.colorPrimaryBg,
+                                    color: token.colorPrimary,
+                                    fontSize: 17,
+                                    flex: '0 0 auto'
+                                }}
+                            >
+                                <FileTextOutlined />
+                            </div>
+
+                            <div
+                                style={{
+                                    minWidth: 0
+                                }}
+                            >
+                                <Title
+                                    level={5}
+                                    style={{
+                                        margin: 0,
+                                        lineHeight: 1.25
+                                    }}
+                                    ellipsis
+                                >
+                                    {viewSurvey?.title ||
+                                        (selectedParticipant
+                                            ? 'Survey Response'
+                                            : 'Survey Insights')}
+                                </Title>
+
+                                <Text
+                                    type='secondary'
+                                    style={{
+                                        display: 'block',
+                                        marginTop: 2,
+                                        fontSize: 12
+                                    }}
+                                >
+                                    {selectedParticipant
+                                        ? `Viewing ${selectedParticipant.participantName ||
+                                        selectedParticipant.name ||
+                                        selectedParticipant.fullName ||
+                                        selectedParticipant.email ||
+                                        'participant'
+                                        }'s response`
+                                        : 'Review participant completion and open individual responses'}
+                                </Text>
+                            </div>
+                        </Space>
+                    </div>
+                }
+            >
+                <AnimatePresence
+                    mode='wait'
+                    initial={false}
+                >
+                    {!selectedParticipant ? (
+                        <motion.div
+                            key='participant-list'
+                            initial={{
+                                opacity: 0,
+                                x: -24
+                            }}
+                            animate={{
+                                opacity: 1,
+                                x: 0
+                            }}
+                            exit={{
+                                opacity: 0,
+                                x: -30
+                            }}
+                            transition={{
+                                duration: 0.24,
+                                ease: 'easeOut'
+                            }}
+                        >
+                            <div
+                                style={{
+                                    marginBottom: 14,
+                                    padding: '13px 15px',
+                                    borderRadius: 16,
+                                    border: `1px solid ${token.colorBorderSecondary}`,
+                                    background: token.colorFillAlter
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: 18,
+                                        flexWrap: 'wrap'
+                                    }}
+                                >
+                                    <Space
+                                        size={26}
+                                        wrap
                                     >
-                                        View
-                                    </Button>
-                                )
-                            }
-                        ]}
-                    />
-                ) : (
-                    <SurveyResponseViewer
-                        questions={
-                            selectedParticipant.questions ||
-                            selectedParticipant.fields ||
-                            []
+                                        <div>
+                                            <Text
+                                                type='secondary'
+                                                style={{
+                                                    display: 'block',
+                                                    fontSize: 11
+                                                }}
+                                            >
+                                                Participants
+                                            </Text>
+
+                                            <Text
+                                                strong
+                                                style={{
+                                                    fontSize: 20
+                                                }}
+                                            >
+                                                {surveyResponseParticipants.length}
+                                            </Text>
+                                        </div>
+
+                                        <div>
+                                            <Text
+                                                type='secondary'
+                                                style={{
+                                                    display: 'block',
+                                                    fontSize: 11
+                                                }}
+                                            >
+                                                Completed
+                                            </Text>
+
+                                            <Text
+                                                strong
+                                                style={{
+                                                    fontSize: 20,
+                                                    color: token.colorSuccess
+                                                }}
+                                            >
+                                                {completedSurveyResponseCount}
+                                            </Text>
+                                        </div>
+
+                                        <div>
+                                            <Text
+                                                type='secondary'
+                                                style={{
+                                                    display: 'block',
+                                                    fontSize: 11
+                                                }}
+                                            >
+                                                Pending
+                                            </Text>
+
+                                            <Text
+                                                strong
+                                                style={{
+                                                    fontSize: 20,
+                                                    color: token.colorWarning
+                                                }}
+                                            >
+                                                {Math.max(
+                                                    0,
+                                                    surveyResponseParticipants.length -
+                                                    completedSurveyResponseCount
+                                                )}
+                                            </Text>
+                                        </div>
+                                    </Space>
+
+                                    <div
+                                        style={{
+                                            width: 210,
+                                            maxWidth: '100%'
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                gap: 8,
+                                                marginBottom: 5
+                                            }}
+                                        >
+                                            <Text
+                                                type='secondary'
+                                                style={{
+                                                    fontSize: 11
+                                                }}
+                                            >
+                                                Completion
+                                            </Text>
+
+                                            <Text
+                                                strong
+                                                style={{
+                                                    fontSize: 12
+                                                }}
+                                            >
+                                                {surveyResponseCompletionRate}%
+                                            </Text>
+                                        </div>
+
+                                        <Progress
+                                            percent={surveyResponseCompletionRate}
+                                            showInfo={false}
+                                            size='small'
+                                            strokeColor={token.colorSuccess}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 10
+                                }}
+                            >
+                                {paginatedSurveyResponseParticipants.map(
+                                    (participant: any) => {
+                                        const completed =
+                                            Boolean(participant.completed)
+
+                                        const participantName =
+                                            participant.participantName ||
+                                            participant.name ||
+                                            participant.fullName ||
+                                            participant.email ||
+                                            'Participant'
+
+                                        const initials =
+                                            participantName
+                                                .split(' ')
+                                                .filter(Boolean)
+                                                .slice(0, 2)
+                                                .map((part: string) =>
+                                                    part
+                                                        .charAt(0)
+                                                        .toUpperCase()
+                                                )
+                                                .join('') || 'P'
+
+                                        const answers =
+                                            participant.answers &&
+                                                typeof participant.answers === 'object'
+                                                ? participant.answers
+                                                : {}
+
+                                        const answerCount =
+                                            Array.isArray(answers)
+                                                ? answers.filter(
+                                                    answer =>
+                                                        answer !== undefined &&
+                                                        answer !== null &&
+                                                        answer !== ''
+                                                ).length
+                                                : Object.keys(answers).filter(key => {
+                                                    const answer = answers[key]
+
+                                                    return (
+                                                        answer !== undefined &&
+                                                        answer !== null &&
+                                                        answer !== ''
+                                                    )
+                                                }).length
+
+                                        return (
+                                            <motion.div
+                                                key={
+                                                    participant.id ||
+                                                    participant.participantId ||
+                                                    participant.email ||
+                                                    participantName
+                                                }
+                                                layout
+                                                whileHover={{
+                                                    y: -2
+                                                }}
+                                                transition={{
+                                                    duration: 0.18
+                                                }}
+                                                style={{
+                                                    width: '100%'
+                                                }}
+                                            >
+                                                <div
+                                                    className='survey-response-participant-card'
+                                                    style={{
+                                                        width: '100%',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 14,
+                                                        padding: '13px 14px',
+                                                        borderRadius: 16,
+                                                        border: `1px solid ${completed
+                                                            ? token.colorSuccessBorder
+                                                            : token.colorBorderSecondary
+                                                            }`,
+                                                        background:
+                                                            token.colorBgContainer,
+                                                        boxShadow:
+                                                            '0 6px 18px rgba(15,23,42,.045)',
+                                                        transition:
+                                                            'border-color .2s ease, box-shadow .2s ease, transform .2s ease'
+                                                    }}
+                                                >
+                                                    <Avatar
+                                                        size={46}
+                                                        style={{
+                                                            flex: '0 0 auto',
+                                                            background: completed
+                                                                ? token.colorSuccessBg
+                                                                : token.colorWarningBg,
+                                                            color: completed
+                                                                ? token.colorSuccess
+                                                                : token.colorWarning,
+                                                            fontWeight: 700
+                                                        }}
+                                                    >
+                                                        {initials}
+                                                    </Avatar>
+
+                                                    <div
+                                                        style={{
+                                                            minWidth: 0,
+                                                            flex: 1
+                                                        }}
+                                                    >
+                                                        <Space
+                                                            size={7}
+                                                            wrap
+                                                            style={{
+                                                                marginBottom: 3
+                                                            }}
+                                                        >
+                                                            <Text
+                                                                strong
+                                                                style={{
+                                                                    fontSize: 14
+                                                                }}
+                                                            >
+                                                                {participantName}
+                                                            </Text>
+
+                                                            <Tag
+                                                                color={
+                                                                    completed
+                                                                        ? 'success'
+                                                                        : 'warning'
+                                                                }
+                                                                icon={
+                                                                    completed ? (
+                                                                        <CheckCircleFilled />
+                                                                    ) : (
+                                                                        <ClockCircleOutlined />
+                                                                    )
+                                                                }
+                                                                style={{
+                                                                    margin: 0,
+                                                                    borderRadius: 999
+                                                                }}
+                                                            >
+                                                                {completed
+                                                                    ? 'Completed'
+                                                                    : 'Pending'}
+                                                            </Tag>
+
+                                                            {completed && answerCount > 0 ? (
+                                                                <Tag
+                                                                    style={{
+                                                                        margin: 0,
+                                                                        borderRadius: 999
+                                                                    }}
+                                                                >
+                                                                    {answerCount}{' '}
+                                                                    answer
+                                                                    {answerCount === 1
+                                                                        ? ''
+                                                                        : 's'}
+                                                                </Tag>
+                                                            ) : null}
+                                                        </Space>
+
+                                                        <Text
+                                                            ellipsis
+                                                            style={{
+                                                                display: 'block',
+                                                                fontSize: 13
+                                                            }}
+                                                        >
+                                                            {participant.companyName ||
+                                                                'Unnamed Company'}
+                                                        </Text>
+
+                                                        <Space
+                                                            size={6}
+                                                            wrap
+                                                            style={{
+                                                                marginTop: 2
+                                                            }}
+                                                        >
+                                                            <Text
+                                                                type='secondary'
+                                                                ellipsis
+                                                                style={{
+                                                                    fontSize: 12
+                                                                }}
+                                                            >
+                                                                {participant.email ||
+                                                                    'No email recorded'}
+                                                            </Text>
+
+                                                            <Tag
+                                                                color='blue'
+                                                                style={{
+                                                                    margin: 0,
+                                                                    borderRadius: 999
+                                                                }}
+                                                            >
+                                                                Group {participant.group || 'N/A'}
+                                                            </Tag>
+                                                        </Space>
+                                                    </div>
+
+                                                    <Button
+                                                        type={
+                                                            completed
+                                                                ? 'primary'
+                                                                : 'default'
+                                                        }
+                                                        shape='round'
+                                                        disabled={!completed}
+                                                        icon={
+                                                            completed ? (
+                                                                <EyeOutlined />
+                                                            ) : (
+                                                                <ClockCircleOutlined />
+                                                            )
+                                                        }
+                                                        onClick={() =>
+                                                            setSelectedParticipant(
+                                                                participant
+                                                            )
+                                                        }
+                                                        style={{
+                                                            flex: '0 0 auto',
+                                                            minWidth: 132
+                                                        }}
+                                                    >
+                                                        {completed
+                                                            ? 'View Response'
+                                                            : 'Awaiting'}
+                                                    </Button>
+                                                </div>
+                                            </motion.div>
+                                        )
+                                    }
+                                )}
+                            </div>
+
+                            {surveyResponseParticipants.length >
+                                SURVEY_RESPONSE_PAGE_SIZE ? (
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        marginTop: 18
+                                    }}
+                                >
+                                    <Pagination
+                                        current={surveyParticipantPage}
+                                        pageSize={SURVEY_RESPONSE_PAGE_SIZE}
+                                        total={surveyResponseParticipants.length}
+                                        showSizeChanger={false}
+                                        onChange={page =>
+                                            setSurveyParticipantPage(page)
+                                        }
+                                    />
+                                </div>
+                            ) : null}
+                        </motion.div>
+                    ) : (
+                        <motion.div
+                            key='survey-response'
+                            initial={{
+                                opacity: 0,
+                                x: 38,
+                                scale: 0.99
+                            }}
+                            animate={{
+                                opacity: 1,
+                                x: 0,
+                                scale: 1
+                            }}
+                            exit={{
+                                opacity: 0,
+                                x: 34,
+                                scale: 0.99
+                            }}
+                            transition={{
+                                duration: 0.28,
+                                ease: 'easeOut'
+                            }}
+                        >
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 12,
+                                    marginBottom: 14
+                                }}
+                            >
+                                <Button
+                                    shape='circle'
+                                    icon={<ArrowLeftOutlined />}
+                                    onClick={() =>
+                                        setSelectedParticipant(null)
+                                    }
+                                />
+
+                                <Avatar
+                                    size={38}
+                                    style={{
+                                        background: token.colorSuccessBg,
+                                        color: token.colorSuccess,
+                                        fontWeight: 700,
+                                        flex: '0 0 auto'
+                                    }}
+                                >
+                                    {String(
+                                        selectedParticipant.participantName ||
+                                        selectedParticipant.name ||
+                                        selectedParticipant.fullName ||
+                                        selectedParticipant.email ||
+                                        'P'
+                                    )
+                                        .split(' ')
+                                        .filter(Boolean)
+                                        .slice(0, 2)
+                                        .map((part: string) =>
+                                            part.charAt(0).toUpperCase()
+                                        )
+                                        .join('')}
+                                </Avatar>
+
+                                <div
+                                    style={{
+                                        minWidth: 0,
+                                        flex: 1
+                                    }}
+                                >
+                                    <Text
+                                        type='secondary'
+                                        style={{
+                                            display: 'block',
+                                            fontSize: 10,
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '.07em',
+                                            fontWeight: 600
+                                        }}
+                                    >
+                                        Participant Response
+                                    </Text>
+
+                                    <Title
+                                        level={5}
+                                        ellipsis
+                                        style={{
+                                            margin: 0,
+                                            marginTop: 1
+                                        }}
+                                    >
+                                        {selectedParticipant.participantName ||
+                                            selectedParticipant.name ||
+                                            selectedParticipant.fullName ||
+                                            selectedParticipant.email ||
+                                            'Participant'}
+                                    </Title>
+                                </div>
+
+                                <Tag
+                                    color='success'
+                                    icon={<CheckCircleFilled />}
+                                    style={{
+                                        margin: 0,
+                                        borderRadius: 999
+                                    }}
+                                >
+                                    Completed
+                                </Tag>
+                            </div>
+
+                            <div
+                                style={{
+                                    display: 'grid',
+                                    gridTemplateColumns:
+                                        'repeat(2, minmax(0, 1fr))',
+                                    gap: 10,
+                                    marginBottom: 14
+                                }}
+                                className='survey-response-summary'
+                            >
+                                <div
+                                    style={{
+                                        padding: '11px 12px',
+                                        borderRadius: 14,
+                                        border: `1px solid ${token.colorBorderSecondary}`,
+                                        background: token.colorFillAlter
+                                    }}
+                                >
+                                    <Text
+                                        type='secondary'
+                                        style={{
+                                            display: 'block',
+                                            fontSize: 11
+                                        }}
+                                    >
+                                        Status
+                                    </Text>
+
+                                    <Text
+                                        strong
+                                        style={{
+                                            display: 'block',
+                                            marginTop: 2,
+                                            color: token.colorSuccess
+                                        }}
+                                    >
+                                        Completed
+                                    </Text>
+                                </div>
+
+                                <div
+                                    style={{
+                                        padding: '11px 12px',
+                                        borderRadius: 14,
+                                        border: `1px solid ${token.colorBorderSecondary}`,
+                                        background: token.colorFillAlter
+                                    }}
+                                >
+                                    <Text
+                                        type='secondary'
+                                        style={{
+                                            display: 'block',
+                                            fontSize: 11
+                                        }}
+                                    >
+                                        Answers
+                                    </Text>
+
+                                    <Text
+                                        strong
+                                        style={{
+                                            display: 'block',
+                                            marginTop: 2
+                                        }}
+                                    >
+                                        {selectedParticipant.answers &&
+                                            typeof selectedParticipant.answers ===
+                                            'object'
+                                            ? Array.isArray(
+                                                selectedParticipant.answers
+                                            )
+                                                ? selectedParticipant.answers.length
+                                                : Object.keys(
+                                                    selectedParticipant.answers
+                                                ).length
+                                            : 0}
+                                    </Text>
+                                </div>
+                            </div>
+
+                            <div
+                                style={{
+                                    borderRadius: 18,
+                                    border: `1px solid ${token.colorBorderSecondary}`,
+                                    background: token.colorBgContainer,
+                                    padding: 16,
+                                    boxShadow:
+                                        '0 8px 24px rgba(15,23,42,.04)'
+                                }}
+                            >
+                                <SurveyResponseViewer
+                                    questions={
+                                        selectedParticipant.questions ||
+                                        selectedParticipant.fields ||
+                                        []
+                                    }
+                                    answers={
+                                        selectedParticipant.answers ||
+                                        {}
+                                    }
+                                    title={viewSurvey?.title}
+                                    showTOC
+                                />
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <style>{`
+                    @media (max-width: 700px) {
+                        .survey-response-summary {
+                            grid-template-columns: 1fr !important;
                         }
-                        answers={
-                            selectedParticipant.answers ||
-                            {}
+
+                        .survey-response-participant-card {
+                            align-items: flex-start !important;
+                            flex-wrap: wrap;
                         }
-                        title={
-                            viewSurvey?.title
+
+                        .survey-response-participant-card .ant-btn {
+                            width: 100%;
                         }
-                        showTOC
-                    />
-                )}
+                    }
+                `}</style>
             </Modal>
 
             {/* Send survey modal */}
             <Modal
                 open={sendModalOpen}
-                onCancel={() => {
-                    setSendModalOpen(
-                        false
-                    )
-                    setSelectedSurveyId(
-                        null
-                    )
-                    setSelectedParticipantIds(
-                        []
-                    )
-                    form.resetFields()
-                }}
-                title='Send Survey'
-                okText='Send'
-                onOk={
-                    handleSendSurvey
-                }
-                width={800}
+                onCancel={closeSendSurveyModal}
+                width={860}
                 centered
-            >
-                <Form
-                    layout='vertical'
-                    form={form}
-                >
-                    <Form.Item
-                        label='Survey Template'
-                        required
+                destroyOnClose
+                title={
+                    <div
+                        style={{
+                            paddingRight: 30
+                        }}
                     >
-                        <Select
-                            placeholder='Choose a published template'
-                            value={
-                                selectedSurveyId ||
-                                undefined
-                            }
-                            onChange={value =>
-                                setSelectedSurveyId(
-                                    value
-                                )
-                            }
-                            options={surveyTemplates
-                                .filter(
-                                    template =>
-                                        template.status ===
-                                        'published'
-                                )
-                                .map(
-                                    template => ({
-                                        value:
-                                            template.id,
-                                        label:
-                                            template.title
-                                    })
-                                )}
-                        />
-                    </Form.Item>
-                </Form>
+                        <Space
+                            align='center'
+                            size={10}
+                        >
+                            <div
+                                style={{
+                                    width: 38,
+                                    height: 38,
+                                    borderRadius: 12,
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    background:
+                                        token.colorPrimaryBg,
+                                    color:
+                                        token.colorPrimary,
+                                    fontSize: 17,
+                                    flex: '0 0 auto'
+                                }}
+                            >
+                                <SendOutlined />
+                            </div>
 
-                <Button
-                    type='link'
-                    icon={
-                        <PlusOutlined />
+                            <div
+                                style={{
+                                    minWidth: 0
+                                }}
+                            >
+                                <Title
+                                    level={5}
+                                    style={{
+                                        margin: 0,
+                                        lineHeight: 1.25
+                                    }}
+                                >
+                                    {sendSurveyStep ===
+                                        'template'
+                                        ? 'Choose Survey Template'
+                                        : selectedSurveyTemplate?.title ||
+                                        'Select SMEs'}
+                                </Title>
+
+                                <Text
+                                    type='secondary'
+                                    style={{
+                                        display: 'block',
+                                        marginTop: 2,
+                                        fontSize: 12
+                                    }}
+                                >
+                                    {sendSurveyStep ===
+                                        'template'
+                                        ? 'Select a published survey to continue'
+                                        : `${selectedParticipantIds.length} SME${selectedParticipantIds.length === 1
+                                            ? ''
+                                            : 's'
+                                        } selected`}
+                                </Text>
+                            </div>
+                        </Space>
+                    </div>
+                }
+                footer={
+                    sendSurveyStep === 'template' ? (
+                        <div
+                            style={{
+                                display: 'flex',
+                                width: '100%',
+                                gap: 10
+                            }}
+                        >
+                            <Button
+                                block
+                                shape='round'
+                                onClick={
+                                    closeSendSurveyModal
+                                }
+                            >
+                                Cancel
+                            </Button>
+
+                            <Button
+                                block
+                                type='primary'
+                                shape='round'
+                                icon={<PlusOutlined />}
+                                onClick={() => {
+                                    closeSendSurveyModal()
+                                    navigate(
+                                        '/operations/surveys/builder'
+                                    )
+                                }}
+                            >
+                                Create New Survey
+                            </Button>
+                        </div>
+                    ) : (
+                        <div
+                            style={{
+                                display: 'flex',
+                                width: '100%',
+                                gap: 10
+                            }}
+                        >
+                            <Button
+                                block
+                                shape='round'
+                                icon={<ArrowLeftOutlined />}
+                                disabled={
+                                    sendSurveySubmitting
+                                }
+                                onClick={() =>
+                                    setSendSurveyStep(
+                                        'template'
+                                    )
+                                }
+                            >
+                                Back
+                            </Button>
+
+                            <Button
+                                block
+                                type='primary'
+                                shape='round'
+                                icon={<SendOutlined />}
+                                loading={
+                                    sendSurveySubmitting
+                                }
+                                disabled={
+                                    selectedParticipantIds.length ===
+                                    0
+                                }
+                                onClick={
+                                    handleSendSurvey
+                                }
+                            >
+                                Send Survey
+                            </Button>
+                        </div>
+                    )
+                }
+                styles={{
+                    body: {
+                        paddingTop: 12,
+                        overflow: 'hidden'
+                    },
+                    footer: {
+                        marginTop: 18
                     }
-                    onClick={() => {
-                        navigate(
-                            '/operations/surveys/builder'
-                        )
-                        setSendModalOpen(
-                            false
-                        )
-                    }}
-                    style={{
-                        paddingInline: 0
-                    }}
+                }}
+            >
+                <AnimatePresence
+                    mode='wait'
+                    initial={false}
                 >
-                    Create New Survey
-                </Button>
+                    {sendSurveyStep === 'template' ? (
+                        <motion.div
+                            key='send-template-step'
+                            initial={{
+                                opacity: 0,
+                                x: -28
+                            }}
+                            animate={{
+                                opacity: 1,
+                                x: 0
+                            }}
+                            exit={{
+                                opacity: 0,
+                                x: -30
+                            }}
+                            transition={{
+                                duration: 0.24,
+                                ease: 'easeOut'
+                            }}
+                            style={{
+                                width: '100%'
+                            }}
+                        >
+                            {publishedSurveyTemplates.length ? (
+                                <>
+                                    <div
+                                        className='send-survey-template-grid'
+                                        style={{
+                                            display: 'grid',
+                                            gridTemplateColumns:
+                                                'repeat(2, minmax(0, 1fr))',
+                                            gap: 12,
+                                            width: '100%'
+                                        }}
+                                    >
+                                        {paginatedSendTemplates.map(
+                                            (template, index) => {
+                                                const currentPageCount =
+                                                    paginatedSendTemplates.length
 
-                <Divider>
-                    Select Participants
-                </Divider>
+                                                const isLastItem =
+                                                    index ===
+                                                    currentPageCount - 1
 
-                <div
-                    style={{
-                        display: 'flex',
-                        alignItems:
-                            'center',
-                        gap: 8,
-                        flexWrap: 'nowrap',
-                        overflowX: 'auto',
-                        marginBottom: 12
-                    }}
-                >
-                    <Input
-                        allowClear
-                        prefix={
-                            <SearchOutlined />
-                        }
-                        placeholder='Search by SMME Name'
-                        value={
-                            participantFilters.search
-                        }
-                        onChange={event =>
-                            setParticipantFilters(
-                                previous => ({
-                                    ...previous,
-                                    search:
-                                        event
-                                            .target
-                                            .value
-                                })
-                            )
-                        }
-                        style={{
-                            width: 260,
-                            flex: '0 0 260px'
-                        }}
-                    />
+                                                const shouldSpanFullWidth =
+                                                    currentPageCount === 1 ||
+                                                    (
+                                                        currentPageCount % 2 !==
+                                                        0 &&
+                                                        isLastItem
+                                                    )
 
-                    <Select
-                        allowClear
-                        placeholder='Filter by Branch'
-                        value={
-                            participantFilters.branchId ||
-                            undefined
-                        }
-                        onChange={value =>
-                            setParticipantFilters(
-                                previous => ({
-                                    ...previous,
-                                    branchId:
-                                        value ||
-                                        ''
-                                })
-                            )
-                        }
-                        options={Object.entries(
-                            branchesMap
-                        ).map(
-                            ([
-                                id,
-                                name
-                            ]) => ({
-                                value: id,
-                                label: name
-                            })
-                        )}
-                        style={{
-                            width: 200,
-                            flex: '0 0 200px'
-                        }}
-                    />
+                                                const questionCount =
+                                                    template.fields.filter(
+                                                        field =>
+                                                            field.type !==
+                                                            'heading'
+                                                    ).length
 
-                    <Select
-                        allowClear
-                        placeholder='Filter by Group'
-                        value={
-                            participantFilters.gapGroup ||
-                            undefined
-                        }
-                        onChange={value =>
-                            setParticipantFilters(
-                                previous => ({
-                                    ...previous,
-                                    gapGroup:
-                                        value ||
-                                        ''
-                                })
-                            )
-                        }
-                        options={[
-                            {
-                                value: 'A',
-                                label:
-                                    'Group A'
-                            },
-                            {
-                                value: 'B',
-                                label:
-                                    'Group B'
-                            },
-                            {
-                                value: 'C',
-                                label:
-                                    'Group C'
-                            }
-                        ]}
-                        style={{
-                            width: 180,
-                            flex: '0 0 180px'
-                        }}
-                    />
-                </div>
+                                                return (
+                                                    <motion.button
+                                                        key={template.id}
+                                                        type='button'
+                                                        whileHover={{
+                                                            y: -2
+                                                        }}
+                                                        whileTap={{
+                                                            scale: 0.995
+                                                        }}
+                                                        onClick={() =>
+                                                            selectSendSurveyTemplate(
+                                                                template.id
+                                                            )
+                                                        }
+                                                        style={{
+                                                            appearance:
+                                                                'none',
+                                                            width: '100%',
+                                                            gridColumn:
+                                                                shouldSpanFullWidth
+                                                                    ? '1 / -1'
+                                                                    : undefined,
+                                                            minHeight: 150,
+                                                            padding: 16,
+                                                            textAlign:
+                                                                'left',
+                                                            borderRadius: 18,
+                                                            border: `1px solid ${selectedSurveyId ===
+                                                                    template.id
+                                                                    ? token.colorPrimary
+                                                                    : token.colorBorderSecondary
+                                                                }`,
+                                                            background:
+                                                                selectedSurveyId ===
+                                                                    template.id
+                                                                    ? token.colorPrimaryBg
+                                                                    : token.colorBgContainer,
+                                                            boxShadow:
+                                                                '0 8px 24px rgba(15,23,42,.045)',
+                                                            cursor:
+                                                                'pointer',
+                                                            color:
+                                                                'inherit'
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                display:
+                                                                    'flex',
+                                                                alignItems:
+                                                                    'flex-start',
+                                                                gap: 12
+                                                            }}
+                                                        >
+                                                            <div
+                                                                style={{
+                                                                    width: 42,
+                                                                    height: 42,
+                                                                    borderRadius: 13,
+                                                                    display:
+                                                                        'grid',
+                                                                    placeItems:
+                                                                        'center',
+                                                                    background:
+                                                                        token.colorPrimaryBg,
+                                                                    color:
+                                                                        token.colorPrimary,
+                                                                    flex:
+                                                                        '0 0 auto',
+                                                                    fontSize: 17
+                                                                }}
+                                                            >
+                                                                <FileTextOutlined />
+                                                            </div>
 
-                <Table
-                    rowSelection={{
-                        selectedRowKeys:
-                            selectedParticipantIds,
-                        onChange: keys =>
-                            setSelectedParticipantIds(
-                                keys as string[]
-                            )
-                    }}
-                    rowKey='key'
-                    columns={[
-                        {
-                            title: 'Name',
-                            dataIndex: 'name'
-                        },
-                        {
-                            title: 'Branch',
-                            dataIndex:
-                                'branch'
-                        },
-                        {
-                            title: 'Group',
-                            dataIndex:
-                                'group'
+                                                            <div
+                                                                style={{
+                                                                    minWidth: 0,
+                                                                    flex: 1
+                                                                }}
+                                                            >
+                                                                <Text
+                                                                    strong
+                                                                    style={{
+                                                                        display:
+                                                                            'block',
+                                                                        fontSize: 14
+                                                                    }}
+                                                                >
+                                                                    {
+                                                                        template.title
+                                                                    }
+                                                                </Text>
+
+                                                                <Text
+                                                                    type='secondary'
+                                                                    ellipsis={{
+                                                                        tooltip:
+                                                                            template.description ||
+                                                                            undefined
+                                                                    }}
+                                                                    style={{
+                                                                        display:
+                                                                            'block',
+                                                                        marginTop: 4,
+                                                                        fontSize: 12
+                                                                    }}
+                                                                >
+                                                                    {template.description ||
+                                                                        'Published survey template'}
+                                                                </Text>
+                                                            </div>
+                                                        </div>
+
+                                                        <Space
+                                                            size={6}
+                                                            wrap
+                                                            style={{
+                                                                marginTop: 16
+                                                            }}
+                                                        >
+                                                            <Tag
+                                                                color='green'
+                                                                style={{
+                                                                    margin: 0,
+                                                                    borderRadius: 999
+                                                                }}
+                                                            >
+                                                                Published
+                                                            </Tag>
+
+                                                            <Tag
+                                                                style={{
+                                                                    margin: 0,
+                                                                    borderRadius: 999
+                                                                }}
+                                                            >
+                                                                {
+                                                                    questionCount
+                                                                }{' '}
+                                                                question
+                                                                {questionCount === 1
+                                                                    ? ''
+                                                                    : 's'}
+                                                            </Tag>
+
+                                                            {template.category ? (
+                                                                <Tag
+                                                                    color='blue'
+                                                                    style={{
+                                                                        margin: 0,
+                                                                        borderRadius: 999
+                                                                    }}
+                                                                >
+                                                                    {
+                                                                        template.category
+                                                                    }
+                                                                </Tag>
+                                                            ) : null}
+                                                        </Space>
+                                                    </motion.button>
+                                                )
+                                            }
+                                        )}
+                                    </div>
+
+                                    {publishedSurveyTemplates.length >
+                                        SEND_SURVEY_TEMPLATE_PAGE_SIZE ? (
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                justifyContent:
+                                                    'center',
+                                                marginTop: 18
+                                            }}
+                                        >
+                                            <Pagination
+                                                current={
+                                                    sendTemplatePage
+                                                }
+                                                pageSize={
+                                                    SEND_SURVEY_TEMPLATE_PAGE_SIZE
+                                                }
+                                                total={
+                                                    publishedSurveyTemplates.length
+                                                }
+                                                showSizeChanger={
+                                                    false
+                                                }
+                                                onChange={page =>
+                                                    setSendTemplatePage(
+                                                        page
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                    ) : null}
+                                </>
+                            ) : (
+                                <Empty
+                                    image={
+                                        Empty.PRESENTED_IMAGE_SIMPLE
+                                    }
+                                    description='No published survey templates are available.'
+                                />
+                            )}
+                        </motion.div>
+                    ) : (
+                        <motion.div
+                            key='send-participant-step'
+                            initial={{
+                                opacity: 0,
+                                x: 34
+                            }}
+                            animate={{
+                                opacity: 1,
+                                x: 0
+                            }}
+                            exit={{
+                                opacity: 0,
+                                x: 32
+                            }}
+                            transition={{
+                                duration: 0.26,
+                                ease: 'easeOut'
+                            }}
+                        >
+                            <div
+                                style={{
+                                    padding: '11px 13px',
+                                    marginBottom: 12,
+                                    borderRadius: 14,
+                                    border: `1px solid ${token.colorBorderSecondary}`,
+                                    background:
+                                        token.colorFillAlter,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent:
+                                        'space-between',
+                                    gap: 12,
+                                    flexWrap: 'wrap'
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        minWidth: 0
+                                    }}
+                                >
+                                    <Text
+                                        type='secondary'
+                                        style={{
+                                            display: 'block',
+                                            fontSize: 11
+                                        }}
+                                    >
+                                        Survey
+                                    </Text>
+
+                                    <Text strong>
+                                        {selectedSurveyTemplate?.title ||
+                                            'Selected Survey'}
+                                    </Text>
+                                </div>
+
+                                <Space size={6} wrap>
+                                    {surveyProgramMeta?.name ? (
+                                        <Tag
+                                            color='blue'
+                                            style={{
+                                                margin: 0,
+                                                borderRadius: 999
+                                            }}
+                                        >
+                                            {surveyProgramMeta.name}
+                                        </Tag>
+                                    ) : null}
+
+                                    <Tag
+                                        color='processing'
+                                        style={{
+                                            margin: 0,
+                                            borderRadius: 999
+                                        }}
+                                    >
+                                        {selectedParticipantIds.length}{' '}
+                                        selected
+                                    </Tag>
+                                </Space>
+                            </div>
+
+                            <div
+                                className='send-survey-filter-grid'
+                                style={{
+                                    display: 'grid',
+                                    gridTemplateColumns:
+                                        surveyProgramMeta?.isMultiBranch
+                                            ? 'repeat(3, minmax(0, 1fr))'
+                                            : 'repeat(2, minmax(0, 1fr))',
+                                    gap: 10,
+                                    width: '100%',
+                                    marginBottom: 14
+                                }}
+                            >
+                                <Input
+                                    allowClear
+                                    prefix={<SearchOutlined />}
+                                    placeholder='Search name, company or email'
+                                    value={
+                                        participantFilters.search
+                                    }
+                                    onChange={event =>
+                                        setParticipantFilters(
+                                            previous => ({
+                                                ...previous,
+                                                search:
+                                                    event.target.value
+                                            })
+                                        )
+                                    }
+                                    style={{
+                                        width: '100%'
+                                    }}
+                                />
+
+                                <Select
+                                    allowClear
+                                    placeholder='Filter by Group'
+                                    value={
+                                        participantFilters.gapGroup ||
+                                        undefined
+                                    }
+                                    onChange={value =>
+                                        setParticipantFilters(
+                                            previous => ({
+                                                ...previous,
+                                                gapGroup:
+                                                    value || ''
+                                            })
+                                        )
+                                    }
+                                    options={[
+                                        {
+                                            value: 'A',
+                                            label: 'Group A'
+                                        },
+                                        {
+                                            value: 'B',
+                                            label: 'Group B'
+                                        },
+                                        {
+                                            value: 'C',
+                                            label: 'Group C'
+                                        }
+                                    ]}
+                                    style={{
+                                        width: '100%'
+                                    }}
+                                />
+
+                                {surveyProgramMeta?.isMultiBranch ? (
+                                    <Select
+                                        allowClear
+                                        placeholder='Filter by Branch'
+                                        value={
+                                            participantFilters.branchId ||
+                                            undefined
+                                        }
+                                        onChange={value =>
+                                            setParticipantFilters(
+                                                previous => ({
+                                                    ...previous,
+                                                    branchId:
+                                                        value || ''
+                                                })
+                                            )
+                                        }
+                                        options={
+                                            surveyBranchOptions
+                                        }
+                                        style={{
+                                            width: '100%'
+                                        }}
+                                    />
+                                ) : null}
+                            </div>
+
+                            {paginatedSendParticipants.length ? (
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: 10
+                                    }}
+                                >
+                                    {paginatedSendParticipants.map(
+                                        participant => {
+                                            const selected =
+                                                selectedParticipantIds.includes(
+                                                    participant.key
+                                                )
+
+                                            const initials =
+                                                participant.participantName
+                                                    .split(' ')
+                                                    .filter(Boolean)
+                                                    .slice(0, 2)
+                                                    .map(part =>
+                                                        part
+                                                            .charAt(0)
+                                                            .toUpperCase()
+                                                    )
+                                                    .join('') || 'SME'
+
+                                            return (
+                                                <motion.div
+                                                    key={participant.key}
+                                                    layout
+                                                    whileHover={{
+                                                        y: -2
+                                                    }}
+                                                    transition={{
+                                                        duration: 0.18
+                                                    }}
+                                                >
+                                                    <div
+                                                        className='send-survey-participant-card'
+                                                        role='button'
+                                                        tabIndex={0}
+                                                        onClick={() =>
+                                                            toggleSurveyParticipant(
+                                                                participant.key
+                                                            )
+                                                        }
+                                                        onKeyDown={event => {
+                                                            if (
+                                                                event.key ===
+                                                                'Enter' ||
+                                                                event.key ===
+                                                                ' '
+                                                            ) {
+                                                                event.preventDefault()
+                                                                toggleSurveyParticipant(
+                                                                    participant.key
+                                                                )
+                                                            }
+                                                        }}
+                                                        style={{
+                                                            display: 'flex',
+                                                            alignItems:
+                                                                'center',
+                                                            width: '100%',
+                                                            gap: 14,
+                                                            padding:
+                                                                '13px 14px',
+                                                            borderRadius: 16,
+                                                            border: `1px solid ${selected
+                                                                ? token.colorPrimary
+                                                                : token.colorBorderSecondary
+                                                                }`,
+                                                            background:
+                                                                selected
+                                                                    ? token.colorPrimaryBg
+                                                                    : token.colorBgContainer,
+                                                            boxShadow:
+                                                                '0 6px 18px rgba(15,23,42,.045)',
+                                                            cursor: 'pointer',
+                                                            transition:
+                                                                'border-color .2s ease, background .2s ease, box-shadow .2s ease'
+                                                        }}
+                                                    >
+                                                        <Avatar
+                                                            size={46}
+                                                            style={{
+                                                                flex:
+                                                                    '0 0 auto',
+                                                                background:
+                                                                    selected
+                                                                        ? token.colorPrimaryBgHover
+                                                                        : token.colorFillSecondary,
+                                                                color:
+                                                                    selected
+                                                                        ? token.colorPrimary
+                                                                        : token.colorTextSecondary,
+                                                                fontWeight: 700
+                                                            }}
+                                                        >
+                                                            {initials}
+                                                        </Avatar>
+
+                                                        <div
+                                                            style={{
+                                                                minWidth: 0,
+                                                                flex: 1
+                                                            }}
+                                                        >
+                                                            <Space
+                                                                size={6}
+                                                                wrap
+                                                                style={{
+                                                                    marginBottom: 3
+                                                                }}
+                                                            >
+                                                                <Text strong>
+                                                                    {participant.participantName}
+                                                                </Text>
+
+                                                                <Tag
+                                                                    color='blue'
+                                                                    style={{
+                                                                        margin: 0,
+                                                                        borderRadius: 999
+                                                                    }}
+                                                                >
+                                                                    Group {participant.group}
+                                                                </Tag>
+
+                                                                {surveyProgramMeta?.isMultiBranch &&
+                                                                    participant.branch &&
+                                                                    participant.branch !==
+                                                                    'Unknown' ? (
+                                                                    <Tag
+                                                                        style={{
+                                                                            margin: 0,
+                                                                            borderRadius: 999
+                                                                        }}
+                                                                    >
+                                                                        {participant.branch}
+                                                                    </Tag>
+                                                                ) : null}
+                                                            </Space>
+
+                                                            <Text
+                                                                style={{
+                                                                    display: 'block',
+                                                                    fontSize: 13
+                                                                }}
+                                                                ellipsis
+                                                            >
+                                                                {participant.companyName}
+                                                            </Text>
+
+                                                            <Text
+                                                                type='secondary'
+                                                                style={{
+                                                                    display: 'block',
+                                                                    marginTop: 2,
+                                                                    fontSize: 12
+                                                                }}
+                                                                ellipsis
+                                                            >
+                                                                {participant.email ||
+                                                                    'No email recorded'}
+                                                            </Text>
+                                                        </div>
+
+                                                        <Button
+                                                            type={
+                                                                selected
+                                                                    ? 'primary'
+                                                                    : 'default'
+                                                            }
+                                                            shape='round'
+                                                            icon={
+                                                                selected ? (
+                                                                    <CheckCircleFilled />
+                                                                ) : undefined
+                                                            }
+                                                            onClick={event => {
+                                                                event.stopPropagation()
+                                                                toggleSurveyParticipant(
+                                                                    participant.key
+                                                                )
+                                                            }}
+                                                            style={{
+                                                                minWidth: 105,
+                                                                flex:
+                                                                    '0 0 auto'
+                                                            }}
+                                                        >
+                                                            {selected
+                                                                ? 'Selected'
+                                                                : 'Select'}
+                                                        </Button>
+                                                    </div>
+                                                </motion.div>
+                                            )
+                                        }
+                                    )}
+                                </div>
+                            ) : (
+                                <Empty
+                                    image={
+                                        Empty.PRESENTED_IMAGE_SIMPLE
+                                    }
+                                    description='No SMEs match the current filters.'
+                                />
+                            )}
+
+                            {participantTableData.length >
+                                SEND_SURVEY_PARTICIPANT_PAGE_SIZE ? (
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                        marginTop: 18
+                                    }}
+                                >
+                                    <Pagination
+                                        current={
+                                            sendParticipantPage
+                                        }
+                                        pageSize={
+                                            SEND_SURVEY_PARTICIPANT_PAGE_SIZE
+                                        }
+                                        total={
+                                            participantTableData.length
+                                        }
+                                        showSizeChanger={false}
+                                        onChange={page =>
+                                            setSendParticipantPage(
+                                                page
+                                            )
+                                        }
+                                    />
+                                </div>
+                            ) : null}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <style>{`
+                    @media (max-width: 700px) {
+                        .send-survey-template-grid,
+                        .send-survey-filter-grid {
+                            grid-template-columns: 1fr !important;
                         }
-                    ]}
-                    dataSource={
-                        participantTableData
+
+                        .send-survey-participant-card {
+                            align-items: flex-start !important;
+                            flex-wrap: wrap;
+                        }
+
+                        .send-survey-participant-card .ant-btn {
+                            width: 100%;
+                        }
                     }
-                    pagination={{
-                        position: [
-                            'bottomCenter'
-                        ],
-                        showSizeChanger: false
-                    }}
-                />
+                `}</style>
             </Modal>
+
         </div>
     )
 }

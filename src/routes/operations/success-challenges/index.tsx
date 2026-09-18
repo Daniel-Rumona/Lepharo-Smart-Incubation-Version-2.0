@@ -59,7 +59,7 @@ import {
     where
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
 
 const { Paragraph } = Typography
 const { TextArea } = Input
@@ -1143,13 +1143,12 @@ const SuccessChallengesPage: React.FC = () => {
                         { icon: <TrophyOutlined style={{ color: '#1677ff' }} />, bg: 'rgba(22,119,255,0.12)', title: 'SMEs in Programme', value: challengeSmes.length }
                     ]).map(metric => (
                         <Col xs={24} md={8} key={metric.title}>
-                            <MotionCard>
-                                <MotionCard.Metric icon={metric.icon} iconBg={metric.bg} title={metric.title} value={metric.value} subtitle={metric.subtitle} />
-                            </MotionCard>
+                            <MotionCard.Metric icon={metric.icon} iconBg={metric.bg} title={metric.title} value={metric.value} />
                         </Col>
                     ))}
                 </Row>
-                <MotionCard>
+
+                <DashboardFilterBar>
                     <Segmented<PageSegment>
                         block
                         value={segment}
@@ -1159,7 +1158,7 @@ const SuccessChallengesPage: React.FC = () => {
                             { label: 'Challenges', value: 'challenges' }
                         ]}
                     />
-                </MotionCard>
+                </DashboardFilterBar>
 
                 <div>
                     {segment === 'stories' ? (
