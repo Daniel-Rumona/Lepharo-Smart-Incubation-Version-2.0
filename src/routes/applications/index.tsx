@@ -55,6 +55,7 @@ import { Helmet } from 'react-helmet'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { applicationExportRow, applicationsCSV } from '@/utils/applicationExport'
 
 const { TabPane } = Tabs
 const { Option } = Select
@@ -74,6 +75,7 @@ const ApplicationsDashboard: React.FC = () => {
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
 
     const [loading, setLoading] = useState(false)
+    const [exporting, setExporting] = useState(false)
     const [applications, setApplications] = useState<any[]>([])
     const [selectedApplication, setSelectedApplication] = useState<any>(null)
     const [isModalVisible, setIsModalVisible] = useState(false)
@@ -857,35 +859,48 @@ const ApplicationsDashboard: React.FC = () => {
         }
     }
 
-    const exportCSV = () => {
-        const headers = [
-            'Enterprise Name',
-            'Email',
-            'Gender',
-            'Age Group',
-            'Stage',
-            'Hub',
-            'Status',
-            'AI Score'
-        ]
-        const rows = filteredApplications.map(app => [
-            app.beneficiaryName,
-            app.email,
-            app.gender,
-            app.ageGroup,
-            app.stage,
-            app.hub,
-            app.applicationStatus,
-            app.aiScore
-        ])
-        const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n')
-        const blob = new Blob([csvContent], { type: 'text/csv' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = 'applications.csv'
-        a.click()
-        URL.revokeObjectURL(url)
+    const exportCSV = async () => {
+        setExporting(true)
+        try {
+            const participantCache = new Map<string, any>()
+            const rows: string[][] = []
+            for (const app of filteredApplications) {
+                let participant: any = undefined
+                // Prefer the canonical link; only use a unique email match as fallback.
+                const participantId = String(app.participantId || '').trim()
+                if (participantId) {
+                    const key = `id:${participantId}`
+                    if (!participantCache.has(key)) {
+                        const snapshot = await getDoc(doc(db, 'participants', participantId))
+                        participantCache.set(key, snapshot.exists() ? snapshot.data() : null)
+                    }
+                    participant = participantCache.get(key)
+                }
+                const email = String(app.email || '').trim()
+                if (!participant && email && email.toLowerCase() !== 'n/a') {
+                    const key = `email:${email}`
+                    if (!participantCache.has(key)) {
+                        const emails = Array.from(new Set([email, email.toLowerCase()]))
+                        const snapshot = await getDocs(query(collection(db, 'participants'), where('email', 'in', emails)))
+                        participantCache.set(key, snapshot.size === 1 ? snapshot.docs[0].data() : null)
+                    }
+                    participant = participantCache.get(key)
+                }
+                rows.push(applicationExportRow(app, participant || {}))
+            }
+            const blob = new Blob([applicationsCSV(rows)], { type: 'text/csv;charset=utf-8;' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = 'applications.csv'
+            a.click()
+            URL.revokeObjectURL(url)
+        } catch (error) {
+            console.error('Failed to export applications:', error)
+            message.error('Could not load participant details for export. Please try again.')
+        } finally {
+            setExporting(false)
+        }
     }
 
     const columns = [
@@ -1284,6 +1299,7 @@ const ApplicationsDashboard: React.FC = () => {
                                         <Button
                                             icon={<DownloadOutlined />}
                                             onClick={exportCSV}
+                                            loading={exporting}
                                         >
                                             Export CSV
                                         </Button>

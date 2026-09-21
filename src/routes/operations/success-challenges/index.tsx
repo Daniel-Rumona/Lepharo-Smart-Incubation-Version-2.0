@@ -17,7 +17,6 @@ import {
     Segmented,
     Select,
     Space,
-    Steps,
     Table,
     Tag,
     Typography,
@@ -28,6 +27,8 @@ import type { ColumnsType } from 'antd/es/table'
 import {
     AppstoreOutlined,
     BarsOutlined,
+    BankOutlined,
+    CalendarOutlined,
     CheckCircleOutlined,
     ClearOutlined,
     FilePdfOutlined,
@@ -350,6 +351,29 @@ const uploadFiles = async (files: any[], folder: string): Promise<Attachment[]> 
     return uploaded
 }
 
+const StoryTypeQuestion: React.FC = () => {
+    const question = 'What kind of success story would you like to tell?'
+    const [visibleCharacters, setVisibleCharacters] = useState(0)
+
+    useEffect(() => {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setVisibleCharacters(question.length)
+            return
+        }
+        const timer = window.setInterval(() => {
+            setVisibleCharacters(count => {
+                if (count + 1 >= question.length) window.clearInterval(timer)
+                return Math.min(count + 1, question.length)
+            })
+        }, 30)
+        return () => window.clearInterval(timer)
+    }, [])
+
+    return <Typography.Title level={3} aria-label={question} style={{ minHeight: 64, marginTop: 8 }}>
+        <span aria-hidden='true'>{question.slice(0, visibleCharacters)}</span>
+    </Typography.Title>
+}
+
 const SuccessChallengesPage: React.FC = () => {
     const { user } = useFullIdentity()
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
@@ -358,7 +382,7 @@ const SuccessChallengesPage: React.FC = () => {
     const [challengeForm] = Form.useForm()
     const challengeType = Form.useWatch('challengeType', challengeForm) as ChallengeType | undefined
     const storyKind = Form.useWatch('storyKind', successForm) as 'SMME' | 'Event' | undefined
-    const storyFormValues = Form.useWatch([], successForm) || {}
+    const storyFormValues = Form.useWatch([], { form: successForm, preserve: true }) || {}
 
     const [smes, setSmes] = useState<SmeOption[]>([])
     const [challengeSmes, setChallengeSmes] = useState<SmeOption[]>([])
@@ -372,7 +396,7 @@ const SuccessChallengesPage: React.FC = () => {
     const [draftingStory, setDraftingStory] = useState(false)
     const [savingChallenge, setSavingChallenge] = useState(false)
     const [storyModalOpen, setStoryModalOpen] = useState(false)
-    const [storyStep, setStoryStep] = useState(0)
+    const [storyStep, setStoryStep] = useState(-1)
     const [storyView, setStoryView] = useState<'cards' | 'table'>('cards')
     const [selectedStory, setSelectedStory] = useState<SuccessStory | null>(null)
     const [challengeModalOpen, setChallengeModalOpen] = useState(false)
@@ -834,7 +858,7 @@ const SuccessChallengesPage: React.FC = () => {
 
     const closeStoryModal = () => {
         setStoryModalOpen(false)
-        setStoryStep(0)
+        setStoryStep(-1)
         successForm.resetFields()
         setSelectedParticipantId(undefined)
         setInterventions([])
@@ -1180,7 +1204,7 @@ const SuccessChallengesPage: React.FC = () => {
                                     <Col xs={12} md={6} lg={2}><Button block icon={<ClearOutlined />} onClick={resetStoryFilters}>Reset</Button></Col>
                                     <Col xs={24} md={10} lg={4}>
                                         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-                                            <Button type='primary' icon={<PlusOutlined />} onClick={() => { setStoryStep(0); setStoryModalOpen(true) }}>Add Story</Button>
+                                            <Button type='primary' icon={<PlusOutlined />} onClick={() => { setStoryStep(-1); setStoryModalOpen(true) }}>Add Story</Button>
                                         </Space>
                                     </Col>
                                 </Row>
@@ -1192,7 +1216,7 @@ const SuccessChallengesPage: React.FC = () => {
                                 <Table rowKey='id' columns={storyColumns} dataSource={filteredStories} loading={loading} scroll={{ x: 920 }} expandable={{ expandedRowRender: storyDetails }} pagination={{ pageSize: 8 }} />
                             ) : (
                                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No success stories match these filters'>
-                                    <Button type='primary' icon={<PlusOutlined />} onClick={() => { resetStoryFilters(); setStoryStep(0); setStoryModalOpen(true) }}>Create the first story</Button>
+                                    <Button type='primary' icon={<PlusOutlined />} onClick={() => { resetStoryFilters(); setStoryStep(-1); setStoryModalOpen(true) }}>Create the first story</Button>
                                 </Empty>
                             )}
                         </MotionCard>
@@ -1309,27 +1333,53 @@ const SuccessChallengesPage: React.FC = () => {
             </Modal>
 
             <Modal title='Create Success Story' open={storyModalOpen} onCancel={closeStoryModal} footer={null} width={900} destroyOnClose>
-                <Steps current={storyStep} responsive items={[{ title: 'Story subject' }, { title: 'Case study' }, { title: 'Evidence & review' }]} style={{ marginBottom: 18 }} />
-                <div style={{ background: '#f5f7fb', borderRadius: 12, padding: '10px 14px', marginBottom: 18 }}>
+                {storyStep >= 0 && <div style={{ background: '#f5f7fb', borderRadius: 12, padding: '10px 14px', marginBottom: 18 }}>
                     <Space direction='vertical' size={4} style={{ width: '100%' }}>
                         <Space style={{ width: '100%', justifyContent: 'space-between' }}><Typography.Text strong>Story completeness</Typography.Text><Typography.Text>{completedStoryFields} of {requiredStoryFields.length} required sections</Typography.Text></Space>
                         <Progress percent={storyCompletionPercent} size='small' status={storyCompletionPercent === 100 ? 'success' : 'active'} />
                     </Space>
-                </div>
-                <Form form={successForm} layout='vertical' onFinish={handleStorySubmit} initialValues={{ storyKind: 'SMME' }}>
+                </div>}
+                <Form form={successForm} layout='vertical' onFinish={() => handleStorySubmit(successForm.getFieldsValue(true))} initialValues={{ storyKind: 'SMME' }}>
+                    <Form.Item name='storyKind' hidden><Input /></Form.Item>
+                    {storyStep === -1 && <div style={{ padding: '16px 0 8px' }}>
+                        <StoryTypeQuestion />
+                        <Paragraph type='secondary'>Choose a business journey or an event worth sharing.</Paragraph>
+                        <Row gutter={[16, 16]}>
+                            {([
+                                { kind: 'SMME', title: 'An SMME success', description: 'Celebrate a business achievement and the support behind it.', icon: <BankOutlined /> },
+                                { kind: 'Event', title: 'An event success', description: 'Share who came together, what happened and the outcomes.', icon: <CalendarOutlined /> }
+                            ] as const).map(option => <Col xs={24} sm={12} key={option.kind}>
+                                <Button block onClick={() => {
+                                    if (storyKind !== option.kind) {
+                                        successForm.resetFields()
+                                        setSelectedParticipantId(undefined)
+                                        setInterventions([])
+                                        setStorySourceContext(null)
+                                    }
+                                    successForm.setFieldValue('storyKind', option.kind)
+                                    setStoryStep(0)
+                                }} style={{ height: 'auto', minHeight: 160, padding: 24, textAlign: 'left', whiteSpace: 'normal', borderRadius: 12 }}>
+                                    <Space direction='vertical' size={10} style={{ width: '100%' }}>
+                                        <span style={{ fontSize: 28, color: '#1677ff' }}>{option.icon}</span>
+                                        <Typography.Text strong>{option.title}</Typography.Text>
+                                        <Typography.Text type='secondary'>{option.description}</Typography.Text>
+                                    </Space>
+                                </Button>
+                            </Col>)}
+                        </Row>
+                    </div>}
                     {storyStep === 0 && <>
-                        <Alert showIcon type='info' style={{ marginBottom: 16 }} message='Start with the subject and completed intervention. The next step builds the case study.' />
-                        <Form.Item label='Success story type' name='storyKind' rules={[{ required: true }]}><Segmented block options={['SMME', 'Event']} onChange={() => { successForm.setFieldsValue({ participantId: undefined, interventionId: undefined }); setSelectedParticipantId(undefined); setInterventions([]) }} /></Form.Item>
+                        <Typography.Title level={4}>Tell us about {storyKind === 'Event' ? 'the event' : 'the business and its success'}.</Typography.Title>
                         <Form.Item label='Story title' name='title' rules={[{ required: true, whitespace: true, message: 'Add a clear story title' }]}><Input placeholder={storyKind === 'Event' ? 'E.g. Supplier Readiness Day connects SMMEs to buyers' : 'E.g. Safe Lifestyle grows turnover after incubation support'} /></Form.Item>
                         {storyKind !== 'Event' && <Form.Item label='SME' name='participantId' rules={[{ required: true, message: 'Select an SME' }]}><Select showSearch placeholder='Select an SME with completed interventions' optionFilterProp='label' loading={loading} onChange={value => { setSelectedParticipantId(value); successForm.setFieldValue('interventionId', undefined) }} options={smes.map(item => ({ label: item.companyName, value: item.participantId }))} notFoundContent='No SMEs with SME-confirmed interventions were found for this department.' /></Form.Item>}
-                        {storyKind !== 'Event' && <Form.Item label='SME-confirmed intervention' name='interventionId' rules={[{ required: true, message: 'Select a confirmed intervention' }]}><Select showSearch placeholder='Select confirmed intervention' optionFilterProp='search' disabled={!selectedParticipantId} options={interventions.map(item => ({ search: `${item.interventionTitle} ${item.departmentName || ''} ${(item.monthTags || []).join(' ')}`, label: <Space direction='vertical' size={2}><span>{item.interventionTitle}{item.departmentName ? ` - ${item.departmentName}` : ''}</span><Space size={4} wrap>{(item.occurrenceCount || 0) > 1 && <Tag color='blue'>{item.occurrenceCount} sessions</Tag>}{(item.monthTags || []).slice(0, 4).map(month => <Tag key={month}>{month}</Tag>)}</Space></Space>, value: item.id }))} /></Form.Item>}
+                        {storyKind !== 'Event' && <Form.Item label='SME-confirmed intervention' name='interventionId' rules={[{ required: true, message: 'Select a confirmed intervention' }]}><Select showSearch placeholder='Select confirmed intervention' optionFilterProp='search' optionLabelProp='selectedLabel' disabled={!selectedParticipantId} options={interventions.map(item => ({ selectedLabel: item.interventionTitle, search: `${item.interventionTitle} ${item.departmentName || ''} ${(item.monthTags || []).join(' ')}`, label: <Space direction='vertical' size={2}><span>{item.interventionTitle}{item.departmentName ? ` - ${item.departmentName}` : ''}</span><Space size={4} wrap>{(item.occurrenceCount || 0) > 1 && <Tag color='blue'>{item.occurrenceCount} sessions</Tag>}{(item.monthTags || []).slice(0, 4).map(month => <Tag key={month}>{month}</Tag>)}</Space></Space>, value: item.id }))} /></Form.Item>}
                     </>}
                     {storyStep === 1 && (storyKind !== 'Event' ? <>
                         {selectedSme && <Alert showIcon type='success' style={{ marginBottom: 16 }} message='Prefilled from SME records' description={<Space direction='vertical' size={8}><span>Review the sourced draft and edit anything that needs context.</span><Button size='small' icon={<RobotOutlined />} loading={draftingStory} onClick={handleAiStoryDraft}>Prepare improved draft with AI</Button></Space>} />}
                         <Form.Item label={<span>Background on the SMME <Tag color='blue'>From SME records</Tag></span>} name='background' rules={[{ required: true, whitespace: true }]}><TextArea rows={3} placeholder='What the business does, when it started, sector, founder and relevant context.' /></Form.Item>
                         <Form.Item label={<span>{crossDepartmentStoryView ? 'Journey with Lepharo' : `How ${storyDepartmentLabel} supported the SMME`} <Tag color='blue'>From SME-confirmed interventions</Tag></span>} name='lepharoJourney' rules={[{ required: true, whitespace: true }]}><TextArea rows={4} placeholder={crossDepartmentStoryView ? 'When the SMME joined, completed interventions and current position.' : `Describe the SME-confirmed interventions serviced by ${storyDepartmentLabel} and how they supported progress.`} /></Form.Item>
                         <Form.Item label='Detailed achievement' name='achievement' rules={[{ required: true, whitespace: true }]}><TextArea rows={4} placeholder='Describe the award, contract, funding, turnover growth, jobs or other measurable result.' /></Form.Item>
-                        <Form.Item label="Lepharo's contribution" name='lepharoRole' rules={[{ required: true, whitespace: true }]}><TextArea rows={3} placeholder='Explain the support that contributed, or state clearly if it was not directly linked.' /></Form.Item>
+                        <Form.Item label="How did this support help make the achievement possible?" extra="Connect the support to the result rather than listing interventions again. If the achievement was independent of the support, say so." name='lepharoRole' rules={[{ required: true, whitespace: true }]}><TextArea rows={3} placeholder='E.g. The legal advice helped the business meet the contract requirements and secure its first supply agreement.' /></Form.Item>
                     </> : <>
                         <Form.Item label='Event background' name='eventBackground' rules={[{ required: true, whitespace: true }]}><TextArea rows={4} placeholder='When and why it was hosted or attended, intended beneficiaries and immediate outcomes.' /></Form.Item>
                         <Row gutter={12}><Col xs={24} md={16}><Form.Item label='Who attended' name='attendees' rules={[{ required: true, whitespace: true }]}><TextArea rows={3} placeholder='Stakeholder and beneficiary types.' /></Form.Item></Col><Col xs={24} md={8}><Form.Item label='Number of attendees' name='attendeeCount' rules={[{ required: true, message: 'Add attendance' }]}><Input type='number' min={1} /></Form.Item></Col></Row>
@@ -1343,8 +1393,8 @@ const SuccessChallengesPage: React.FC = () => {
                         <Card size='small' title='Final review'><Space direction='vertical' size={6}><Typography.Text strong>{storyFormValues.title || 'Untitled story'}</Typography.Text><Typography.Text type='secondary'>{storyKind === 'Event' ? 'Event success story' : `${selectedSme?.companyName || 'SMME'} · ${interventions.find(item => item.id === storyFormValues.interventionId)?.interventionTitle || 'Intervention'}`}</Typography.Text><Typography.Text>{storyKind === 'Event' ? storyFormValues.eventBenefits : storyFormValues.achievement}</Typography.Text></Space></Card>
                     </>}
                     <Row gutter={12} style={{ marginTop: 20 }}>
-                        <Col span={8}><Button block onClick={storyStep === 0 ? closeStoryModal : () => setStoryStep(current => current - 1)}>{storyStep === 0 ? 'Cancel' : 'Back'}</Button></Col>
-                        <Col span={16}>{storyStep < 2 ? <Button block type='primary' onClick={goToNextStoryStep}>Continue</Button> : <Button block type='primary' loading={savingStory} icon={<PlusOutlined />} onClick={() => successForm.submit()}>Publish Success Story</Button>}</Col>
+                        <Col span={storyStep === -1 ? 24 : 8}><Button block onClick={storyStep === -1 ? closeStoryModal : () => setStoryStep(current => current - 1)}>{storyStep === -1 ? 'Cancel' : 'Back'}</Button></Col>
+                        {storyStep >= 0 && <Col span={16}>{storyStep < 2 ? <Button block type='primary' onClick={goToNextStoryStep}>Continue</Button> : <Button block type='primary' loading={savingStory} icon={<PlusOutlined />} onClick={() => successForm.submit()}>Publish Success Story</Button>}</Col>}
                     </Row>
                 </Form>
             </Modal>

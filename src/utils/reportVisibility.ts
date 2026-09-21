@@ -33,9 +33,7 @@ const containsControlEmail = (value: unknown, seen = new Set<object>()): boolean
     )
 }
 
-// Dummy SMEs created from shared/incubatees are marked on their application.
-// Keep this marker-based check so older/manual records are hidden even when
-// their contact email does not use the Quantilytix domain.
+// Only explicit dummy markers hide records; manual capture is not a dummy marker.
 const containsDummyMarker = (value: unknown, seen = new Set<object>()): boolean => {
     if (!value || typeof value !== 'object') return false
     if (seen.has(value as object)) return false
@@ -43,7 +41,7 @@ const containsDummyMarker = (value: unknown, seen = new Set<object>()): boolean 
     if (Array.isArray(value)) return value.some(item => containsDummyMarker(item, seen))
     return Object.entries(value as Record<string, unknown>).some(([key, nested]) => {
         const normalizedKey = key.toLowerCase()
-        if (['isdummy', 'dummy', 'manuallycreated', 'manualapplication'].includes(normalizedKey) && nested === true) return true
+        if (['isdummy', 'dummy'].includes(normalizedKey) && nested === true) return true
         return containsDummyMarker(nested, seen)
     })
 }
