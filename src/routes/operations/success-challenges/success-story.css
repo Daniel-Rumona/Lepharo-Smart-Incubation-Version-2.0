@@ -1,0 +1,24 @@
+.story-images-upload .ant-upload.ant-upload-drag {
+    height: auto;
+    min-height: 76px;
+}
+
+.story-images-upload .ant-upload.ant-upload-drag .ant-upload-btn {
+    padding: 18px 12px;
+}
+
+.story-images-upload .ant-upload-list,
+.story-image-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.story-images-upload .ant-upload-list .ant-upload-list-item-container {
+    margin: 0 !important;
+}
+
+.story-review section {
+    overflow-wrap: anywhere;
+}
