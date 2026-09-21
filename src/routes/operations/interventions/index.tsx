@@ -1,3 +1,4 @@
+import { allocateCompulsoryPlans } from '@/services/compulsoryInterventionService';
 import React, { useEffect, useMemo, useState } from "react";
 import {
     DragDropContext,
@@ -380,7 +381,7 @@ const InterventionsManager: React.FC = () => {
                             popover: {
                                 title: "Compulsory",
                                 description:
-                                    "Use this when the intervention is mandatory. Assignments are still created from the Assignments workspace.",
+                                    "Automatically add this intervention to accepted SMEs’ development plans. It can be assigned without DP sign-off.",
                                 side: "right",
                                 align: "start",
                             },
@@ -823,12 +824,10 @@ const InterventionsManager: React.FC = () => {
         title: string,
         deptNameForAssignment: string
     ) => {
-        void interventionId;
-        void title;
-        void deptNameForAssignment;
-        message.info(
-            "Compulsory intervention saved. Assignments are created from the Assignments workspace once an assignee and delivery cycle are selected."
-        );
+        const snapshot = await getDoc(doc(db, "interventions", interventionId));
+        if (!snapshot.exists()) throw new Error("Intervention not found");
+        await allocateCompulsoryPlans([{ ...snapshot.data(), id: interventionId }]);
+        message.info("Compulsory intervention added to accepted SMEs' development plans. No DP sign-off is required to assign it.");
     };
 
 
@@ -1022,7 +1021,7 @@ const InterventionsManager: React.FC = () => {
                 await updateDoc(doc(db, "interventions", editId), payload as any);
                 message.success("Intervention updated!");
 
-                if (!!values.compulsory && !prevCompulsory) {
+                if (!!values.compulsory) {
                     await allocateCompulsoryToAccepted(
                         editId,
                         values.interventionTitle,
@@ -1275,6 +1274,7 @@ const InterventionsManager: React.FC = () => {
                     </div>
 
                     <MotionCard
+                        loading={loading}
                         filterBar={
                             <Row data-guide="intervention-filters" gutter={[12, 12]} align="middle" justify="space-between">
                                 <Col xs={24} md={8}>

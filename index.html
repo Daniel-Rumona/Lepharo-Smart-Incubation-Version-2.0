@@ -33,8 +33,15 @@
           document.documentElement.setAttribute("data-theme", mode);
           document.documentElement.style.colorScheme = mode;
           if (mode === "dark") document.documentElement.style.background = "#0e1117";
+
+          var accent = window.localStorage.getItem("lph-accent-theme");
+          document.documentElement.setAttribute(
+            "data-accent",
+            accent === "ocean" || accent === "violet" ? accent : "blue"
+          );
         } catch (e) {
           document.documentElement.setAttribute("data-theme", "light");
+          document.documentElement.setAttribute("data-accent", "blue");
         }
       })();
     </script>

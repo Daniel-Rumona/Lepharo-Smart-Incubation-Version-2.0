@@ -27,7 +27,6 @@ import {
     List,
     InputNumber,
     Checkbox,
-    theme,
 } from "antd";
 import {
     CheckCircleOutlined,
@@ -39,8 +38,6 @@ import {
     UserAddOutlined,
     EyeOutlined,
     DeleteOutlined,
-    BarChartOutlined,
-    PieChartOutlined,
 } from "@ant-design/icons";
 import { Helmet } from "react-helmet";
 import {
@@ -57,13 +54,15 @@ import {
     documentId,
     writeBatch,
     deleteField,
+    runTransaction,
+    serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import weekOfYear from "dayjs/plugin/weekOfYear";
-import { MotionCard, DashboardFilterBar } from "@/components/dashboards/metrics/Header";
+import { MotionCard } from "@/components/dashboards/metrics/Header";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import {
     guideTarget,
@@ -88,14 +87,73 @@ import {
     toAssignedInterventionView,
 } from "@/services/assignedInterventionService";
 import { resolveAssignmentLifecycle } from "@/services/assignmentLifecycleService";
-import { AssignmentStatusesModal } from "./AssignmentStatusesModal";
-import { InterventionDemandModal } from "./InterventionDemandModal";
 import {
     GROUP_INTERVENTION_DELIVERIES_COLLECTION,
     type GroupInterventionDelivery,
 } from "@/services/groupInterventionDeliveryService";
-import { ensureCompulsoryPlan } from '@/services/compulsoryInterventionService';
-import { eligiblePlanInterventions, isCompulsoryIntervention } from '@/utils/compulsoryInterventions';
+
+// BEGIN COMPULSORY DP HELPERS
+const interventionId = (item: any): string =>
+    String(item?.id || item?.interventionId || '').trim()
+
+/** The live definition is authoritative, including when compulsory is switched off. */
+const isCompulsoryIntervention = (item: any, definitions: any[]): boolean =>
+    definitions.find(definition => interventionId(definition) === interventionId(item))?.compulsory === true
+
+function mergeCompulsoryInterventions(items: any[], definitions: any[]): any[] {
+    const result = [...items]
+    for (const definition of definitions.filter(item => item.compulsory === true)) {
+        const id = interventionId(definition)
+        if (!id || result.some(item => interventionId(item) === id)) continue
+        result.push({
+            ...definition,
+            id,
+            title: definition.interventionTitle || definition.title || 'Intervention',
+            area: definition.areaOfSupport || definition.area || '',
+            source: 'compulsory',
+        })
+    }
+    return result
+}
+
+const eligiblePlanInterventions = (
+    items: any[], definitions: any[], confirmed: boolean
+): any[] => items.filter(item => confirmed || isCompulsoryIntervention(item, definitions))
+
+/** Add requirements only; never manufacture department or SME signatures. */
+async function ensureCompulsoryPlan(app: any, definitions: any[], knownPlan?: any) {
+    if (!app.participantId || !definitions.some(item => item.compulsory === true)) return knownPlan
+    let plan = knownPlan
+    if (!plan) {
+        const constraints = [where('participantId', '==', app.participantId)]
+        if (app.programId) constraints.push(where('programId', '==', app.programId))
+        const snapshot = await getDocs(query(collection(db, 'diagnosticPlans'), ...constraints))
+        plan = snapshot.docs.map(item => ({ ...item.data(), id: item.id } as any))
+            .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))[0]
+    }
+    if (plan && Array.isArray(plan.interventions) &&
+        mergeCompulsoryInterventions(plan.interventions, definitions).length === plan.interventions.length) return plan
+    // A stable ID makes simultaneous first-time allocation idempotent.
+    const ref = doc(db, 'diagnosticPlans', plan?.id || `compulsory_${encodeURIComponent(app.programId || 'default')}_${encodeURIComponent(app.participantId)}`)
+    return runTransaction(db, async transaction => {
+        const snapshot = await transaction.get(ref)
+        const current = snapshot.exists() ? snapshot.data() : {
+            participantId: app.participantId,
+            programId: app.programId || null,
+        }
+        const items = Array.isArray(current.interventions) ? current.interventions : []
+        const interventions = mergeCompulsoryInterventions(items, definitions)
+        if (!snapshot.exists() || interventions.length !== items.length) {
+            transaction.set(ref, {
+                ...current, interventions, updatedAt: serverTimestamp(),
+                ...(!snapshot.exists() ? { createdAt: serverTimestamp() } : {}),
+            }, { merge: true })
+        }
+        return { ...current, interventions, id: ref.id }
+    })
+}
+
+// END COMPULSORY DP HELPERS
 
 dayjs.extend(weekOfYear);
 
@@ -140,7 +198,7 @@ const displayStatusValue = (value: any) => {
     const text = String(value || "—").trim();
     return text ? text.replace(/^./, char => char.toUpperCase()) : "—";
 };
-export const formatDisplayDate = (value: any) => {
+const formatDisplayDate = (value: any) => {
     const parsed = dateLikeToDayjs(value);
     return parsed ? parsed.format("DD MMM YYYY") : "—";
 };
@@ -161,7 +219,7 @@ const getActiveSubInterventions = (intervention: any) =>
 
 const unique = <T,>(arr: T[]) => [...new Set(arr)];
 
-export const isGroupedAssignmentRecord = (a: any) =>
+const isGroupedAssignmentRecord = (a: any) =>
     !!normalizeAssignmentGroupKey(a) || String(a?.type) === "grouped";
 
 const dateLikeToDayjs = (value: any) => {
@@ -556,38 +614,6 @@ const dedupeInterventions = (items: any[]) => {
     });
 };
 
-// Normalises a raw intervention definition (from either the `interventions`
-// collection or a Diagnostic Plan's embedded intervention list - the two
-// sources disagree on whether `area` or `areaOfSupport` is primary, hence
-// `preferAreaField`) into the shape the rest of this page expects. Was
-// written out twice, nearly identically, at the two call sites below.
-const normalizeInterventionDef = (
-    iv: any,
-    deptId: string,
-    deptName: string,
-    preferAreaField: boolean
-) => ({
-    id: String(iv?.id || ""),
-    interventionTitle: iv?.title || iv?.interventionTitle || iv?.name || "Untitled",
-    areaOfSupport: preferAreaField
-        ? iv?.area || iv?.areaOfSupport || deptName
-        : iv?.areaOfSupport || iv?.area || deptName,
-    departmentId: iv?.departmentId || deptId || null,
-    hasSubInterventions: !!iv?.hasSubInterventions,
-    subInterventions: getActiveSubInterventions(iv),
-    definitionVersion: Math.max(1, Number(iv?.definitionVersion || 1)),
-    assignmentMode:
-        iv?.assignmentMode || iv?.interventionMode || iv?.deliveryScheduleType || null,
-    recurring: iv?.recurring ?? false,
-    recurrencePreset: iv?.recurrencePreset ?? null,
-    recurrence: iv?.recurrence ?? null,
-    recurrenceStrict: iv?.recurrenceStrict ?? null,
-    frequency: iv?.frequency ?? null,
-    defaultPlannedSessions: Math.max(1, Number(iv?.defaultPlannedSessions) || 1),
-    subInterventionRotationMode:
-        iv?.subInterventionRotationMode === "repeat" ? "repeat" : "rotate",
-});
-
 const pickLatestByUpdated = (arr: any[]) => {
     if (!arr.length) return null;
     return [...arr].sort((a, b) => {
@@ -679,7 +705,7 @@ const getOperationsLifecycle = (assignment: any) => {
 const isDeclinedAssignment = (a: any) =>
     getOperationsLifecycle(a).key === "participant-declined";
 
-export const getCompositeStatus = (a: any) => {
+const getCompositeStatus = (a: any) => {
     const lifecycle = getOperationsLifecycle(a);
     if (!a?.assigneeId && lifecycle.key !== "cancelled") {
         return { label: "Needs Reassignment", color: "magenta" };
@@ -769,7 +795,7 @@ const suggestNextSubIntervention = (args: {
     return ranked[0]?.subId ?? null;
 };
 
-export type Bottleneck = {
+type Bottleneck = {
     label: string;
     pendingType:
     | "scheduling"
@@ -784,17 +810,6 @@ export type Bottleneck = {
 
 const LENIENT_OPEN_CYCLE_LIMIT = 3;
 
-// Shared accent palette for the metric-tile icon chips on this page (page-level
-// progress cards and the per-beneficiary coverage cards). One source of truth
-// so the two card sets can't drift into slightly different shades of the same
-// color, as blue/orange had before.
-const METRIC_ACCENT = {
-    purple: { color: "#722ed1", bg: "rgba(114,46,209,.12)" },
-    blue: { color: "#1677ff", bg: "rgba(22,119,255,.12)" },
-    green: { color: "#52c41a", bg: "rgba(82,196,26,.12)" },
-    orange: { color: "#fa8c16", bg: "rgba(250,140,22,.12)" },
-} as const;
-
 const ONCE_OFF_COMPLETED_REASON = "Already completed";
 
 // A completed once-off item is the only reason that truly bars a new
@@ -803,7 +818,7 @@ const ONCE_OFF_COMPLETED_REASON = "Already completed";
 const isHardBlockReason = (reason: string | null) =>
     String(reason || "").trim() === ONCE_OFF_COMPLETED_REASON;
 
-export const getBottleneck = (a: any): Bottleneck => {
+const getBottleneck = (a: any): Bottleneck => {
     const lifecycle = getOperationsLifecycle(a);
 
     if (!lifecycle.isOpen) {
@@ -1092,22 +1107,8 @@ const decideReassignStatuses = (prev: any) => {
 
 type LockSource = "manage" | null;
 
-// The page only ever shows one of its modals at a time - every call site that
-// opens one already closes whichever else might be open - so one "which modal
-// is active" enum replaces what used to be 6 independent visibility booleans.
-type OperationsModalType =
-    | "manage"
-    | "assign"
-    | "firstAppointment"
-    | "groupMembers"
-    | "addToGroup"
-    | "convertSingles"
-    | "statuses"
-    | "demand";
-
 export const InterventionsAssignments: React.FC = () => {
     const { user } = useFullIdentity();
-    const { token } = theme.useToken();
     const screens = Grid.useBreakpoint();
     const isMobile = !screens.md; // < md (xs/sm) treated as mobile
 
@@ -1159,9 +1160,9 @@ export const InterventionsAssignments: React.FC = () => {
                         {
                             element: guideTarget("assignment-filters"),
                             popover: {
-                                title: "Find SMEs and interventions",
+                                title: "Find beneficiaries",
                                 description:
-                                    "These filters change with the selected workspace. SMEs use coverage filters, Assignment Statuses use dates, and Intervention Demand uses intervention-level filters.",
+                                    "These filters change with the selected workspace. Beneficiaries use coverage filters, Assignment Statuses use dates, and Intervention Demand uses intervention-level filters.",
                                 side: "bottom",
                                 align: "start",
                             },
@@ -1335,7 +1336,18 @@ export const InterventionsAssignments: React.FC = () => {
                             popover: {
                                 title: "Beneficiary metrics",
                                 description:
-                                    "Click a metric to filter required, assigned, completed, open or unassigned interventions. Click it again, or Required, to show all. Zero counts are hidden.",
+                                    "See how many interventions are required, assigned, completed, currently open and grouped.",
+                                side: "bottom",
+                                align: "start",
+                            },
+                        },
+                        {
+                            element: guideTarget("manage-beneficiary-filter"),
+                            waitForElement: 5000,
+                            popover: {
+                                title: "Filter interventions",
+                                description:
+                                    "Show all, assigned or unassigned interventions for this beneficiary.",
                                 side: "bottom",
                                 align: "start",
                             },
@@ -1541,19 +1553,11 @@ export const InterventionsAssignments: React.FC = () => {
     const [dpByPid, setDpByPid] = useState<Record<string, any>>({});
 
     const [loading, setLoading] = useState(true);
-
-    const [activeModal, setActiveModal] = useState<OperationsModalType | null>(null);
-    const makeModalSetter = (type: OperationsModalType) => (visible: boolean) =>
-        setActiveModal((prev) => (visible ? type : prev === type ? null : prev));
-    const manageModalVisible = activeModal === "manage";
-    const setManageModalVisible = makeModalSetter("manage");
-    const assignmentModalVisible = activeModal === "assign";
-    const setAssignmentModalVisible = makeModalSetter("assign");
-
+    const [manageModalVisible, setManageModalVisible] = useState(false);
+    const [assignmentModalVisible, setAssignmentModalVisible] = useState(false);
     const [savingAssignment, setSavingAssignment] = useState(false);
     const assignmentWriteLockRef = useRef(false);
-    const firstAppointmentOpen = activeModal === "firstAppointment";
-    const setFirstAppointmentOpen = makeModalSetter("firstAppointment");
+    const [firstAppointmentOpen, setFirstAppointmentOpen] = useState(false);
     const [firstAppointmentContext, setFirstAppointmentContext] =
         useState<FirstAppointmentContext | null>(null);
     const [savingFirstAppointment, setSavingFirstAppointment] = useState(false);
@@ -1561,40 +1565,33 @@ export const InterventionsAssignments: React.FC = () => {
 
     const [selectedParticipant, setSelectedParticipant] =
         useState<Participant | null>(null);
-
+    const [interventionFilter, setInterventionFilter] = useState<
+        "all" | "assigned" | "unassigned"
+    >("all");
+    const [searchText, setSearchText] = useState("");
     const [selectedProgram, setSelectedProgram] = useState<string | undefined>();
 
-    const [viewMode, setViewMode] = useState<"beneficiaries" | "groups">("beneficiaries");
+    const [viewMode, setViewMode] = useState<
+        "beneficiaries" | "groups" | "range" | "demand"
+    >("beneficiaries");
 
-    type ViewFilters = {
-        interventionFilter: "all" | "assigned" | "unassigned" | "completed" | "open";
-        searchText: string;
-        beneficiaryCoverageFilter: "all" | "needs-assignment" | "open" | "completed";
-        groupSearchText: string;
-        groupProgressFilter: "all" | "active" | "completed";
-    };
-    const [viewFilters, setViewFilters] = useState<ViewFilters>({
-        interventionFilter: "all",
-        searchText: "",
-        beneficiaryCoverageFilter: "all",
-        groupSearchText: "",
-        groupProgressFilter: "all",
-    });
-    const makeFilterSetter =
-        <K extends keyof ViewFilters>(key: K) =>
-            (value: ViewFilters[K]) =>
-                setViewFilters((prev) => ({ ...prev, [key]: value }));
+    const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
+        dayjs().startOf("month"),
+        dayjs().endOf("month"),
+    ]);
 
-    const interventionFilter = viewFilters.interventionFilter;
-    const setInterventionFilter = makeFilterSetter("interventionFilter");
-    const searchText = viewFilters.searchText;
-    const setSearchText = makeFilterSetter("searchText");
-    const beneficiaryCoverageFilter = viewFilters.beneficiaryCoverageFilter;
-    const setBeneficiaryCoverageFilter = makeFilterSetter("beneficiaryCoverageFilter");
-    const groupSearchText = viewFilters.groupSearchText;
-    const setGroupSearchText = makeFilterSetter("groupSearchText");
-    const groupProgressFilter = viewFilters.groupProgressFilter;
-    const setGroupProgressFilter = makeFilterSetter("groupProgressFilter");
+    const [beneficiaryCoverageFilter, setBeneficiaryCoverageFilter] = useState<
+        "all" | "needs-assignment" | "open" | "completed"
+    >("all");
+    const [groupSearchText, setGroupSearchText] = useState("");
+    const [groupProgressFilter, setGroupProgressFilter] = useState<
+        "all" | "active" | "completed"
+    >("all");
+    const [rangeStatusFilter, setRangeStatusFilter] = useState<string>("all");
+    const [demandSearchText, setDemandSearchText] = useState("");
+    const [demandCoverageFilter, setDemandCoverageFilter] = useState<
+        "all" | "needs-allocation" | "open" | "completed"
+    >("all");
 
     const [assignmentForm] = Form.useForm();
     const [addToGroupForm] = Form.useForm();
@@ -1608,8 +1605,8 @@ export const InterventionsAssignments: React.FC = () => {
     const [reassigningAssignment, setReassigningAssignment] =
         useState<Assignment | null>(null);
     const [selectedGroup, setSelectedGroup] = useState<any | null>(null);
-    const groupMembersModalVisible = activeModal === "groupMembers";
-    const setGroupMembersModalVisible = makeModalSetter("groupMembers");
+    const [groupMembersModalVisible, setGroupMembersModalVisible] =
+        useState(false);
     const [groupDeliverySummary, setGroupDeliverySummary] = useState({
         loading: false,
         sessionsHeld: 0,
@@ -1617,14 +1614,9 @@ export const InterventionsAssignments: React.FC = () => {
         attendanceCount: 0,
         attendancePossible: 0,
     });
-    const addToGroupModalVisible = activeModal === "addToGroup";
-    const setAddToGroupModalVisible = makeModalSetter("addToGroup");
-    const convertSinglesModalVisible = activeModal === "convertSingles";
-    const setConvertSinglesModalVisible = makeModalSetter("convertSingles");
-    const statusesModalVisible = activeModal === "statuses";
-    const setStatusesModalVisible = makeModalSetter("statuses");
-    const demandModalVisible = activeModal === "demand";
-    const setDemandModalVisible = makeModalSetter("demand");
+    const [addToGroupModalVisible, setAddToGroupModalVisible] = useState(false);
+    const [convertSinglesModalVisible, setConvertSinglesModalVisible] =
+        useState(false);
     const [groupActionLoading, setGroupActionLoading] = useState(false);
 
     const [userDepartment, setUserDepartment] = useState<any>(null);
@@ -1815,25 +1807,18 @@ export const InterventionsAssignments: React.FC = () => {
             if (!missing.length) return;
 
             const out: Record<string, any> = {};
-            const chunks: string[][] = [];
             for (let i = 0; i < missing.length; i += 10) {
-                chunks.push(missing.slice(i, i + 10));
-            }
-            const snapshots = await Promise.all(
-                chunks.map((chunk) =>
-                    getDocs(
-                        query(
-                            collection(db, "interventions"),
-                            where(documentId(), "in", chunk)
-                        )
+                const chunk = missing.slice(i, i + 10);
+                const snap = await getDocs(
+                    query(
+                        collection(db, "interventions"),
+                        where(documentId(), "in", chunk)
                     )
-                )
-            );
-            snapshots.forEach((snap) => {
+                );
                 snap.docs.forEach((d) => {
                     out[d.id] = { id: d.id, ...(d.data() as any) };
                 });
-            });
+            }
 
             setIvDefsById((prev) => ({ ...prev, ...out }));
         };
@@ -2000,36 +1985,26 @@ export const InterventionsAssignments: React.FC = () => {
             const groupKeys = Array.from(new Set(
                 Object.values(expectedGroupKeyByAssignmentId).filter(Boolean)
             ));
-            const groupKeyChunks: string[][] = [];
             for (let index = 0; index < groupKeys.length; index += 10) {
-                groupKeyChunks.push(groupKeys.slice(index, index + 10));
-            }
-            const groupKeySnapshots = await Promise.all(
-                groupKeyChunks.map((keys) => getDocs(query(
+                const keys = groupKeys.slice(index, index + 10);
+                const snapshot = await getDocs(query(
                     collection(db, 'appointments'),
                     where('groupKey', 'in', keys)
-                )))
-            );
-            groupKeySnapshots.forEach(snapshot => {
+                ));
                 snapshot.docs.forEach(item => applyAppointmentResponse(item.data() as any));
-            });
+            }
 
             // Singular interventions do not have a group key, so retain the
             // direct assignment lookup for those records only.
             const singularAssignmentIds = assignmentIds.filter(id => !expectedGroupKeyByAssignmentId[id]);
-            const singularIdChunks: string[][] = [];
             for (let index = 0; index < singularAssignmentIds.length; index += 10) {
-                singularIdChunks.push(singularAssignmentIds.slice(index, index + 10));
-            }
-            const singularSnapshots = await Promise.all(
-                singularIdChunks.map((ids) => getDocs(query(
+                const ids = singularAssignmentIds.slice(index, index + 10);
+                const snapshot = await getDocs(query(
                     collection(db, 'appointments'),
                     where('assignedInterventionId', 'in', ids)
-                )))
-            );
-            singularSnapshots.forEach(snapshot => {
+                ));
                 snapshot.docs.forEach(item => applyAppointmentResponse(item.data() as any));
-            });
+            }
             if (!cancelled) setAppointmentResponseByAssignmentId(state);
         })().catch(error => console.error('Failed to resolve appointment response state:', error));
         return () => { cancelled = true; };
@@ -2124,12 +2099,39 @@ export const InterventionsAssignments: React.FC = () => {
                     });
 
                 const monitoringRequiredInterventions = dedupeInterventions(
-                    departmentInterventions.filter((iv: any) => iv.compulsory === true).map((iv: any) =>
-                        normalizeInterventionDef(iv, deptId, deptName, false)
-                    )
+                    departmentInterventions.filter((iv: any) => iv.compulsory === true).map((iv: any) => ({
+                        id: String(iv?.id || ""),
+                        interventionTitle:
+                            iv?.title || iv?.interventionTitle || iv?.name || "Untitled",
+                        areaOfSupport: iv?.areaOfSupport || iv?.area || deptName,
+                        departmentId: iv?.departmentId || deptId || null,
+                        hasSubInterventions: !!iv?.hasSubInterventions,
+                        subInterventions: getActiveSubInterventions(iv),
+                        definitionVersion: Math.max(1, Number(iv?.definitionVersion || 1)),
+                        assignmentMode:
+                            iv?.assignmentMode ||
+                            iv?.interventionMode ||
+                            iv?.deliveryScheduleType ||
+                            null,
+                        recurring: iv?.recurring ?? false,
+                        recurrencePreset: iv?.recurrencePreset ?? null,
+                        recurrence: iv?.recurrence ?? null,
+                        recurrenceStrict: iv?.recurrenceStrict ?? null,
+                        frequency: iv?.frequency ?? null,
+                        defaultPlannedSessions: Math.max(
+                            1,
+                            Number(iv?.defaultPlannedSessions) || 1
+                        ),
+                        subInterventionRotationMode:
+                            iv?.subInterventionRotationMode === "repeat"
+                                ? "repeat"
+                                : "rotate",
+                    }))
                 );
 
+                // Repair existing plans and cover SMEs accepted after the definition was saved.
                 for (const app of apps) {
+                    if (cancelled) return;
                     const pid = String(app.participantId || "");
                     if (!pid) continue;
                     dpMap[pid] = await ensureCompulsoryPlan(app, departmentInterventions, dpMap[pid]);
@@ -2158,15 +2160,43 @@ export const InterventionsAssignments: React.FC = () => {
                         ? monitoringRequiredInterventions
                         : eligiblePlanInterventions(dpInterventions, departmentInterventions,
                             hasBothConfirmationsForDept(dp, deptId, deptName)).filter((iv: any) => {
-                                if (deptId && iv?.departmentId)
-                                    return String(iv.departmentId) === deptId;
-                                return ciEq(iv?.area || iv?.areaOfSupport, deptName);
-                            });
+                            if (deptId && iv?.departmentId)
+                                return String(iv.departmentId) === deptId;
+                            return ciEq(iv?.area || iv?.areaOfSupport, deptName);
+                        });
 
                     const requiredForDept = dedupeInterventions(
-                        requiredForDeptRaw.map((iv: any) =>
-                            normalizeInterventionDef(iv, deptId, deptName, true)
-                        )
+                        requiredForDeptRaw.map((iv: any) => ({
+                            id: String(iv?.id || ""),
+                            interventionTitle:
+                                iv?.title || iv?.interventionTitle || iv?.name || "Untitled",
+                            areaOfSupport: iv?.area || iv?.areaOfSupport || deptName,
+                            departmentId: iv?.departmentId || deptId || null,
+                            hasSubInterventions: !!iv?.hasSubInterventions,
+                            subInterventions: getActiveSubInterventions(iv),
+                            definitionVersion: Math.max(
+                                1,
+                                Number(iv?.definitionVersion || 1)
+                            ),
+                            assignmentMode:
+                                iv?.assignmentMode ||
+                                iv?.interventionMode ||
+                                iv?.deliveryScheduleType ||
+                                null,
+                            recurring: iv?.recurring ?? false,
+                            recurrencePreset: iv?.recurrencePreset ?? null,
+                            recurrence: iv?.recurrence ?? null,
+                            recurrenceStrict: iv?.recurrenceStrict ?? null,
+                            frequency: iv?.frequency ?? null,
+                            defaultPlannedSessions: Math.max(
+                                1,
+                                Number(iv?.defaultPlannedSessions) || 1
+                            ),
+                            subInterventionRotationMode:
+                                iv?.subInterventionRotationMode === "repeat"
+                                    ? "repeat"
+                                    : "rotate",
+                        }))
                     );
 
                     return {
@@ -2539,6 +2569,64 @@ export const InterventionsAssignments: React.FC = () => {
             });
     }, [assignments, baseParticipants, appointmentResponseByAssignmentId, groupDeliveries]);
 
+    const assignmentDate = (a: any) =>
+        a.createdAt?.toDate?.() ||
+        a.assignedAt?.toDate?.() ||
+        a.updatedAt?.toDate?.() ||
+        a.dueDate?.toDate?.() ||
+        null;
+
+    const rangeAssignments = useMemo(() => {
+        const [start, end] = dateRange;
+
+        return visibleAssignments.filter((a: any) => {
+            const d = assignmentDate(a);
+            if (!d) return false;
+
+            return (
+                dayjs(d).isAfter(start.startOf("day").subtract(1, "millisecond")) &&
+                dayjs(d).isBefore(end.endOf("day").add(1, "millisecond"))
+            );
+        });
+    }, [visibleAssignments, dateRange]);
+
+    const rangeStatusRows = useMemo(() => {
+        const map = new Map<string, any>();
+
+        rangeAssignments.forEach((a: any) => {
+            const s = getCompositeStatus(a);
+            const key = s.label;
+
+            const existing = map.get(key) || {
+                status: s.label,
+                color: s.color,
+                count: 0,
+            };
+
+            existing.count += 1;
+            map.set(key, existing);
+        });
+
+        return Array.from(map.values());
+    }, [rangeAssignments]);
+
+    const filteredRangeStatusRows = useMemo(() => {
+        if (rangeStatusFilter === "all") return rangeStatusRows;
+        return rangeStatusRows.filter(
+            (row: any) => String(row.status) === rangeStatusFilter
+        );
+    }, [rangeStatusRows, rangeStatusFilter]);
+
+    const rangeStatusOptions = useMemo(
+        () => [
+            { label: "All Statuses", value: "all" },
+            ...rangeStatusRows.map((row: any) => ({
+                label: row.status,
+                value: row.status,
+            })),
+        ],
+        [rangeStatusRows]
+    );
 
     const getEffectiveCycleKey = (a: any, recurrence: Recurrence | null) => {
         const assigned =
@@ -2623,6 +2711,73 @@ export const InterventionsAssignments: React.FC = () => {
         };
     };
 
+    const interventionDemandRows = useMemo(() => {
+        const map = new Map<string, any>();
+
+        baseParticipants.forEach((p: any) => {
+            (p.requiredInterventions || []).forEach((iv: any) => {
+                const key = String(iv.id);
+                const audit = getAssignmentAudit(String(p.id), key);
+
+                const row = map.get(key) || {
+                    interventionId: key,
+                    interventionTitle: iv.interventionTitle || iv.title || "Untitled",
+                    needed: 0,
+                    assigned: 0,
+                    completed: 0,
+                    unassigned: 0,
+                    openStatuses: {} as Record<string, number>,
+                };
+
+                row.needed += 1;
+                if (audit.totalAssignments > 0) row.assigned += 1;
+                if (audit.totalAssignments === 0) {
+                    row.unassigned += 1;
+                } else if (audit.currentStatus.label === "Completed") {
+                    row.completed += 1;
+                } else {
+                    const status = audit.currentStatus.label || "Open";
+                    row.openStatuses[status] = (row.openStatuses[status] || 0) + 1;
+                }
+
+                map.set(key, row);
+            });
+        });
+
+        return Array.from(map.values()).map((row) => ({
+            ...row,
+            completionRate: row.needed
+                ? Math.round((row.completed / row.needed) * 100)
+                : 0,
+            openStatusSummary: Object.entries(row.openStatuses).map(
+                ([status, count]) => ({ status, count })
+            ),
+        }));
+    }, [baseParticipants, assignments]);
+
+    const filteredInterventionDemandRows = useMemo(() => {
+        const term = norm(demandSearchText);
+
+        return interventionDemandRows.filter((row: any) => {
+            const matchesSearch =
+                !term || norm(row.interventionTitle).includes(term);
+
+            const matchesCoverage =
+                demandCoverageFilter === "all"
+                    ? true
+                    : demandCoverageFilter === "needs-allocation"
+                        ? Number(row.unassigned || 0) > 0
+                        : demandCoverageFilter === "open"
+                            ? Number(row.assigned || 0) > Number(row.completed || 0)
+                            : Number(row.completionRate || 0) >= 100;
+
+            return matchesSearch && matchesCoverage;
+        });
+    }, [
+        interventionDemandRows,
+        demandSearchText,
+        demandCoverageFilter,
+    ]);
 
     const getParticipantCoverage = (pid: string) => {
         const requiredIds = Array.from(
@@ -2743,7 +2898,7 @@ export const InterventionsAssignments: React.FC = () => {
         return metaFromDef;
     };
 
-    const getFilteredInterventions = (filter = interventionFilter) => {
+    const getFilteredInterventions = () => {
         if (!selectedParticipant) return [];
 
         const participantId = String((selectedParticipant as any).id);
@@ -2909,14 +3064,10 @@ export const InterventionsAssignments: React.FC = () => {
             };
         });
 
-        if (filter === "assigned")
+        if (interventionFilter === "assigned")
             return rows.filter((r: any) => !r.isUnassigned);
-        if (filter === "unassigned")
+        if (interventionFilter === "unassigned")
             return rows.filter((r: any) => r.isUnassigned);
-        if (filter === "completed")
-            return rows.filter((r: any) => !r.isUnassigned && r.currentStatus?.label === "Completed");
-        if (filter === "open")
-            return rows.filter((r: any) => !r.isUnassigned && r.currentStatus?.label !== "Completed");
         return rows;
     };
 
@@ -3089,41 +3240,6 @@ export const InterventionsAssignments: React.FC = () => {
             const selfAssigneeRole: AssigneeRole =
                 assigneeRole === "operations" ? "operations" : "coordinator";
 
-            // Resolves who the assignment goes to for either the reassign or the
-            // new-assignment path below - both used to duplicate this lookup with
-            // only their coordinator-missing error message differing.
-            const resolveAssignee = (coordinatorErrorMessage: string) => {
-                if (assignTo === "coordinator") {
-                    const c = coordinators.find((c) => c.id === values.coordinator);
-                    if (!c) {
-                        message.error(coordinatorErrorMessage);
-                        return null;
-                    }
-                    return {
-                        id: c.id,
-                        name: c.name,
-                        email: String(c.email || "").trim().toLowerCase(),
-                    };
-                }
-                if (assignTo === "hod") {
-                    const h = hodList.find((h) => h.id === values.hodId);
-                    if (!h) {
-                        message.error("Please select an HOD");
-                        return null;
-                    }
-                    return {
-                        id: h.id,
-                        name: h.name,
-                        email: String(h.email || "").trim().toLowerCase(),
-                    };
-                }
-                return {
-                    id: selfId,
-                    name: selfName,
-                    email: String(user?.email || "").trim().toLowerCase(),
-                };
-            };
-
             // Progress is now purely automatic: planned vs. held sessions.
             // No target mode to choose - see shared/appointments coverage save.
             const plannedSessions = Math.max(1, Number(values.plannedSessions) || 1);
@@ -3162,8 +3278,11 @@ export const InterventionsAssignments: React.FC = () => {
 
                 const dp = dpByPid[String(pid)];
                 const selectedInterventionId = String(reassigningAssignment?.interventionId || values.intervention || "");
-                return !!dp && (hasBothConfirmationsForDept(dp, deptId, deptName) ||
-                    isCompulsoryIntervention({ id: selectedInterventionId }, Object.values(ivDefsById)));
+                const requiredForParticipant = participants.find(p => String(p.id) === String(pid))?.requiredInterventions || [];
+                const compulsoryRequirement = requiredForParticipant.some((iv: any) =>
+                    String(iv.id) === selectedInterventionId &&
+                    isCompulsoryIntervention(iv, Object.values(ivDefsById)));
+                return !!dp && (hasBothConfirmationsForDept(dp, deptId, deptName) || compulsoryRequirement);
             };
 
             for (const pid of selectedIds) {
@@ -3176,11 +3295,38 @@ export const InterventionsAssignments: React.FC = () => {
             }
 
             if (reassigningAssignment) {
-                const resolved = resolveAssignee("Please select a facilitator");
-                if (!resolved) return;
-                const finalAssigneeId = resolved.id;
-                const finalAssigneeName = resolved.name;
-                const finalAssigneeEmail = resolved.email;
+                let finalAssigneeId = selfId;
+                let finalAssigneeName = selfName;
+                let finalAssigneeEmail = String(user?.email || "")
+                    .trim()
+                    .toLowerCase();
+                if (assignTo === "coordinator") {
+                    const c = coordinators.find((c) => c.id === values.coordinator);
+
+                    if (!c) {
+                        message.error("Please select a facilitator");
+                        return;
+                    }
+
+                    finalAssigneeId = c.id;
+                    finalAssigneeName = c.name;
+                    finalAssigneeEmail = String(c.email || "")
+                        .trim()
+                        .toLowerCase();
+                } else if (assignTo === "hod") {
+                    const h = hodList.find((h) => h.id === values.hodId);
+
+                    if (!h) {
+                        message.error("Please select an HOD");
+                        return;
+                    }
+
+                    finalAssigneeId = h.id;
+                    finalAssigneeName = h.name;
+                    finalAssigneeEmail = String(h.email || "")
+                        .trim()
+                        .toLowerCase();
+                }
 
                 const prev: any = reassigningAssignment;
                 const nextPlannedSessions = prev.plannedSessions ?? plannedSessions;
@@ -3292,11 +3438,34 @@ export const InterventionsAssignments: React.FC = () => {
                 return;
             }
 
-            const resolvedNewAssignee = resolveAssignee("Please select a coordinator");
-            if (!resolvedNewAssignee) return;
-            const finalAssigneeId = resolvedNewAssignee.id;
-            const finalAssigneeName = resolvedNewAssignee.name;
-            const finalAssigneeEmail = resolvedNewAssignee.email;
+            let finalAssigneeId = selfId;
+            let finalAssigneeName = selfName;
+            let finalAssigneeEmail = String(user?.email || "")
+                .trim()
+                .toLowerCase();
+            if (assignTo === "coordinator") {
+                const c = coordinators.find((c) => c.id === values.coordinator);
+                if (!c) {
+                    message.error("Please select a coordinator");
+                    return;
+                }
+                finalAssigneeId = c.id;
+                finalAssigneeName = c.name;
+                finalAssigneeEmail = String(c.email || "")
+                    .trim()
+                    .toLowerCase();
+            } else if (assignTo === "hod") {
+                const h = hodList.find((h) => h.id === values.hodId);
+                if (!h) {
+                    message.error("Please select an HOD");
+                    return;
+                }
+                finalAssigneeId = h.id;
+                finalAssigneeName = h.name;
+                finalAssigneeEmail = String(h.email || "")
+                    .trim()
+                    .toLowerCase();
+            }
 
             const newAssigneeRole: AssigneeRole =
                 assignTo === "self"
@@ -4993,50 +5162,55 @@ export const InterventionsAssignments: React.FC = () => {
 
     const progressCards = [
         {
-            title: "Total SMEs",
+            title: "Total Beneficiaries",
             value: `${activeSmeCount}`,
-            icon: <PayCircleOutlined style={{ fontSize: 18, color: METRIC_ACCENT.purple.color }} />,
-            iconBg: METRIC_ACCENT.purple.bg,
+            icon: <PayCircleOutlined style={{ fontSize: 18, color: "#722ed1" }} />,
+            iconBg: "rgba(114,46,209,.12)",
             subtitle: "Confirmed SMEs currently available.",
         },
         {
             title: "Assigned / Required",
             value: `${totalAssigned} / ${totalRequired}`,
-            icon: <CheckCircleOutlined style={{ fontSize: 18, color: METRIC_ACCENT.blue.color }} />,
-            iconBg: METRIC_ACCENT.blue.bg,
+            icon: <CheckCircleOutlined style={{ fontSize: 18, color: "#1890ff" }} />,
+            iconBg: "rgba(24,144,255,.12)",
             subtitle: "Allocated against total required.",
         },
         {
             title: "Completed / Assigned",
             value: `${totalCompleted} / ${totalAssigned}`,
-            icon: <CalendarOutlined style={{ fontSize: 18, color: METRIC_ACCENT.green.color }} />,
-            iconBg: METRIC_ACCENT.green.bg,
+            icon: <CalendarOutlined style={{ fontSize: 18, color: "#52c41a" }} />,
+            iconBg: "rgba(82,196,26,.12)",
             subtitle: "Completed out of assigned.",
         },
         {
             title: "Completion Rate",
             value: `${completionRate}%`,
-            icon: <CommentOutlined style={{ fontSize: 18, color: METRIC_ACCENT.orange.color }} />,
-            iconBg: METRIC_ACCENT.orange.bg,
+            icon: <CommentOutlined style={{ fontSize: 18, color: "#faad14" }} />,
+            iconBg: "rgba(250,173,20,.12)",
             subtitle: (
                 <div>
                     <div>Overall completion.</div>
                 </div>
             ),
         },
+        // {
+        //     title: 'Needs Reassignment',
+        //     value: `${needsReassignCount}`,
+        //     icon: <CommentOutlined style={{ fontSize: 18, color: '#eb2f96' }} />,
+        //     iconBg: 'rgba(235,47,150,.12)',
+        //     subtitle: 'Items requiring a new allocation.'
+        // }
     ];
 
-    // Metrics and filters use the same current-cycle rows as the Manage table.
-    const manageRows = getFilteredInterventions("all");
-    const manageMetrics = [
-        { key: "all" as const, title: "Required", value: manageRows.length, icon: <PayCircleOutlined />, accent: METRIC_ACCENT.purple },
-        { key: "assigned" as const, title: "Assigned", value: manageRows.filter(r => !r.isUnassigned).length, icon: <CheckCircleOutlined />, accent: METRIC_ACCENT.blue },
-        { key: "completed" as const, title: "Completed", value: manageRows.filter(r => !r.isUnassigned && r.currentStatus?.label === "Completed").length, icon: <CalendarOutlined />, accent: METRIC_ACCENT.green },
-        { key: "open" as const, title: "Open", value: manageRows.filter(r => !r.isUnassigned && r.currentStatus?.label !== "Completed").length, icon: <CommentOutlined />, accent: METRIC_ACCENT.orange },
-        { key: "unassigned" as const, title: "Unassigned", value: manageRows.filter(r => r.isUnassigned).length, icon: <UserAddOutlined />, accent: METRIC_ACCENT.purple },
-    ].filter(metric => metric.value > 0);
-    const activeManageFilter = manageMetrics.length > 1 && manageMetrics.some(metric => metric.key === interventionFilter)
-        ? interventionFilter : "all";
+    const selectedParticipantCoverage = selectedParticipant
+        ? getParticipantCoverage(String((selectedParticipant as any).id))
+        : {
+            required: 0,
+            assigned: 0,
+            completed: 0,
+            currentOpen: 0,
+            grouped: 0,
+        };
 
     const participantColumns = useMemo(() => {
         const cols: any[] = [
@@ -5225,23 +5399,66 @@ export const InterventionsAssignments: React.FC = () => {
         },
     ];
 
+    const resetViewFilters = () => {
+        if (viewMode === "beneficiaries") {
+            setSearchText("");
+            setBeneficiaryCoverageFilter("all");
+            return;
+        }
+
+        if (viewMode === "groups") {
+            setGroupSearchText("");
+            setGroupProgressFilter("all");
+            return;
+        }
+
+        if (viewMode === "range") {
+            setDateRange([
+                dayjs().startOf("month"),
+                dayjs().endOf("month"),
+            ]);
+            setRangeStatusFilter("all");
+            return;
+        }
+
+        if (viewMode === "demand") {
+            setDemandSearchText("");
+            setDemandCoverageFilter("all");
+        }
+    };
+
     const assignmentFilterBar = (
         <Row
             data-guide="assignment-filters"
-            gutter={12}
+            gutter={[12, 12]}
             align="middle"
-            wrap={false}
-            style={{
-                width: "100%",
-                margin: 0,
-            }}
+            style={{ width: "100%", margin: 0 }}
         >
-            {/* BENEFICIARIES */}
+            <Col span={24} data-guide="assignment-views">
+                <Segmented
+                    block
+                    value={viewMode}
+                    onChange={(value) => setViewMode(value as any)}
+                    options={[
+                        { label: "Beneficiaries", value: "beneficiaries" },
+                        ...(hasGroupedInterventions ? [{
+                            label: (
+                                <span data-guide="grouped-view-option">
+                                    Grouped Interventions
+                                </span>
+                            ),
+                            value: "groups",
+                        }] : []),
+                        { label: "Assignment Statuses", value: "range" },
+                        { label: "Intervention Demand", value: "demand" },
+                    ]}
+                />
+            </Col>
             {viewMode === "beneficiaries" && (
                 <>
-                    <Col flex="1 1 360px" style={{ minWidth: 0 }}>
+                    <Col xs={24} md={8}>
                         <Input.Search
-                            placeholder="Search SME..."
+                            placeholder="Search beneficiary..."
                             allowClear
                             value={searchText}
                             onChange={(event) => setSearchText(event.target.value)}
@@ -5249,13 +5466,13 @@ export const InterventionsAssignments: React.FC = () => {
                         />
                     </Col>
 
-                    <Col flex="0 1 220px" style={{ minWidth: 170 }}>
+                    <Col xs={24} md={6}>
                         <Select
                             value={beneficiaryCoverageFilter}
                             onChange={setBeneficiaryCoverageFilter}
                             style={{ width: "100%" }}
                             options={[
-                                { label: "All SMEs", value: "all" },
+                                { label: "All Beneficiaries", value: "all" },
                                 {
                                     label: "Needs Assignment",
                                     value: "needs-assignment",
@@ -5268,10 +5485,9 @@ export const InterventionsAssignments: React.FC = () => {
                 </>
             )}
 
-            {/* GROUPS */}
             {viewMode === "groups" && (
                 <>
-                    <Col flex="1 1 320px" style={{ minWidth: 0 }}>
+                    <Col xs={24} md={8}>
                         <Input.Search
                             placeholder="Search intervention, facilitator or cycle..."
                             allowClear
@@ -5281,7 +5497,7 @@ export const InterventionsAssignments: React.FC = () => {
                         />
                     </Col>
 
-                    <Col flex="0 1 180px" style={{ minWidth: 150 }}>
+                    <Col xs={24} md={6}>
                         <Select
                             value={groupProgressFilter}
                             onChange={setGroupProgressFilter}
@@ -5296,57 +5512,103 @@ export const InterventionsAssignments: React.FC = () => {
                 </>
             )}
 
-            {/* ACTIONS */}
-            <Col flex="none">
-                <div
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "flex-end",
-                        gap: 8,
-                        whiteSpace: "nowrap",
-                    }}
-                >
-                    {viewMode === "groups" && (
-                        <Button
-                            type="primary"
-                            shape="round"
-                            icon={<TeamOutlined />}
-                            onClick={() => {
-                                convertSinglesForm.resetFields();
-                                setConvertSinglesModalVisible(true);
+            {viewMode === "range" && (
+                <>
+                    <Col xs={24} md={8}>
+                        <DatePicker.RangePicker
+                            value={dateRange}
+                            onChange={(value) => {
+                                if (!value?.[0] || !value?.[1]) return;
+                                setDateRange([value[0], value[1]]);
                             }}
-                            disabled={!singleAssignmentGroupOptions.length}
-                            style={{
-                                minWidth: 190,
-                            }}
-                        >
-                            Create Group from Singles
-                        </Button>
-                    )}
+                            style={{ width: "100%" }}
+                            allowClear={false}
+                        />
+                    </Col>
 
-                    <Tooltip
-                        title={
-                            totalRequired === 0
-                                ? "No required interventions for this department."
-                                : undefined
-                        }
-                    >
+                    <Col xs={24} md={6}>
+                        <Select
+                            value={rangeStatusFilter}
+                            onChange={setRangeStatusFilter}
+                            style={{ width: "100%" }}
+                            options={rangeStatusOptions}
+                        />
+                    </Col>
+                </>
+            )}
+
+            {viewMode === "demand" && (
+                <>
+                    <Col xs={24} md={8}>
+                        <Input.Search
+                            placeholder="Search intervention..."
+                            allowClear
+                            value={demandSearchText}
+                            onChange={(event) => setDemandSearchText(event.target.value)}
+                            style={{ width: "100%" }}
+                        />
+                    </Col>
+
+                    <Col xs={24} md={6}>
+                        <Select
+                            value={demandCoverageFilter}
+                            onChange={setDemandCoverageFilter}
+                            style={{ width: "100%" }}
+                            options={[
+                                { label: "All Interventions", value: "all" },
+                                {
+                                    label: "Needs Allocation",
+                                    value: "needs-allocation",
+                                },
+                                { label: "Has Open Work", value: "open" },
+                                { label: "Fully Completed", value: "completed" },
+                            ]}
+                        />
+                    </Col>
+                </>
+            )}
+
+            <Col xs={24} md={10}>
+                <Row
+                    gutter={[8, 8]}
+                    justify={screens.md ? "end" : "start"}
+                >
+                    <Col xs={24} sm={8}>
                         <Button
-                            data-guide="assign-new-intervention"
-                            type="primary"
-                            style={{
-                                ...roundBtn,
-                                minWidth: 205,
-                            }}
-                            icon={<CheckCircleOutlined />}
-                            onClick={openAssignNew}
-                            disabled={totalRequired === 0}
+                            block
+                            onClick={resetViewFilters}
+                            icon={<ReloadOutlined />}
+                            style={{ border: "1px solid orange" }}
+                            shape="round"
+                            color="orange"
+                            variant="filled"
                         >
-                            Assign New Intervention
+                            Reset
                         </Button>
-                    </Tooltip>
-                </div>
+                    </Col>
+
+                    <Col xs={24} sm={16}>
+                        <Tooltip
+                            title={
+                                totalRequired === 0
+                                    ? "No required interventions for this department."
+                                    : undefined
+                            }
+                        >
+                            <Button
+                                data-guide="assign-new-intervention"
+                                block
+                                type="primary"
+                                style={roundBtn}
+                                icon={<CheckCircleOutlined />}
+                                onClick={openAssignNew}
+                                disabled={totalRequired === 0}
+                            >
+                                Assign New Intervention
+                            </Button>
+                        </Tooltip>
+                    </Col>
+                </Row>
             </Col>
         </Row>
     );
@@ -5356,6 +5618,9 @@ export const InterventionsAssignments: React.FC = () => {
     return (
         <div
             style={{
+                // Fills the height the shell's Content gives us instead of
+                // forcing a full viewport on top of the header, which pushed the
+                // page down and left it stuck against the bottom.
                 padding: isMobile ? "5px 12px" : "6px 24px",
                 flex: 1,
                 minHeight: 0,
@@ -5388,57 +5653,25 @@ export const InterventionsAssignments: React.FC = () => {
                 ))}
             </Row>
 
-            <DashboardFilterBar marginBottom={16}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
-                    <Row
-                        gutter={[12, 8]}
-                        align="middle"
-                        justify="space-between"
-                        wrap
-                        style={{ width: "100%" }}
-                        data-guide="assignment-views"
-                    >
-                        <Col flex="1 1 320px">
-                            <Segmented
-                                block
-                                value={viewMode}
-                                onChange={(value) => setViewMode(value as any)}
-                                options={[
-                                    { label: "SMEs", value: "beneficiaries" },
-                                    ...(hasGroupedInterventions ? [{
-                                        label: (
-                                            <span data-guide="grouped-view-option">
-                                                Grouped Interventions
-                                            </span>
-                                        ),
-                                        value: "groups",
-                                    }] : []),
-                                ]}
-                            />
-                        </Col>
-                        <Col flex="0 0 auto">
-                            <Space wrap>
-                                <Button
-                                    icon={<BarChartOutlined />}
-                                    onClick={() => setStatusesModalVisible(true)}
-                                >
-                                    Assignment Statuses
-                                </Button>
-                                <Button
-                                    icon={<PieChartOutlined />}
-                                    onClick={() => setDemandModalVisible(true)}
-                                >
-                                    Intervention Demand
-                                </Button>
-                            </Space>
-                        </Col>
-                    </Row>
-                </div>
-            </DashboardFilterBar>
-
-            <MotionCard loading={loading} filterBar={assignmentFilterBar}>
+            <MotionCard
+                loading={loading}
+                filterBar={assignmentFilterBar}
+            >
                 {viewMode === "groups" ? (
                     <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                        <Button
+                            type="primary"
+                            shape="round"
+                            icon={<TeamOutlined />}
+                            onClick={() => {
+                                convertSinglesForm.resetFields();
+                                setConvertSinglesModalVisible(true);
+                            }}
+                            disabled={!singleAssignmentGroupOptions.length}
+                        >
+                            Create Group from Singles
+                        </Button>
+
                         <div data-guide="grouped-interventions-table">
                             <Table
                                 rowKey="groupKey"
@@ -5454,6 +5687,178 @@ export const InterventionsAssignments: React.FC = () => {
                             />
                         </div>
                     </Space>
+                ) : viewMode === "range" ? (
+                    <Table
+                        rowKey="status"
+                        dataSource={filteredRangeStatusRows}
+                        pagination={false}
+                        expandable={{
+                            expandedRowRender: (statusRow: any) => {
+                                const rows = rangeAssignments
+                                    .filter(
+                                        (a: any) => getCompositeStatus(a).label === statusRow.status
+                                    )
+                                    .map((a: any) => ({
+                                        id: a.id,
+                                        beneficiaryName: a.beneficiaryName || a.participantName || a.smeName || "—",
+                                        interventionTitle: a.interventionTitle || "Untitled",
+                                        facilitator: a.assigneeName || "—",
+                                        type: isGroupedAssignmentRecord(a) ? "Grouped" : "Single",
+                                        progress:
+                                            Number(a.groupDelivery?.progress || 0) || typeof a.computedProgress === "number"
+                                                ? Math.round(Number(a.groupDelivery?.progress || 0) || a.computedProgress || 0)
+                                                : getCompositeStatus(a).label === "Completed"
+                                                    ? 100
+                                                    : 0,
+                                        assignedDate:
+                                            a.createdAt?.toDate?.() ||
+                                            a.assignedAt?.toDate?.() ||
+                                            null,
+
+                                        deliveryDate:
+                                            a.groupDelivery?.completedAt?.toDate?.() ||
+                                            a.completedAt?.toDate?.() ||
+                                            null,
+
+                                        completedDate:
+                                            a.completionConfirmedAt?.toDate?.() ||
+                                            (getCompositeStatus(a).label === "Completed"
+                                                ? a.completedAt?.toDate?.() || a.updatedAt?.toDate?.()
+                                                : null),
+
+                                        dueDate: a.dueDate?.toDate?.() || null,
+                                        pendingAction: getBottleneck(a).label,
+                                    }));
+
+                                const isCompletedStatus = statusRow.status === "Completed";
+                                const isMovStatus = [
+                                    "Awaiting MOV Confirmation",
+                                    "Completion Rejected",
+                                ].includes(statusRow.status);
+                                const showProgress = ![
+                                    "Ready to Schedule",
+                                    "Awaiting Appointment Response",
+                                    "Appointment Declined",
+                                    "Cancelled",
+                                    "Completed",
+                                    "Awaiting MOV Confirmation",
+                                ].includes(statusRow.status);
+                                const showNextStep = !isCompletedStatus && statusRow.status !== "Cancelled";
+
+                                return (
+                                    <Table
+                                        rowKey="id"
+                                        size="small"
+                                        pagination={false}
+                                        dataSource={rows}
+                                        columns={[
+                                            { title: "SME", dataIndex: "beneficiaryName" },
+                                            { title: "Intervention", dataIndex: "interventionTitle" },
+                                            { title: "Facilitator", dataIndex: "facilitator" },
+                                            {
+                                                title: "Type",
+                                                dataIndex: "type",
+                                                render: (v: string) => (
+                                                    <Tag color={v === "Grouped" ? "purple" : "geekblue"}>
+                                                        {v}
+                                                    </Tag>
+                                                ),
+                                            },
+                                            {
+                                                title: "Progress",
+                                                dataIndex: "progress",
+                                                hidden: !showProgress,
+                                                render: (v: number) => (
+                                                    <Progress percent={v} size="small" />
+                                                ),
+                                            },
+                                            {
+                                                title: "Assigned",
+                                                dataIndex: "assignedDate",
+                                                render: (v: Date | null) => formatDisplayDate(v),
+                                            },
+                                            {
+                                                title: isMovStatus
+                                                    ? "Delivery completed"
+                                                    : isCompletedStatus
+                                                        ? "MOV confirmed"
+                                                        : "Completed",
+                                                dataIndex: "completedDate",
+                                                hidden: !isMovStatus && !isCompletedStatus,
+                                                render: (v: Date | null, record: any) =>
+                                                    formatDisplayDate(isMovStatus ? record.deliveryDate : v),
+                                            },
+                                            {
+                                                title: "Due",
+                                                dataIndex: "dueDate",
+                                                hidden: isCompletedStatus || isMovStatus,
+                                                render: (v: Date | null) => formatDisplayDate(v),
+                                            },
+                                            {
+                                                title: "Next step",
+                                                dataIndex: "pendingAction",
+                                                hidden: !showNextStep,
+                                                render: (v: string) =>
+                                                    v && v !== "—" ? <Tag color="red">{v}</Tag> : "—",
+                                            },
+                                        ]}
+                                    />
+                                );
+                            },
+                        }}
+                        columns={[
+                            {
+                                title: "Status",
+                                dataIndex: "status",
+                                render: (_: any, r: any) => (
+                                    <Tag color={r.color}>{r.status}</Tag>
+                                ),
+                            },
+                            {
+                                title: "Assignments in Selected Range",
+                                dataIndex: "count",
+                            },
+                        ]}
+                    />
+                ) : viewMode === "demand" ? (
+                    <Table
+                        rowKey="interventionId"
+                        dataSource={filteredInterventionDemandRows}
+                        pagination={{ pageSize: 4, position: ["bottomCenter"], showSizeChanger: false }}
+                        columns={[
+                            { title: "Intervention", dataIndex: "interventionTitle" },
+                            { title: "Need It", dataIndex: "needed" },
+                            { title: "Received / Assigned", dataIndex: "assigned" },
+                            { title: "Completed", dataIndex: "completed" },
+                            {
+                                title: "Open status",
+                                dataIndex: "openStatusSummary",
+                                render: (statuses: Array<{ status: string; count: number }>) =>
+                                    statuses?.length ? (
+                                        <Space size={[4, 4]} wrap>
+                                            {statuses.map(({ status, count }) => {
+                                                const meta = getCompositeStatus({
+                                                    assignmentStatus: status,
+                                                });
+                                                return (
+                                                    <Tag key={status} color={meta.color}>
+                                                        {status}: {count}
+                                                    </Tag>
+                                                );
+                                            })}
+                                        </Space>
+                                    ) : (
+                                        "—"
+                                    ),
+                            },
+                            { title: "Not allocated", dataIndex: "unassigned" },
+                            {
+                                title: "Completion",
+                                dataIndex: "completionRate",
+                                render: (v: number) => <Progress percent={v} size="small" />,
+                            },
+                        ]}
+                    />
                 ) : noData ? (
                     <Result
                         status="info"
@@ -5480,7 +5885,7 @@ export const InterventionsAssignments: React.FC = () => {
                                     style={{
                                         marginBottom: 12,
                                         borderRadius: 14,
-                                        border: `1px solid ${token.colorBorderSecondary}`,
+                                        border: "1px solid #d6e4ff",
                                     }}
                                 >
                                     <Space
@@ -5696,7 +6101,7 @@ export const InterventionsAssignments: React.FC = () => {
                         <Form.Item
                             className="guide-assignment-beneficiary"
                             name="participants"
-                            label="Select Multiple SMEs"
+                            label="Select Multiple Beneficiaries"
                             hidden={lockSource === "manage"}
                             rules={[
                                 {
@@ -6442,32 +6847,78 @@ export const InterventionsAssignments: React.FC = () => {
             >
                 <div
                     data-guide="manage-beneficiary-metrics"
-                    style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns: isMobile
+                            ? "repeat(2, minmax(0, 1fr))"
+                            : "repeat(5, minmax(0, 1fr))",
+                        gap: 10,
+                        marginBottom: 16,
+                    }}
                 >
-                    {manageMetrics.map(metric => (
-                        <div key={metric.key} style={{ flex: isMobile ? "1 1 calc(50% - 10px)" : "1 1 0", minWidth: 0 }}>
-                            <MotionCard.Metric
-                                title={metric.title}
-                                value={metric.value}
-                                icon={<span style={{ color: metric.accent.color }}>{metric.icon}</span>}
-                                iconBg={metric.accent.bg}
-                                onClick={manageMetrics.length > 1 ? () => setInterventionFilter(
-                                    activeManageFilter === metric.key ? "all" : metric.key
-                                ) : undefined}
-                                wrapperStyle={{
-                                    height: "100%",
-                                    outline: manageMetrics.length > 1 && activeManageFilter === metric.key
-                                        ? `2px solid ${metric.accent.color}` : undefined,
-                                }}
-                            />
-                        </div>
+                    {[
+                        {
+                            title: "Required",
+                            value: selectedParticipantCoverage.required,
+                            icon: <PayCircleOutlined style={{ color: "#722ed1" }} />,
+                            iconBg: "rgba(114,46,209,.12)",
+                        },
+                        {
+                            title: "Assigned",
+                            value: selectedParticipantCoverage.assigned,
+                            icon: <CheckCircleOutlined style={{ color: "#1677ff" }} />,
+                            iconBg: "rgba(22,119,255,.12)",
+                        },
+                        {
+                            title: "Completed",
+                            value: selectedParticipantCoverage.completed,
+                            icon: <CalendarOutlined style={{ color: "#52c41a" }} />,
+                            iconBg: "rgba(82,196,26,.12)",
+                        },
+                        {
+                            title: "Open",
+                            value: selectedParticipantCoverage.currentOpen,
+                            icon: <CommentOutlined style={{ color: "#fa8c16" }} />,
+                            iconBg: "rgba(250,140,22,.12)",
+                        },
+                        {
+                            title: "Grouped",
+                            value: selectedParticipantCoverage.grouped,
+                            icon: <TeamOutlined style={{ color: "#722ed1" }} />,
+                            iconBg: "rgba(114,46,209,.12)",
+                        },
+                    ].map((metric) => (
+                        <MotionCard.Metric
+                            title={metric.title}
+                            value={metric.value}
+                            icon={metric.icon}
+                            iconBg={metric.iconBg}
+                        />
                     ))}
                 </div>
+
+                <Form
+                    data-guide="manage-beneficiary-filter"
+                    layout={isMobile ? "vertical" : "inline"}
+                    style={{ marginBottom: 16 }}
+                >
+                    <Form.Item label="Filter">
+                        <Select
+                            value={interventionFilter}
+                            onChange={setInterventionFilter}
+                            style={{ width: isMobile ? "100%" : 220 }}
+                        >
+                            <Select.Option value="all">All Interventions</Select.Option>
+                            <Select.Option value="assigned">Assigned</Select.Option>
+                            <Select.Option value="unassigned">Unassigned</Select.Option>
+                        </Select>
+                    </Form.Item>
+                </Form>
 
                 <Table
                     data-guide="manage-beneficiary-table"
                     columns={modalColumns as any}
-                    dataSource={getFilteredInterventions(activeManageFilter) as any}
+                    dataSource={getFilteredInterventions() as any}
                     rowKey="id"
                     expandable={{
                         expandedRowRender: (record: any) => {
@@ -6503,8 +6954,9 @@ export const InterventionsAssignments: React.FC = () => {
                                                 </Paragraph>
                                             )}
 
-                                            <Paragraph style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", overflowX: "auto", maxWidth: "100%" }}>
-                                                <Text strong style={{ flexShrink: 0 }}>Assignment history:</Text>
+                                            <Paragraph>
+                                                <Text strong>Assignment history:</Text>
+                                                <br />
                                                 <Tag>Assignments: {record.totalAssignments || 0}</Tag>
                                                 <Tag color="green">
                                                     Completed: {record.completedCount || 0}
@@ -7062,19 +7514,6 @@ export const InterventionsAssignments: React.FC = () => {
                     <Empty description="No open cycle assignment available." />
                 )}
             </Modal>
-
-            <AssignmentStatusesModal
-                open={statusesModalVisible}
-                onClose={() => setStatusesModalVisible(false)}
-                assignments={visibleAssignments}
-            />
-
-            <InterventionDemandModal
-                open={demandModalVisible}
-                onClose={() => setDemandModalVisible(false)}
-                baseParticipants={baseParticipants}
-                getAssignmentAudit={getAssignmentAudit}
-            />
         </div >
     );
 };

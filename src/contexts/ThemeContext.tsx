@@ -16,6 +16,14 @@ export type ColorModePreference = "light" | "dark" | "system";
 /** The mode actually being painted right now — "system" is always resolved away. */
 export type ResolvedColorMode = "light" | "dark";
 
+/**
+ * Accent palette. Orthogonal to light/dark: each accent has its own light and
+ * dark variant, so any of the three can be paired with any colour mode.
+ */
+export type AccentTheme = "blue" | "ocean" | "violet";
+
+export const ACCENT_THEMES: AccentTheme[] = ["blue", "ocean", "violet"];
+
 type ThemeContextValue = {
     /** What the user picked. */
     preference: ColorModePreference;
@@ -25,9 +33,13 @@ type ThemeContextValue = {
     setPreference: (next: ColorModePreference) => void;
     /** Flips between light and dark, dropping "system" in the process. */
     toggle: () => void;
+    /** The chosen accent palette. */
+    accent: AccentTheme;
+    setAccent: (next: AccentTheme) => void;
 };
 
 const STORAGE_KEY = "lph-color-mode";
+const ACCENT_STORAGE_KEY = "lph-accent-theme";
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const prefersDark = () =>
@@ -47,6 +59,18 @@ const readStoredPreference = (): ColorModePreference => {
     return "system";
 };
 
+const readStoredAccent = (): AccentTheme => {
+    try {
+        const stored = window.localStorage.getItem(ACCENT_STORAGE_KEY);
+        if (stored === "blue" || stored === "ocean" || stored === "violet") {
+            return stored;
+        }
+    } catch {
+        // Private mode / storage disabled — fall through to the default.
+    }
+    return "blue";
+};
+
 const resolve = (preference: ColorModePreference): ResolvedColorMode =>
     preference === "system" ? (prefersDark() ? "dark" : "light") : preference;
 
@@ -61,14 +85,23 @@ const applyToDocument = (mode: ResolvedColorMode) => {
     root.style.colorScheme = mode;
 };
 
+const applyAccentToDocument = (accent: AccentTheme) => {
+    document.documentElement.setAttribute("data-accent", accent);
+};
+
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [preference, setPreferenceState] = useState<ColorModePreference>(readStoredPreference);
     const [mode, setMode] = useState<ResolvedColorMode>(() => resolve(readStoredPreference()));
+    const [accent, setAccentState] = useState<AccentTheme>(readStoredAccent);
 
     // Keep the DOM in sync with the resolved mode.
     useEffect(() => {
         applyToDocument(mode);
     }, [mode]);
+
+    useEffect(() => {
+        applyAccentToDocument(accent);
+    }, [accent]);
 
     // Re-resolve whenever the preference changes, and keep tracking the OS while
     // the preference is "system".
@@ -101,9 +134,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setPreference(mode === "dark" ? "light" : "dark");
     }, [mode, setPreference]);
 
+    const setAccent = useCallback((next: AccentTheme) => {
+        setAccentState(next);
+        try {
+            window.localStorage.setItem(ACCENT_STORAGE_KEY, next);
+        } catch {
+            // Non-fatal: the choice just won't survive a reload.
+        }
+    }, []);
+
     const value = useMemo<ThemeContextValue>(
-        () => ({ preference, mode, isDark: mode === "dark", setPreference, toggle }),
-        [preference, mode, setPreference, toggle],
+        () => ({ preference, mode, isDark: mode === "dark", setPreference, toggle, accent, setAccent }),
+        [preference, mode, setPreference, toggle, accent, setAccent],
     );
 
     return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

@@ -1,3 +1,4 @@
+import { ensureCompulsoryPlan } from '@/services/compulsoryInterventionService'
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
     Card,
@@ -8,10 +9,8 @@ import {
     Input,
     Modal,
     Tabs,
-    Statistic,
     Row,
     Col,
-    Divider,
     Tag,
     message,
     Skeleton,
@@ -426,6 +425,7 @@ const ApplicationsDashboard: React.FC = () => {
         )
 
         const compulsory = await getCompulsoryInterventions()
+        await ensureCompulsoryPlan(app, compulsory)
 
         const toAdd = compulsory
             .filter(iv => !currentIds.has(iv.id))

@@ -1,0 +1,128 @@
+--- live/src/routes/operations/plan/diagnostic/index.tsx
++++ updated/src/routes/operations/plan/diagnostic/index.tsx
+@@ -61,6 +61,24 @@
+     departmentId: string
+     title: string
+ }
++
++// BEGIN COMPULSORY BUILDER HELPERS
++const buildRequiredPlanItems = (selected: BuilderItem[], catalog: any[]): BuilderItem[] => {
++    const result: BuilderItem[] = []
++    const ids = new Set<string>()
++    for (const item of [...selected, ...catalog.filter(iv => iv.compulsory === true).map(iv => ({
++        id: String(iv.id || '').trim(),
++        title: String(iv.interventionTitle || iv.title || 'Intervention').trim(),
++        source: 'Department' as const
++    }))]) {
++        const id = String(item.id || '').trim()
++        if (!id || ids.has(id)) continue
++        ids.add(id)
++        result.push({ ...item, id })
++    }
++    return result
++}
++// END COMPULSORY BUILDER HELPERS
+ 
+ const toMillis = (value: any): number => {
+     if (!value) return 0
+@@ -590,9 +608,14 @@
+ 
+     const goBack = () => setStep(current => Math.max(current - 1, 0))
+ 
++    const compulsoryIds = useMemo(() => new Set<string>(
++        interventionsCatalog.filter(item => item.compulsory === true)
++            .map(item => String(item.id || '').trim()).filter(Boolean)
++    ), [interventionsCatalog])
++
+     const finalList = useMemo(
+-        () => uniq([...requiredItems, ...departmentSelected]),
+-        [requiredItems, departmentSelected]
++        () => buildRequiredPlanItems([...requiredItems, ...departmentSelected], interventionsCatalog),
++        [requiredItems, departmentSelected, interventionsCatalog]
+     )
+ 
+     const hasInterventions = finalList.length > 0
+@@ -605,6 +628,10 @@
+     }, [hasInterventions])
+ 
+     const removeFromFinal = (item: BuilderItem) => {
++        if (compulsoryIds.has(String(item.id).trim())) {
++            message.info('Compulsory interventions are included automatically and cannot be removed here.')
++            return
++        }
+         if (item.source === 'SME') {
+             message.info('SME-selected interventions cannot be removed here.')
+             return
+@@ -643,7 +670,7 @@
+                 title: 'Action',
+                 width: 110,
+                 render: (_: unknown, item: BuilderItem) =>
+-                    item.source === 'Department' ? (
++                    item.source === 'Department' && !compulsoryIds.has(String(item.id).trim()) ? (
+                         <Button
+                             danger
+                             type="link"
+@@ -652,11 +679,11 @@
+                             Remove
+                         </Button>
+                     ) : (
+-                        <Text type="secondary">Required</Text>
++                        <Text type="secondary">{compulsoryIds.has(String(item.id).trim()) ? 'Compulsory' : 'Required'}</Text>
+                     )
+             }
+         ],
+-        [baseColumns]
++        [baseColumns, compulsoryIds]
+     )
+ 
+     const canSubmit = hasInterventions
+@@ -719,7 +746,8 @@
+             id: item.id,
+             title: item.title,
+             source: item.source,
+-            departmentId: userDepartmentId
++            departmentId: userDepartmentId,
++            compulsory: compulsoryIds.has(String(item.id).trim())
+         }))
+ 
+         const userId = String(
+@@ -961,7 +989,7 @@
+                 ) : (
+                     <Checkbox.Group
+                         style={{ width: '100%' }}
+-                        value={departmentSelected.map(item => item.id)}
++                        value={Array.from(new Set([...departmentSelected.map(item => item.id), ...compulsoryIds]))}
+                         onChange={values => {
+                             const selectedIds = new Set(
+                                 (values as string[]).map(String)
+@@ -970,7 +998,7 @@
+                             const selectedItems: BuilderItem[] =
+                                 interventionsCatalog
+                                     .filter(item =>
+-                                        selectedIds.has(String(item.id))
++                                        selectedIds.has(String(item.id)) || item.compulsory === true
+                                     )
+                                     .filter(isSameDeptIntervention)
+                                     .map(item => ({
+@@ -992,10 +1020,12 @@
+                                 <Checkbox
+                                     key={String(item.id)}
+                                     value={String(item.id)}
++                                    disabled={item.compulsory === true}
+                                 >
+                                     {String(
+                                         item.interventionTitle || item.title || ''
+                                     )}
++                                    {item.compulsory === true && <Tag color="red" style={{ marginLeft: 8 }}>Compulsory</Tag>}
+                                 </Checkbox>
+                             ))}
+                         </Space>
+@@ -1233,7 +1263,7 @@
+                             }
+                             description={
+                                 hasInterventions
+-                                    ? 'Department interventions can still be removed before submission.'
++                                    ? 'Optional department interventions can be removed. Compulsory interventions are included automatically and need no SME DP sign-off.'
+                                     : 'You may still submit, but you must explicitly confirm that this SME has no interventions under your department.'
+                             }
+                             style={{ marginBottom: 12 }}

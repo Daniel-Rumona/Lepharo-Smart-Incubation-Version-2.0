@@ -1,0 +1,250 @@
+--- live/src/routes/incubatee/roadmap/index.tsx
++++ updated/src/routes/incubatee/roadmap/index.tsx
+@@ -61,6 +61,15 @@
+     type PageGuideRegistration
+ } from '@/components/guide-me'
+ 
++// BEGIN COMPULSORY ROADMAP HELPERS
++const isCompulsoryItem = (item: any, catalog: any[]): boolean => {
++    const id = String(item?.id || item?.interventionId || '').trim()
++    return !!id && catalog.some(def => String(def.id || '').trim() === id && def.compulsory === true)
++}
++const isCompulsoryOnly = (items: any[], catalog: any[]): boolean =>
++    items.length > 0 && items.every(item => isCompulsoryItem(item, catalog))
++// END COMPULSORY ROADMAP HELPERS
++
+ const { Title, Text } = Typography
+ const { Panel } = Collapse
+ const { useBreakpoint } = Grid
+@@ -90,10 +99,10 @@
+ 
+     interventions?: any[]
+ 
+-    // legacy SME confirmations (name keyed) – might exist in old docs
++    // legacy SME review complete or not required (name keyed) – might exist in old docs
+     incubateeDepartmentConfirmations?: Record<string, SMEDeptConfirm>
+ 
+-    // SME confirmations (id keyed) – use this going forward
++    // SME review complete or not required (id keyed) – use this going forward
+     incubateeDepartmentConfirmationsByDeptId?: Record<string, SMEDeptConfirm>
+ 
+     incubateeConfirmation?: boolean
+@@ -343,8 +352,7 @@
+                         const snap = await getDocs(
+                             query(
+                                 collection(db, 'interventions'),
+-                                where('departmentId', '==', d.id),
+-                                orderBy('title', 'asc')
++                                where('departmentId', '==', d.id)
+                             )
+                         )
+ 
+@@ -352,6 +360,7 @@
+                             const data = x.data() as any
+                             return {
+                                 id: x.id,
++                                compulsory: data.compulsory === true,
+                                 title: data.title || data.name || data.interventionTitle || 'Untitled',
+                                 area: data.area || data.areaOfSupport || d.name,
+                                 areaOfSupport: data.areaOfSupport,
+@@ -489,17 +498,22 @@
+     const smeConfirmedById: Record<string, SMEDeptConfirm> =
+         planData?.incubateeDepartmentConfirmationsByDeptId || {}
+ 
++    const compulsoryOnlyDeptIds = useMemo(() => new Set(departments.filter(dept =>
++        isCompulsoryOnly((planData?.interventions || []).filter(iv => belongsToDept(iv, dept)),
++            deptInterventionsMap[dept.id] || [])
++    ).map(dept => dept.id)), [departments, planData, deptInterventionsMap])
++
+     const TARGET_DEPTS = departments.length || 0
+ 
+     const deptConfirmedCount = useMemo(() => {
+         if (!TARGET_DEPTS) return 0
+-        return departments.filter(d => !!deptConfirmedById?.[d.id]).length
+-    }, [departments, deptConfirmedById, TARGET_DEPTS])
++        return departments.filter(d => compulsoryOnlyDeptIds.has(d.id) || !!deptConfirmedById?.[d.id]).length
++    }, [departments, deptConfirmedById, TARGET_DEPTS, compulsoryOnlyDeptIds])
+ 
+     const smeConfirmedCount = useMemo(() => {
+         if (!TARGET_DEPTS) return 0
+-        return departments.filter(d => !!smeConfirmedById?.[d.id]?.confirmed).length
+-    }, [departments, smeConfirmedById, TARGET_DEPTS])
++        return departments.filter(d => compulsoryOnlyDeptIds.has(d.id) || !!smeConfirmedById?.[d.id]?.confirmed).length
++    }, [departments, smeConfirmedById, TARGET_DEPTS, compulsoryOnlyDeptIds])
+ 
+     const deptPercent = TARGET_DEPTS
+         ? Math.min(100, Math.round((deptConfirmedCount / TARGET_DEPTS) * 100))
+@@ -510,14 +524,14 @@
+ 
+     // Only departments that have confirmed are available for SME review.
+     const confirmedDepts = useMemo(() => {
+-        return departments.filter(d => !!deptConfirmedById?.[d.id])
+-    }, [departments, deptConfirmedById])
++        return departments.filter(d => compulsoryOnlyDeptIds.has(d.id) || !!deptConfirmedById?.[d.id])
++    }, [departments, deptConfirmedById, compulsoryOnlyDeptIds])
+ 
+     const finalized = !!planData?.finalConfirmation
+ 
+     const canConfirmDepartment =
+         deptConfirmedCount > 0 &&
+-        confirmedDepts.length > 0 &&
++        confirmedDepts.some(d => !compulsoryOnlyDeptIds.has(d.id) && !smeConfirmedById?.[d.id]?.confirmed) &&
+         !finalized
+ 
+     const guideRegistration = useMemo<PageGuideRegistration>(
+@@ -760,6 +774,10 @@
+     }
+ 
+     const handleDeleteIntervention = async (deptId: string, iv: any) => {
++        if (isCompulsoryItem(iv, deptInterventionsMap[deptId] || [])) {
++            message.info('Compulsory interventions cannot be removed from your development plan.')
++            return
++        }
+         if (!latestPlanId) return
+         const msgKey = `del-${deptId}-${iv?.id || iv?.title || ''}`
+ 
+@@ -860,7 +878,9 @@
+         const data = snap.exists() ? (snap.data() as any) : {}
+ 
+         const conf: Record<string, SMEDeptConfirm> = data?.incubateeDepartmentConfirmationsByDeptId || {}
+-        const count = departments.filter(d => !!conf?.[d.id]?.confirmed).length
++        const count = departments.filter(d => !!conf?.[d.id]?.confirmed ||
++            isCompulsoryOnly((data?.interventions || []).filter((iv: any) => belongsToDept(iv, d)),
++                deptInterventionsMap[d.id] || [])).length
+ 
+         // Only finalize when SME has confirmed ALL target departments
+         if (!data?.finalConfirmation && count >= TARGET_DEPTS) {
+@@ -870,7 +890,7 @@
+                 incubateeConfirmationAt: serverTimestamp(),
+                 finalConfirmation: true,
+                 finalConfirmationAt: serverTimestamp(),
+-                finalConfirmationMode: 'incubatee_confirmed_all_departments_by_id'
++                finalConfirmationMode: 'required_departments_confirmed_compulsory_exempt'
+             })
+             setFinalizing(false)
+         }
+@@ -879,6 +899,10 @@
+     const handleConfirmDeptBySME = async (dept: DeptRow) => {
+         if (!latestPlanId || !userEmail) return
+         const deptId = dept.id
++        if (compulsoryOnlyDeptIds.has(deptId)) {
++            message.info('This department only has compulsory interventions. No sign-off is required.')
++            return
++        }
+         const msgKey = `confirm-${deptId}`
+ 
+         // SME can only confirm AFTER department has confirmed (id-based)
+@@ -1006,13 +1030,13 @@
+                                     okText='Remove'
+                                     cancelText='Cancel'
+                                     onConfirm={() => handleDeleteIntervention(deptId, row)}
+-                                    disabled={finalized || savingDeptId === deptId}
++                                    disabled={finalized || savingDeptId === deptId || isCompulsoryItem(row, deptInterventionsMap[deptId] || [])}
+                                 >
+                                     <Button
+                                         danger
+                                         size='small'
+                                         icon={<DeleteOutlined />}
+-                                        disabled={finalized || savingDeptId === deptId}
++                                        disabled={finalized || savingDeptId === deptId || isCompulsoryItem(row, deptInterventionsMap[deptId] || [])}
+                                         loading={savingDeptId === deptId}
+                                         block
+                                     >
+@@ -1190,7 +1214,7 @@
+                     >
+                         <Col span={progressCols}>
+                             <CardLike>
+-                                <Text strong>Departments confirmed (by departments)</Text>
++                                <Text strong>Departments ready (by departments)</Text>
+                                 <Progress
+                                     percent={deptPercent}
+                                     size={isMobile ? [220, 12] : [360, 14]}
+@@ -1204,7 +1228,7 @@
+ 
+                         <Col span={progressCols}>
+                             <CardLike>
+-                                <Text strong>SME confirmations</Text>
++                                <Text strong>SME review complete or not required</Text>
+                                 <Progress
+                                     percent={smePercent}
+                                     size={isMobile ? [220, 12] : [360, 14]}
+@@ -1234,6 +1258,7 @@
+                                 const deptOk = !!deptConfirmedById?.[deptId]
+                                 const smeOk = !!smeConfirmedById?.[deptId]?.confirmed
+                                 const ivs = interventionsByDeptId.get(deptId) || []
++                                const compulsoryOnly = compulsoryOnlyDeptIds.has(deptId)
+ 
+                                 const header = isMobile ? (
+                                     <div
+@@ -1246,8 +1271,8 @@
+                                             </Text>
+ 
+                                             <Space wrap size={6}>
+-                                                {deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
+-                                                {smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
++                                                {compulsoryOnly ? <Tag color='blue'>Compulsory</Tag> : deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
++                                                {compulsoryOnly ? <Tag>No sign-off required</Tag> : smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
+                                             </Space>
+ 
+                                             {smeOk && (
+@@ -1265,8 +1290,8 @@
+                                     >
+                                         <Space wrap>
+                                             <Text strong>{dept.name}</Text>
+-                                            {deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
+-                                            {smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
++                                            {compulsoryOnly ? <Tag color='blue'>Compulsory</Tag> : deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
++                                            {compulsoryOnly ? <Tag>No sign-off required</Tag> : smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
+                                         </Space>
+ 
+                                         <Space>
+@@ -1282,7 +1307,15 @@
+                                 return (
+                                     <Panel key={deptId} header={header}>
+                                         <div data-guide='roadmap-department-content'>
+-                                        {!deptOk ? (
++                                        {compulsoryOnly ? (
++                                            <>
++                                                <Alert type='info' showIcon message='No DP sign-off required'
++                                                    description='These compulsory interventions can proceed without department or SME confirmation.' />
++                                                <List dataSource={ivs} renderItem={(iv: any) => (
++                                                    <List.Item>{iv.title || iv.interventionTitle || iv.name}</List.Item>
++                                                )} />
++                                            </>
++                                        ) : !deptOk ? (
+                                             <Alert
+                                                 type='info'
+                                                 showIcon
+@@ -1331,13 +1364,13 @@
+                                                                         okText='Remove'
+                                                                         cancelText='Cancel'
+                                                                         onConfirm={() => handleDeleteIntervention(deptId, row)}
+-                                                                        disabled={finalized || savingDeptId === deptId}
++                                                                        disabled={finalized || savingDeptId === deptId || isCompulsoryItem(row, deptInterventionsMap[deptId] || [])}
+                                                                     >
+                                                                         <Button
+                                                                             danger
+                                                                             size='small'
+                                                                             icon={<DeleteOutlined />}
+-                                                                            disabled={finalized || savingDeptId === deptId}
++                                                                            disabled={finalized || savingDeptId === deptId || isCompulsoryItem(row, deptInterventionsMap[deptId] || [])}
+                                                                             loading={savingDeptId === deptId}
+                                                                         />
+                                                                     </Popconfirm>
+@@ -1462,14 +1495,14 @@
+                             <Title level={3} style={{ marginTop: 8, marginBottom: 0, color: '#52c41a' }}>
+                                 Developmental Plan Finalized
+                             </Title>
+-                            <Text type='secondary'>You confirmed all {TARGET_DEPTS} departments.</Text>
++                            <Text type='secondary'>All required department confirmations are complete; compulsory-only departments need no sign-off.</Text>
+                         </div>
+                     ) : (
+                         <Alert
+                             type='info'
+                             showIcon
+                             message='Finalization rule'
+-                            description={`Final confirmation is set automatically when you (SME) confirm all ${TARGET_DEPTS} departments.`}
++                            description='Confirm departments that contain optional interventions. Compulsory-only departments do not require sign-off and do not block assignments.'
+                         />
+                     )}
+                     </div>

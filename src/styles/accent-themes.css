@@ -1,0 +1,83 @@
+/* ============================================================================
+   Accent themes
+   ----------------------------------------------------------------------------
+   The app ships three accent palettes — Blue (the default), Ocean (teal) and
+   Violet (purple) — each with its own light and dark variant, selected
+   independently of light/dark mode via html[data-accent="…"].
+
+   Blue is not defined here: its values are the baseline tokens already set in
+   styles/dark-mode.css (:root for light, html[data-theme="dark"] for dark), so
+   an unthemed accent renders exactly as the app always has. This file only
+   supplies the deltas for Ocean and Violet.
+
+   Loaded after dark-mode.css. Each rule below pairs a data-theme selector with
+   a data-accent selector, so specificity (two attributes vs. one) wins over the
+   Blue baseline regardless of file order — see dark-mode.css's own header
+   comment for the same reasoning applied to data-theme="dark" over :root.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   Ocean — teal
+   ------------------------------------------------------------------------- */
+
+html[data-accent="ocean"] {
+    --app-accent: #0e9488;
+    --app-accent-strong: #0b7a70;
+    --app-accent-deep: #0f766e;
+    --app-accent-wash: #eefbf9;
+    --app-accent-soft: #e3f7f4;
+    --app-accent-border: #b7e6df;
+    --app-accent-border-strong: #6fd0c1;
+    --app-accent-active-bg: #ffffff;
+    --app-accent-glow: rgba(14, 148, 136, 0.08);
+    --app-accent-glow-strong: rgba(14, 148, 136, 0.1);
+    --app-accent-contrast: #ffffff;
+}
+
+html[data-theme="dark"][data-accent="ocean"] {
+    --app-accent: #2dd4bf;
+    --app-accent-strong: #6fe6d6;
+    --app-accent-deep: #0f9d8f;
+    --app-accent-wash: rgba(45, 212, 191, 0.1);
+    --app-accent-soft: rgba(45, 212, 191, 0.14);
+    --app-accent-border: rgba(45, 212, 191, 0.35);
+    --app-accent-border-strong: rgba(45, 212, 191, 0.55);
+    --app-accent-active-bg: rgba(45, 212, 191, 0.22);
+    --app-accent-glow: rgba(45, 212, 191, 0.18);
+    --app-accent-glow-strong: rgba(45, 212, 191, 0.22);
+    /* --app-accent-contrast stays #ffffff (dark-mode.css baseline): the active-bg
+       above is a translucent wash over a near-black page, not a solid fill, so it
+       always needs light text regardless of the accent's own hue. */
+}
+
+/* ---------------------------------------------------------------------------
+   Violet — purple
+   ------------------------------------------------------------------------- */
+
+html[data-accent="violet"] {
+    --app-accent: #7c3aed;
+    --app-accent-strong: #5b21b6;
+    --app-accent-deep: #6425c4;
+    --app-accent-wash: #f6f2ff;
+    --app-accent-soft: #f1eaff;
+    --app-accent-border: #d9c7ff;
+    --app-accent-border-strong: #b794ff;
+    --app-accent-active-bg: #ffffff;
+    --app-accent-glow: rgba(124, 58, 237, 0.08);
+    --app-accent-glow-strong: rgba(124, 58, 237, 0.1);
+    --app-accent-contrast: #ffffff;
+}
+
+html[data-theme="dark"][data-accent="violet"] {
+    --app-accent: #a78bfa;
+    --app-accent-strong: #c4b5fd;
+    --app-accent-deep: #7c5cea;
+    --app-accent-wash: rgba(167, 139, 250, 0.1);
+    --app-accent-soft: rgba(167, 139, 250, 0.14);
+    --app-accent-border: rgba(167, 139, 250, 0.35);
+    --app-accent-border-strong: rgba(167, 139, 250, 0.55);
+    --app-accent-active-bg: rgba(167, 139, 250, 0.22);
+    --app-accent-glow: rgba(167, 139, 250, 0.18);
+    --app-accent-glow-strong: rgba(167, 139, 250, 0.22);
+    /* --app-accent-contrast stays #ffffff — see the Ocean block above. */
+}

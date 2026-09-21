@@ -30,9 +30,12 @@ import {
     ApartmentOutlined,
     BarChartOutlined,
     CalendarOutlined,
+    CheckCircleOutlined,
     DatabaseOutlined,
     DeleteOutlined,
     EditOutlined,
+    EyeOutlined,
+    FileProtectOutlined,
     FileTextOutlined,
     FilterOutlined,
     LeftOutlined,
@@ -74,6 +77,15 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
+import { KpiAgreementFormModal } from '@/components/kpi-agreements/KpiAgreementFormModal'
+import { KpiAgreementDetail } from '@/components/kpi-agreements/KpiAgreementDetail'
+import { kpiAgreementService } from '@/services/kpiAgreementService'
+import type {
+    KpiAgreement,
+    KpiAgreementFormData,
+    KpiNumericTarget,
+    KpiDeliverable
+} from '@/types/types'
 
 dayjs.extend(quarterOfYear)
 dayjs.extend(customParseFormat)
@@ -81,6 +93,11 @@ dayjs.extend(isSameOrBefore)
 
 const { Option } = Select
 const { Text } = Typography
+
+const isAgreementFullySigned = (agreement: KpiAgreement) =>
+    !!agreement.signOff?.hod?.name?.trim() &&
+    !!agreement.signOff?.centerManager?.name?.trim() &&
+    !!agreement.signOff?.ceo?.name?.trim()
 
 type FilterOp = '==' | '!=' | 'in'
 type SourceType = 'applications' | 'interventions' | 'metrics'
@@ -197,6 +214,10 @@ interface KPI {
     latestTargetPeriodKey?: string | null
     latestTarget?: number | null
 }
+
+type UnifiedKpiItem =
+    | { kind: 'computed'; id: string; label: string; kpi: KPI }
+    | { kind: 'agreement'; id: string; label: string; agreement: KpiAgreement }
 
 interface KpiTargetDoc {
     id: string
@@ -677,8 +698,15 @@ const KPIManager: React.FC = () => {
     const { programId, isAllPrograms, activeProgramId } = useActiveProgramId()
 
     const [kpis, setKpis] = useState<KPI[]>([])
+    const [agreements, setAgreements] = useState<KpiAgreement[]>([])
     const [kpiSearch, setKpiSearch] = useState('')
     const [selectedKpiId, setSelectedKpiId] = useState<string | null>(null)
+    const [selectedAgreementId, setSelectedAgreementId] = useState<string | null>(null)
+    const [addKpiChooserVisible, setAddKpiChooserVisible] = useState(false)
+    const [agreementModalVisible, setAgreementModalVisible] = useState(false)
+    const [editingAgreement, setEditingAgreement] = useState<KpiAgreement | null>(null)
+    const [agreementDetailVisible, setAgreementDetailVisible] = useState(false)
+    const [agreementDetailTarget, setAgreementDetailTarget] = useState<KpiAgreement | null>(null)
     const [kpiListPage, setKpiListPage] = useState(1)
     const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
@@ -820,6 +848,74 @@ const KPIManager: React.FC = () => {
         }
     }, [orderedKpis, selectedKpiId])
 
+    const orderedAgreements = useMemo(() => {
+        const search = kpiSearch.trim().toLowerCase()
+        return agreements
+            .filter(agreement => {
+                if (!search) return true
+                return [agreement.serviceName, agreement.departmentName, agreement.fyLabel]
+                    .filter(Boolean)
+                    .some(value => String(value).toLowerCase().includes(search))
+            })
+            .sort((a, b) =>
+                (a.serviceName || a.departmentName || '').localeCompare(b.serviceName || b.departmentName || '')
+            )
+    }, [agreements, kpiSearch])
+
+    const unifiedItems = useMemo<UnifiedKpiItem[]>(() => {
+        const computedItems: UnifiedKpiItem[] = orderedKpis.map(kpi => ({
+            kind: 'computed',
+            id: kpi.id,
+            label: kpi.kpiLabel,
+            kpi
+        }))
+        const agreementItems: UnifiedKpiItem[] = orderedAgreements.map(agreement => ({
+            kind: 'agreement',
+            id: agreement.id,
+            label: agreement.serviceName || agreement.departmentName || 'Untitled agreement',
+            agreement
+        }))
+        return [...computedItems, ...agreementItems].sort((a, b) => a.label.localeCompare(b.label))
+    }, [orderedKpis, orderedAgreements])
+
+    const pagedUnifiedItems = useMemo(() => {
+        const start = (kpiListPage - 1) * kpiListPageSize
+        return unifiedItems.slice(start, start + kpiListPageSize)
+    }, [kpiListPage, unifiedItems])
+
+    const selectedItem = useMemo<UnifiedKpiItem | null>(() => {
+        if (selectedAgreementId) {
+            const agreement = orderedAgreements.find(a => a.id === selectedAgreementId)
+            if (agreement) {
+                return { kind: 'agreement', id: agreement.id, label: agreement.serviceName || agreement.departmentName, agreement }
+            }
+        }
+        if (selectedKpiId) {
+            const kpi = orderedKpis.find(k => k.id === selectedKpiId)
+            if (kpi) {
+                return { kind: 'computed', id: kpi.id, label: kpi.kpiLabel, kpi }
+            }
+        }
+        return null
+    }, [selectedAgreementId, orderedAgreements, selectedKpiId, orderedKpis])
+
+    useEffect(() => {
+        const pageCount = Math.max(1, Math.ceil(unifiedItems.length / kpiListPageSize))
+        setKpiListPage(current => Math.min(current, pageCount))
+    }, [unifiedItems.length])
+
+    useEffect(() => {
+        if (selectedAgreementId && orderedAgreements.some(a => a.id === selectedAgreementId)) return
+        if (selectedKpiId && orderedKpis.some(k => k.id === selectedKpiId)) return
+        if (!unifiedItems.length) return
+        const first = unifiedItems[0]
+        if (first.kind === 'computed') {
+            setSelectedKpiId(first.id)
+        } else {
+            setSelectedAgreementId(first.id)
+        }
+    }, [unifiedItems, selectedAgreementId, orderedAgreements, selectedKpiId, orderedKpis])
+
     const checkIfMainDept = async () => {
         try {
             if (!user?.departmentId) {
@@ -927,6 +1023,15 @@ const KPIManager: React.FC = () => {
         }
     }
 
+    const fetchAgreements = async () => {
+        try {
+            const data = await kpiAgreementService.getKpiAgreements()
+            setAgreements(data)
+        } catch (err) {
+            console.error('Failed to load KPI agreements', err)
+        }
+    }
+
     const fetchTargetsForKpi = async (kpiId: string) => {
         setTargetsLoading(true)
         try {
@@ -978,6 +1083,7 @@ const KPIManager: React.FC = () => {
         fetchDepartments()
         fetchInterventions()
         fetchKPIs()
+        fetchAgreements()
     }, [user?.departmentName, isMainDept, activeProgramId, isAllPrograms])
 
     const selectedContributorDepartmentIdsRaw =
@@ -1650,6 +1756,35 @@ const KPIManager: React.FC = () => {
             message.error('Delete failed')
         } finally {
             setDeletingId(null)
+        }
+    }
+
+    const handleSaveAgreement = async (values: KpiAgreementFormData) => {
+        try {
+            if (editingAgreement) {
+                await kpiAgreementService.updateKpiAgreement(editingAgreement.id, values)
+                message.success('KPI agreement updated successfully!')
+            } else {
+                const newId = await kpiAgreementService.createKpiAgreement(values)
+                setSelectedAgreementId(newId)
+                message.success('KPI agreement saved successfully!')
+            }
+            setAgreementModalVisible(false)
+            setEditingAgreement(null)
+            await fetchAgreements()
+        } catch (err: any) {
+            message.error(err.message || 'Operation failed')
+        }
+    }
+
+    const handleDeleteAgreement = async (agreement: KpiAgreement) => {
+        try {
+            await kpiAgreementService.deleteKpiAgreement(agreement.id)
+            message.success('KPI agreement deleted successfully!')
+            if (selectedAgreementId === agreement.id) setSelectedAgreementId(null)
+            await fetchAgreements()
+        } catch (err: any) {
+            message.error(err.message || 'Failed to delete KPI agreement')
         }
     }
 
@@ -2539,7 +2674,7 @@ const KPIManager: React.FC = () => {
 
     return (
         <div style={{ padding: '5px 24px' }}>
-            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                    <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col xs={24} md={12}>
                     <MotionCard.Metric
                         icon={<NumberOutlined style={{ color: '#1677ff', fontSize: 18 }} />}
@@ -2580,7 +2715,7 @@ const KPIManager: React.FC = () => {
                         />
                     </Col>
                     <Col xs={24} lg={6}>
-                        <Button shape='round' block type='primary' icon={<PlusOutlined />} onClick={() => openModal()}>
+                        <Button shape='round' block type='primary' icon={<PlusOutlined />} onClick={() => setAddKpiChooserVisible(true)}>
                             Add KPI
                         </Button>
                     </Col>
@@ -2600,14 +2735,43 @@ const KPIManager: React.FC = () => {
                                     </Space>
                                 ) : (
                                     <Space direction='vertical' size={10} style={{ width: '100%' }}>
-                                        {pagedKpis.map(kpi => {
-                                            const isSelected = selectedKpi?.id === kpi.id
+                                        {pagedUnifiedItems.map(item => {
+                                            const isSelected = selectedItem?.kind === item.kind && selectedItem?.id === item.id
+                                            if (item.kind === 'agreement') {
+                                                return (
+                                                    <Card
+                                                        key={`agreement-${item.id}`}
+                                                        size='small'
+                                                        hoverable
+                                                        onClick={() => setSelectedAgreementId(item.id)}
+                                                        style={{
+                                                            borderColor: isSelected ? token.colorPrimary : undefined,
+                                                            background: isSelected
+                                                                ? token.colorPrimaryBg
+                                                                : undefined,
+                                                            boxShadow: isSelected ? token.boxShadowSecondary : undefined,
+                                                            overflow: 'hidden'
+                                                        }}
+                                                    >
+                                                        <Text strong ellipsis={{ tooltip: item.label }} style={{ display: 'block', fontSize: 15 }}>
+                                                            {item.label}
+                                                        </Text>
+                                                        <Tag color='purple' style={{ marginTop: 8 }}>
+                                                            Funder Agreement
+                                                        </Tag>
+                                                    </Card>
+                                                )
+                                            }
+                                            const kpi = item.kpi
                                             return (
                                                 <Card
                                                     key={kpi.id}
                                                     size='small'
                                                     hoverable
-                                                    onClick={() => setSelectedKpiId(kpi.id)}
+                                                    onClick={() => {
+                                                        setSelectedKpiId(kpi.id)
+                                                        setSelectedAgreementId(null)
+                                                    }}
                                                     style={{
                                                         borderColor: isSelected ? token.colorPrimary : undefined,
                                                         background: isSelected
@@ -2626,14 +2790,14 @@ const KPIManager: React.FC = () => {
                                                 </Card>
                                             )
                                         })}
-                                        {!pagedKpis.length && <Empty description='No KPIs yet.' />}
+                                        {!pagedUnifiedItems.length && <Empty description='No KPIs yet.' />}
                                     </Space>
                                 )}
                             </div>
 
                             <Pagination
                                 current={kpiListPage}
-                                total={orderedKpis.length}
+                                total={unifiedItems.length}
                                 pageSize={kpiListPageSize}
                                 showSizeChanger={false}
                                 hideOnSinglePage
@@ -2658,7 +2822,7 @@ const KPIManager: React.FC = () => {
                                             ))}
                                         </Row>
                                     </Space>
-                                ) : selectedKpi ? (
+                                ) : selectedItem?.kind === 'computed' && selectedKpi ? (
                                     <Space direction='vertical' size={14} style={{ width: '100%' }}>
                                         <div
                                             style={{
@@ -2727,11 +2891,63 @@ const KPIManager: React.FC = () => {
                                             </div>
                                         )}
                                     </Space>
+                                ) : selectedItem?.kind === 'agreement' ? (
+                                    <Space direction='vertical' size={14} style={{ width: '100%' }}>
+                                        <div
+                                            style={{
+                                                padding: '9px 12px',
+                                                borderRadius: 10,
+                                                background: token.colorPrimaryBg,
+                                                border: `1px solid ${token.colorPrimaryBorder}`
+                                            }}
+                                        >
+                                            <Space align='center' size={10} style={{ width: '100%', justifyContent: 'space-between' }}>
+                                                <Space align='center' size={10} style={{ minWidth: 0 }}>
+                                                    <MotionCard.IconChip
+                                                        size={34}
+                                                        bg={token.colorPrimaryBgHover}
+                                                        icon={<FileProtectOutlined style={{ color: token.colorPrimary, fontSize: 16 }} />}
+                                                    />
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <Text type='secondary' ellipsis={{ tooltip: selectedItem.agreement.serviceName }} style={{ display: 'block', fontSize: 12 }}>
+                                                            {selectedItem.agreement.serviceName || 'Funder-agreed KPI set'}
+                                                        </Text>
+                                                    </div>
+                                                </Space>
+                                                <Tag color='purple' style={{ marginInlineEnd: 0 }}>
+                                                    Funder Agreement
+                                                </Tag>
+                                            </Space>
+                                        </div>
+
+                                        <Row gutter={[10, 10]}>
+                                            {[
+                                                { label: 'Department', value: selectedItem.agreement.departmentName || 'Not set', icon: <ApartmentOutlined />, color: '#722ed1', background: 'rgba(114,46,209,.10)' },
+                                                { label: 'Financial year', value: selectedItem.agreement.fyLabel || 'Not set', icon: <CalendarOutlined />, color: '#fa8c16', background: 'rgba(250,140,22,.10)' },
+                                                { label: 'Numeric targets', value: selectedItem.agreement.numericTargets?.length || 0, icon: <AimOutlined />, color: '#1677ff', background: 'rgba(22,119,255,.10)' },
+                                                { label: 'Deliverables', value: selectedItem.agreement.deliverables?.length || 0, icon: <BarChartOutlined />, color: '#1677ff', background: 'rgba(22,119,255,.10)' },
+                                                { label: 'Monthly capacity', value: selectedItem.agreement.monthlyCapacity ?? 'Not set', icon: <TeamOutlined />, color: '#13a8a8', background: 'rgba(19,168,168,.10)' },
+                                                { label: 'Sign-off', value: isAgreementFullySigned(selectedItem.agreement) ? 'Fully signed' : 'Pending', icon: <CheckCircleOutlined />, color: isAgreementFullySigned(selectedItem.agreement) ? '#52c41a' : '#fa8c16', background: isAgreementFullySigned(selectedItem.agreement) ? 'rgba(82,196,26,.10)' : 'rgba(250,140,22,.10)' }
+                                            ].map(item => (
+                                                <Col xs={24} sm={12} xl={8} key={item.label}>
+                                                    <Card size='small' style={{ height: '100%', borderRadius: 10, background: token.colorFillAlter }} bodyStyle={{ padding: '10px 12px' }}>
+                                                        <Space size={9} align='center'>
+                                                            <MotionCard.IconChip size={30} bg={item.background} icon={React.cloneElement(item.icon, { style: { color: item.color } })} />
+                                                            <div>
+                                                                <Text type='secondary' style={{ display: 'block', fontSize: 11, lineHeight: 1.2 }}>{item.label}</Text>
+                                                                <Text strong ellipsis={{ tooltip: String(item.value) }} style={{ display: 'block', fontSize: 13, marginTop: 2 }}>{item.value}</Text>
+                                                            </div>
+                                                        </Space>
+                                                    </Card>
+                                                </Col>
+                                            ))}
+                                        </Row>
+                                    </Space>
                                 ) : (
                                     <Empty description={loading ? 'Loading KPIs...' : 'Select a KPI to view its details.'} />
                                 )}
                             </div>
-                            {selectedKpi && (
+                            {selectedItem?.kind === 'computed' && selectedKpi && (
                                 <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 12 }}>
                                     <Row gutter={[10, 10]}>
                                         <Col xs={24} sm={8}>
@@ -2755,6 +2971,53 @@ const KPIManager: React.FC = () => {
                                             >
                                                 <Button shape='round' block danger icon={<DeleteOutlined />} loading={deletingId === selectedKpi.id}>
                                                     Delete KPI
+                                                </Button>
+                                            </Popconfirm>
+                                        </Col>
+                                    </Row>
+                                </div>
+                            )}
+                            {selectedItem?.kind === 'agreement' && (
+                                <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 12 }}>
+                                    <Row gutter={[10, 10]}>
+                                        <Col xs={24} sm={8}>
+                                            <Button
+                                                shape='round'
+                                                block
+                                                icon={<EyeOutlined />}
+                                                onClick={() => {
+                                                    setAgreementDetailTarget(selectedItem.agreement)
+                                                    setAgreementDetailVisible(true)
+                                                }}
+                                            >
+                                                View Full Agreement
+                                            </Button>
+                                        </Col>
+                                        <Col xs={24} sm={8}>
+                                            <Button
+                                                shape='round'
+                                                block
+                                                type='primary'
+                                                icon={<EditOutlined />}
+                                                onClick={() => {
+                                                    setEditingAgreement(selectedItem.agreement)
+                                                    setAgreementModalVisible(true)
+                                                }}
+                                            >
+                                                Edit Agreement
+                                            </Button>
+                                        </Col>
+                                        <Col xs={24} sm={8}>
+                                            <Popconfirm
+                                                title='Delete KPI Agreement'
+                                                description='This removes the agreement and its targets.'
+                                                okText='Delete'
+                                                okButtonProps={{ danger: true }}
+                                                cancelText='Cancel'
+                                                onConfirm={() => handleDeleteAgreement(selectedItem.agreement)}
+                                            >
+                                                <Button shape='round' block danger icon={<DeleteOutlined />}>
+                                                    Delete Agreement
                                                 </Button>
                                             </Popconfirm>
                                         </Col>
@@ -3908,6 +4171,79 @@ const KPIManager: React.FC = () => {
                     </>
                 )}
             </Modal>
+
+            <Modal
+                title='Add KPI'
+                open={addKpiChooserVisible}
+                onCancel={() => setAddKpiChooserVisible(false)}
+                footer={null}
+                centered
+                width={640}
+            >
+                <Text type='secondary' style={{ display: 'block', marginBottom: 16 }}>
+                    Choose how you'd like to define this KPI.
+                </Text>
+                <Row gutter={[12, 12]}>
+                    <Col xs={24} sm={12}>
+                        <Card
+                            hoverable
+                            onClick={() => {
+                                setAddKpiChooserVisible(false)
+                                openModal()
+                            }}
+                            style={{ height: '100%' }}
+                        >
+                            <Space direction='vertical' size={8}>
+                                <MotionCard.IconChip size={36} bg='rgba(22,119,255,.12)' icon={<BarChartOutlined style={{ color: '#1677ff', fontSize: 18 }} />} />
+                                <Text strong>Compute from live data</Text>
+                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                    Build a formula-driven KPI from participants, interventions, or other live system data.
+                                </Text>
+                            </Space>
+                        </Card>
+                    </Col>
+                    <Col xs={24} sm={12}>
+                        <Card
+                            hoverable
+                            onClick={() => {
+                                setAddKpiChooserVisible(false)
+                                setEditingAgreement(null)
+                                setAgreementModalVisible(true)
+                            }}
+                            style={{ height: '100%' }}
+                        >
+                            <Space direction='vertical' size={8}>
+                                <MotionCard.IconChip size={36} bg='rgba(114,46,209,.12)' icon={<FileProtectOutlined style={{ color: '#722ed1', fontSize: 18 }} />} />
+                                <Text strong>Set from a funder agreement</Text>
+                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                    Upload or capture a signed KPI letter with annual/quarterly targets and deliverables.
+                                </Text>
+                            </Space>
+                        </Card>
+                    </Col>
+                </Row>
+            </Modal>
+
+            <KpiAgreementFormModal
+                open={agreementModalVisible}
+                onClose={() => {
+                    setAgreementModalVisible(false)
+                    setEditingAgreement(null)
+                }}
+                onSaved={handleSaveAgreement}
+                initialValues={editingAgreement}
+            />
+
+            <KpiAgreementDetail
+                agreement={agreementDetailTarget}
+                open={agreementDetailVisible}
+                onClose={() => setAgreementDetailVisible(false)}
+                onEdit={agreement => {
+                    setAgreementDetailVisible(false)
+                    setEditingAgreement(agreement)
+                    setAgreementModalVisible(true)
+                }}
+            />
         </div>
     )
 }

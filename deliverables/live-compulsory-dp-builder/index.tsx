@@ -1,4 +1,3 @@
-import { mergeCompulsoryInterventions } from '@/utils/compulsoryInterventions'
 // src/pages/diagnostic-plan/DiagnosticPlanBuilder.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
@@ -6,19 +5,16 @@ import {
     Button,
     Card,
     Checkbox,
-    Col,
     Collapse,
     Divider,
     Empty,
-    Grid,
     Modal,
     Select,
     Space,
-    Row,
+    Steps,
     Table,
     Tag,
     Typography,
-    theme,
     message
 } from 'antd'
 import {
@@ -32,20 +28,17 @@ import {
     updateDoc,
     where
 } from 'firebase/firestore'
-import { ArrowLeftOutlined, FileSearchOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, ArrowRightOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
 import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { roundBtn } from '@/components/shared/StyledButton'
 import { createOrUpdateDiagnosticPlanMovDraft } from '@/services/movService'
-import { loadGapSuggestions, type GapSuggestion } from '@/services/gapSuggestionsService'
-import { getOwnedSectionsForDept } from '@/routes/gap/sections'
-import GapResponsesModal from '@/routes/gap/view/GapResponsesModal'
 import {
     guideTarget,
     usePageGuides,
@@ -53,7 +46,6 @@ import {
 } from '@/components/guide-me'
 
 const { Text } = Typography
-const { useBreakpoint } = Grid
 
 type DeliveryMethod = 'InPerson' | 'Virtual' | 'Hybrid'
 type PlanSource = 'SME' | 'Department'
@@ -69,6 +61,24 @@ type AppRequiredItem = {
     departmentId: string
     title: string
 }
+
+// BEGIN COMPULSORY BUILDER HELPERS
+const buildRequiredPlanItems = (selected: BuilderItem[], catalog: any[]): BuilderItem[] => {
+    const result: BuilderItem[] = []
+    const ids = new Set<string>()
+    for (const item of [...selected, ...catalog.filter(iv => iv.compulsory === true).map(iv => ({
+        id: String(iv.id || '').trim(),
+        title: String(iv.interventionTitle || iv.title || 'Intervention').trim(),
+        source: 'Department' as const
+    }))]) {
+        const id = String(item.id || '').trim()
+        if (!id || ids.has(id)) continue
+        ids.add(id)
+        result.push({ ...item, id })
+    }
+    return result
+}
+// END COMPULSORY BUILDER HELPERS
 
 const toMillis = (value: any): number => {
     if (!value) return 0
@@ -114,10 +124,6 @@ const DiagnosticPlanBuilder: React.FC = () => {
     const participantId = params.get('participantId') || ''
     const { activeProgramId } = useActiveProgramId()
 
-    const screens = useBreakpoint()
-    const isMobile = !screens.md
-    const { token } = theme.useToken()
-
     const userDepartmentId = String((user as any)?.departmentId || '').trim()
     const userDepartmentName = String((user as any)?.departmentName || '').trim()
     const roleRaw = String((user as any)?.role || '').toLowerCase().trim()
@@ -129,19 +135,15 @@ const DiagnosticPlanBuilder: React.FC = () => {
     const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
 
+    const [step, setStep] = useState(0)
     const [confirmOpen, setConfirmOpen] = useState(false)
     const [confirmNoInterventions, setConfirmNoInterventions] = useState(false)
-    const [gapResponsesOpen, setGapResponsesOpen] = useState(false)
 
     const [dpDeliveryMethod, setDpDeliveryMethod] =
         useState<DeliveryMethod | undefined>(undefined)
 
-    const [gapSuggestions, setGapSuggestions] = useState<GapSuggestion[]>([])
-    const [gapLoading, setGapLoading] = useState(false)
-    const [gapId, setGapId] = useState<string | null>(null)
-    const [gapUnconfirmed, setGapUnconfirmed] = useState(false)
+    const [gapSuggestions, setGapSuggestions] = useState<BuilderItem[]>([])
     const [requiredItems, setRequiredItems] = useState<BuilderItem[]>([])
-    const [previousDepartmentItems, setPreviousDepartmentItems] = useState<BuilderItem[]>([])
     const [departmentSelected, setDepartmentSelected] = useState<BuilderItem[]>([])
 
     const [beneficiaryName, setBeneficiaryName] = useState('')
@@ -193,18 +195,28 @@ const DiagnosticPlanBuilder: React.FC = () => {
         return departmentMatches && hasId && hasTitle
     }
 
-    /**
-     * Whether the GAP panel appears at all. Decided from the department alone,
-     * not from the loaded suggestions, so the panel does not pop in and reflow
-     * the page once the mapping resolves — it renders its own loading and empty
-     * states instead. ROM and M&E deliver no section, so they never see it.
-     */
-    const ownedSections = useMemo(
-        () => getOwnedSectionsForDept(userDepartmentName),
-        [userDepartmentName]
+    const hasGapStep = gapSuggestions.length > 0
+
+    const stepItems = useMemo(
+        () =>
+            hasGapStep
+                ? [
+                    { title: 'Gap Analysis' },
+                    { title: 'SME Selected' },
+                    { title: 'Department Additions' },
+                    { title: 'Confirm' }
+                ]
+                : [
+                    { title: 'SME Selected' },
+                    { title: 'Department Additions' },
+                    { title: 'Confirm' }
+                ],
+        [hasGapStep]
     )
-    const hasGapPanel = ownedSections.length > 0
-    const hasSmeItems = requiredItems.length > 0
+
+    const smeStepIndex = hasGapStep ? 1 : 0
+    const departmentStepIndex = hasGapStep ? 2 : 1
+    const confirmStepIndex = hasGapStep ? 3 : 2
 
     const canUseBuilderGuide =
         !isParentDept &&
@@ -221,7 +233,7 @@ const DiagnosticPlanBuilder: React.FC = () => {
                         id: 'diagnostic-plan-builder-overview',
                         title: 'Quick tour',
                         description:
-                            'Understand the Development Plan builder, where interventions come from and how to return to the participant list.',
+                            'Understand the Development Plan builder, its stages and how to return to the participant list.',
                         kind: 'page',
                         order: 1,
                         steps: [
@@ -236,24 +248,23 @@ const DiagnosticPlanBuilder: React.FC = () => {
                                 }
                             },
                             {
-                                element: guideTarget('dp-builder-sources'),
-                                waitForElement: 5000,
+                                element: guideTarget('dp-builder-steps'),
                                 popover: {
-                                    title: 'Where interventions come from',
+                                    title: 'Builder stages',
                                     description:
-                                        'Three sources feed the plan: gaps identified in the GAP Analysis, the interventions the SME selected, and your own department catalogue. Open any panel to add from it.',
-                                    side: 'right',
+                                        'Move through SME-selected interventions, department additions and final confirmation. A Gap Analysis stage appears when gap suggestions are available.',
+                                    side: 'bottom',
                                     align: 'start'
                                 }
                             },
                             {
-                                element: guideTarget('dp-builder-plan-summary'),
+                                element: guideTarget('dp-builder-current-step'),
                                 waitForElement: 5000,
                                 popover: {
-                                    title: 'The plan so far',
+                                    title: 'Current stage',
                                     description:
-                                        'Everything you add appears here immediately. This is exactly what will be submitted for your department.',
-                                    side: 'left',
+                                        'Complete the information shown in the current stage, then use Next to continue through the builder.',
+                                    side: 'top',
                                     align: 'start'
                                 }
                             },
@@ -273,110 +284,182 @@ const DiagnosticPlanBuilder: React.FC = () => {
                         id: 'diagnostic-plan-builder-flow',
                         title: 'Build the Development Plan',
                         description:
-                            'Walk through assembling the Development Plan and submitting it.',
+                            'Walk through the current Development Plan from selections to final submission.',
                         kind: 'process',
                         order: 2,
                         steps: () => {
-                            const steps: any[] = []
-
-                            if (hasGapPanel) {
-                                steps.push({
-                                    element: guideTarget('dp-builder-gap-panel'),
-                                    waitForElement: 5000,
-                                    popover: {
-                                        title: 'Gaps from the GAP Analysis',
-                                        description:
-                                            'Each row pairs a gap the SME reported with an intervention from your catalogue that addresses it, plus the reason for the match. Accept the ones you agree with — they are recorded as Department interventions.',
-                                        side: 'right',
-                                        align: 'start'
-                                    }
-                                })
-                            }
-
-                            if (hasSmeItems) {
-                                steps.push({
-                                    element: guideTarget('dp-builder-sme-panel'),
-                                    waitForElement: 5000,
-                                    popover: {
-                                        title: 'Interventions selected by the SME',
-                                        description:
-                                            'These came from the SME application and are always part of the plan. They cannot be removed by the department.',
-                                        side: 'right',
-                                        align: 'start'
-                                    }
-                                })
-                            }
-
-                            steps.push(
+                            const steps: any[] = [
                                 {
-                                    element: guideTarget('dp-builder-department-panel'),
-                                    waitForElement: 5000,
+                                    element: guideTarget('dp-builder-steps'),
                                     popover: {
-                                        title: 'Your department catalogue',
+                                        title: 'Development Plan stages',
                                         description:
-                                            'Tick any additional interventions your department will deliver for this SME.',
-                                        side: 'right',
+                                            'The workflow moves from the SME selections to your department additions and then to confirmation.',
+                                        side: 'bottom',
                                         align: 'start'
-                                    }
-                                },
-                                {
-                                    element: guideTarget('dp-builder-plan-summary'),
-                                    waitForElement: 5000,
-                                    popover: {
-                                        title: 'Review the plan',
-                                        description:
-                                            'Check the combined SME and Department list. Department interventions can still be removed here before submission.',
-                                        side: 'left',
-                                        align: 'start'
-                                    }
-                                },
-                                {
-                                    element: guideTarget('dp-builder-save-action'),
-                                    waitForElement: 1500,
-                                    advanceOnClick: true,
-                                    popover: {
-                                        title: 'Save Plan',
-                                        description:
-                                            'Open the final confirmation window.',
-                                        side: 'top',
-                                        align: 'center',
-                                        showButtons: ['close']
-                                    }
-                                },
-                                {
-                                    element: '.guide-dp-builder-confirm-modal',
-                                    waitForElement: 5000,
-                                    popover: {
-                                        title: 'Final confirmation',
-                                        description:
-                                            'Confirm the submission details before the department is marked as confirmed.',
-                                        side: 'left',
-                                        align: 'start'
-                                    }
-                                },
-                                {
-                                    element: guideTarget('dp-builder-confirmation-input'),
-                                    waitForElement: 1500,
-                                    popover: {
-                                        title: 'Submission requirement',
-                                        description:
-                                            'If interventions exist, select the delivery method. If there are no interventions, explicitly confirm that your department has none for this SME.',
-                                        side: 'right',
-                                        align: 'start'
-                                    }
-                                },
-                                {
-                                    element: '.guide-dp-builder-submit',
-                                    waitForElement: 1500,
-                                    popover: {
-                                        title: 'Submit Plan',
-                                        description:
-                                            'Submit when the confirmation requirement is complete. The plan is saved and, when interventions exist, its MOV is prepared for SME signature.',
-                                        side: 'top',
-                                        align: 'center'
                                     }
                                 }
-                            )
+                            ]
+
+                            if (hasGapStep && step <= 0) {
+                                steps.push(
+                                    {
+                                        element: guideTarget('dp-builder-gap-step'),
+                                        waitForElement: 5000,
+                                        popover: {
+                                            title: 'Gap Analysis suggestions',
+                                            description:
+                                                'Review suggestions relevant to your department. Accepted suggestions are added as Department interventions.',
+                                            side: 'top',
+                                            align: 'start'
+                                        }
+                                    },
+                                    {
+                                        element: guideTarget('dp-builder-gap-next'),
+                                        waitForElement: 1500,
+                                        advanceOnClick: true,
+                                        popover: {
+                                            title: 'Continue',
+                                            description:
+                                                'When the gap suggestions are ready, continue to the SME-selected interventions.',
+                                            side: 'top',
+                                            align: 'center',
+                                            showButtons: ['close']
+                                        }
+                                    }
+                                )
+                            }
+
+                            if (step <= smeStepIndex) {
+                                steps.push(
+                                    {
+                                        element: guideTarget('dp-builder-sme-step'),
+                                        waitForElement: 5000,
+                                        popover: {
+                                            title: 'SME-selected interventions',
+                                            description:
+                                                'These interventions came from the SME application for your department. They are required here and cannot be removed by the department.',
+                                            side: 'top',
+                                            align: 'start'
+                                        }
+                                    },
+                                    {
+                                        element: guideTarget('dp-builder-sme-next'),
+                                        waitForElement: 1500,
+                                        advanceOnClick: true,
+                                        popover: {
+                                            title: 'Continue to department additions',
+                                            description:
+                                                'Continue after reviewing the interventions selected by the SME.',
+                                            side: 'top',
+                                            align: 'center',
+                                            showButtons: ['close']
+                                        }
+                                    }
+                                )
+                            }
+
+                            if (step <= departmentStepIndex) {
+                                steps.push(
+                                    {
+                                        element: guideTarget('dp-builder-department-step'),
+                                        waitForElement: 5000,
+                                        popover: {
+                                            title: 'Department additions',
+                                            description:
+                                                'Add any additional interventions from your own department catalogue that should form part of this SME’s Development Plan.',
+                                            side: 'top',
+                                            align: 'start'
+                                        }
+                                    },
+                                    {
+                                        element: guideTarget('dp-builder-department-catalog'),
+                                        waitForElement: 1500,
+                                        popover: {
+                                            title: 'Available interventions',
+                                            description:
+                                                'Open the catalogue and select the department interventions that apply. Existing department additions also appear here when editing.',
+                                            side: 'right',
+                                            align: 'start'
+                                        }
+                                    },
+                                    {
+                                        element: guideTarget('dp-builder-department-next'),
+                                        waitForElement: 1500,
+                                        advanceOnClick: true,
+                                        popover: {
+                                            title: 'Review the plan',
+                                            description:
+                                                'Continue when the department additions are complete.',
+                                            side: 'top',
+                                            align: 'center',
+                                            showButtons: ['close']
+                                        }
+                                    }
+                                )
+                            }
+
+                            if (step <= confirmStepIndex) {
+                                steps.push(
+                                    {
+                                        element: guideTarget('dp-builder-confirm-step'),
+                                        waitForElement: 5000,
+                                        popover: {
+                                            title: 'Review and confirm',
+                                            description:
+                                                'Review the final SME and Department intervention list before submitting your department’s Development Plan confirmation.',
+                                            side: 'top',
+                                            align: 'start'
+                                        }
+                                    },
+                                    {
+                                        element: guideTarget('dp-builder-save-action'),
+                                        waitForElement: 1500,
+                                        advanceOnClick: true,
+                                        popover: {
+                                            title: 'Save Plan',
+                                            description:
+                                                'Open the final confirmation window.',
+                                            side: 'top',
+                                            align: 'center',
+                                            showButtons: ['close']
+                                        }
+                                    },
+                                    {
+                                        element: '.guide-dp-builder-confirm-modal',
+                                        waitForElement: 5000,
+                                        popover: {
+                                            title: 'Final confirmation',
+                                            description:
+                                                'Confirm the submission details before the department is marked as confirmed.',
+                                            side: 'left',
+                                            align: 'start'
+                                        }
+                                    },
+                                    {
+                                        element: guideTarget('dp-builder-confirmation-input'),
+                                        waitForElement: 1500,
+                                        popover: {
+                                            title: 'Submission requirement',
+                                            description:
+                                                'If interventions exist, select the delivery method. If there are no interventions, explicitly confirm that your department has none for this SME.',
+                                            side: 'right',
+                                            align: 'start'
+                                        }
+                                    },
+                                    {
+                                        element: '.guide-dp-builder-submit',
+                                        waitForElement: 1500,
+                                        popover: {
+                                            title: 'Submit Plan',
+                                            description:
+                                                'Submit when the confirmation requirement is complete. The plan is saved and, when interventions exist, its MOV is prepared for SME signature.',
+                                            side: 'top',
+                                            align: 'center'
+                                        }
+                                    }
+                                )
+                            }
 
                             return steps
                         }
@@ -384,7 +467,14 @@ const DiagnosticPlanBuilder: React.FC = () => {
                 ]
                 : []
         }),
-        [canUseBuilderGuide, hasGapPanel, hasSmeItems]
+        [
+            canUseBuilderGuide,
+            confirmStepIndex,
+            departmentStepIndex,
+            hasGapStep,
+            smeStepIndex,
+            step
+        ]
     )
 
     usePageGuides(guideRegistration)
@@ -444,31 +534,9 @@ const DiagnosticPlanBuilder: React.FC = () => {
 
                 setInterventionsCatalog(catalog)
 
-                // Gap suggestions come from the GAP Analysis mapping and are
-                // accepted as Department source. Titles are resolved against the
-                // catalogue above so a suggestion can never fall outside this
-                // department — the save path would reject it anyway.
-                const catalogueTitles = new Map<string, string>(
-                    catalog.map((item: any) => [
-                        String(item.id || '').trim(),
-                        String(
-                            item.title || item.interventionTitle || item.name || ''
-                        ).trim()
-                    ])
-                )
-
-                setGapLoading(true)
-                loadGapSuggestions(participantId, userDepartmentName, catalogueTitles)
-                    .then(result => {
-                        setGapSuggestions(result.suggestions)
-                        setGapId(result.gapId)
-                        setGapUnconfirmed(result.unconfirmed)
-                    })
-                    .catch(error => {
-                        console.error('Failed to load gap suggestions', error)
-                        setGapSuggestions([])
-                    })
-                    .finally(() => setGapLoading(false))
+                // Gap suggestions will be connected later.
+                // Any accepted suggestion is saved as Department source.
+                setGapSuggestions([])
 
                 const planQuery = query(
                     collection(db, 'diagnosticPlans'),
@@ -518,8 +586,7 @@ const DiagnosticPlanBuilder: React.FC = () => {
                     }))
                     .filter((item: BuilderItem) => item.id && item.title)
 
-                setPreviousDepartmentItems(uniq(savedDepartmentItems))
-                setDepartmentSelected([])
+                setDepartmentSelected(uniq(savedDepartmentItems))
             } catch (error) {
                 console.error('[DiagnosticPlanBuilder] Failed to load:', error)
                 message.error('Failed to load builder data')
@@ -530,14 +597,25 @@ const DiagnosticPlanBuilder: React.FC = () => {
 
         load()
     }, [participantId, activeProgramId, userDepartmentId])
+
+    useEffect(() => {
+        const maxStep = stepItems.length - 1
+        if (step > maxStep) setStep(maxStep)
+    }, [step, stepItems.length])
+
+    const goNext = () =>
+        setStep(current => Math.min(current + 1, stepItems.length - 1))
+
+    const goBack = () => setStep(current => Math.max(current - 1, 0))
+
+    const compulsoryIds = useMemo(() => new Set<string>(
+        interventionsCatalog.filter(item => item.compulsory === true)
+            .map(item => String(item.id || '').trim()).filter(Boolean)
+    ), [interventionsCatalog])
+
     const finalList = useMemo(
-        () => uniq([...requiredItems, ...previousDepartmentItems, ...departmentSelected,
-            ...interventionsCatalog.filter(item => item.compulsory === true).map(item => ({
-                id: item.id,
-                title: item.interventionTitle || item.title || 'Intervention',
-                source: 'Department' as const
-            }))]),
-        [requiredItems, previousDepartmentItems, departmentSelected, interventionsCatalog]
+        () => buildRequiredPlanItems([...requiredItems, ...departmentSelected], interventionsCatalog),
+        [requiredItems, departmentSelected, interventionsCatalog]
     )
 
     const hasInterventions = finalList.length > 0
@@ -550,15 +628,16 @@ const DiagnosticPlanBuilder: React.FC = () => {
     }, [hasInterventions])
 
     const removeFromFinal = (item: BuilderItem) => {
+        if (compulsoryIds.has(String(item.id).trim())) {
+            message.info('Compulsory interventions are included automatically and cannot be removed here.')
+            return
+        }
         if (item.source === 'SME') {
             message.info('SME-selected interventions cannot be removed here.')
             return
         }
 
         const key = keyOf(item)
-        setPreviousDepartmentItems(current =>
-            current.filter(selected => keyOf(selected) !== key)
-        )
         setDepartmentSelected(current =>
             current.filter(selected => keyOf(selected) !== key)
         )
@@ -591,7 +670,7 @@ const DiagnosticPlanBuilder: React.FC = () => {
                 title: 'Action',
                 width: 110,
                 render: (_: unknown, item: BuilderItem) =>
-                    item.source === 'Department' ? (
+                    item.source === 'Department' && !compulsoryIds.has(String(item.id).trim()) ? (
                         <Button
                             danger
                             type="link"
@@ -600,11 +679,11 @@ const DiagnosticPlanBuilder: React.FC = () => {
                             Remove
                         </Button>
                     ) : (
-                        <Text type="secondary">Required</Text>
+                        <Text type="secondary">{compulsoryIds.has(String(item.id).trim()) ? 'Compulsory' : 'Required'}</Text>
                     )
             }
         ],
-        [baseColumns]
+        [baseColumns, compulsoryIds]
     )
 
     const canSubmit = hasInterventions
@@ -663,12 +742,13 @@ const DiagnosticPlanBuilder: React.FC = () => {
             )
         }
 
-        const departmentInterventions = mergeCompulsoryInterventions(safeFinalList.map(item => ({
+        const departmentInterventions = safeFinalList.map(item => ({
             id: item.id,
             title: item.title,
             source: item.source,
-            departmentId: userDepartmentId
-        })), interventionsCatalog)
+            departmentId: userDepartmentId,
+            compulsory: compulsoryIds.has(String(item.id).trim())
+        }))
 
         const userId = String(
             (user as any)?.uid ||
@@ -876,473 +956,364 @@ const DiagnosticPlanBuilder: React.FC = () => {
         )
     }
 
-    const previousDepartmentIds = new Set(
-        previousDepartmentItems.map(item => String(item.id || '').trim()).filter(Boolean)
+    const existingPlanInfo = existingPlanId ? (
+        <Tag color="blue">Existing Plan Found</Tag>
+    ) : (
+        <Tag color="orange">No Plan Yet</Tag>
     )
 
-    const availableDepartmentCatalog = interventionsCatalog.filter(
-        item => !previousDepartmentIds.has(String(item?.id || '').trim())
-    )
-
-    const departmentCatalog =
-        availableDepartmentCatalog.length === 0 ? (
-            <Empty description="No additional interventions available for this department" />
-        ) : (
-            <Checkbox.Group
-                style={{ width: '100%' }}
-                value={departmentSelected.map(item => item.id)}
-                onChange={values => {
-                    const selectedIds = new Set((values as string[]).map(String))
-
-                    const selectedItems: BuilderItem[] = availableDepartmentCatalog
-                        .filter(item => selectedIds.has(String(item.id)))
-                        .filter(isSameDeptIntervention)
-                        .map(item => ({
-                            id: String(item.id),
-                            title: String(
-                                item.interventionTitle || item.title || ''
-                            ).trim(),
-                            source: 'Department' as const
-                        }))
-                        .filter(item => item.id && item.title)
-
-                    // Merge rather than replace. A gap suggestion can point at an
-                    // intervention that is not in availableDepartmentCatalog (it is
-                    // filtered to exclude previously selected ones), and rebuilding
-                    // purely from the ticked boxes would silently drop it.
-                    const availableIds = new Set(
-                        availableDepartmentCatalog.map(item => String(item.id || '').trim())
-                    )
-
-                    setDepartmentSelected(current =>
-                        uniq([
-                            ...current.filter(item => !availableIds.has(item.id)),
-                            ...selectedItems
-                        ])
-                    )
-                }}
-            >
-                <Space direction="vertical" size={10}>
-                    {availableDepartmentCatalog.map(item => (
-                        <Checkbox key={String(item.id)} value={String(item.id)}>
-                            {String(item.interventionTitle || item.title || '')}
-                        </Checkbox>
-                    ))}
-                </Space>
-            </Checkbox.Group>
-        )
-
-
-    /** Rows for the GAP panel, flagged against what is already in the plan. */
-    const gapRows = useMemo(
-        () =>
-            gapSuggestions.map(item => ({
-                ...item,
-                inPlan: finalList.some(
-                    selected =>
-                        keyOf(selected) ===
-                        keyOf({ id: item.id, title: item.title, source: 'Department' })
-                )
-            })),
-        [gapSuggestions, finalList]
-    )
-
-    const acceptSuggestion = (item: GapSuggestion) =>
-        setDepartmentSelected(current =>
-            uniq([
-                ...current,
-                { id: item.id, title: item.title, source: 'Department' as const }
-            ])
-        )
-
-    const gapPanel = (
-        <div data-guide="dp-builder-gap-panel">
-            <Space
-                wrap
-                align="center"
-                style={{
-                    width: '100%',
-                    justifyContent: 'space-between',
-                    marginBottom: 12
-                }}
-            >
-                <Text type="secondary">
-                    Gaps identified for your department,
-                    matched to your catalogue. Accepting one records it as a
-                    Department intervention.
-                </Text>
-            </Space>
-
-            {gapLoading ? (
-                <Alert
-                    type="info"
-                    showIcon
-                    message="Matching gaps to your interventions…"
-                />
-            ) : gapUnconfirmed ? (
-                <Alert
-                    type="warning"
-                    showIcon
-                    message="GAP Analysis not confirmed yet"
-                    description="ROM has not confirmed this GAP, so its answers are not final. Build the plan from the SME and Department panels, or ask ROM to confirm first."
-                />
-            ) : gapRows.length === 0 ? (
-                <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={
-                        gapId
-                            ? 'No gaps in your section matched an intervention in your catalogue.'
-                            : 'No GAP Analysis has been captured for this participant.'
-                    }
-                />
-            ) : (
-                <Table
-                    dataSource={gapRows}
-                    columns={[
-                        {
-                            title: 'Gap identified',
-                            dataIndex: 'question',
-                            render: (_: unknown, item: any) => (
-                                <div>
-                                    <div>{item.question}</div>
-                                    <Space size={6} wrap style={{ marginTop: 4 }}>
-                                        <Tag color="red">{item.answer}</Tag>
-                                        {item.comment ? (
-                                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                                {item.comment}
-                                            </Text>
-                                        ) : null}
-                                    </Space>
-                                </div>
-                            )
-                        },
-                        {
-                            title: 'Suggested intervention',
-                            dataIndex: 'title',
-                            render: (_: unknown, item: any) => (
-                                <div>
-                                    <div>{item.title}</div>
-                                    {item.rationale ? (
-                                        <Text type="secondary" style={{ fontSize: 12 }}>
-                                            {item.rationale}
-                                        </Text>
-                                    ) : null}
-                                </div>
-                            )
-                        },
-                        {
-                            title: 'Confidence',
-                            dataIndex: 'confidence',
-                            width: 110,
-                            render: (value: number) => (
-                                <Tag
-                                    color={
-                                        value >= 70 ? 'blue' : value >= 40 ? 'orange' : undefined
-                                    }
-                                >
-                                    {value}%
-                                </Tag>
-                            )
-                        },
-                        {
-                            title: 'Action',
-                            width: 110,
-                            render: (_: unknown, item: any) =>
-                                item.inPlan ? (
-                                    <Tag color="green">In plan</Tag>
-                                ) : (
-                                    <Button
-                                        type="link"
-
-                                        onClick={() => acceptSuggestion(item)}
-                                    >
-                                        Accept
-                                    </Button>
-                                )
-                        }
-                    ]}
-                    rowKey={item => `${item.section}-${item.questionIndex}-${item.id}`}
-                    pagination={false}
-                    size="small"
-                />
-            )}
-
-            <Alert
-                type="info"
-                showIcon
-                message="AI-suggested matches — review each one before accepting."
-                style={{ marginTop: 12 }}
-            />
-        </div>
-    )
-
-    const sourcePanels = [
-        ...(hasGapPanel
+    const departmentCollapseItems = [
+        ...(existingPlanId && departmentSelected.length > 0
             ? [
                 {
-                    key: 'gap',
-                    label: (
-                        <Space>
-                            <Text strong>From the GAP Analysis</Text>
-                            {gapLoading ? (
-                                <Tag>loading…</Tag>
-                            ) : gapRows.length ? (
-                                <Tag color="gold">{gapRows.length}</Tag>
-                            ) : null}
-                        </Space>
-                    ),
-                    children: gapPanel,
-                    forceRender: true
-                }
-            ]
-            : []),
-        // Omitted entirely when the SME chose nothing for this department —
-        // an empty panel is noise, and the absence is already visible in the plan.
-        ...(hasSmeItems
-            ? [
-                {
-                    key: 'sme',
-                    label: (
-                        <Space>
-                            <Text strong>Selected by the SME</Text>
-                            <Tag color="green">{requiredItems.length}</Tag>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                read-only
-                            </Text>
-                        </Space>
-                    ),
-                    forceRender: true,
+                    key: 'previous',
+                    label: 'Previously Added by Department',
                     children: (
-                        <div data-guide="dp-builder-sme-panel">
-                            <Text type="secondary">
-                                These came from the SME’s application and cannot be
-                                removed by the department.
-                            </Text>
-                            <div style={{ marginTop: 12 }}>
-                                <Table
-                                    dataSource={requiredItems}
-                                    columns={baseColumns as any}
-                                    rowKey={keyOf}
-                                    pagination={false}
-                                    size="small"
-                                />
-                            </div>
-                        </div>
+                        <Table
+                            dataSource={departmentSelected}
+                            columns={confirmColumns as any}
+                            rowKey={keyOf}
+                            pagination={false}
+                            size="small"
+                        />
                     )
                 }
             ]
             : []),
         {
-            key: 'department',
-            label: (
-                <Space>
-                    <Text strong>Your department catalogue</Text>
-                    <Tag>{availableDepartmentCatalog.length}</Tag>
-                </Space>
-            ),
-            forceRender: true,
-            children: (
-                <div data-guide="dp-builder-department-panel">
-                    <Text type="secondary">
-                        Tick any additional interventions your department will deliver.
-                        Anything already in the plan appears on the right.
-                    </Text>
-                    <div
-                        data-guide="dp-builder-department-catalog"
-                        style={{ marginTop: 12 }}
+            key: 'catalog',
+            label: 'Available Department Interventions',
+            children:
+                interventionsCatalog.length === 0 ? (
+                    <Empty description="No interventions found for this department" />
+                ) : (
+                    <Checkbox.Group
+                        style={{ width: '100%' }}
+                        value={Array.from(new Set([...departmentSelected.map(item => item.id), ...compulsoryIds]))}
+                        onChange={values => {
+                            const selectedIds = new Set(
+                                (values as string[]).map(String)
+                            )
+
+                            const selectedItems: BuilderItem[] =
+                                interventionsCatalog
+                                    .filter(item =>
+                                        selectedIds.has(String(item.id)) || item.compulsory === true
+                                    )
+                                    .filter(isSameDeptIntervention)
+                                    .map(item => ({
+                                        id: String(item.id),
+                                        title: String(
+                                            item.interventionTitle ||
+                                            item.title ||
+                                            ''
+                                        ).trim(),
+                                        source: 'Department' as const
+                                    }))
+                                    .filter(item => item.id && item.title)
+
+                            setDepartmentSelected(uniq(selectedItems))
+                        }}
                     >
-                        {departmentCatalog}
-                    </div>
-                </div>
-            )
+                        <Space direction="vertical" size={10}>
+                            {interventionsCatalog.map(item => (
+                                <Checkbox
+                                    key={String(item.id)}
+                                    value={String(item.id)}
+                                    disabled={item.compulsory === true}
+                                >
+                                    {String(
+                                        item.interventionTitle || item.title || ''
+                                    )}
+                                    {item.compulsory === true && <Tag color="red" style={{ marginLeft: 8 }}>Compulsory</Tag>}
+                                </Checkbox>
+                            ))}
+                        </Space>
+                    </Checkbox.Group>
+                )
         }
     ]
 
     return (
-        <div style={{ padding: '5px 24px', }}>
+        <div style={{ padding: 24, minHeight: '100vh' }}>
             <Helmet>
                 <title>Development Plan Builder | Smart Incubation</title>
             </Helmet>
 
-            <MotionCard style={{ marginBottom: 12 }}>
-                <div
-                    data-guide="dp-builder-header"
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 16,
-                        width: '100%',
-                        flexWrap: 'wrap'
-                    }}
-                >
-                    <Button
-                        data-guide="dp-builder-back"
-                        icon={<ArrowLeftOutlined />}
-                        iconPosition="start"
-                        color="primary"
-                        variant="filled"
-                        style={roundBtn}
-                        onClick={() => navigate('/operations/plan')}
-                    >
-                        Back to Selections
-                    </Button>
-
-                    <div style={{ flex: 1, minWidth: 240 }}>
-                        <Text strong style={{ fontSize: 16 }}>
-                            {beneficiaryName || 'Development Plan'}
-                        </Text>
-                        {userDepartmentName ? (
-                            <Text type="secondary"> · {userDepartmentName}</Text>
-                        ) : null}
-                    </div>
-
-                    {gapId && (
+            <div data-guide="dp-builder-header">
+                <DashboardHeaderCard
+                    title={
+                        beneficiaryName
+                            ? `Developmental Plan: ${beneficiaryName}`
+                            : 'Developmental Plan Builder'
+                    }
+                    subtitle={
+                        <Space wrap>
+                            <span>{`Department: ${userDepartmentName || '—'}`}</span>
+                            {existingPlanInfo}
+                        </Space>
+                    }
+                    extraRight={
                         <Button
+                            data-guide="dp-builder-back"
+                            icon={<ArrowLeftOutlined />}
+                            iconPosition="start"
+                            color="primary"
+                            variant="filled"
                             style={roundBtn}
-                            icon={<FileSearchOutlined />}
-                            onClick={() => setGapResponsesOpen(true)}
+                            onClick={() => navigate('/operations/plan')}
                         >
-                            GAP responses
+                            Back to Selections
                         </Button>
-                    )}
-                </div>
+                    }
+                />
+            </div>
+
+            <MotionCard style={{ marginTop: 12 }}>
+                <Steps
+                    data-guide="dp-builder-steps"
+                    type="navigation"
+                    size="small"
+                    current={step}
+                    onChange={setStep}
+                    items={stepItems}
+                />
             </MotionCard>
 
             {loading && <LoadingOverlay tip="Loading data..." />}
 
-            <Row gutter={[12, 12]} align="top">
-                <Col xs={24} lg={15} xl={16}>
-                    <MotionCard data-guide="dp-builder-sources">
-                        {/*
-                          * All panels open by default: seeing every source at once
-                          * is the point of dropping the wizard. forceRender keeps
-                          * each panel's content in the DOM so the guide tour can
-                          * still anchor to a panel the user has collapsed.
-                          */}
-                        <Collapse
-                            defaultActiveKey={['gap', 'sme', 'department']}
-                            items={sourcePanels}
+            <Divider />
+
+            {hasGapStep && step === 0 && (
+                <div
+                    data-guide="dp-builder-current-step"
+                    style={{ width: '100%' }}
+                >
+                    <MotionCard data-guide="dp-builder-gap-step">
+                        <Alert
+                            type="info"
+                            showIcon
+                            message="Gap suggestions for your department"
+                            description="Accepted gap suggestions will be recorded as Department interventions."
+                            style={{ marginBottom: 12 }}
                         />
-                    </MotionCard>
-                </Col>
 
-                <Col xs={24} lg={9} xl={8}>
-                    <div
-                        data-guide="dp-builder-plan-summary"
-                        style={{ position: 'sticky', top: 12 }}
-                    >
-                        <MotionCard>
-                            <Space
-                                align="center"
-                                style={{
-                                    width: '100%',
-                                    justifyContent: 'space-between',
-                                    marginBottom: 12
-                                }}
+                        <Table
+                            dataSource={gapSuggestions}
+                            columns={[
+                                ...baseColumns,
+                                {
+                                    title: 'Action',
+                                    render: (_: unknown, item: BuilderItem) => (
+                                        <Button
+                                            type="link"
+                                            onClick={() =>
+                                                setDepartmentSelected(current =>
+                                                    uniq([
+                                                        ...current,
+                                                        {
+                                                            ...item,
+                                                            source: 'Department'
+                                                        }
+                                                    ])
+                                                )
+                                            }
+                                        >
+                                            Accept
+                                        </Button>
+                                    )
+                                }
+                            ]}
+                            rowKey={keyOf}
+                            pagination={false}
+                            size="small"
+                        />
+
+                        <Divider />
+                        <Space wrap>
+                            <Button onClick={() => navigate('/operations/plan')}>
+                                Cancel
+                            </Button>
+                            <Button
+                                data-guide="dp-builder-gap-next"
+                                type="primary"
+                                onClick={goNext}
                             >
-                                <Text strong>This plan</Text>
-                                <Tag color={hasInterventions ? 'blue' : undefined}>
-                                    {finalList.length}
-                                </Tag>
-                            </Space>
+                                Next
+                            </Button>
+                        </Space>
+                    </MotionCard>
+                </div>
+            )}
 
-                            {hasInterventions ? (
-                                <Table
-                                    dataSource={finalList}
-                                    columns={confirmColumns as any}
-                                    rowKey={keyOf}
-                                    pagination={false}
-                                    size="small"
-                                    showHeader={false}
-                                />
-                            ) : (
-                                <Empty
-                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                    description="Nothing added yet"
-                                />
-                            )}
+            {step === smeStepIndex && (
+                <div
+                    data-guide="dp-builder-current-step"
+                    style={{ width: '100%' }}
+                >
+                    <MotionCard data-guide="dp-builder-sme-step">
+                        <Alert
+                            type="info"
+                            showIcon
+                            message="Interventions selected by the SME"
+                            description="These came from the SME's application and cannot be removed by the department."
+                            style={{ marginBottom: 12 }}
+                        />
 
-                            {hasInterventions && !dpDeliveryMethod && (
-                                <Alert
-                                    type="warning"
-                                    showIcon
-                                    message="Delivery method required"
-                                    description="You will choose it in the confirmation window."
-                                    style={{ marginTop: 12 }}
-                                />
-                            )}
+                        {requiredItems.length === 0 ? (
+                            <Empty description="The SME selected no interventions for this department" />
+                        ) : (
+                            <Table
+                                dataSource={requiredItems}
+                                columns={baseColumns as any}
+                                rowKey={keyOf}
+                                pagination={false}
+                                size="small"
+                            />
+                        )}
 
-                            {!hasInterventions && (
-                                <Alert
-                                    type="warning"
-                                    showIcon
-                                    message="No interventions selected"
-                                    description="You may still submit, but you must explicitly confirm that this SME has none under your department."
-                                    style={{ marginTop: 12 }}
-                                />
-                            )}
-
-                            <Divider />
+                        <Divider />
+                        <Space wrap>
+                            <Button
+                                icon={<ArrowLeftOutlined />}
+                                iconPosition="start"
+                                style={roundBtn}
+                                onClick={() =>
+                                    hasGapStep
+                                        ? goBack()
+                                        : navigate('/operations/plan')
+                                }
+                            >
+                                Back
+                            </Button>
 
                             <Button
+                                data-guide="dp-builder-sme-next"
+                                icon={<ArrowRightOutlined />}
+                                iconPosition="end"
+                                style={roundBtn}
+                                color="primary"
+                                variant="filled"
+                                onClick={goNext}
+                            >
+                                Next
+                            </Button>
+                        </Space>
+                    </MotionCard>
+                </div>
+            )}
+
+            {step === departmentStepIndex && (
+                <div
+                    data-guide="dp-builder-current-step"
+                    style={{ width: '100%' }}
+                >
+                    <MotionCard data-guide="dp-builder-department-step">
+                        <Alert
+                            type="info"
+                            showIcon
+                            message="Add interventions from your department"
+                            description="Anything added here will be recorded with Department as its source."
+                            style={{ marginBottom: 12 }}
+                        />
+
+                        <div data-guide="dp-builder-department-catalog">
+                            <Collapse accordion items={departmentCollapseItems} />
+                        </div>
+
+                        <Divider />
+                        <Space wrap>
+                            <Button
+                                icon={<ArrowLeftOutlined />}
+                                iconPosition="start"
+                                style={roundBtn}
+                                onClick={goBack}
+                            >
+                                Back
+                            </Button>
+                            <Button
+                                data-guide="dp-builder-department-next"
+                                icon={<ArrowRightOutlined />}
+                                iconPosition="end"
+                                style={roundBtn}
+                                color="primary"
+                                variant="filled"
+                                onClick={goNext}
+                            >
+                                Next
+                            </Button>
+                        </Space>
+                    </MotionCard>
+                </div>
+            )}
+
+            {step === confirmStepIndex && (
+                <div
+                    data-guide="dp-builder-current-step"
+                    style={{ width: '100%' }}
+                >
+                    <MotionCard data-guide="dp-builder-confirm-step">
+                        <Alert
+                            type={hasInterventions ? 'success' : 'warning'}
+                            showIcon
+                            message={
+                                hasInterventions
+                                    ? 'Review and confirm the Developmental Plan'
+                                    : 'No interventions selected for this department'
+                            }
+                            description={
+                                hasInterventions
+                                    ? 'Optional department interventions can be removed. Compulsory interventions are included automatically and need no SME DP sign-off.'
+                                    : 'You may still submit, but you must explicitly confirm that this SME has no interventions under your department.'
+                            }
+                            style={{ marginBottom: 12 }}
+                        />
+
+                        {hasInterventions ? (
+                            <Table
+                                dataSource={finalList}
+                                columns={confirmColumns as any}
+                                rowKey={keyOf}
+                                pagination={false}
+                                size="small"
+                            />
+                        ) : (
+                            <Empty description="No SME or Department interventions selected" />
+                        )}
+
+                        {hasInterventions && !dpDeliveryMethod && (
+                            <Alert
+                                type="warning"
+                                showIcon
+                                message="Delivery method required"
+                                description="The delivery method will be selected in the confirmation window."
+                                style={{ marginTop: 12 }}
+                            />
+                        )}
+
+                        <Divider />
+                        <Space wrap>
+                            <Button
+                                icon={<ArrowLeftOutlined />}
+                                iconPosition="start"
+                                style={roundBtn}
+                                onClick={goBack}
+                            >
+                                Back
+                            </Button>
+                            <Button
                                 data-guide="dp-builder-save-action"
-                                block
                                 type="primary"
                                 style={roundBtn}
                                 onClick={openConfirmation}
                                 disabled={!participantId}
                             >
                                 Save Plan
-                                {hasInterventions ? ` (${finalList.length})` : ''}
                             </Button>
-                        </MotionCard>
-                    </div>
-                </Col>
-            </Row>
-
-            {/*
-              * The plan panel is sticky on desktop, but the columns stack on
-              * mobile and it scrolls away — so Save gets its own fixed bar there.
-              */}
-            {isMobile && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        zIndex: 20,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '10px 16px',
-                        background: token.colorBgElevated,
-                        borderTop: `1px solid ${token.colorBorderSecondary}`,
-                        boxShadow: token.boxShadowSecondary
-                    }}
-                >
-                    <Text style={{ flex: 1 }}>
-                        {finalList.length} intervention
-                        {finalList.length === 1 ? '' : 's'}
-                    </Text>
-                    <Button
-                        type="primary"
-                        style={roundBtn}
-                        onClick={openConfirmation}
-                        disabled={!participantId}
-                    >
-                        Save Plan
-                    </Button>
+                        </Space>
+                    </MotionCard>
                 </div>
             )}
-
-            <GapResponsesModal
-                open={gapResponsesOpen}
-                onClose={() => setGapResponsesOpen(false)}
-                gapId={gapId}
-                sections={ownedSections}
-                companyName={beneficiaryName}
-            />
 
             <Modal
                 className="guide-dp-builder-confirm-modal"

@@ -10,6 +10,7 @@ import {
 import {
     Avatar,
     Button,
+    ConfigProvider,
     Form,
     Input,
     Modal,
@@ -20,6 +21,7 @@ import {
     message,
     theme
 } from 'antd'
+import './account-settings.css'
 import {
     useEffect,
     useLayoutEffect,
@@ -720,14 +722,20 @@ export const AccountSettings = ({
                 style={{
                     minHeight: 72,
                     padding: '15px 20px',
-                    display: 'flex',
+                    display: 'grid',
+                    // Equal-width flanking columns are what actually centres
+                    // the title — a two-column flex row centres it against
+                    // the wrong axis the moment the close button's own width
+                    // is added to one side.
+                    gridTemplateColumns: '32px 1fr 32px',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
                     gap: 16,
                     borderBottom: `1px solid ${token.colorBorderSecondary}`
                 }}
             >
-                <div>
+                <div />
+
+                <div style={{ textAlign: 'center' }}>
                     <Text
                         strong
                         style={{
@@ -748,12 +756,27 @@ export const AccountSettings = ({
                     </Text>
                 </div>
 
-                <Button
-                    type="text"
-                    shape="circle"
-                    icon={<CloseOutlined />}
+                <button
+                    type="button"
+                    className="account-settings-close"
                     onClick={closeModal}
-                />
+                    aria-label="Close"
+                    style={{
+                        width: 32,
+                        height: 32,
+                        display: 'grid',
+                        placeItems: 'center',
+                        justifySelf: 'end',
+                        borderRadius: '50%',
+                        border: '1px solid #ff4d4f',
+                        color: '#ff4d4f',
+                        background: 'color-mix(in srgb, #ff4d4f 8%, transparent)',
+                        cursor: 'pointer',
+                        font: 'inherit'
+                    }}
+                >
+                    <CloseOutlined />
+                </button>
             </div>
 
             <div
@@ -764,20 +787,25 @@ export const AccountSettings = ({
             >
                 <Segmented
                     block
+                    size="large"
+                    className="account-settings-segmented"
                     value={activeSection}
                     onChange={handleSectionChange}
                     options={[
                         {
                             label: 'Profile',
-                            value: 'profile'
+                            value: 'profile',
+                            icon: <UserOutlined />
                         },
                         {
                             label: 'Security',
-                            value: 'security'
+                            value: 'security',
+                            icon: <LockOutlined />
                         },
                         {
                             label: 'Signature',
-                            value: 'signature'
+                            value: 'signature',
+                            icon: <FormOutlined />
                         }
                     ]}
                 />
@@ -817,7 +845,7 @@ export const AccountSettings = ({
             <div
                 style={{
                     border: `1px solid ${token.colorBorderSecondary}`,
-                    borderRadius: 18,
+                    borderRadius: 20,
                     padding: 24,
                     display: 'grid',
                     gridTemplateColumns: 'auto 1fr',
@@ -898,13 +926,14 @@ export const AccountSettings = ({
 
             <button
                 type="button"
+                className="account-settings-row"
                 onClick={startProfileEditing}
                 style={{
                     width: '100%',
                     marginTop: 14,
                     border: `1px solid ${token.colorBorderSecondary}`,
                     background: token.colorBgContainer,
-                    borderRadius: token.borderRadiusLG,
+                    borderRadius: 16,
                     padding: '14px 16px',
                     cursor: 'pointer',
                     font: 'inherit',
@@ -1087,7 +1116,7 @@ export const AccountSettings = ({
             <div
                 style={{
                     border: `1px solid ${token.colorBorderSecondary}`,
-                    borderRadius: 18,
+                    borderRadius: 20,
                     padding: 18,
                     display: 'flex',
                     alignItems: 'center',
@@ -1157,7 +1186,7 @@ export const AccountSettings = ({
                     style={{
                         marginTop: 12,
                         padding: '12px 14px',
-                        borderRadius: token.borderRadiusLG,
+                        borderRadius: 16,
                         background: token.colorFillTertiary
                     }}
                 >
@@ -1308,7 +1337,7 @@ export const AccountSettings = ({
                 <div
                     style={{
                         background: token.colorFillTertiary,
-                        borderRadius: token.borderRadiusLG,
+                        borderRadius: 16,
                         padding: '12px 14px'
                     }}
                 >
@@ -1383,7 +1412,7 @@ export const AccountSettings = ({
                     cursor: 'pointer',
                     textAlign: 'left',
                     font: 'inherit',
-                    borderRadius: token.borderRadiusLG,
+                    borderRadius: 16,
                     border: `1px solid ${selected
                             ? token.colorPrimary
                             : token.colorBorderSecondary
@@ -1508,7 +1537,7 @@ export const AccountSettings = ({
                                 padding: '15px 16px',
                                 cursor: 'pointer',
                                 textAlign: 'left',
-                                borderRadius: token.borderRadiusLG,
+                                borderRadius: 16,
                                 border: `1px solid ${selected
                                         ? token.colorPrimary
                                         : token.colorBorderSecondary
@@ -1579,7 +1608,7 @@ export const AccountSettings = ({
                     height: 190,
                     overflow: 'hidden',
                     position: 'relative',
-                    borderRadius: token.borderRadiusLG,
+                    borderRadius: 16,
                     border: `1px dashed ${token.colorBorder}`,
                     background: '#fff'
                 }}
@@ -1686,7 +1715,7 @@ export const AccountSettings = ({
                 <div
                     style={{
                         border: `1px solid ${token.colorBorderSecondary}`,
-                        borderRadius: 18,
+                        borderRadius: 20,
                         overflow: 'hidden'
                     }}
                 >
@@ -1753,7 +1782,7 @@ export const AccountSettings = ({
                         minHeight: 250,
                         padding: 28,
                         border: `1px dashed ${token.colorBorder}`,
-                        borderRadius: 18,
+                        borderRadius: 20,
                         display: 'grid',
                         placeItems: 'center',
                         textAlign: 'center'
@@ -2044,7 +2073,7 @@ export const AccountSettings = ({
                 content: {
                     padding: 0,
                     overflow: 'hidden',
-                    borderRadius: 18,
+                    borderRadius: 24,
                     background: token.colorBgContainer
                 },
                 body: {
@@ -2053,53 +2082,74 @@ export const AccountSettings = ({
                 }
             }}
         >
-            {loading ? (
-                <div
-                    style={{
-                        padding: 24
-                    }}
-                >
-                    <Skeleton
-                        active
-                        avatar
-                        paragraph={{
-                            rows: 6
-                        }}
-                    />
-                </div>
-            ) : (
-                <div
-                    style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        maxHeight: '84vh',
-                        background: token.colorBgContainer
-                    }}
-                >
-                    {renderHeader()}
-
+            {/*
+                Scoped to this modal only — softens buttons, the Segmented
+                control, inputs and tags without touching the app-wide radius
+                token everything else still relies on.
+            */}
+            <ConfigProvider
+                theme={{
+                    token: {
+                        borderRadius: 10,
+                        borderRadiusLG: 16
+                    }
+                }}
+            >
+                {loading ? (
                     <div
                         style={{
-                            flex: 1,
-                            minHeight: 0,
-                            overflowY: 'auto',
-                            padding: '22px 20px'
+                            padding: 24
                         }}
                     >
-                        {renderContent()}
+                        <Skeleton
+                            active
+                            avatar
+                            paragraph={{
+                                rows: 6
+                            }}
+                        />
                     </div>
-
+                ) : (
                     <div
                         style={{
-                            padding: '12px 20px',
-                            borderTop: `1px solid ${token.colorBorderSecondary}`,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            // A tall cap rather than a tight one: on any
+                            // reasonably sized screen the content below never
+                            // reaches it, so the scroll region — and its
+                            // scrollbar — stay dormant. It only earns its keep
+                            // on short windows or the longer Security/Signature
+                            // forms.
+                            maxHeight: 'min(90vh, 780px)',
                             background: token.colorBgContainer
                         }}
                     >
-                        {renderFooter()}
+                        {renderHeader()}
+
+                        <div
+                            className="account-settings-scroll"
+                            style={{
+                                flex: 1,
+                                minHeight: 0,
+                                overflowY: 'auto',
+                                padding: '22px 20px'
+                            }}
+                        >
+                            {renderContent()}
+                        </div>
+
+                        <div
+                            style={{
+                                padding: '12px 20px',
+                                borderTop: `1px solid ${token.colorBorderSecondary}`,
+                                background: token.colorBgContainer
+                            }}
+                        >
+                            {renderFooter()}
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+            </ConfigProvider>
         </Modal>
     )
 }

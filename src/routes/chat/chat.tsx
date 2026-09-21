@@ -13,12 +13,13 @@ import {
     Spin,
     Typography
 } from 'antd'
-import { ArrowLeftOutlined, OpenAIOutlined, SendOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, AudioOutlined, OpenAIOutlined, SendOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { ChartSpecRenderer } from '@/components/ai/ChartSpecRenderer'
+import { ConversationMode } from '@/routes/chat/ConversationMode'
 import {
     MAX_MESSAGE_LENGTH,
     useChatSession
@@ -270,6 +271,7 @@ const Chat: React.FC = () => {
     const { messages, isTyping, error, startMessage } = useChatSession()
     const state = { messages, isTyping, error }
     const [input, setInput] = useState('')
+    const [conversationMode, setConversationMode] = useState(false)
     const navigate = useNavigate()
     const screens = useBreakpoint()
     const isMobile = !screens.md
@@ -573,6 +575,33 @@ const Chat: React.FC = () => {
           font-weight: 600;
           text-align: center;
         }
+        .chat-voice-toggle {
+          position: absolute;
+          top: 16px;
+          right: clamp(18px, 4vw, 40px);
+          z-index: 3;
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          height: 34px;
+          padding: 0 14px;
+          border: 1px solid var(--app-border);
+          border-radius: 17px;
+          color: var(--app-text);
+          background: var(--app-surface);
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;
+        }
+        .chat-voice-toggle:hover,
+        .chat-voice-toggle:focus-visible {
+          border-color: var(--app-accent);
+          color: var(--app-accent);
+          background: var(--app-accent-soft);
+          box-shadow: 0 8px 20px color-mix(in srgb, var(--app-accent) 15%, transparent);
+          outline: none;
+        }
         .chat-marker-rail {
           position: absolute;
           left: 8px;
@@ -828,8 +857,26 @@ const Chat: React.FC = () => {
                             <ArrowLeftOutlined />
                         </button>
                         <span className='chat-mobile-header-title'>QxAgent</span>
-                        <span className='chat-mobile-header-spacer' aria-hidden='true' />
+                        <button
+                            type='button'
+                            className='chat-back-button'
+                            aria-label='Start conversation mode'
+                            onClick={() => setConversationMode(true)}
+                        >
+                            <AudioOutlined />
+                        </button>
                     </header>
+                )}
+                {!isMobile && (
+                    <button
+                        type='button'
+                        className='chat-voice-toggle'
+                        aria-label='Start conversation mode'
+                        onClick={() => setConversationMode(true)}
+                    >
+                        <AudioOutlined />
+                        <span>Conversation mode</span>
+                    </button>
                 )}
                 <nav className='chat-marker-rail' aria-label='Conversation messages'>
                     {state.messages.filter(item => item.sender === 'user').map(item => {
@@ -939,6 +986,10 @@ const Chat: React.FC = () => {
                     <footer className='chat-composer'>
                         {renderComposer(true)}
                     </footer>
+                )}
+
+                {conversationMode && (
+                    <ConversationMode onClose={() => setConversationMode(false)} />
                 )}
             </section>
         </div>

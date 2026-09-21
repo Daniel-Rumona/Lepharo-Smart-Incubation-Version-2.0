@@ -94,7 +94,7 @@
 
 .workspace-primary-segment:hover,
 .workspace-primary-segment:focus-visible {
-    color: #1677ff;
+    color: var(--app-accent);
     background: rgba(255, 255, 255, 0.65);
     outline: none;
 }
@@ -102,7 +102,7 @@
 .workspace-primary-segment-active,
 .workspace-primary-segment-active:hover,
 .workspace-primary-segment-active:focus-visible {
-    color: #1677ff;
+    color: var(--app-accent);
     background: #fff;
     box-shadow: 0 2px 8px rgba(20, 37, 63, 0.12);
 }
@@ -119,7 +119,7 @@
 }
 
 .workspace-primary-segment-active .workspace-segment-chevron {
-    color: #1677ff;
+    color: var(--app-accent);
 }
 
 .workspace-topbar-actions {
@@ -150,14 +150,14 @@
 
 .workspace-program-control-selectable:focus-within,
 .workspace-program-control-selectable:hover {
-    border-color: #91caff;
+    border-color: var(--app-accent-border-strong);
     background: #fff;
-    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.08);
+    box-shadow: 0 0 0 2px var(--app-accent-glow);
 }
 
 .workspace-program-icon {
     flex: 0 0 auto;
-    color: #1677ff;
+    color: var(--app-accent);
     font-size: 15px;
 }
 
@@ -201,8 +201,8 @@
 }
 
 .workspace-program-control-locked {
-    background: #f5f9ff;
-    border-color: #b7d7ff;
+    background: var(--app-accent-wash);
+    border-color: var(--app-accent-border);
 }
 
 .workspace-program-lock {
@@ -233,9 +233,9 @@
 
 .workspace-theme-toggle:hover,
 .workspace-theme-toggle:focus-visible {
-    border-color: #91caff !important;
-    color: #1677ff !important;
-    background: #f5f9ff !important;
+    border-color: var(--app-accent-border-strong) !important;
+    color: var(--app-accent) !important;
+    background: var(--app-accent-wash) !important;
 }
 
 .workspace-current-user-avatar {
@@ -245,17 +245,17 @@
 }
 
 .workspace-assistant-button {
-    border: 1px solid #cfe0ff !important;
-    color: #1677ff !important;
-    background: #f5f9ff !important;
+    border: 1px solid var(--app-accent-border) !important;
+    color: var(--app-accent) !important;
+    background: var(--app-accent-wash) !important;
 }
 
 .workspace-assistant-button:hover,
 .workspace-assistant-button:focus-visible,
 .workspace-assistant-button-active {
-    border-color: #69b1ff !important;
-    color: #0958d9 !important;
-    background: #e6f4ff !important;
+    border-color: var(--app-accent-border-strong) !important;
+    color: var(--app-accent-strong) !important;
+    background: var(--app-accent-soft) !important;
 }
 
 .workspace-logout-button:hover,
@@ -300,8 +300,8 @@
     justify-content: center;
     flex: 0 0 auto;
     border-radius: 12px;
-    color: #1677ff;
-    background: #eaf3ff;
+    color: var(--app-accent);
+    background: var(--app-accent-soft);
     font-size: 18px;
 }
 
@@ -363,7 +363,7 @@
 
 .workspace-more-segment:hover,
 .workspace-more-segment:focus-visible {
-    color: #1677ff;
+    color: var(--app-accent);
     background: rgba(255, 255, 255, 0.65);
     outline: none;
 }
@@ -371,7 +371,7 @@
 .workspace-more-segment-active,
 .workspace-more-segment-active:hover,
 .workspace-more-segment-active:focus-visible {
-    color: #1677ff;
+    color: var(--app-accent);
     background: #fff;
     box-shadow: 0 2px 7px rgba(20, 37, 63, 0.11);
 }
@@ -401,15 +401,15 @@
 
 .workspace-more-card:hover,
 .workspace-more-card:focus-visible {
-    border-color: #91caff;
-    box-shadow: 0 7px 18px rgba(22, 119, 255, 0.1);
+    border-color: var(--app-accent-border-strong);
+    box-shadow: 0 7px 18px var(--app-accent-glow-strong);
     transform: translateY(-1px);
     outline: none;
 }
 
 .workspace-more-card-active {
-    border-color: #69b1ff;
-    background: #f6faff;
+    border-color: var(--app-accent-border-strong);
+    background: var(--app-accent-wash);
 }
 
 .workspace-more-card-icon {
@@ -419,8 +419,8 @@
     align-items: center;
     justify-content: center;
     border-radius: 10px;
-    color: #1677ff;
-    background: #edf5ff;
+    color: var(--app-accent);
+    background: var(--app-accent-soft);
     font-size: 16px;
 }
 
@@ -678,8 +678,8 @@ Shared by the staff workspace and the applicant portal. */
 
 .workspace-bottom-nav-item-active {
     flex: 1 1 auto;
-    color: #1677ff;
-    background: #eaf3ff;
+    color: var(--app-accent);
+    background: var(--app-accent-soft);
 }
 
 .workspace-bottom-nav-item-active .workspace-bottom-nav-label {

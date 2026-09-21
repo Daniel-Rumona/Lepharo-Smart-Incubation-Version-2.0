@@ -42,6 +42,18 @@
     --app-wash-success: #f6ffed;
     --app-wash-warning: #fff7e6;
     --app-wash-error: #fff2f0;
+
+    /* Accent ramp. Everything below is redefined per data-accent in
+       styles/accent-themes.css — these are the "blue" values, which double as
+       the app's baseline/default so an unthemed accent still looks right. */
+    --app-accent-strong: #0958d9;
+    --app-accent-wash: #f5f9ff;
+    --app-accent-border: #cfe0ff;
+    --app-accent-border-strong: #91caff;
+    --app-accent-active-bg: #ffffff;
+    --app-accent-glow: rgba(22, 119, 255, 0.08);
+    --app-accent-glow-strong: rgba(22, 119, 255, 0.1);
+    --app-accent-contrast: #ffffff;
 }
 
 html[data-theme="dark"] {
@@ -64,6 +76,17 @@ html[data-theme="dark"] {
     --app-wash-success: rgba(91, 200, 91, 0.14);
     --app-wash-warning: rgba(245, 185, 66, 0.14);
     --app-wash-error: rgba(255, 107, 107, 0.14);
+
+    /* Accent ramp — dark "blue" baseline. */
+    --app-accent-strong: #7db4ff;
+    --app-accent-deep: #2f7fe0;
+    --app-accent-wash: rgba(74, 155, 255, 0.1);
+    --app-accent-border: rgba(74, 155, 255, 0.35);
+    --app-accent-border-strong: rgba(74, 155, 255, 0.55);
+    --app-accent-active-bg: rgba(74, 155, 255, 0.22);
+    --app-accent-glow: rgba(74, 155, 255, 0.18);
+    --app-accent-glow-strong: rgba(74, 155, 255, 0.22);
+    --app-accent-contrast: #ffffff;
 }
 
 /* ---------------------------------------------------------------------------
@@ -190,8 +213,8 @@ html[data-theme="dark"] .workspace-primary-segment-active:focus-visible,
 html[data-theme="dark"] .workspace-more-segment-active,
 html[data-theme="dark"] .workspace-more-segment-active:hover,
 html[data-theme="dark"] .workspace-more-segment-active:focus-visible {
-    color: #ffffff;
-    background: rgba(74, 155, 255, 0.22);
+    color: var(--app-accent-contrast);
+    background: var(--app-accent-active-bg);
 }
 
 html[data-theme="dark"] .workspace-program-control {
@@ -202,7 +225,7 @@ html[data-theme="dark"] .workspace-program-control {
 
 html[data-theme="dark"] .workspace-program-control-selectable:focus-within,
 html[data-theme="dark"] .workspace-program-control-selectable:hover {
-    border-color: rgba(74, 155, 255, 0.55);
+    border-color: var(--app-accent-border-strong);
     background: rgba(255, 255, 255, 0.07);
 }
 
@@ -216,8 +239,8 @@ html[data-theme="dark"] .workspace-program-control strong {
 }
 
 html[data-theme="dark"] .workspace-program-control-locked {
-    background: var(--app-wash-info);
-    border-color: rgba(74, 155, 255, 0.35);
+    background: var(--app-accent-wash);
+    border-color: var(--app-accent-border);
 }
 
 html[data-theme="dark"] .workspace-program-lock {
@@ -247,17 +270,17 @@ html[data-theme="dark"] .workspace-logout-button:focus-visible {
 }
 
 html[data-theme="dark"] .workspace-assistant-button {
-    border-color: rgba(74, 155, 255, 0.32) !important;
+    border-color: var(--app-accent-border) !important;
     color: var(--app-accent) !important;
-    background: rgba(74, 155, 255, 0.1) !important;
+    background: var(--app-accent-wash) !important;
 }
 
 html[data-theme="dark"] .workspace-assistant-button:hover,
 html[data-theme="dark"] .workspace-assistant-button:focus-visible,
 html[data-theme="dark"] .workspace-assistant-button-active {
-    border-color: rgba(74, 155, 255, 0.6) !important;
-    color: #7db4ff !important;
-    background: rgba(74, 155, 255, 0.22) !important;
+    border-color: var(--app-accent-border-strong) !important;
+    color: var(--app-accent-strong) !important;
+    background: var(--app-accent-active-bg) !important;
 }
 
 html[data-theme="dark"] .workspace-more-modal .ant-modal-header {
@@ -286,12 +309,12 @@ html[data-theme="dark"] .workspace-more-card {
 
 html[data-theme="dark"] .workspace-more-card:hover,
 html[data-theme="dark"] .workspace-more-card:focus-visible {
-    border-color: rgba(74, 155, 255, 0.5);
+    border-color: var(--app-accent-border-strong);
 }
 
 html[data-theme="dark"] .workspace-more-card-active {
-    border-color: rgba(74, 155, 255, 0.65);
-    background: rgba(74, 155, 255, 0.12);
+    border-color: var(--app-accent-border-strong);
+    background: var(--app-accent-wash);
 }
 
 html[data-theme="dark"] .workspace-more-card-icon {
@@ -886,13 +909,13 @@ html[data-theme="dark"] .ant-btn-default:not(.keep-light *) {
 }
 
 html[data-theme="dark"] .ant-btn-default:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
-    background: linear-gradient(180deg, rgba(74, 155, 255, 0.18), rgba(74, 155, 255, 0.08));
-    border-color: rgba(74, 155, 255, 0.55);
-    color: #9cc6ff;
+    background: linear-gradient(180deg, var(--app-accent-active-bg), var(--app-accent-wash));
+    border-color: var(--app-accent-border-strong);
+    color: var(--app-accent-strong);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.10),
-        0 0 0 1px rgba(74, 155, 255, 0.12),
-        0 4px 16px rgba(74, 155, 255, 0.18);
+        0 0 0 1px var(--app-accent-wash),
+        0 4px 16px var(--app-accent-glow);
     transform: translateY(-1px);
 }
 
@@ -905,20 +928,20 @@ html[data-theme="dark"] .ant-btn-default:not(:disabled):not(.ant-btn-disabled):h
    text on a blue field, which is what made "View calendar" unreadable.
 */
 html[data-theme="dark"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
-    background: linear-gradient(180deg, #59a6ff, #2f7fe0);
-    border-color: rgba(140, 194, 255, 0.45);
+    background: linear-gradient(180deg, var(--app-accent), var(--app-accent-deep));
+    border-color: var(--app-accent-border-strong);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.22),
-        0 2px 10px rgba(47, 127, 224, 0.35);
+        0 2px 10px var(--app-accent-glow);
 }
 
 html[data-theme="dark"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
-    background: linear-gradient(180deg, #6fb3ff, #3d8bec);
-    border-color: rgba(170, 212, 255, 0.7);
+    background: linear-gradient(180deg, var(--app-accent-strong), var(--app-accent));
+    border-color: var(--app-accent-strong);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.3),
-        0 0 0 1px rgba(120, 180, 255, 0.2),
-        0 6px 22px rgba(74, 155, 255, 0.42);
+        0 0 0 1px var(--app-accent-wash),
+        0 6px 22px var(--app-accent-glow-strong);
     transform: translateY(-1px);
 }
 
@@ -932,15 +955,15 @@ html[data-theme="dark"] .ant-btn-background-ghost:not(:disabled):not(.ant-btn-di
 }
 
 html[data-theme="dark"] .ant-btn-background-ghost.ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
-    border-color: rgba(74, 155, 255, 0.55);
-    color: #7db4ff;
+    border-color: var(--app-accent-border-strong);
+    color: var(--app-accent-strong);
 }
 
 html[data-theme="dark"] .ant-btn-background-ghost.ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
-    border-color: #7db4ff;
-    color: #9cc6ff;
-    background: rgba(74, 155, 255, 0.12);
-    box-shadow: 0 4px 16px rgba(74, 155, 255, 0.18);
+    border-color: var(--app-accent-strong);
+    color: var(--app-accent-strong);
+    background: var(--app-accent-wash);
+    box-shadow: 0 4px 16px var(--app-accent-glow);
     transform: translateY(-1px);
 }
 
@@ -982,8 +1005,8 @@ html[data-theme="dark"] .ant-btn-dangerous.ant-btn-text:not(:disabled):not(.ant-
 }
 
 html[data-theme="dark"] .ant-btn-link:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
-    color: #9cc6ff;
-    text-shadow: 0 0 12px rgba(74, 155, 255, 0.45);
+    color: var(--app-accent-strong);
+    text-shadow: 0 0 12px var(--app-accent-glow-strong);
 }
 
 /* --- Modal cancel --------------------------------------------------------- */
@@ -1016,7 +1039,7 @@ html[data-theme="dark"] .ant-btn:not(:disabled):not(.ant-btn-disabled):active:no
 /* Keyboard focus stays a visible ring rather than a glow — a glow alone is not a
    reliable focus indicator. */
 html[data-theme="dark"] .ant-btn:focus-visible:not(.keep-light *) {
-    outline: 2px solid rgba(122, 184, 255, 0.9);
+    outline: 2px solid var(--app-accent-strong);
     outline-offset: 2px;
 }
 

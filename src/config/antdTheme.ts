@@ -1,6 +1,6 @@
 import { theme as antdTheme } from "antd";
 import type { ThemeConfig } from "antd";
-import type { ResolvedColorMode } from "@/contexts/ThemeContext";
+import type { AccentTheme, ResolvedColorMode } from "@/contexts/ThemeContext";
 
 /**
  * Brand accent. Matches the RefineThemes.Blue primary the app shipped with, so
@@ -9,6 +9,18 @@ import type { ResolvedColorMode } from "@/contexts/ThemeContext";
  */
 const PRIMARY_LIGHT = "#1677FF";
 const PRIMARY_DARK = "#4A9BFF";
+
+/**
+ * Per-accent primaries, one pair per colour mode. Mirrors the CSS custom
+ * properties in styles/dark-mode.css and styles/accent-themes.css, so Ant
+ * Design's own tokens (buttons, checkboxes, switches, links, active tabs, …)
+ * track whichever accent is selected instead of only the hand-written chrome.
+ */
+const ACCENT_PRIMARY: Record<AccentTheme, { light: string; dark: string }> = {
+    blue: { light: PRIMARY_LIGHT, dark: PRIMARY_DARK },
+    ocean: { light: "#0E9488", dark: "#2DD4BF" },
+    violet: { light: "#7C3AED", dark: "#A78BFA" },
+};
 
 /**
  * Dark surface ramp. Deliberately a desaturated blue-grey rather than pure black:
@@ -144,7 +156,23 @@ const darkTheme: ThemeConfig = {
     },
 };
 
-export const getAntdTheme = (mode: ResolvedColorMode): ThemeConfig =>
-    mode === "dark" ? darkTheme : lightTheme;
+export const getAntdTheme = (
+    mode: ResolvedColorMode,
+    accent: AccentTheme = "blue",
+): ThemeConfig => {
+    const primary = mode === "dark" ? ACCENT_PRIMARY[accent].dark : ACCENT_PRIMARY[accent].light;
+    const base = mode === "dark" ? darkTheme : lightTheme;
 
-export { PRIMARY_LIGHT, PRIMARY_DARK, DARK_SURFACE, DARK_TEXT };
+    if (accent === "blue") return base;
+
+    return {
+        ...base,
+        token: {
+            ...base.token,
+            colorPrimary: primary,
+            ...(mode === "dark" ? { colorInfo: primary } : null),
+        },
+    };
+};
+
+export { PRIMARY_LIGHT, PRIMARY_DARK, DARK_SURFACE, DARK_TEXT, ACCENT_PRIMARY };

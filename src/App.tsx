@@ -33,6 +33,9 @@ import "@/styles/modal-footer.css";
 // Loaded last so its html[data-theme="dark"] rules win over the light defaults
 // the stylesheets above establish.
 import "@/styles/dark-mode.css";
+// Ocean/Violet accent deltas — after dark-mode.css so Blue's baseline tokens
+// exist before anything overrides them.
+import "@/styles/accent-themes.css";
 import "@/styles/scrollbars.css";
 
 // ───────────────────────────────────────────────────────────
@@ -196,7 +199,6 @@ const InvoicesView = lazy(() => import("./routes/operations/inhouse/verification
 const JobsManagementPage = lazy(() => import("./routes/coordinator/interventions/hse/JobManagement"));
 const KPIManager = lazy(() => import("./routes/kpis"));
 const KPITrackerView = lazy(() => import("./routes/kpis/KPITrackerView"));
-const KpiAgreementManagement = lazy(() => import("./components/kpi-agreements/KpiAgreementManagement").then(m => ({ default: m.KpiAgreementManagement })));
 const LandingPage = lazy(() => import("./routes/landing"));
 const LeaveCalendar = lazy(() => import("./routes/operations/hr/leave/LeaveCalendar"));
 const LibraryPage = lazy(() => import("./routes/shared/library"));
@@ -274,7 +276,7 @@ const queryClient = new QueryClient();
 
 const App = () => {
     const notificationProvider = useNotificationProvider();
-    const { mode } = useColorMode();
+    const { mode, accent } = useColorMode();
 
     // Highcharts colours are inline SVG attributes, so they need a real theme
     // rather than CSS. Applied here so every dashboard picks it up centrally.
@@ -289,10 +291,10 @@ const App = () => {
     useEffect(() => {
         ConfigProvider.config({
             holderRender: (children) => (
-                <ConfigProvider theme={getAntdTheme(mode)}>{children}</ConfigProvider>
+                <ConfigProvider theme={getAntdTheme(mode, accent)}>{children}</ConfigProvider>
             ),
         });
-    }, [mode]);
+    }, [mode, accent]);
     const ConfirmedInterventionsWrapper = () => {
         const { participantId, department } = useParams();
         return (
@@ -307,7 +309,7 @@ const App = () => {
         <>
             <QueryClientProvider client={queryClient}>
                 <BrowserRouter>
-                    <ConfigProvider theme={getAntdTheme(mode)}>
+                    <ConfigProvider theme={getAntdTheme(mode, accent)}>
                         <AntdApp>
                             <LoginPromptProvider>
                                 <AuthSessionTracker />
@@ -758,7 +760,6 @@ const App = () => {
                                                         <Route path="kpis">
                                                             <Route path="setup" element={<KPIManager />} />
                                                             <Route path="track" element={<KPITrackerView />} />
-                                                            <Route path="agreements" element={<KpiAgreementManagement />} />
                                                         </Route>
                                                         <Route path="participants" element={<SMEOverview />} />
                                                         <Route path="team" element={<UserManagement />} />

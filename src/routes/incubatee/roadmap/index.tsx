@@ -1,3 +1,4 @@
+import { isCompulsoryIntervention } from '@/utils/compulsoryInterventions'
 import React, { useEffect, useMemo, useState } from 'react'
 import {
     Alert,
@@ -283,8 +284,7 @@ const RoadmapFlow: React.FC = () => {
                         const snap = await getDocs(
                             query(
                                 collection(db, 'interventions'),
-                                where('departmentId', '==', d.id),
-                                orderBy('title', 'asc')
+                                where('departmentId', '==', d.id)
                             )
                         )
 
@@ -292,6 +292,7 @@ const RoadmapFlow: React.FC = () => {
                             const data = x.data() as any
                             return {
                                 id: x.id,
+                                compulsory: data.compulsory === true,
                                 title: data.title || data.name || data.interventionTitle || 'Untitled',
                                 area: data.area || data.areaOfSupport || d.name,
                                 areaOfSupport: data.areaOfSupport,
@@ -453,8 +454,10 @@ const RoadmapFlow: React.FC = () => {
     // Show work for SME:
     // Only display collapses for departments that have confirmed (deptConfirmedById[dept.id] === true)
     const confirmedDepts = useMemo(() => {
-        return departments.filter(d => !!deptConfirmedById?.[d.id])
-    }, [departments, deptConfirmedById])
+        return departments.filter(d => !!deptConfirmedById?.[d.id] ||
+            (planData?.interventions || []).some((iv: any) => belongsToDept(iv, d) &&
+                isCompulsoryIntervention(iv, deptInterventionsMap[d.id] || [])))
+    }, [departments, deptConfirmedById, planData, deptInterventionsMap])
 
     const planInterventions = (planData?.interventions || []) as any[]
 
@@ -474,6 +477,10 @@ const RoadmapFlow: React.FC = () => {
     }
 
     const handleDeleteIntervention = async (deptId: string, iv: any) => {
+        if (isCompulsoryIntervention(iv, deptInterventionsMap[deptId] || [])) {
+            message.info('Compulsory interventions cannot be removed from your development plan.')
+            return
+        }
         if (!latestPlanId) return
         const msgKey = `del-${deptId}-${iv?.id || iv?.title || ''}`
 
@@ -825,7 +832,7 @@ const RoadmapFlow: React.FC = () => {
 
                 <Divider style={{ margin: isMobile ? '4px 0' : undefined }} />
 
-                {!deptConfirmedCount ? (
+                {!confirmedDepts.length ? (
                     <Alert
                         type='warning'
                         showIcon
@@ -839,6 +846,8 @@ const RoadmapFlow: React.FC = () => {
                             const deptOk = !!deptConfirmedById?.[deptId]
                             const smeOk = !!smeConfirmedById?.[deptId]?.confirmed
                             const ivs = interventionsByDeptId.get(deptId) || []
+                            const compulsoryOnly = ivs.length > 0 && ivs.every(iv =>
+                                isCompulsoryIntervention(iv, deptInterventionsMap[deptId] || []))
 
                             const header = isMobile ? (
                                 <div style={{ width: '100%' }}>
@@ -848,8 +857,8 @@ const RoadmapFlow: React.FC = () => {
                                         </Text>
 
                                         <Space wrap size={6}>
-                                            {deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
-                                            {smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
+                                            {compulsoryOnly ? <Tag color='blue'>Compulsory</Tag> : deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
+                                            {compulsoryOnly ? <Tag>No sign-off required</Tag> : smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
                                         </Space>
                                     </Space>
                                 </div>
@@ -857,8 +866,8 @@ const RoadmapFlow: React.FC = () => {
                                 <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
                                     <Space wrap>
                                         <Text strong>{dept.name}</Text>
-                                        {deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
-                                        {smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
+                                        {compulsoryOnly ? <Tag color='blue'>Compulsory</Tag> : deptOk ? <Tag color='blue'>Dept Confirmed</Tag> : <Tag>Pending Dept</Tag>}
+                                        {compulsoryOnly ? <Tag>No sign-off required</Tag> : smeOk ? <Tag color='green'>SME Confirmed</Tag> : <Tag>Pending SME</Tag>}
                                     </Space>
 
                                     <Space>
@@ -884,7 +893,15 @@ const RoadmapFlow: React.FC = () => {
                                         overflow: 'hidden'
                                     }}
                                 >
-                                    {!deptOk ? (
+                                    {compulsoryOnly ? (
+                                        <>
+                                            <Alert type='info' showIcon message='No DP sign-off required'
+                                                description='These compulsory interventions can be assigned and delivered without department or SME confirmation.' />
+                                            <List dataSource={ivs} renderItem={(iv: any) => (
+                                                <List.Item>{iv.title || iv.interventionTitle || iv.name}</List.Item>
+                                            )} />
+                                        </>
+                                    ) : !deptOk ? (
                                         <Alert
                                             type='info'
                                             showIcon

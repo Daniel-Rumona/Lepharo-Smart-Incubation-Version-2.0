@@ -1,0 +1,195 @@
+--- live/src/routes/operations/assignments/index.tsx
++++ updated/src/routes/operations/assignments/index.tsx
+@@ -54,6 +54,8 @@
+     documentId,
+     writeBatch,
+     deleteField,
++    runTransaction,
++    serverTimestamp,
+ } from "firebase/firestore";
+ import { db } from "@/firebase";
+ import { useFullIdentity } from "@/hooks/useFullIdentity";
+@@ -89,6 +91,69 @@
+     GROUP_INTERVENTION_DELIVERIES_COLLECTION,
+     type GroupInterventionDelivery,
+ } from "@/services/groupInterventionDeliveryService";
++
++// BEGIN COMPULSORY DP HELPERS
++const interventionId = (item: any): string =>
++    String(item?.id || item?.interventionId || '').trim()
++
++/** The live definition is authoritative, including when compulsory is switched off. */
++const isCompulsoryIntervention = (item: any, definitions: any[]): boolean =>
++    definitions.find(definition => interventionId(definition) === interventionId(item))?.compulsory === true
++
++function mergeCompulsoryInterventions(items: any[], definitions: any[]): any[] {
++    const result = [...items]
++    for (const definition of definitions.filter(item => item.compulsory === true)) {
++        const id = interventionId(definition)
++        if (!id || result.some(item => interventionId(item) === id)) continue
++        result.push({
++            ...definition,
++            id,
++            title: definition.interventionTitle || definition.title || 'Intervention',
++            area: definition.areaOfSupport || definition.area || '',
++            source: 'compulsory',
++        })
++    }
++    return result
++}
++
++const eligiblePlanInterventions = (
++    items: any[], definitions: any[], confirmed: boolean
++): any[] => items.filter(item => confirmed || isCompulsoryIntervention(item, definitions))
++
++/** Add requirements only; never manufacture department or SME signatures. */
++async function ensureCompulsoryPlan(app: any, definitions: any[], knownPlan?: any) {
++    if (!app.participantId || !definitions.some(item => item.compulsory === true)) return knownPlan
++    let plan = knownPlan
++    if (!plan) {
++        const constraints = [where('participantId', '==', app.participantId)]
++        if (app.programId) constraints.push(where('programId', '==', app.programId))
++        const snapshot = await getDocs(query(collection(db, 'diagnosticPlans'), ...constraints))
++        plan = snapshot.docs.map(item => ({ ...item.data(), id: item.id } as any))
++            .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))[0]
++    }
++    if (plan && Array.isArray(plan.interventions) &&
++        mergeCompulsoryInterventions(plan.interventions, definitions).length === plan.interventions.length) return plan
++    // A stable ID makes simultaneous first-time allocation idempotent.
++    const ref = doc(db, 'diagnosticPlans', plan?.id || `compulsory_${encodeURIComponent(app.programId || 'default')}_${encodeURIComponent(app.participantId)}`)
++    return runTransaction(db, async transaction => {
++        const snapshot = await transaction.get(ref)
++        const current = snapshot.exists() ? snapshot.data() : {
++            participantId: app.participantId,
++            programId: app.programId || null,
++        }
++        const items = Array.isArray(current.interventions) ? current.interventions : []
++        const interventions = mergeCompulsoryInterventions(items, definitions)
++        if (!snapshot.exists() || interventions.length !== items.length) {
++            transaction.set(ref, {
++                ...current, interventions, updatedAt: serverTimestamp(),
++                ...(!snapshot.exists() ? { createdAt: serverTimestamp() } : {}),
++            }, { merge: true })
++        }
++        return { ...current, interventions, id: ref.id }
++    })
++}
++
++// END COMPULSORY DP HELPERS
+ 
+ dayjs.extend(weekOfYear);
+ 
+@@ -1996,7 +2061,7 @@
+                         dpMap[participantId] = plan;
+                     }
+                 });
+-                setDpByPid(dpMap);
++
+ 
+                 const pMap = new Map(
+                     participantsSnap.docs.map((d) => [d.id, d.data() as any])
+@@ -2019,6 +2084,8 @@
+                     user?.departmentName || userDepartment?.name || ""
+                 );
+ 
++                setIvDefsById(Object.fromEntries(interventionsSnap.docs.map(d =>
++                    [d.id, { ...d.data(), id: d.id }])));
+                 const departmentInterventions = interventionsSnap.docs
+                     .map((d) => ({ id: d.id, ...(d.data() as any) }))
+                     .filter((iv: any) => {
+@@ -2032,7 +2099,7 @@
+                     });
+ 
+                 const monitoringRequiredInterventions = dedupeInterventions(
+-                    departmentInterventions.map((iv: any) => ({
++                    departmentInterventions.filter((iv: any) => iv.compulsory === true).map((iv: any) => ({
+                         id: String(iv?.id || ""),
+                         interventionTitle:
+                             iv?.title || iv?.interventionTitle || iv?.name || "Untitled",
+@@ -2062,12 +2129,23 @@
+                     }))
+                 );
+ 
++                // Repair existing plans and cover SMEs accepted after the definition was saved.
++                for (const app of apps) {
++                    if (cancelled) return;
++                    const pid = String(app.participantId || "");
++                    if (!pid) continue;
++                    dpMap[pid] = await ensureCompulsoryPlan(app, departmentInterventions, dpMap[pid]);
++                }
++                if (cancelled) return;
++                setDpByPid(dpMap);
++
+                 const visibleApps = isMonitoringDepartment
+                     ? apps
+                     : apps.filter((app) => {
+                         const dp = dpMap[String(app.participantId)];
+-                        if (!dp) return false;
+-                        return hasBothConfirmationsForDept(dp, deptId, deptName);
++                        return hasBothConfirmationsForDept(dp, deptId, deptName) ||
++                            (dp?.interventions || []).some((iv: any) =>
++                                isCompulsoryIntervention(iv, departmentInterventions));
+                     });
+ 
+                 const fetchedParticipants: Participant[] = visibleApps.map((app) => {
+@@ -2080,7 +2158,8 @@
+ 
+                     const requiredForDeptRaw = isMonitoringDepartment
+                         ? monitoringRequiredInterventions
+-                        : dpInterventions.filter((iv: any) => {
++                        : eligiblePlanInterventions(dpInterventions, departmentInterventions,
++                            hasBothConfirmationsForDept(dp, deptId, deptName)).filter((iv: any) => {
+                             if (deptId && iv?.departmentId)
+                                 return String(iv.departmentId) === deptId;
+                             return ciEq(iv?.area || iv?.areaOfSupport, deptName);
+@@ -3198,13 +3277,18 @@
+                 if (isMonitoringDepartment) return true;
+ 
+                 const dp = dpByPid[String(pid)];
+-                return !!dp && hasBothConfirmationsForDept(dp, deptId, deptName);
++                const selectedInterventionId = String(reassigningAssignment?.interventionId || values.intervention || "");
++                const requiredForParticipant = participants.find(p => String(p.id) === String(pid))?.requiredInterventions || [];
++                const compulsoryRequirement = requiredForParticipant.some((iv: any) =>
++                    String(iv.id) === selectedInterventionId &&
++                    isCompulsoryIntervention(iv, Object.values(ivDefsById)));
++                return !!dp && (hasBothConfirmationsForDept(dp, deptId, deptName) || compulsoryRequirement);
+             };
+ 
+             for (const pid of selectedIds) {
+                 if (!isAllowedByDp(String(pid))) {
+                     message.error(
+-                        "This SME is not ready: Diagnostic Plan must be confirmed by both the department and the SME."
++                        "This intervention requires DP confirmation by both the department and the SME. Compulsory interventions do not require DP sign-off."
+                     );
+                     return;
+                 }
+@@ -4172,7 +4256,8 @@
+ 
+             if (!isMonitoringDepartment) {
+                 const dp = dpByPid[pid];
+-                if (!dp || !hasBothConfirmationsForDept(dp, deptId, deptName))
++                if (!dp || (!hasBothConfirmationsForDept(dp, deptId, deptName) &&
++                    !isCompulsoryIntervention({ id: group.interventionId }, Object.values(ivDefsById))))
+                     return false;
+             }
+ 
+@@ -5780,8 +5865,8 @@
+                         title="No SMEs found"
+                         subTitle={
+                             isMonitoringDepartment
+-                                ? "Make sure this programme has accepted SMEs and your monitoring department has interventions configured."
+-                                : "This page only lists SMEs whose Diagnostic Plan is confirmed by both the department and the SME."
++                                ? "Make sure this programme has accepted SMEs and your monitoring department has compulsory interventions configured."
++                                : "Compulsory interventions can be assigned without DP sign-off. Other interventions require department and SME confirmation."
+                         }
+                     />
+                 ) : isMobile ? (
+@@ -7288,7 +7373,7 @@
+                                 name="participants"
+                                 label="SMEs to add"
+                                 rules={[{ required: true, message: "Select at least one SME." }]}
+-                                extra="Only SMEs with both DP confirmations and the same required intervention are shown."
++                                extra="SMEs with this required intervention are shown. Compulsory interventions do not require DP sign-off."
+                             >
+                                 <Select
+                                     mode="multiple"

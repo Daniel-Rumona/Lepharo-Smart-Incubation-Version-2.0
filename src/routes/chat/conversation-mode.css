@@ -1,0 +1,161 @@
+/* ============================================================================
+   Conversation mode — full-screen voice-style overlay for the chat page
+   ----------------------------------------------------------------------------
+   Sits above .chat-page (which is itself position: fixed) so it covers the
+   whole chat surface including the mobile header. Text input stays available
+   as a fallback since speech recognition/ElevenLabs playback aren't wired up
+   yet — see ConversationMode.tsx.
+   ========================================================================== */
+
+.conversation-mode {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    background: var(--app-surface);
+}
+
+.conversation-mode-topbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px;
+}
+
+.conversation-mode-badge {
+    color: var(--app-text-subtle) !important;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.conversation-mode-close {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+    color: var(--app-text);
+    background: var(--app-surface);
+    cursor: pointer;
+    transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+
+.conversation-mode-close:hover,
+.conversation-mode-close:focus-visible {
+    border-color: var(--app-accent);
+    color: var(--app-accent);
+    background: var(--app-accent-soft);
+    outline: none;
+}
+
+.conversation-mode-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 0 24px;
+}
+
+.conversation-mode-status {
+    color: var(--app-text-subtle);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
+
+.conversation-mode-captions {
+    width: min(560px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+}
+
+.conversation-mode-caption-user {
+    margin: 0;
+    color: var(--app-text-subtle);
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.conversation-mode-caption-assistant {
+    margin: 0;
+    color: var(--app-text);
+    font-size: 17px;
+    font-weight: 550;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+}
+
+.conversation-mode-controls {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px clamp(18px, 6vw, 112px) 24px;
+}
+
+.conversation-mode-mic {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid var(--app-border-strong);
+    color: var(--app-text);
+    background: var(--app-surface);
+    font-size: 18px;
+    cursor: pointer;
+    transition: background .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+.conversation-mode-mic:hover,
+.conversation-mode-mic:focus-visible {
+    border-color: var(--app-accent);
+    color: var(--app-accent);
+    outline: none;
+}
+
+.conversation-mode-mic:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
+
+.conversation-mode-mic-active {
+    border-color: var(--app-accent);
+    color: #fff;
+    background: var(--app-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--app-accent) 22%, transparent);
+}
+
+.conversation-mode-composer {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+@media (max-width: 767px) {
+    .conversation-mode-controls { padding: 14px 12px 20px; }
+    .conversation-mode-caption-assistant { font-size: 15px; }
+}

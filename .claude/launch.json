@@ -16,9 +16,8 @@
     {
       "name": "dev-auto",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite"],
-      "port": 5173,
-      "autoPort": true
+      "runtimeArgs": ["vite", "--port", "5180", "--strictPort"],
+      "port": 5180
     }
   ]
 }
