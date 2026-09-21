@@ -21,7 +21,8 @@ import {
     Tag,
     Typography,
     Upload,
-    message
+    message,
+    theme
 } from 'antd'
 import './success-story.css'
 import { listEvents, type EventRecord } from '@/services/eventService'
@@ -45,8 +46,6 @@ import {
 } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
-import Highcharts from 'highcharts'
-import HighchartsReact from 'highcharts-react-official'
 import { getAuth } from 'firebase/auth'
 import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -391,6 +390,7 @@ const StoryTypeQuestion: React.FC = () => {
 }
 
 const SuccessChallengesPage: React.FC = () => {
+    const { token } = theme.useToken()
     const { user } = useFullIdentity()
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
 
@@ -990,26 +990,27 @@ const SuccessChallengesPage: React.FC = () => {
                 ['SMME comment / testimonial', record.smeComment]
             ]
         return (
-            <Space direction='vertical' size={14} style={{ width: '100%' }}>
-                {sections.filter(([, value]) => clean(value)).map(([label, value]) => (
-                    <div key={label}>
-                        <strong>{label}</strong>
-                        <Paragraph style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap' }}>{value}</Paragraph>
-                    </div>
-                ))}
-                {!!record.attachments?.length && (
-                    <div>
-                        <strong>Evidence and pictures</strong>
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+            <div className='story-reader-sections'>
+                {sections.filter(([, value]) => clean(value)).map(([label, value]) => {
+                    const isOutcome = label === 'Achievement' || label === 'Benefits and long-term outcomes'
+                    return <Card key={label} size='small' className={isOutcome ? 'story-reader-section story-reader-outcome' : 'story-reader-section'} style={isOutcome ? { background: token.colorPrimaryBg, borderColor: token.colorPrimaryBorder } : undefined}>
+                        <Typography.Title level={5} style={{ margin: '0 0 10px' }}>{label}</Typography.Title>
+                        <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{value}</Paragraph>
+                    </Card>
+                })}
+                {!!record.attachments?.length && <section className='story-reader-gallery'>
+                    <Typography.Title level={5} style={{ margin: '0 0 12px' }}>Images and supporting files</Typography.Title>
+                    <Image.PreviewGroup>
+                        <div className='story-image-row'>
                             {record.attachments.map(file => file.type?.startsWith('image/') ? (
                                 <Image key={file.url} src={file.url} alt={file.name} width={120} height={90} style={{ objectFit: 'cover', borderRadius: 8 }} />
                             ) : (
                                 <Button key={file.url} href={file.url} target='_blank' icon={<FilePdfOutlined />}>{file.name}</Button>
                             ))}
                         </div>
-                    </div>
-                )}
-            </Space>
+                    </Image.PreviewGroup>
+                </section>}
+            </div>
         )
     }
 
@@ -1051,7 +1052,6 @@ const SuccessChallengesPage: React.FC = () => {
     const openChallenges = challenges.filter(item => !isClosedStatus(item.status)).length
     const closedChallenges = challenges.filter(item => isClosedStatus(item.status)).length
     const totalChallenges = challenges.length
-    const openPercent = totalChallenges ? Math.round((openChallenges / totalChallenges) * 100) : 0
 
     const filteredStories = useMemo(() => {
         const q = norm(storySearchText)
@@ -1104,63 +1104,9 @@ const SuccessChallengesPage: React.FC = () => {
         { name: 'In Progress', y: challenges.filter(item => clean(item.status) === 'In Progress').length, color: '#1677ff' },
         { name: 'Resolved', y: challenges.filter(item => clean(item.status) === 'Resolved').length, color: '#52c41a' },
         { name: 'Closed', y: challenges.filter(item => clean(item.status) === 'Closed').length, color: '#8c8c8c' }
-    ].filter(item => item.y > 0)
+    ]
 
-    const challengeStatusOptions: Highcharts.Options = {
-        chart: {
-            type: 'pie',
-            height: 320,
-            backgroundColor: 'transparent'
-        },
-        title: {
-            text: `${totalChallenges}`,
-            align: 'center',
-            verticalAlign: 'middle',
-            y: 8,
-            style: { fontSize: '28px', fontWeight: '700' }
-        },
-        subtitle: {
-            text: 'Total',
-            align: 'center',
-            verticalAlign: 'middle',
-            y: 32,
-            style: { color: 'rgba(0,0,0,.45)' }
-        },
-        credits: { enabled: false },
-        tooltip: {
-            pointFormat: '<b>{point.y}</b> challenges'
-        },
-        plotOptions: {
-            pie: {
-                innerSize: '62%',
-                size: '72%',
-                allowPointSelect: false,
-                cursor: 'default',
-                dataLabels: {
-                    enabled: true,
-                    distance: 28,
-                    connectorWidth: 1,
-                    connectorColor: '#8c8c8c',
-                    formatter: function (this: any) {
-                        return `<span style="font-weight:600">${this.point.name}</span><br/><span>${this.point.y}</span>`
-                    },
-                    style: {
-                        color: '#1f2937',
-                        fontSize: '12px',
-                        textOutline: 'none'
-                    }
-                },
-                showInLegend: false
-            }
-        },
-        series: [
-            {
-                type: 'pie',
-                name: 'Challenges',
-                data: challengeStatusData
-            }
-        ]
-    }
+    const largestStatusCount = Math.max(1, ...challengeStatusData.map(item => item.y))
 
     const storyCover = (record: SuccessStory) =>
         record.coverImageUrl || record.attachments?.find(file => file.type?.startsWith('image/'))?.url || ''
@@ -1266,27 +1212,16 @@ const SuccessChallengesPage: React.FC = () => {
                     {segment === 'stories' ? (
                         <MotionCard
                             filterBar={
-                                <Row gutter={[10, 10]} align='middle'>
-                                    <Col xs={24} md={12} lg={8}>
-                                        <Input allowClear prefix={<SearchOutlined />} placeholder='Search title, SME, achievement, intervention or department...' value={storySearchText} onChange={event => setStorySearchText(event.target.value)} />
-                                    </Col>
-                                    <Col xs={12} md={6} lg={3}>
-                                        <Select value={storyKindFilter} style={{ width: '100%' }} onChange={setStoryKindFilter} options={[{ value: 'all', label: 'All story types' }, { value: 'SMME', label: 'SMME stories' }, { value: 'Event', label: 'Event stories' }]} />
-                                    </Col>
-                                    <Col xs={12} md={6} lg={3}>
-                                        <Select value={storySourceFilter} style={{ width: '100%' }} onChange={setStorySourceFilter} options={[{ value: 'all', label: 'All sources' }, { value: 'SME', label: 'SME submitted' }, { value: 'Department', label: 'Department submitted' }]} />
-                                    </Col>
-                                    <Col xs={12} md={8} lg={4}>
-                                        <Segmented block value={storyView} onChange={value => setStoryView(value as 'cards' | 'table')} options={[{ value: 'cards', icon: <AppstoreOutlined />, label: 'Cards' }, { value: 'table', icon: <BarsOutlined />, label: 'Table' }]} />
-                                    </Col>
-                                    <Col xs={12} md={6} lg={2}><Button block icon={<ClearOutlined />} onClick={resetStoryFilters}>Reset</Button></Col>
-                                    <Col xs={24} md={10} lg={4}>
-                                        <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-                                            <Button type='primary' icon={<PlusOutlined />} loading={eventsLoading} disabled={loading || eventsError} onClick={openStoryModal}>Add Story</Button>
-                                        </Space>
-                                    </Col>
-                                </Row>
+                                <div className='success-page-filters story-library-filters'>
+                                    <Input aria-label='Search success stories' allowClear prefix={<SearchOutlined />} placeholder='Search stories...' value={storySearchText} onChange={event => setStorySearchText(event.target.value)} />
+                                    <Select aria-label='Story type' value={storyKindFilter} onChange={setStoryKindFilter} options={[{ value: 'all', label: 'All story types' }, { value: 'SMME', label: 'SMME stories' }, { value: 'Event', label: 'Event stories' }]} />
+                                    <Select aria-label='Story source' value={storySourceFilter} onChange={setStorySourceFilter} options={[{ value: 'all', label: 'All sources' }, { value: 'SME', label: 'SME submitted' }, { value: 'Department', label: 'Department submitted' }]} />
+                                    <Segmented block value={storyView} onChange={value => setStoryView(value as 'cards' | 'table')} options={[{ value: 'cards', icon: <AppstoreOutlined />, label: 'Cards' }, { value: 'table', icon: <BarsOutlined />, label: 'Table' }]} />
+                                    <Button block icon={<ClearOutlined />} onClick={resetStoryFilters}>Reset</Button>
+                                    <Button block type='primary' icon={<PlusOutlined />} loading={eventsLoading} disabled={loading || eventsError} onClick={openStoryModal}>Add Story</Button>
+                                </div>
                             }
+                            filterBarProps={{ className: 'success-page-filter-container' }}
                             title='Success Story Library'>
                             {filteredStories.length ? storyView === 'cards' ? (
                                 <Row gutter={[16, 16]}>{filteredStories.map(record => <Col xs={24} md={12} xl={8} key={record.id}>{renderStoryCard(record)}</Col>)}</Row>
@@ -1303,55 +1238,30 @@ const SuccessChallengesPage: React.FC = () => {
                             {totalChallenges > 0 && (
                                 <Col xs={24} xl={8}>
                                     <MotionCard title='Challenge Status'>
-                                        <HighchartsReact highcharts={Highcharts} options={challengeStatusOptions} />
+                                        <Space direction='vertical' size={20} style={{ width: '100%' }}>
+                                            <Typography.Text type='secondary'>{totalChallenges} challenges in total</Typography.Text>
+                                            {challengeStatusData.map(item => <div key={item.name} aria-label={`${item.name}: ${item.y} challenges`}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}><Typography.Text>{item.name}</Typography.Text><Typography.Text strong>{item.y}</Typography.Text></div>
+                                                <div aria-hidden='true' style={{ height: 10, borderRadius: 5, background: token.colorFillSecondary, overflow: 'hidden' }}>
+                                                    <div style={{ height: '100%', width: `${item.y / largestStatusCount * 100}%`, borderRadius: 5, background: item.color }} />
+                                                </div>
+                                            </div>)}
+                                        </Space>
                                     </MotionCard>
                                 </Col>
                             )}
                             <Col xs={24} xl={totalChallenges > 0 ? 16 : 24}>
                                 <MotionCard
                                     title='Logged Challenges'
+                                    filterBarProps={{ className: 'success-page-filter-container' }}
                                     filterBar={
-                                        <Row gutter={[10, 10]} align='middle'>
-                                            <Col xs={24} md={12} xxl={8}>
-                                                <Input
-                                                    allowClear
-                                                    prefix={<SearchOutlined />}
-                                                    placeholder='Search challenges, SMEs, attempts...'
-                                                    value={challengeSearchText}
-                                                    onChange={event => setChallengeSearchText(event.target.value)}
-                                                />
-                                            </Col>
-                                            <Col xs={24} md={6} xxl={4}>
-                                                <Select
-                                                    value={statusFilter}
-                                                    style={{ width: '100%' }}
-                                                    onChange={value => setStatusFilter(value)}
-                                                    options={[
-                                                        { value: 'all', label: 'All statuses' },
-                                                        ...challengeStatuses.map(status => ({ value: status, label: status }))
-                                                    ]}
-                                                />
-                                            </Col>
-                                            <Col xs={24} md={6} xxl={4}>
-                                                <Select
-                                                    value={challengeTypeFilter}
-                                                    style={{ width: '100%' }}
-                                                    onChange={value => setChallengeTypeFilter(value)}
-                                                    options={[
-                                                        { value: 'all', label: 'All challenge types' },
-                                                        ...challengeTypes.map(type => ({ value: type, label: type }))
-                                                    ]}
-                                                />
-                                            </Col>
-                                            <Col xs={24} xxl={4}>
-                                                <Space style={{ width: '100%', justifyContent: 'flex-end' }} wrap>
-                                                    <Button icon={<ClearOutlined />} onClick={resetChallengeFilters}>Reset</Button>
-                                                    <Button type='primary' icon={<PlusOutlined />} onClick={() => openChallengeModal()}>
-                                                        Add Challenge
-                                                    </Button>
-                                                </Space>
-                                            </Col>
-                                        </Row>
+                                        <div className='success-page-filters challenge-library-filters'>
+                                            <Input aria-label='Search challenges' allowClear prefix={<SearchOutlined />} placeholder='Search challenges...' value={challengeSearchText} onChange={event => setChallengeSearchText(event.target.value)} />
+                                            <Select aria-label='Challenge status' value={statusFilter} onChange={setStatusFilter} options={[{ value: 'all', label: 'All statuses' }, ...challengeStatuses.map(status => ({ value: status, label: status }))]} />
+                                            <Select aria-label='Challenge type' value={challengeTypeFilter} onChange={setChallengeTypeFilter} options={[{ value: 'all', label: 'All challenge types' }, ...challengeTypes.map(type => ({ value: type, label: type }))]} />
+                                            <Button block icon={<ClearOutlined />} onClick={resetChallengeFilters}>Reset</Button>
+                                            <Button block type='primary' icon={<PlusOutlined />} onClick={() => openChallengeModal()}>Add Challenge</Button>
+                                        </div>
                                     }
                                 >
                                     <Table
@@ -1402,12 +1312,23 @@ const SuccessChallengesPage: React.FC = () => {
                 </div>
             </Space>
 
-            <Modal title={selectedStory?.title || selectedStory?.smeName || 'Success story'} open={!!selectedStory} onCancel={() => setSelectedStory(null)} footer={<Button onClick={() => setSelectedStory(null)}>Close</Button>} width={860}>
-                {selectedStory && <>
-                    {storyCover(selectedStory) && <Image src={storyCover(selectedStory)} alt={`${selectedStory.title || selectedStory.smeName} cover`} width='100%' height={320} style={{ objectFit: 'cover', borderRadius: 14, marginBottom: 18 }} />}
-                    <Space wrap style={{ marginBottom: 16 }}><Tag color={selectedStory.storyKind === 'Event' ? 'purple' : 'blue'}>{selectedStory.storyKind || 'SMME'}</Tag><Tag color={selectedStory.source === 'SME' ? 'cyan' : 'gold'}>{selectedStory.source || 'Department'} submitted</Tag>{selectedStory.departmentName && <Tag>{selectedStory.departmentName}</Tag>}</Space>
+            <Modal title='Success story' className='story-reader-modal' open={!!selectedStory} onCancel={() => setSelectedStory(null)} footer={<Button onClick={() => setSelectedStory(null)}>Close</Button>} width={920}>
+                {selectedStory && <article className='story-reader'>
+                    <header>
+                        <Typography.Title level={2} style={{ margin: '4px 0 8px', overflowWrap: 'anywhere' }}>{selectedStory.title || selectedStory.smeName}</Typography.Title>
+                        <Typography.Text type='secondary'>{[selectedStory.storyKind === 'Event' ? selectedStory.eventTitle : selectedStory.smeName, selectedStory.createdAt ? `Captured ${formatDateTime(selectedStory.createdAt)}` : ''].filter(Boolean).join(' · ')}</Typography.Text>
+                    </header>
+                    {storyCover(selectedStory) && <div className='story-reader-cover' style={{ background: token.colorFillAlter }}>
+                        <Image src={storyCover(selectedStory)} alt={`${selectedStory.title || selectedStory.smeName} cover`} width='100%' style={{ display: 'block', maxHeight: 360, objectFit: 'contain' }} />
+                    </div>}
+                    <div className='story-reader-meta'>
+                        <Tag color={selectedStory.storyKind === 'Event' ? 'purple' : 'blue'}>{selectedStory.storyKind || 'SMME'}</Tag>
+                        <Tag color={selectedStory.source === 'SME' ? 'cyan' : 'gold'}>{selectedStory.source || 'Department'} submitted</Tag>
+                        {selectedStory.departmentName && <Tag>{selectedStory.departmentName}</Tag>}
+                        {selectedStory.interventionTitle && <Tag>{selectedStory.interventionTitle}</Tag>}
+                    </div>
                     {storyDetails(selectedStory)}
-                </>}
+                </article>}
             </Modal>
 
             {eventsError && <Alert type='error' showIcon message='Events could not be loaded. Refresh the page to try again before creating a story.' />}
