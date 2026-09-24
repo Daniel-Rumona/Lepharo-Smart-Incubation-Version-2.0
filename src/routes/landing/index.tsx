@@ -5,7 +5,6 @@ import { Helmet } from 'react-helmet'
 import {
     RocketOutlined,
     TeamOutlined,
-    LineChartOutlined,
     UserAddOutlined,
     CheckCircleFilled
 } from '@ant-design/icons'
@@ -29,13 +28,6 @@ const roleSlides = [
         perks: ['Automated progress tracking', 'AI-based mentee matching']
     },
     {
-        key: 'government',
-        title: 'Public Sector | Government',
-        image: '/assets/images/projects/2.jpg',
-        description: 'Policies and partnerships for government stakeholders.',
-        perks: ['AI-informed impact reports', 'Policy planning support tools']
-    },
-    {
         key: 'investor',
         title: 'Investors | Funders | Capital Partners',
         image: '/assets/images/projects/5.jpg',
@@ -47,7 +39,6 @@ const roleSlides = [
 const orbitIcons = [
     <RocketOutlined key='sme' />,
     <TeamOutlined key='incubate' />,
-    <LineChartOutlined key='government' />,
     <UserAddOutlined key='investor' />
 ]
 
@@ -104,8 +95,8 @@ const LandingPageContent = () => {
                 />
                 <defs>
                     <linearGradient id='blobGradB' x1='0' y1='0' x2='1' y2='1'>
-                        <stop offset='0%' stopColor='#ffd9cf' />
-                        <stop offset='100%' stopColor='#fbc2eb' />
+                        <stop offset='0%' stopColor='#c9a6ff' />
+                        <stop offset='100%' stopColor='#7c3aed' />
                     </linearGradient>
                 </defs>
             </motion.svg>
@@ -119,7 +110,6 @@ const LandingPageContent = () => {
             >
                 <div className='topbar-brand'>
                     <img src='/assets/images/lepharo.png' alt='Lepharo' />
-                    <span>Smart Incubation</span>
                 </div>
                 <nav className='topbar-actions'>
                     <ThemeToggle />

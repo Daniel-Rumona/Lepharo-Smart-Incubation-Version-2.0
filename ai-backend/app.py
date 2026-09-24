@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from firebase_admin import auth as firebase_auth
 from google import genai
@@ -71,6 +71,7 @@ JSON_BODY_PATHS = {
     "/report-writing",
     "/surveys/extract-questions",
     "/gap/intervention-mapping",
+    "/tts",
 }
 
 
@@ -204,6 +205,11 @@ class ReportWritingResponse(BaseModel):
     suggestion: str
 
 
+class TtsRequest(BaseModel):
+    text: str
+    voiceId: Optional[str] = None
+
+
 def _whatsapp_error(code: str, reply: str, status_code: int) -> JSONResponse:
     payload = WhatsAppChatResponse(
         ok=False,
@@ -264,6 +270,7 @@ OWN_DATA_TOOLS = {
     "get_participant_metrics",
     "get_clock_events_by_user",
     "get_time_records_by_user",
+    "get_leave_requests_by_user",
     "get_active_programs",
 }
 
@@ -323,6 +330,8 @@ DEPARTMENT_SCOPED_TOOLS = {
     "get_movs_by_department",
     "get_completed_interventions_by_department",
     "get_timesheets_by_department",
+    "get_leave_requests_by_department",
+    "get_kpi_targets_by_department",
 }
 
 COORDINATOR_DATA_TOOLS = PROGRAM_DATA_TOOLS | COORDINATOR_OWN_WORK_TOOLS | DEPARTMENT_SCOPED_TOOLS
@@ -674,6 +683,8 @@ TOOL_TOPIC_RULES: list[tuple[re.Pattern, tuple[str, ...]]] = [
     (re.compile(r"\binquir|\benquir|\bquer(y|ies)\b", re.I), ("inquir",)),
     (re.compile(r"\bintake\b|\bsubmissions?\b", re.I), ("intake",)),
     (re.compile(r"\btimesheets?\b|\bclock.?(in|out)|\bhours worked\b|\battendance\b", re.I), ("clock", "time_record", "timesheet")),
+    (re.compile(r"\bleave\b|\bpto\b|\bvacation\b|\btime off\b|\bsick(\s|-)?leave\b|\bannual leave\b|\bon leave\b", re.I), ("leave",)),
+    (re.compile(r"\bkpis?\b|\bkey performance\b|\btargets?\b", re.I), ("kpi",)),
     (re.compile(r"\bmonthly\b|\btrend\b|\bover time\b|\bper month\b|\bchart\b|\bgraph\b|\bplot\b|\bspline\b|\bdonut\b", re.I), ("monthly",)),
     (re.compile(r"\bcatalog|\bservices? (offered|catalog)\b", re.I), ("catalog", "interventions_catalog")),
     (re.compile(r"\bdepartments?\b|\bhod\b", re.I), ("department",)),
@@ -1464,6 +1475,11 @@ def chat(payload: ChatRequest, request: Request):
     - If an appointment lacks enough date/time data, say its real-time state cannot be determined.
     - Timesheet records include a human-readable staffName. Always use that name in clock-in answers;
       never label people as "Staff Member 1" or expose user IDs.
+    - kpiTargets records are committed targets only (kpiLabel, target, periodType/periodKey) — there is
+      no fetched "actual" or "achieved" value to compare them against. Answer target questions directly,
+      but say current performance against a target is not available here rather than estimating it.
+    - leaveRequests records use "status" (e.g. pending/approved/declined) and "from"/"to" dates. A leave
+      request with status "approved" whose from/to span today means that person is currently on leave.
     - The user language is: {payload.language}.
     - Current route: {payload.route}.
 
@@ -1617,6 +1633,86 @@ def chat(payload: ChatRequest, request: Request):
             if isinstance(result, dict) and result.get("ok")
         ],
     }
+
+
+# -------------------------------------------------------------------------
+# Text-to-speech (ElevenLabs) — conversation mode's "speaking" audio.
+# -------------------------------------------------------------------------
+
+ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1"
+# "Rachel" — a stock ElevenLabs preset voice, used only as a default so
+# conversation mode has a voice out of the box; override with the
+# ELEVENLABS_VOICE_ID env var once a preferred voice is picked in ElevenLabs.
+ELEVENLABS_DEFAULT_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+# The Turbo model line trades a little quality for much lower latency, which
+# matters more for a live back-and-forth than for a one-off narration.
+ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5")
+MAX_TTS_CHARS = 2000
+
+
+def _require_authenticated_uid(request: Request) -> str:
+    """
+    A lighter check than _verified_user(): this endpoint only proxies text to
+    ElevenLabs and returns audio, so it needs proof of a signed-in app user
+    (to keep the API key/quota from being drained by anonymous callers), not
+    the full profile/role/department resolution _verified_user() does.
+    """
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication is required.")
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+    except Exception as error:
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired authentication token."
+        ) from error
+    return str(decoded.get("uid") or "")
+
+
+@app.post("/tts")
+def synthesize_speech(payload: TtsRequest, request: Request):
+    _require_authenticated_uid(request)
+
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Voice output is not configured.")
+
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required.")
+    text = text[:MAX_TTS_CHARS]
+
+    voice_id = (payload.voiceId or ELEVENLABS_DEFAULT_VOICE_ID).strip()
+    url = f"{ELEVENLABS_API_BASE}/text-to-speech/{voice_id}"
+    body = json.dumps({
+        "text": text,
+        "model_id": ELEVENLABS_MODEL_ID,
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+    }).encode("utf-8")
+
+    request_obj = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "xi-api-key": api_key,
+            "Content-Type": "application/json",
+            "Accept": "audio/mpeg",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request_obj, timeout=30) as response:
+            audio_bytes = response.read()
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="ignore")[:300]
+        raise HTTPException(
+            status_code=502, detail=f"ElevenLabs request failed: {detail}"
+        ) from error
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise HTTPException(status_code=502, detail="Could not reach ElevenLabs.") from error
+
+    return Response(content=audio_bytes, media_type="audio/mpeg")
 
 
 # -------------------------------------------------------------------------
@@ -3226,6 +3322,7 @@ class KpiAgreementExtractionRequest(BaseModel):
     fileBase64: str
     fileName: str = ""
     mimeType: str = ""
+    departmentId: str = ""
 
 
 class ExtractedKpiNumericTarget(BaseModel):
@@ -3398,12 +3495,208 @@ def _build_kpi_draft(parsed: dict[str, Any]) -> tuple[Optional[KpiAgreementExtra
     ), warnings
 
 
-@app.post("/kpi/extract-agreement", response_model=KpiAgreementExtractionResponse)
-def extract_kpi_agreement(payload: KpiAgreementExtractionRequest, request: Request):
-    """Read an uploaded KPI agreement letter and return a draft agreement.
+# ---- Source-mapping pass: classify each drafted row against real KPI data ----
+# Every candidate row (numeric target or deliverable) is checked against the
+# same source taxonomy the manual KPI builder uses, plus the department's own
+# intervention titles, so an obviously computable row (e.g. "Direct Jobs" ->
+# metrics.jobsCreated) becomes a real tracked KPI instead of a static number.
 
-    The response is a draft only - nothing is persisted here. The client shows
-    it for review/edit and the user explicitly confirms before it is saved.
+MAX_INTERVENTION_TITLES = 60
+
+# Mirrors SOURCE_CONFIGS in src/routes/kpis/index.tsx. Kept as a compact
+# description (not the full field metadata) since this only needs to steer
+# the model's mapping guess, not reproduce the builder's validation.
+KPI_SOURCE_TAXONOMY_BLOCK = """
+Live data sources this system can compute a KPI from (sourceType.field):
+- applications (count only, no numeric fields): filter by gender, ageGroup, stage,
+  applicationStatus, province, sector, gapGroup.
+- interventions (count only, no numeric fields): filter by the same fields as
+  applications, plus status, movStatus, and interventionTitle (the specific
+  intervention given, e.g. "SBAT Assessment", "BBBEE Compliance Support") -
+  NOT areaOfSupport, which is the owning department and is already implied by
+  the department this KPI is being created for.
+- metrics (participant monthly metrics, numeric): monthlyRevenue, jobsCreated,
+  jobsSustained, employeesPermanent, employeesTemporary, totalEmployees - each
+  can be summed or averaged.
+
+A row maps cleanly when its meaning matches one of these fields directly (e.g.
+"Direct Jobs" -> metrics.jobsCreated summed, "Turnover increased by X%" ->
+metrics.monthlyRevenue). A row about a specific activity (e.g. "SBAT
+Assessment forms completed") maps if - and only if - one of the department's
+actual intervention titles listed below is the same activity; count
+interventions with that title (optionally status = completed) rather than
+inventing a title that doesn't exist. A row with no matching field and no
+matching intervention title is unmapped - do not force a mapping.
+"""
+
+
+def _load_department_intervention_titles(department_id: str) -> list[str]:
+    """Distinct interventionTitle values already used by this department.
+
+    Best-effort: an empty/missing department or a read failure just yields no
+    titles, so the mapping pass falls back to field-only matching rather than
+    failing the whole request.
+    """
+    if not department_id:
+        return []
+    try:
+        docs = (
+            db.collection("interventions")
+            .where("departmentId", "==", department_id)
+            .limit(400)
+            .stream()
+        )
+        titles: set[str] = set()
+        for snapshot in docs:
+            data = snapshot.to_dict() or {}
+            title = str(data.get("interventionTitle") or data.get("title") or "").strip()
+            if title:
+                titles.add(title)
+            if len(titles) >= MAX_INTERVENTION_TITLES:
+                break
+        return sorted(titles)
+    except Exception as error:
+        print("_load_department_intervention_titles failed:", type(error).__name__, str(error), flush=True)
+        return []
+
+
+class KpiCandidateMapping(BaseModel):
+    sourceType: Optional[str] = None  # "applications" | "interventions" | "metrics"
+    field: Optional[str] = None
+    calculationType: Optional[str] = None  # "count" | "sum" | "average"
+    unit: str = "count"
+    interventionTitleMatch: Optional[str] = None
+    confidence: str = "low"  # "high" | "medium" | "low"
+    rationale: str = ""
+
+
+class KpiCandidate(BaseModel):
+    kpiName: str
+    kpiArea: str = ""
+    annual: float = 0
+    q1: float = 0
+    q2: float = 0
+    q3: float = 0
+    q4: float = 0
+    frequency: str = ""
+    measurementIndicator: str = ""
+    mapping: Optional[KpiCandidateMapping] = None
+
+
+class KpiCandidateDraft(BaseModel):
+    serviceName: str = ""
+    fyLabel: str = ""
+    formNo: str = ""
+    revisionNo: str = ""
+    effectiveDate: str = ""
+    monthlyCapacity: str = ""
+    candidates: list[KpiCandidate] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+def _kpi_candidate_mapping_prompt(rows: list[dict[str, Any]], intervention_titles: list[str], feedback_block: str) -> str:
+    titles_block = (
+        "\n".join(f"- {t}" for t in intervention_titles)
+        if intervention_titles
+        else "(none on record for this department yet)"
+    )
+    return f"""
+You classify draft KPI rows against a system's live data sources, so obviously
+computable rows become real tracked KPIs instead of static numbers someone
+has to update by hand.
+
+{feedback_block}
+{KPI_SOURCE_TAXONOMY_BLOCK}
+This department's own intervention titles on record:
+{titles_block}
+
+Rows to classify (by index, in order):
+{json.dumps(rows, ensure_ascii=False)}
+
+For each row, decide if it maps to a live source. Return strict JSON only, no
+markdown fences, one object per input row in the same order:
+{{"mappings":[{{"sourceType":null,"field":null,"calculationType":null,"unit":"count",
+"interventionTitleMatch":null,"confidence":"low","rationale":""}}]}}
+
+Use null for sourceType/field/calculationType/interventionTitleMatch when a row
+does not map to anything - never guess a field or an intervention title that
+isn't listed above. "confidence" is "high" only when the row's wording is an
+unambiguous match; use "low" (and still return the guess) when you are unsure,
+so a person can review it rather than silently getting it wrong.
+"""
+
+
+def _map_kpi_candidates(draft: KpiAgreementExtractionResponse, department_id: str) -> KpiCandidateDraft:
+    intervention_titles = _load_department_intervention_titles(department_id)
+
+    rows: list[dict[str, Any]] = [
+        {"kpiName": t.kpiName, "kpiArea": "", "measurementIndicator": "", "frequency": ""}
+        for t in draft.numericTargets
+    ] + [
+        {"kpiName": d.deliverable or d.kpiArea, "kpiArea": d.kpiArea, "measurementIndicator": d.measurementIndicator, "frequency": d.frequency}
+        for d in draft.deliverables
+    ]
+
+    mappings: list[Optional[KpiCandidateMapping]] = [None] * len(rows)
+    if rows:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if api_key:
+            try:
+                feedback_block = build_feedback_prompt_block(KPI_CANDIDATE_MAPPING_FEEDBACK_FEATURE)
+                prompt = _kpi_candidate_mapping_prompt(rows, intervention_titles, feedback_block)
+                parsed = _gemini_json(api_key, prompt, "KPI candidate mapping")
+                raw_mappings = parsed.get("mappings") if isinstance(parsed.get("mappings"), list) else []
+                for index, raw in enumerate(raw_mappings[: len(rows)]):
+                    if not isinstance(raw, dict):
+                        continue
+                    source_type = raw.get("sourceType") or None
+                    if source_type not in {"applications", "interventions", "metrics", None}:
+                        source_type = None
+                    mappings[index] = KpiCandidateMapping(
+                        sourceType=source_type,
+                        field=(raw.get("field") or None) if source_type else None,
+                        calculationType=(raw.get("calculationType") or None) if source_type else None,
+                        unit=str(raw.get("unit") or "count"),
+                        interventionTitleMatch=(raw.get("interventionTitleMatch") or None) if source_type else None,
+                        confidence=str(raw.get("confidence") or "low"),
+                        rationale=re.sub(r"\s+", " ", str(raw.get("rationale") or "").strip())[:300],
+                    )
+            except Exception as error:
+                print("_map_kpi_candidates failed:", type(error).__name__, str(error), flush=True)
+
+    candidates: list[KpiCandidate] = []
+    for index, t in enumerate(draft.numericTargets):
+        candidates.append(KpiCandidate(
+            kpiName=t.kpiName, annual=t.annual, q1=t.q1, q2=t.q2, q3=t.q3, q4=t.q4,
+            mapping=mappings[index],
+        ))
+    offset = len(draft.numericTargets)
+    for j, d in enumerate(draft.deliverables):
+        candidates.append(KpiCandidate(
+            kpiName=d.deliverable or d.kpiArea, kpiArea=d.kpiArea,
+            frequency=d.frequency, measurementIndicator=d.measurementIndicator,
+            mapping=mappings[offset + j],
+        ))
+
+    return KpiCandidateDraft(
+        serviceName=draft.serviceName, fyLabel=draft.fyLabel, formNo=draft.formNo,
+        revisionNo=draft.revisionNo, effectiveDate=draft.effectiveDate,
+        monthlyCapacity=draft.monthlyCapacity, candidates=candidates, warnings=draft.warnings,
+    )
+
+
+KPI_CANDIDATE_MAPPING_FEEDBACK_FEATURE = "kpi_source_mapping"
+
+
+@app.post("/kpi/extract-candidates", response_model=KpiCandidateDraft)
+def extract_kpi_candidates(payload: KpiAgreementExtractionRequest, request: Request):
+    """Read an uploaded KPI letter and return draft KPI candidates.
+
+    Each candidate is checked against live data sources so rows that are
+    obviously computable (e.g. a jobs count) come back with a proposed
+    mapping instead of a flat, disconnected number. Nothing is persisted
+    here - the client reviews/edits every candidate and confirms per-row
+    before anything is created.
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -3413,7 +3706,7 @@ def extract_kpi_agreement(payload: KpiAgreementExtractionRequest, request: Reque
     if _normalise_role(user.role) not in KPI_AGREEMENT_AUTHOR_ROLES:
         raise HTTPException(
             status_code=403,
-            detail="You do not have permission to import KPI agreements.",
+            detail="You do not have permission to import KPI letters.",
         )
 
     document_part, document_text, _ = _read_course_document(
@@ -3428,7 +3721,7 @@ def extract_kpi_agreement(payload: KpiAgreementExtractionRequest, request: Reque
         else f"{prompt}\n\nDocument:\n{document_text}"
     )
 
-    parsed = _gemini_json(api_key, contents, "KPI agreement extraction")
+    parsed = _gemini_json(api_key, contents, "KPI letter extraction")
     draft, warnings = _build_kpi_draft(parsed)
 
     if draft is None:
@@ -3437,14 +3730,26 @@ def extract_kpi_agreement(payload: KpiAgreementExtractionRequest, request: Reque
             detail="No KPI targets or deliverables could be found in this document.",
         )
 
-    return draft
+    return _map_kpi_candidates(draft, payload.departmentId)
 
 
 # ---- Conversational entry point: build the same draft without a document ----
 
-KPI_AGREEMENT_CHAT_RULES = """
+def _kpi_agreement_chat_rules(department_name: Optional[str]) -> str:
+    # The client always resolves a department before this chat starts (the Add
+    # KPI modal picks it up front, via a dropdown or the user's own
+    # department - see AddKpiFlowModal.tsx), so normally there is nothing to
+    # ask here. The "unknown" branch only covers a caller that somehow starts
+    # this chat without one.
+    first_question = (
+        f'Which financial year this covers (e.g. "2026-27 FY"). The department is '
+        f'already known - {department_name} - do not ask about it.'
+        if department_name else
+        'Which department/service this is for, and which financial year (e.g. "2026-27 FY").'
+    )
+    return f"""
 Ask ONE focused question at a time instead of a long checklist - ordinarily:
-  1. Which department/service this is for, and which financial year (e.g. "2026-27 FY").
+  1. {first_question}
   2. Whether the targets are numeric (an annual figure split across Q1-Q4) or
      qualitative deliverables (an area, what gets done, how it's measured, how
      often) - a department can use either or both.
@@ -3461,14 +3766,21 @@ is enough to save; the user can add more rows on the review screen afterwards.
 """
 
 
-def _kpi_agreement_chat_prompt(history: list[dict[str, str]], feedback_block: str) -> str:
+def _kpi_agreement_chat_prompt(
+    history: list[dict[str, str]], feedback_block: str, department_name: Optional[str]
+) -> str:
+    department_context = (
+        f"This KPI agreement is for the {department_name} department - that part is "
+        f"already settled, so never ask about it.\n"
+        if department_name else ""
+    )
     return f"""
 You help someone build a "KEY PERFORMANCE INDICATOR AGREEMENT" record through
 conversation, for a department that does not have the funder's signed letter
 to upload. This is the same record a document-upload flow would produce -
 see the target shapes below.
 
-{feedback_block}
+{department_context}{feedback_block}
 Numeric/quarterly shape: one row per KPI with an annual figure and a Q1-Q4
 split that should sum to (or approximate) the annual figure.
 
@@ -3476,7 +3788,7 @@ Deliverable shape: one row per qualitative process deliverable - an area, what
 must be done, how it's measured, and how often (usually monthly) - with no
 numeric target.
 
-{KPI_AGREEMENT_CHAT_RULES}
+{_kpi_agreement_chat_rules(department_name)}
 Conversation so far (oldest first):
 {json.dumps(history, ensure_ascii=False)}
 
@@ -3496,20 +3808,21 @@ class KpiAgreementChatMessage(BaseModel):
 
 class KpiAgreementChatRequest(BaseModel):
     messages: list[KpiAgreementChatMessage]
+    departmentId: str = ""
 
 
-class KpiAgreementChatResponse(BaseModel):
+class KpiCandidateChatResponse(BaseModel):
     done: bool
     message: str
-    draft: Optional[KpiAgreementExtractionResponse] = None
+    draft: Optional[KpiCandidateDraft] = None
 
 
-@app.post("/kpi/agreement-chat", response_model=KpiAgreementChatResponse)
-def kpi_agreement_chat(payload: KpiAgreementChatRequest, request: Request):
-    """Build a KPI agreement draft through conversation instead of an upload.
+@app.post("/kpi/candidate-chat", response_model=KpiCandidateChatResponse)
+def kpi_candidate_chat(payload: KpiAgreementChatRequest, request: Request):
+    """Build draft KPI candidates through conversation instead of an upload.
 
     Stateless: the client holds and resends the message history each turn.
-    Finishes by returning the same draft shape /kpi/extract-agreement does,
+    Finishes with the same source-mapping pass /kpi/extract-candidates runs,
     so the client's review screen is shared between both entry points.
     """
     api_key = os.getenv("GEMINI_API_KEY")
@@ -3520,7 +3833,7 @@ def kpi_agreement_chat(payload: KpiAgreementChatRequest, request: Request):
     if _normalise_role(user.role) not in KPI_AGREEMENT_AUTHOR_ROLES:
         raise HTTPException(
             status_code=403,
-            detail="You do not have permission to import KPI agreements.",
+            detail="You do not have permission to define KPIs this way.",
         )
 
     if not payload.messages:
@@ -3535,26 +3848,29 @@ def kpi_agreement_chat(payload: KpiAgreementChatRequest, request: Request):
         raise HTTPException(status_code=400, detail="The conversation must end with a user message.")
 
     feedback_block = build_feedback_prompt_block(KPI_AGREEMENT_FEEDBACK_FEATURE)
-    prompt = _kpi_agreement_chat_prompt(history, feedback_block)
-    parsed = _gemini_json(api_key, prompt, "KPI agreement assistant")
+    department_name = _resolve_department_name(payload.departmentId)
+    prompt = _kpi_agreement_chat_prompt(history, feedback_block, department_name)
+    parsed = _gemini_json(api_key, prompt, "KPI drafting assistant")
 
     done = bool(parsed.get("done"))
     message = re.sub(r"\s+", " ", str(parsed.get("message") or "").strip())[:1000]
-    draft: Optional[KpiAgreementExtractionResponse] = None
+    draft: Optional[KpiCandidateDraft] = None
 
     if done:
         raw_draft = parsed.get("draft") if isinstance(parsed.get("draft"), dict) else {}
-        draft, _ = _build_kpi_draft(raw_draft)
-        if draft is None:
+        built, _ = _build_kpi_draft(raw_draft)
+        if built is None:
             # The model said it was done but has nothing usable yet - keep going
             # rather than hand the client an empty draft to review.
             done = False
             message = message or "Could you share at least one KPI target or deliverable before we finish?"
+        else:
+            draft = _map_kpi_candidates(built, payload.departmentId)
 
     if not message:
         message = "Could you tell me more?"
 
-    return KpiAgreementChatResponse(done=done, message=message, draft=draft)
+    return KpiCandidateChatResponse(done=done, message=message, draft=draft)
 
 
 # ============= REUSABLE AI SUGGESTION FEEDBACK =============

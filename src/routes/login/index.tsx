@@ -22,7 +22,8 @@ import {
     signInWithEmailAndPassword,
     GoogleAuthProvider,
     signInWithPopup,
-    fetchSignInMethodsForEmail
+    fetchSignInMethodsForEmail,
+    signOut
 } from 'firebase/auth'
 import { httpsCallable } from 'firebase/functions'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -41,6 +42,66 @@ import { ThemeToggle } from '@/components/layout/theme-toggle'
 
 const { Title, Text } = Typography
 const { useBreakpoint } = Grid
+
+// Whether a returning, already-signed-in user should be routed straight into
+// the app or asked first. Keyed per-uid so one device with multiple accounts
+// doesn't inherit another account's choice.
+type AutoSignInPreference = 'always' | 'ask'
+const AUTO_SIGNIN_PREF_PREFIX = 'lph-auto-signin-pref:'
+
+const getAutoSignInPreference = (uid: string): AutoSignInPreference | null => {
+    try {
+        const value = window.localStorage.getItem(AUTO_SIGNIN_PREF_PREFIX + uid)
+        return value === 'always' || value === 'ask' ? value : null
+    } catch {
+        return null
+    }
+}
+
+const setAutoSignInPreference = (uid: string, preference: AutoSignInPreference) => {
+    try {
+        window.localStorage.setItem(AUTO_SIGNIN_PREF_PREFIX + uid, preference)
+    } catch {
+        // localStorage unavailable -- the prompt just reappears next visit.
+    }
+}
+
+// IdentityContext can force a hard `window.location.reload()` right after an
+// interactive sign-in, to reconcile the on-disk Firestore cache when it still
+// belongs to a previously signed-in account (see IdentityContext.tsx's
+// cacheBelongsToAnotherAccount check). That reload re-mounts this screen with
+// the new user already in auth.currentUser, which would otherwise look
+// exactly like a cold app restart and trigger the "welcome back" prompt a
+// second time for someone who just typed their password. sessionStorage
+// survives that reload (unlike component state) but not a real new session,
+// so it is the right place to mark "a sign-in on this screen is in flight."
+const INTERACTIVE_SIGNIN_FLAG = 'lph-interactive-signin'
+
+const markInteractiveSignIn = () => {
+    try {
+        window.sessionStorage.setItem(INTERACTIVE_SIGNIN_FLAG, '1')
+    } catch {
+        // sessionStorage unavailable -- worst case, the prompt reappears once.
+    }
+}
+
+const clearInteractiveSignInFlag = () => {
+    try {
+        window.sessionStorage.removeItem(INTERACTIVE_SIGNIN_FLAG)
+    } catch {
+        /* noop */
+    }
+}
+
+const consumeInteractiveSignInFlag = (): boolean => {
+    try {
+        const had = window.sessionStorage.getItem(INTERACTIVE_SIGNIN_FLAG) === '1'
+        if (had) window.sessionStorage.removeItem(INTERACTIVE_SIGNIN_FLAG)
+        return had
+    } catch {
+        return false
+    }
+}
 
 interface CarouselSlideProps {
     title: string
@@ -250,6 +311,8 @@ const LoginPageContent: React.FC = () => {
         searchParams.get('flip') === '1'
     )
     const [isLeavingForRegistration, setIsLeavingForRegistration] = useState(false)
+    const [pickupUser, setPickupUser] = useState<any>(null)
+    const [pickupBusy, setPickupBusy] = useState(false)
 
     // framer-motion helpers
     const reduceMotion = useReducedMotion()
@@ -279,15 +342,25 @@ const LoginPageContent: React.FC = () => {
 
     // Someone can reach this screen already signed in, now that sessions survive
     // the app being closed -- by opening the app cold, by navigating here
-    // directly, or after an internal reload. Showing them the form anyway is what
-    // made signing in look like it needed two attempts: the first sign-in worked,
-    // and they were simply handed the form a second time. Route them on instead.
+    // directly, or after an internal reload. Only route them on silently when
+    // they've previously said to always do that for this account; otherwise
+    // confirm first via the "welcome back" modal below, since jumping straight
+    // into someone else's last session on a shared device is surprising.
     //
     // auth.currentUser is reliable here because main.tsx waits for
     // authStateReady() before the app renders.
     useEffect(() => {
         const user = auth.currentUser
         if (!user) return
+
+        const skipPrompt =
+            getAutoSignInPreference(user.uid) === 'always' ||
+            consumeInteractiveSignInFlag()
+
+        if (!skipPrompt) {
+            setPickupUser(user)
+            return
+        }
 
         let cancelled = false
         void (async () => {
@@ -306,6 +379,35 @@ const LoginPageContent: React.FC = () => {
         // that are stable for the life of the screen.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
+
+    const handlePickupContinue = async (remember: AutoSignInPreference) => {
+        const user = pickupUser
+        if (!user) return
+        setAutoSignInPreference(user.uid, remember)
+        setPickupBusy(true)
+        markInteractiveSignIn()
+        try {
+            await routeSignedInUser(user)
+        } catch {
+            // Their profile could not be read -- leave them on the form.
+        } finally {
+            setPickupBusy(false)
+            setPickupUser(null)
+            clearInteractiveSignInFlag()
+        }
+    }
+
+    const handlePickupDifferentAccount = async () => {
+        setPickupBusy(true)
+        try {
+            await signOut(auth)
+        } catch {
+            // Best effort -- the empty form below still lets them sign in fresh.
+        } finally {
+            setPickupBusy(false)
+            setPickupUser(null)
+        }
+    }
 
     const spinnerVariants = {
         animate: {
@@ -546,6 +648,7 @@ const LoginPageContent: React.FC = () => {
 
         try {
             setLoading(true)
+            markInteractiveSignIn()
 
             const { user } = await signInWithEmailAndPassword(
                 auth,
@@ -569,6 +672,10 @@ const LoginPageContent: React.FC = () => {
             }
         } finally {
             setLoading(false)
+            // If we got here, this run of handleLogin finished on its own --
+            // no cache-reconciliation reload interrupted it -- so there is
+            // nothing left for a future mount of this screen to pick up.
+            clearInteractiveSignInFlag()
         }
     }
 
@@ -578,6 +685,7 @@ const LoginPageContent: React.FC = () => {
 
         try {
             setGoogleLoading(true)
+            markInteractiveSignIn()
 
             const result = await signInWithPopup(auth, new GoogleAuthProvider())
             const user = result.user
@@ -700,6 +808,9 @@ const LoginPageContent: React.FC = () => {
             message.error(formatFirebaseError(error, 'google'))
         } finally {
             setGoogleLoading(false)
+            // Same reasoning as handleLogin's finally: only reached when no
+            // reconciliation reload interrupted this attempt.
+            clearInteractiveSignInFlag()
         }
     }
 
@@ -1087,6 +1198,46 @@ const LoginPageContent: React.FC = () => {
                     />
                 </div>
             </div>
+
+            <Modal
+                title='Welcome back'
+                open={Boolean(pickupUser)}
+                closable={false}
+                maskClosable={false}
+                footer={null}
+                width={380}
+                centered
+            >
+                <Alert
+                    type='info'
+                    showIcon
+                    message={`Pick up where you left off as ${pickupUser?.email ?? 'your last account'}?`}
+                />
+                <Space direction='vertical' size={10} style={{ width: '100%', marginTop: 18 }}>
+                    <Button
+                        type='primary'
+                        block
+                        loading={pickupBusy}
+                        onClick={() => void handlePickupContinue('always')}
+                    >
+                        Always sign me in automatically
+                    </Button>
+                    <Button
+                        block
+                        loading={pickupBusy}
+                        onClick={() => void handlePickupContinue('ask')}
+                    >
+                        Continue, but ask me every time
+                    </Button>
+                    <Button
+                        block
+                        loading={pickupBusy}
+                        onClick={() => void handlePickupDifferentAccount()}
+                    >
+                        Use a different account
+                    </Button>
+                </Space>
+            </Modal>
 
             <Modal
                 title={

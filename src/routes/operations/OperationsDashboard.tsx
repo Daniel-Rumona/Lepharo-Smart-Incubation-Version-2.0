@@ -18,9 +18,9 @@ import {
 import { BellOutlined, CheckCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
+import { sendNotification } from '@/utils/sendNotification'
 import {
     Timestamp,
-    addDoc,
     arrayUnion,
     collection,
     getDoc,
@@ -797,11 +797,11 @@ export const OperationsDashboard: React.FC = () => {
             const role = String(queryItem.resolver?.role || 'consultant').trim()
             const reminder = { sentAt: Timestamp.now(), sentById: String(user?.uid || user?.id || '') || null }
             await Promise.all([
-                addDoc(collection(db, 'notifications'), {
+                sendNotification({
                     type: 'workflow-query-reminder',
                     message: { [role]: 'Reminder: an open query needs your response.' },
                     recipientRoles: [role], recipientIds: [resolverId], workflowQueryId: queryItem.id,
-                    programId: queryItem.programId, createdAt: new Date(), readBy: {}
+                    programId: queryItem.programId
                 }),
                 updateDoc(doc(db, 'workflowQueries', queryItem.id), {
                     lastReminderAt: reminder.sentAt, reminders: arrayUnion(reminder), updatedAt: Timestamp.now()

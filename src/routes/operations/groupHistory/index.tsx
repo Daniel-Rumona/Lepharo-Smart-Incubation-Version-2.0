@@ -817,48 +817,40 @@ export default function GroupMovementTimeline() {
         </MotionCard> : <>
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard>
-                        <MotionCard.Metric
-                            icon={<TeamOutlined style={{ color: '#1677ff' }} />}
-                            iconBg='rgba(22,119,255,0.12)'
-                            title='Total SMEs'
-                            value={metrics.total}
-                            subtitle={`${filteredRows.length} in current view`}
-                        />
-                    </MotionCard>
+                    <MotionCard.Metric
+                        icon={<TeamOutlined style={{ color: '#1677ff' }} />}
+                        iconBg='rgba(22,119,255,0.12)'
+                        title='Total SMEs'
+                        value={metrics.total}
+                        subtitle={`${filteredRows.length} in current view`}
+                    />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard>
-                        <MotionCard.Metric
-                            icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                            iconBg='rgba(82,196,26,0.14)'
-                            title='Ready for ROM'
-                            value={metrics.eligible}
-                            subtitle='Eligible, not yet submitted'
-                        />
-                    </MotionCard>
+                    <MotionCard.Metric
+                        icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                        iconBg='rgba(82,196,26,0.14)'
+                        title='Ready for ROM'
+                        value={metrics.eligible}
+                        subtitle='Eligible, not yet submitted'
+                    />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard>
-                        <MotionCard.Metric
-                            icon={<ClockCircleOutlined style={{ color: '#faad14' }} />}
-                            iconBg='rgba(250,173,20,0.16)'
-                            title='Pending M&E'
-                            value={metrics.pending}
-                            subtitle='Submitted by ROM'
-                        />
-                    </MotionCard>
+                    <MotionCard.Metric
+                        icon={<ClockCircleOutlined style={{ color: '#faad14' }} />}
+                        iconBg='rgba(250,173,20,0.16)'
+                        title='Pending M&E'
+                        value={metrics.pending}
+                        subtitle='Submitted by ROM'
+                    />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard>
-                        <MotionCard.Metric
-                            icon={<TrophyOutlined style={{ color: '#13c2c2' }} />}
-                            iconBg='rgba(19,194,194,0.14)'
-                            title='Graduated'
-                            value={metrics.graduated}
-                            subtitle='Completed incubation'
-                        />
-                    </MotionCard>
+                    <MotionCard.Metric
+                        icon={<TrophyOutlined style={{ color: '#13c2c2' }} />}
+                        iconBg='rgba(19,194,194,0.14)'
+                        title='Graduated'
+                        value={metrics.graduated}
+                        subtitle='Completed incubation'
+                    />
                 </Col>
             </Row>
 
@@ -876,15 +868,15 @@ export default function GroupMovementTimeline() {
 
             <MotionCard
                 filterBar={
-                    <Row gutter={[12, 12]} align='middle'>
-                        <Col xs={24} xl={8}>
+                    <Row gutter={12} align='middle' wrap={false} style={{ minWidth: 1180 }}>
+                        <Col flex='1 1 320px'>
                             <Segmented value={filterGroup} onChange={value => setFilterGroup(value as any)} options={[
                                 { label: 'All', value: 'all' },
                                 ...(isME ? [{ label: `Pending M&E (${metrics.pending})`, value: 'pending' }] : []),
                                 ...GROUPS.map(group => ({ label: groupLabel(group), value: group }))
                             ]} />
                         </Col>
-                        <Col xs={24} md={12} xl={6}>
+                        <Col flex='1 1 220px'>
                             <Input
                                 allowClear
                                 prefix={<SearchOutlined />}
@@ -893,13 +885,13 @@ export default function GroupMovementTimeline() {
                                 onChange={event => setSearchText(event.target.value)}
                             />
                         </Col>
-                        <Col xs={24} md={12} xl={4}>
+                        <Col flex='0 1 160px'>
                             <Select value={filterStage} onChange={setFilterStage} style={{ width: '100%' }} options={[
                                 { label: 'All stages', value: 'all' }, ...stages.map(stage => ({ label: stage, value: stage }))
                             ]} />
                         </Col>
-                        <Col xs={24} xl={6}>
-                            <Space style={{ width: '100%', justifyContent: 'flex-end' }} wrap>
+                        <Col flex='none'>
+                            <Space wrap={false} size={8}>
                                 {isROM && <Button
                                     shape='round'
                                     icon={<MailOutlined />

@@ -70,6 +70,10 @@ from firestore_tools import (
     get_timesheets_by_program,
     get_timesheets_by_department,
 
+    get_leave_requests_by_user,
+    get_leave_requests_by_department,
+    get_kpi_targets_by_department,
+
     get_recent_activity_summary,
 )
 
@@ -120,7 +124,12 @@ SUMMARY_TOOL_SPECS: dict[str, tuple[str, list[tuple[str, str, Any]]]] = {
         [("programId", "==", 0)],
     ),
     "get_appointments": ("appointments", []),
-    "get_appointments_by_participant": ("appointments", [("participantId", "==", 0)]),
+    # v5 appointment docs stamp the SME under smeId, not participantId — see
+    # PARTICIPANT_ID_FIELDS / _hydrate_appointments_with_sessions() in
+    # firestore_tools.py. This fast-count path only supports one equality
+    # filter, so unlike get_appointments_by_participant() it can't fan out
+    # over both field names; smeId covers current and future data.
+    "get_appointments_by_participant": ("appointments", [("smeId", "==", 0)]),
     "get_appointments_by_program": ("appointments", [("programId", "==", 0)]),
     "get_appointments_by_department": ("appointments", [("departmentId", "==", 0)]),
     "get_movs": ("movDocuments", []),
@@ -205,6 +214,10 @@ TOOL_MAP: dict[str, Callable[..., Any]] = {
     "get_timesheets_by_program": get_timesheets_by_program,
     "get_timesheets_by_department": get_timesheets_by_department,
 
+    "get_leave_requests_by_user": get_leave_requests_by_user,
+    "get_leave_requests_by_department": get_leave_requests_by_department,
+    "get_kpi_targets_by_department": get_kpi_targets_by_department,
+
     "get_recent_activity_summary": get_recent_activity_summary,
 }
 
@@ -280,6 +293,7 @@ MULTI_FIELD_SUMMARY_TOOLS = {
     "get_assigned_interventions_by_assignee",
     "get_timesheets_by_program",
     "get_timesheets_by_department",
+    "get_leave_requests_by_department",
     "get_completed_interventions_by_department",
     "get_compliance",
     "get_compliance_by_participant",
@@ -477,6 +491,8 @@ def run_page_tools(
             "get_movs_by_department",
             "get_completed_interventions_by_department",
             "get_timesheets_by_department",
+            "get_leave_requests_by_department",
+            "get_kpi_targets_by_department",
         }:
             if not department_id:
                 results[tool_name] = {
@@ -512,6 +528,7 @@ def run_page_tools(
         if tool_name in {
             "get_clock_events_by_user",
             "get_time_records_by_user",
+            "get_leave_requests_by_user",
         }:
             if not user_id:
                 results[tool_name] = {

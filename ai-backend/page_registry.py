@@ -78,6 +78,20 @@ PAGE_REGISTRY = {
         "collections": ["clockEvents", "timeRecords", "users"],
         "tools": ["get_clock_events", "get_time_records"],
     },
+    "/operations/hr/leave": {
+        "page_name": "HR Leave Management",
+        "role_area": "operations",
+        "purpose": "Staff leave requests, approvals, and balances for the department.",
+        "collections": ["leaveRequests", "users"],
+        "tools": ["get_leave_requests_by_department"],
+    },
+    "/operations/hr/performance": {
+        "page_name": "HR Performance",
+        "role_area": "operations",
+        "purpose": "Department KPI targets and staff performance tracking.",
+        "collections": ["kpiTargets", "kpiDefinitions"],
+        "tools": ["get_kpi_targets_by_department"],
+    },
     "/operations/applications": {
         "page_name": "Applications",
         "role_area": "operations",
@@ -155,6 +169,28 @@ PAGE_REGISTRY = {
         "purpose": "Project admin clock-in and team attendance.",
         "collections": ["clockEvents", "timeRecords", "users"],
         "tools": ["get_clock_events", "get_time_records"],
+    },
+
+    "/timesheet": {
+        "page_name": "My Timesheet",
+        "role_area": "shared",
+        "purpose": "The signed-in staff member's own clock-in/out activity.",
+        "collections": ["timesheets"],
+        "tools": ["get_clock_events_by_user", "get_time_records_by_user"],
+    },
+    "/leave": {
+        "page_name": "My Leave",
+        "role_area": "shared",
+        "purpose": "The signed-in staff member's own leave requests and balance.",
+        "collections": ["leaveRequests"],
+        "tools": ["get_leave_requests_by_user"],
+    },
+    "/kpis/track": {
+        "page_name": "KPI Tracker",
+        "role_area": "shared",
+        "purpose": "Department KPI targets and progress tracking.",
+        "collections": ["kpiTargets", "kpiDefinitions"],
+        "tools": ["get_kpi_targets_by_department"],
     },
 }
 

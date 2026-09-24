@@ -31,6 +31,12 @@ const { Text } = Typography
 const { TextArea } = Input
 
 
+// HR staff manage people, not the programme delivery pipeline — they never
+// have interventions/appointments/MOVs of their own, so both roleBasedTopics
+// and roleBasedQuestions special-case this department instead of falling
+// through to the generic intervention-centric copy every other department gets.
+const HR_DEPARTMENT_PATTERN = /(human resources|hrm|\bhr\b)/
+
 const roleBasedTopics = (user: Record<string, any> | null): string[] => {
     const role = normaliseIdentityValue(user?.role)
     const department = normaliseIdentityValue(
@@ -38,6 +44,9 @@ const roleBasedTopics = (user: Record<string, any> | null): string[] => {
     )
 
     if (role === 'incubatee') return ['My progress', 'Interventions', 'Appointments', 'Compliance']
+    if ((role === 'coordinator' || role === 'operations') && HR_DEPARTMENT_PATTERN.test(department)) {
+        return ['Clock-ins', 'Leave', 'KPI targets', 'Team']
+    }
     if (role === 'coordinator') return ['Assigned work', 'Interventions', 'Appointments', 'MOVs']
     if (role === 'operations' && /(monitoring|evaluation|m&e)/.test(department)) {
         return ['Interventions', 'MOVs', 'Compliance', 'Participant progress']
@@ -152,12 +161,12 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
             ]
         }
 
-        if (/(human resources|hrm|\bhr\b)/.test(department)) {
+        if (HR_DEPARTMENT_PATTERN.test(department)) {
             return [
-                'Show my active HR interventions',
-                'Which of my assigned interventions are overdue?',
-                'Show my upcoming appointments',
-                'Summarise my completed interventions'
+                'Show my leave requests',
+                'Have I taken any leave this month?',
+                'How many hours have I clocked this week?',
+                'Show my recent clock-in history'
             ]
         }
 
@@ -170,6 +179,15 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
     }
 
     if (role === 'operations') {
+        if (HR_DEPARTMENT_PATTERN.test(department)) {
+            return [
+                "Who's currently on leave?",
+                'Show outstanding leave requests',
+                'Show clock-in activity for my department',
+                'What are our KPI targets this period?'
+            ]
+        }
+
         if (/(monitoring|evaluation|m&e)/.test(department)) {
             return [
                 'Which participant compliance items are outstanding?',
@@ -343,6 +361,14 @@ const Chat: React.FC = () => {
     const renderComposer = (docked = false) => (
         <div className={`chat-composer-panel ${docked ? 'chat-composer-panel-docked' : ''}`}>
             <div className='chat-input-wrap'>
+                <button
+                    type='button'
+                    className='chat-voice-button'
+                    aria-label='Start conversation mode'
+                    onClick={() => setConversationMode(true)}
+                >
+                    <AudioOutlined />
+                </button>
                 <TextArea
                     value={input}
                     onChange={event => setInput(event.target.value)}
@@ -575,33 +601,6 @@ const Chat: React.FC = () => {
           font-weight: 600;
           text-align: center;
         }
-        .chat-voice-toggle {
-          position: absolute;
-          top: 16px;
-          right: clamp(18px, 4vw, 40px);
-          z-index: 3;
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          height: 34px;
-          padding: 0 14px;
-          border: 1px solid var(--app-border);
-          border-radius: 17px;
-          color: var(--app-text);
-          background: var(--app-surface);
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: background .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;
-        }
-        .chat-voice-toggle:hover,
-        .chat-voice-toggle:focus-visible {
-          border-color: var(--app-accent);
-          color: var(--app-accent);
-          background: var(--app-accent-soft);
-          box-shadow: 0 8px 20px color-mix(in srgb, var(--app-accent) 15%, transparent);
-          outline: none;
-        }
         .chat-marker-rail {
           position: absolute;
           left: 8px;
@@ -788,9 +787,9 @@ const Chat: React.FC = () => {
         .chat-input-wrap {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
           min-height: 48px;
-          padding: 5px 6px 5px 14px;
+          padding: 5px 6px;
           border: 1px solid var(--app-border-strong);
           border-radius: 18px;
           background: var(--app-surface);
@@ -807,6 +806,27 @@ const Chat: React.FC = () => {
           line-height: 24px !important;
           box-shadow: none !important;
           resize: none !important;
+        }
+        .chat-voice-button {
+          flex: 0 0 36px;
+          display: grid;
+          place-items: center;
+          width: 36px;
+          height: 36px;
+          padding: 0;
+          border: 0;
+          border-radius: 50%;
+          color: var(--app-text-subtle);
+          background: transparent;
+          font-size: 16px;
+          cursor: pointer;
+          transition: background .16s ease, color .16s ease;
+        }
+        .chat-voice-button:hover,
+        .chat-voice-button:focus-visible {
+          color: var(--app-accent);
+          background: var(--app-accent-soft);
+          outline: none;
         }
         .chat-send-button {
           width: 36px !important;
@@ -857,26 +877,8 @@ const Chat: React.FC = () => {
                             <ArrowLeftOutlined />
                         </button>
                         <span className='chat-mobile-header-title'>QxAgent</span>
-                        <button
-                            type='button'
-                            className='chat-back-button'
-                            aria-label='Start conversation mode'
-                            onClick={() => setConversationMode(true)}
-                        >
-                            <AudioOutlined />
-                        </button>
+                        <span className='chat-mobile-header-spacer' aria-hidden='true' />
                     </header>
-                )}
-                {!isMobile && (
-                    <button
-                        type='button'
-                        className='chat-voice-toggle'
-                        aria-label='Start conversation mode'
-                        onClick={() => setConversationMode(true)}
-                    >
-                        <AudioOutlined />
-                        <span>Conversation mode</span>
-                    </button>
                 )}
                 <nav className='chat-marker-rail' aria-label='Conversation messages'>
                     {state.messages.filter(item => item.sender === 'user').map(item => {

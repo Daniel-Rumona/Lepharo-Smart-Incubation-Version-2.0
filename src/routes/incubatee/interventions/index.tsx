@@ -51,6 +51,7 @@ import {
 } from 'firebase/firestore'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
+import { sendNotification } from '@/utils/sendNotification'
 import { v4 as uuidv4 } from 'uuid'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
@@ -1918,7 +1919,7 @@ const InterventionsTrackingView: React.FC = () => {
                                 }
                             )
 
-                            await addDoc(collection(db, 'notifications'), {
+                            await sendNotification({
                                 type: 'intervention-request',
                                 recipientRoles: ['operations'],
                                 department: values.areaOfSupport,
@@ -1930,9 +1931,7 @@ const InterventionsTrackingView: React.FC = () => {
                                 status: 'pending',
                                 message: {
                                     operations: `A new intervention "${values.interventionTitle}" has been requested in ${values.areaOfSupport}. Reason: ${values.reason}`
-                                },
-                                createdAt: new Date(),
-                                readBy: {}
+                                }
                             })
 
                             notification.success({

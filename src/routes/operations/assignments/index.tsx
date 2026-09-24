@@ -2156,7 +2156,7 @@ export const InterventionsAssignments: React.FC = () => {
 
                     const requiredForDeptRaw = isMonitoringDepartment
                         ? monitoringRequiredInterventions
-                        : eligiblePlanInterventions(dpInterventions, departmentInterventions,
+                        : eligiblePlanInterventions(dpInterventions,
                             hasBothConfirmationsForDept(dp, deptId, deptName)).filter((iv: any) => {
                                 if (deptId && iv?.departmentId)
                                     return String(iv.departmentId) === deptId;
@@ -3161,15 +3161,13 @@ export const InterventionsAssignments: React.FC = () => {
                 if (isMonitoringDepartment) return true;
 
                 const dp = dpByPid[String(pid)];
-                const selectedInterventionId = String(reassigningAssignment?.interventionId || values.intervention || "");
-                return !!dp && (hasBothConfirmationsForDept(dp, deptId, deptName) ||
-                    isCompulsoryIntervention({ id: selectedInterventionId }, Object.values(ivDefsById)));
+                return !!dp && hasBothConfirmationsForDept(dp, deptId, deptName);
             };
 
             for (const pid of selectedIds) {
                 if (!isAllowedByDp(String(pid))) {
                     message.error(
-                        "This intervention requires DP confirmation by both the department and the SME. Compulsory interventions do not require DP sign-off."
+                        "This intervention requires DP confirmation by both the department and the SME."
                     );
                     return;
                 }
@@ -4087,9 +4085,7 @@ export const InterventionsAssignments: React.FC = () => {
 
             if (!isMonitoringDepartment) {
                 const dp = dpByPid[pid];
-                if (!dp || (!hasBothConfirmationsForDept(dp, deptId, deptName) &&
-                    !isCompulsoryIntervention({ id: group.interventionId }, Object.values(ivDefsById))))
-                    return false;
+                if (!dp || !hasBothConfirmationsForDept(dp, deptId, deptName)) return false;
             }
 
             return ((p.requiredInterventions || []) as any[]).some(
@@ -6921,7 +6917,7 @@ export const InterventionsAssignments: React.FC = () => {
                                 name="participants"
                                 label="SMEs to add"
                                 rules={[{ required: true, message: "Select at least one SME." }]}
-                                extra="SMEs with this required intervention are shown. Compulsory interventions do not require DP sign-off."
+                                extra="SMEs with this required intervention are shown. Monitoring departments can assign compulsory interventions without DP sign-off; other departments require both confirmations."
                             >
                                 <Select
                                     mode="multiple"

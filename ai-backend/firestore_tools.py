@@ -865,28 +865,95 @@ def get_completed_interventions_by_department(department_id: str, max_results: i
 # -------------------------
 # Appointments
 # -------------------------
+# Schema v5 (src/types/appointment.ts) split "appointments" into two
+# collections: `appointments` is one thin per-SME invitation record (status,
+# smeId, assigneeId, ...) and `appointmentSessions` holds everything about the
+# actual slot (startAt, endAt, location, meetingLink, coverage, ...), joined
+# via appointment.appointmentSessionId. Callers of get_appointments* (notably
+# _add_appointment_timing() in app.py, which needs startAt/endAt to say
+# upcoming vs. past) expect those schedule fields on the appointment record
+# itself, so _hydrate_appointments_with_sessions() merges them in — mirroring
+# the same join functions/src/whatsappGateway.ts already does for WhatsApp.
+
+# Old (pre-v5) appointment docs stamped the SME under `participantId`;
+# current docs use `smeId` (see getAppointmentParticipantId() in
+# src/services/appointmentService.ts, which falls back the same way on read).
+PARTICIPANT_ID_FIELDS = ("smeId", "participantId")
+
+APPOINTMENT_SESSION_FIELDS = (
+    "startAt",
+    "endAt",
+    "title",
+    "location",
+    "meetingLink",
+    "deliveryMethod",
+    "sessionType",
+    "coverage",
+    "attendanceSummary",
+)
+
+
+def _hydrate_appointments_with_sessions(records: list[dict]) -> list[dict]:
+    session_ids = list(dict.fromkeys(
+        str(record["appointmentSessionId"]).strip()
+        for record in records
+        if isinstance(record, dict) and record.get("appointmentSessionId")
+    ))
+    if not session_ids:
+        return records
+
+    sessions: dict[str, dict] = {}
+    for start in range(0, len(session_ids), 300):
+        chunk = session_ids[start:start + 300]
+        refs = [db.collection("appointmentSessions").document(session_id) for session_id in chunk]
+        for snapshot in db.get_all(refs):
+            if snapshot.exists:
+                sessions[snapshot.id] = snapshot.to_dict() or {}
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        session = sessions.get(str(record.get("appointmentSessionId") or ""))
+        if not session:
+            continue
+        for field in APPOINTMENT_SESSION_FIELDS:
+            if session.get(field) is not None:
+                record[field] = session[field]
+
+    return records
+
 
 def get_appointments(max_results: int = 100):
-    return list_collection("appointments", max_results)
+    return _hydrate_appointments_with_sessions(list_collection("appointments", max_results))
 
 
 def get_appointments_by_participant(participant_id: str, max_results: int = 100):
-    return query_collection("appointments", "participantId", participant_id, max_results)
+    return _hydrate_appointments_with_sessions(
+        query_by_any_field_any_value(
+            "appointments", PARTICIPANT_ID_FIELDS, [participant_id], max_results
+        )
+    )
 
 
 def get_appointments_by_assignee(assignee_ids, max_results: int = 500):
     values = assignee_ids if isinstance(assignee_ids, list) else [assignee_ids]
-    return query_by_any_field_any_value(
-        "appointments", ASSIGNEE_ID_FIELDS, values, max_results
+    return _hydrate_appointments_with_sessions(
+        query_by_any_field_any_value(
+            "appointments", ASSIGNEE_ID_FIELDS, values, max_results
+        )
     )
 
 
 def get_appointments_by_program(program_id: str, max_results: int = 100):
-    return query_collection("appointments", "programId", program_id, max_results)
+    return _hydrate_appointments_with_sessions(
+        query_collection("appointments", "programId", program_id, max_results)
+    )
 
 
 def get_appointments_by_department(department_id: str, max_results: int = 100):
-    return query_collection("appointments", "departmentId", department_id, max_results)
+    return _hydrate_appointments_with_sessions(
+        query_collection("appointments", "departmentId", department_id, max_results)
+    )
 
 
 # -------------------------
@@ -937,7 +1004,10 @@ RECENT_ACTIVITY_SOURCES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("newApplications", "applications", ("submittedAt", "createdAt")),
     ("completedInterventions", "assignedInterventions", ("completedAt",)),
     ("movsUploaded", "movDocuments", ("uploadedAt", "createdAt")),
-    ("appointmentsHeld", "appointments", ("startAt", "scheduledDate", "date")),
+    # Appointment invitation docs (schema v5) carry no date of their own —
+    # startAt lives on the appointmentSessions doc they point to — so this
+    # counts sessions directly rather than per-SME invitation records.
+    ("appointmentsHeld", "appointmentSessions", ("startAt",)),
     ("complianceUpdates", "participantComplianceTimeline", ("updatedAt", "createdAt")),
 )
 
@@ -1093,3 +1163,61 @@ def get_timesheets_by_department(department_id: str, max_results: int = 200):
         return []
 
     return _decorate_timesheets(query_by_any_field_any_value("timesheets", ("userId",), user_ids, max_results))
+
+
+# -------------------------
+# Leave
+# -------------------------
+# leaveRequests docs (src/routes/shared/leave/index.tsx, src/routes/operations/
+# hr/leave/index.tsx) carry employeeId (the staff member's Firebase uid) and
+# employeeEmail, but no departmentId — department scoping joins through
+# `users.departmentId` first, same as get_timesheets_by_department above.
+
+def get_leave_requests_by_user(user_id: str, max_results: int = 100):
+    return query_by_any_field_any_value(
+        "leaveRequests", ("employeeId",), [user_id], max_results
+    )
+
+
+def get_leave_requests_by_department(department_id: str, max_results: int = 200):
+    user_ids = [
+        document.id
+        for document in db.collection("users")
+        .where("departmentId", "==", department_id)
+        .stream()
+    ]
+    if not user_ids:
+        return []
+
+    return query_by_any_field_any_value("leaveRequests", ("employeeId",), user_ids, max_results)
+
+
+# -------------------------
+# KPI targets
+# -------------------------
+
+def _resolve_department_name(department_id: str) -> str | None:
+    try:
+        snapshot = db.collection("departments").document(department_id).get()
+    except Exception:
+        return None
+    if not snapshot.exists:
+        return None
+    name = (snapshot.to_dict() or {}).get("name")
+    return str(name).strip() or None if name else None
+
+
+def get_kpi_targets_by_department(department_id: str, max_results: int = 200):
+    """
+    kpiTargets (src/routes/kpis/index.tsx) are keyed by department NAME, not
+    departmentId like every other *_by_department tool here — resolve the
+    name first so callers keep passing a departmentId consistently. Returns
+    committed targets only: actual performance against them is computed
+    client-side (src/services/kpiCalculationService.ts) from several other
+    collections and isn't reproduced here.
+    """
+    department_name = _resolve_department_name(department_id)
+    if not department_name:
+        return []
+
+    return query_collection("kpiTargets", "department", department_name, max_results)

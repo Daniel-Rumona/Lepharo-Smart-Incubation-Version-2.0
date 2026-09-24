@@ -111,18 +111,50 @@ const MetricBase: React.FC<MetricProps> = ({
     loading = false
 }) => {
     const isClickable = clickable && !!onClick && !disabled && !loading
-    const [hovered, setHovered] = React.useState(false)
     const palette = useMetricPalette()
+
+    // Hover/focus visuals (border, shadow, lift) are pure CSS (:hover /
+    // :focus-visible), not JS-tracked state: a div[tabIndex] doesn't reliably
+    // fire mouseleave/blur in every case, which left a previously-active
+    // tile's border "stuck" until it was hovered again. CSS always reflects
+    // the real cursor/focus position, so it can't get stuck.
+    //
+    // Crucially, border/boxShadow/transform must NOT be set inline here:
+    // inline styles always beat stylesheet rules (even :hover ones), so an
+    // inline value would make the CSS below dead code. They're driven
+    // entirely by the CSS variables + class rules instead. `wrapperStyle`
+    // (used by many callers to inline an "active/selected" border) still
+    // works as before, since it's spread last and inline still wins over
+    // the stylesheet for whichever sub-properties it sets.
+    const style = {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        width: '100%',
+        minWidth: 0,
+        padding: '11px 12px',
+        borderRadius: 10,
+        background: palette.surface,
+        transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
+        cursor: loading ? 'default' : disabled ? 'not-allowed' : cursor || (isClickable ? 'pointer' : 'default'),
+        userSelect: isClickable ? 'none' : undefined,
+        opacity: disabled ? 0.6 : 1,
+        outline: 'none',
+        '--qtx-metric-border': palette.border,
+        '--qtx-metric-shadow': palette.shadow,
+        '--qtx-metric-border-hover': palette.borderHover,
+        '--qtx-metric-shadow-hover': palette.shadowHover,
+        '--qtx-metric-chip-border-hover': palette.borderHover,
+        '--qtx-metric-arrow-hover': palette.arrowHover,
+        ...wrapperStyle
+    }
 
     return (
         <div
             role={isClickable ? 'button' : undefined}
             tabIndex={isClickable ? 0 : undefined}
             onClick={isClickable ? onClick : undefined}
-            onMouseEnter={() => isClickable && setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-            onFocus={() => isClickable && setHovered(true)}
-            onBlur={() => setHovered(false)}
             onKeyDown={
                 isClickable
                     ? (e) => {
@@ -130,26 +162,8 @@ const MetricBase: React.FC<MetricProps> = ({
                     }
                     : undefined
             }
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8,
-                width: '100%',
-                minWidth: 0,
-                padding: '11px 12px',
-                border: `1px solid ${hovered ? palette.borderHover : palette.border}`,
-                borderRadius: 10,
-                background: palette.surface,
-                boxShadow: hovered ? palette.shadowHover : palette.shadow,
-                transform: hovered ? 'translateY(-2px)' : 'translateY(0)',
-                transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
-                cursor: loading ? 'default' : disabled ? 'not-allowed' : cursor || (isClickable ? 'pointer' : 'default'),
-                userSelect: isClickable ? 'none' : undefined,
-                opacity: disabled ? 0.6 : 1,
-                outline: 'none',
-                ...wrapperStyle
-            }}
+            className={isClickable ? 'qtx-metric-tile qtx-metric-tile--clickable' : 'qtx-metric-tile'}
+            style={style as React.CSSProperties}
         >
             <Space size={10} align="center" style={{ minWidth: 0, flex: '1 1 auto' }}>
                 {loading ? (
@@ -230,6 +244,7 @@ const MetricBase: React.FC<MetricProps> = ({
                     {clickable ? (
                         <span
                             aria-hidden="true"
+                            className="qtx-metric-chevron"
                             style={{
                                 width: 28,
                                 height: 28,
@@ -237,20 +252,17 @@ const MetricBase: React.FC<MetricProps> = ({
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                border: `1px solid ${hovered ? palette.borderHover : palette.chipBorder}`,
-                                background: hovered
-                                    ? 'rgba(22,119,255,.06)'
-                                    : palette.surface,
+                                border: `1px solid ${palette.chipBorder}`,
+                                background: palette.surface,
                                 transition: 'all .2s ease'
                             }}
                         >
                             <RightOutlined
+                                className="qtx-metric-arrow"
                                 style={{
                                     fontSize: 11,
-                                    color: hovered ? palette.arrowHover : palette.arrowIdle,
-                                    transform: hovered
-                                        ? 'translateX(1px)'
-                                        : 'translateX(0)',
+                                    color: palette.arrowIdle,
+                                    transform: 'translateX(0)',
                                     transition: 'color .2s ease, transform .2s ease'
                                 }}
                             />
@@ -258,6 +270,30 @@ const MetricBase: React.FC<MetricProps> = ({
                     ) : null}
                 </div>
             ) : null}
+
+            <style>{`
+                .qtx-metric-tile {
+                    border: 1px solid var(--qtx-metric-border);
+                    box-shadow: var(--qtx-metric-shadow);
+                    transform: translateY(0);
+                }
+                .qtx-metric-tile--clickable:hover,
+                .qtx-metric-tile--clickable:focus-visible {
+                    border-color: var(--qtx-metric-border-hover);
+                    box-shadow: var(--qtx-metric-shadow-hover);
+                    transform: translateY(-2px);
+                }
+                .qtx-metric-tile--clickable:hover .qtx-metric-chevron,
+                .qtx-metric-tile--clickable:focus-visible .qtx-metric-chevron {
+                    border-color: var(--qtx-metric-chip-border-hover);
+                    background: rgba(22,119,255,.06);
+                }
+                .qtx-metric-tile--clickable:hover .qtx-metric-arrow,
+                .qtx-metric-tile--clickable:focus-visible .qtx-metric-arrow {
+                    color: var(--qtx-metric-arrow-hover);
+                    transform: translateX(1px);
+                }
+            `}</style>
         </div>
     )
 }

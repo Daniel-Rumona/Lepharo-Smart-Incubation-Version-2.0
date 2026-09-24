@@ -21,6 +21,12 @@ export function mergeCompulsoryInterventions(items: any[], definitions: any[]): 
     return result
 }
 
+/**
+ * Nothing is assignable until both the department and the SME have signed off
+ * on the DP — including compulsory items. Departments that operate without a
+ * DP (isMonitoring === true) never call this; they assign compulsory
+ * interventions directly instead.
+ */
 export const eligiblePlanInterventions = (
-    items: any[], definitions: any[], confirmed: boolean
-): any[] => items.filter(item => confirmed || isCompulsoryIntervention(item, definitions))
+    items: any[], confirmed: boolean
+): any[] => confirmed ? items : []

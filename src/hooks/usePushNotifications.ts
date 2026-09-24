@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { App } from 'antd'
+import { useCallback, useState } from 'react'
 import { arrayUnion, doc, updateDoc } from 'firebase/firestore'
-import { getToken, onMessage } from 'firebase/messaging'
+import { getToken } from 'firebase/messaging'
 
 import { db, getMessagingInstance } from '@/firebase'
 import { useFullIdentity } from './useFullIdentity'
@@ -28,7 +27,6 @@ async function activeServiceWorker(): Promise<ServiceWorkerRegistration | null> 
 
 export function usePushNotifications() {
     const { user } = useFullIdentity()
-    const { notification } = App.useApp()
     const [permission, setPermission] = useState<PushPermissionState>(
         typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
     )
@@ -78,21 +76,10 @@ export function usePushNotifications() {
         }
     }, [user?.uid])
 
-    useEffect(() => {
-        let unsubscribe: (() => void) | undefined
-
-        getMessagingInstance().then(messaging => {
-            if (!messaging) return
-            unsubscribe = onMessage(messaging, payload => {
-                notification.info({
-                    message: payload.notification?.title || 'Notification',
-                    description: payload.notification?.body
-                })
-            })
-        })
-
-        return () => unsubscribe?.()
-    }, [notification])
+    // Foreground push toasts are now handled by the live Firestore listener in
+    // useNotificationCenter.ts (every new `notifications` doc toasts once,
+    // push-enabled or not) -- an onMessage() toast here would double up for
+    // push-enabled users.
 
     return { permission, registering, requestPermission }
 }

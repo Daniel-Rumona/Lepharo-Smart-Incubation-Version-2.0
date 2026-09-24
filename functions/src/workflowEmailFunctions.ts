@@ -64,7 +64,7 @@ export const sendInterventionReminderEmail = onRequest(
   },
 );
 
-function clean(value: any) {
+export function clean(value: any) {
   return String(value ?? "").trim();
 }
 
@@ -81,7 +81,7 @@ function esc(value: any) {
     .replace(/"/g, "&quot;");
 }
 
-function status(value: any) {
+export function status(value: any) {
   return clean(value).toLowerCase();
 }
 
@@ -97,13 +97,14 @@ function notificationPatch(key: string, state: string, to: string) {
   };
 }
 
-function buildNotificationContent(heading: string, lines: string[], actionPath?: string) {
+export function buildNotificationContent(heading: string, lines: string[], actionPath?: string, extraHtml?: string) {
   const safeLines = lines.filter(Boolean);
   const actionUrl = actionPath ? `${LOGIN_URL}${actionPath}` : LOGIN_URL;
   const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.6">
     <h2>${esc(heading)}</h2>
     ${safeLines.map((line) => `<p>${esc(line)}</p>`).join("")}
     <p><a href="${esc(actionUrl)}" style="display:inline-block;padding:10px 16px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:6px">Open Smart Incubation</a></p>
+    ${extraHtml || ""}
     <p>Regards,<br><b>Lepharo Smart Incubation System</b></p>
   </div>`;
   const text = `${heading}\n\n${safeLines.join("\n\n")}\n\nOpen Smart Incubation: ${actionUrl}`;
@@ -128,7 +129,7 @@ async function userEmail(data: Doc): Promise<string | null> {
   return email(snap.data()?.email);
 }
 
-async function participant(data: Doc): Promise<{ email: string | null; name: string }> {
+export async function participant(data: Doc): Promise<{ email: string | null; name: string }> {
   const direct = email(data.participantEmail || data.applicantEmail || data.userEmail);
   const id = clean(data.participantId);
   if (direct) return { email: direct, name: clean(data.participantName || data.beneficiaryName) || "Participant" };
@@ -168,6 +169,19 @@ async function assignee(data: Doc): Promise<{ email: string | null; name: string
     }
   }
   return { email: null, name: clean(data.assigneeName) || "Facilitator" };
+}
+
+/** Resolves a notification's target user (e.g. a workflow query resolver) by
+ * uid -- a fresh users/{uid} lookup rather than a payload snapshot, so it
+ * reflects the user's current email even if it changed after the doc was
+ * assigned. */
+export async function resolverEmail(data: Doc): Promise<{ email: string | null; name: string }> {
+  const uid = clean(data.recipientIds?.[0]) || clean(data.resolverId);
+  if (!uid) return { email: null, name: "there" };
+  const snap = await db.collection("users").doc(uid).get();
+  if (!snap.exists) return { email: null, name: "there" };
+  const d = snap.data() || {};
+  return { email: email(d.email), name: clean(d.name || d.displayName) || "there" };
 }
 
 export const onLeaveRequestDecisionEmail = onDocumentWritten(
@@ -297,39 +311,8 @@ export const onAssignedInterventionEmail = onDocumentWritten(
   },
 );
 
-export const onInterventionReminderQueuedEmail = onDocumentWritten(
-  { region: REGION, document: "notifications/{notificationId}" },
-  async (event) => {
-    const before = event.data?.before.data() as Doc | undefined;
-    const after = event.data?.after.data() as Doc | undefined;
-    if (before || !after || status(after.type) !== "intervention_reminder") return;
-    const recipient = await participant(after);
-    if (!recipient.email) return logger.warn("intervention_reminder_email.no_recipient", { notificationId: event.params.notificationId });
-    const title = clean(after.interventionTitle) || "your intervention";
-    const subject = `Reminder: action required for ${title}`;
-    const { html, text } = buildNotificationContent("Intervention reminder", [
-      `Hello ${recipient.name},`,
-      clean(after.message) || (status(after.reminderReason) === "completion"
-        ? "Please confirm completion of your intervention."
-        : "Please accept the intervention assigned to you."),
-    ], "/incubatee/interventions");
-
-    const participantId = clean(after.participantId) || null;
-    const programId = clean(after.programId) || null;
-
-    try {
-      const { messageId } = await sendViaBrevo({ to: recipient.email, subject, html, text, tags: ["intervention-reminder"] });
-      await logBrevoSend({ type: "INTERVENTION_REMINDER", to: recipient.email, subject, status: "sent", messageId, participantId, programId });
-    } catch (err: any) {
-      const msg = String(err?.message || err);
-      await logBrevoSend({ type: "INTERVENTION_REMINDER", to: recipient.email, subject, status: "failed", error: msg, participantId, programId });
-      logger.error("intervention_reminder_email.failed", { notificationId: event.params.notificationId, error: msg });
-      return;
-    }
-
-    await event.data!.after.ref.update({
-      emailSentAt: admin.firestore.FieldValue.serverTimestamp(),
-      emailSentTo: recipient.email,
-    });
-  },
-);
+// `intervention_reminder` notification emails are now handled generically by
+// onNotificationCreatedEmail (see notificationEmailFanout.ts), which looks up
+// NOTIFICATION_REGISTRY by `type` instead of hardcoding one type here. Do not
+// re-add a per-type trigger on `notifications/{id}` in this file -- two
+// triggers on the same new-doc guard would double-send.

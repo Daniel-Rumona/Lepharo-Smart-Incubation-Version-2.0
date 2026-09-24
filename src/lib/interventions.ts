@@ -17,8 +17,9 @@ import {
     where,
     writeBatch,
     runTransaction,
-    Firestore
+    Firestore,
 } from 'firebase/firestore'
+import { sendNotification } from '@/utils/sendNotification'
 import {
     isAssignmentAccepted,
     loadAssignmentGroup,
@@ -210,13 +211,6 @@ async function pushDenormEntry(
     })
 }
 
-async function createNotification(db: Firestore, payload: any) {
-    await addDoc(collection(db, 'notifications'), stripUndefined({
-        ...payload,
-        createdAt: new Date(),
-        readBy: {}
-    }))
-}
 
 // ─────────────────────────────A────────────────────────────────
 // Public API
@@ -277,7 +271,7 @@ export async function acceptAssignedIntervention(db: Firestore, assignedInterven
     }
 
     // Notify
-    await createNotification(db, {
+    await sendNotification({
         participantId: a.participantId,
         consultantId: a.assigneeId,
         interventionId: assignedInterventionId,
@@ -324,7 +318,7 @@ export async function declineAssignedIntervention(
         })
     }
 
-    await createNotification(db, {
+    await sendNotification({
         participantId: a.participantId,
         consultantId: a.assigneeId,
         interventionId: assignedInterventionId,
@@ -357,7 +351,7 @@ export async function rejectCompletion(
         reason
     }))
 
-    await createNotification(db, {
+    await sendNotification({
         participantId: a.participantId,
         consultantId: a.assigneeId,
         interventionId: assignedInterventionId,
@@ -434,7 +428,7 @@ export async function confirmCompletion(
     }
 
     // 5) notify (unchanged)
-    await createNotification(db, {
+    await sendNotification({
         participantId: a.participantId,
         consultantId: a.assigneeId,
         interventionId: assignedInterventionId,

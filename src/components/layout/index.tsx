@@ -1663,7 +1663,7 @@ export const CustomLayout: React.FC = () => {
                     {
                         key: "leave-requests",
                         to: "/operations/hr/leave",
-                        label: "Requests",
+                        label: "Leave",
                         icon: <QuestionCircleOutlined />,
                     },
                     {

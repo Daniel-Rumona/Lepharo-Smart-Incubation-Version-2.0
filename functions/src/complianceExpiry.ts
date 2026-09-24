@@ -7,6 +7,7 @@ import {
   sendStatusChangeNotification,
 } from "./emailShared";
 import { logBrevoSend, sendViaBrevo } from "./brevoClient";
+import { createComplianceExpiryInAppNotifications } from "./complianceExpiryInApp";
 
 const EXPIRING_SOON_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -100,7 +101,7 @@ function resolveRecipients(
   application: any,
   program: any,
   directory: Awaited<ReturnType<typeof loadRecipientDirectory>>
-): { staff: string[]; smeEmail: string | null } {
+): { staff: string[]; staffUids: string[]; smeEmail: string | null } {
   const { romDepartmentIds, users } = directory;
   const assignedCoordinatorIds = new Set(
     (Array.isArray(program?.assignedCoordinators) ? program.assignedCoordinators : [])
@@ -109,6 +110,7 @@ function resolveRecipients(
   );
   const programId = clean(application?.programId);
   const recipients = new Set<string>();
+  const recipientUids = new Set<string>();
 
   users.forEach(snapshot => {
     const user = snapshot.data() as any;
@@ -129,7 +131,10 @@ function resolveRecipients(
     );
     if (isHod || isProjectCoordinator) {
       const email = emailAddress(user.email);
-      if (email) recipients.add(email);
+      if (email) {
+        recipients.add(email);
+        recipientUids.add(snapshot.id);
+      }
     }
   });
 
@@ -141,7 +146,9 @@ function resolveRecipients(
   );
   // Staff (ROM/HOD/coordinators) keep getting the existing BCC notification below;
   // the SME's own copy is sent (and tracked) separately -- see the cron loop.
-  return { staff: Array.from(recipients), smeEmail };
+  // staffUids feeds the additive in-app notification only (complianceExpiryInApp.ts)
+  // -- it does not change who gets emailed or when.
+  return { staff: Array.from(recipients), staffUids: Array.from(recipientUids), smeEmail };
 }
 
 type DueDocument = {
@@ -332,7 +339,7 @@ export const complianceExpiryReminderCron = onSchedule(
           participant.email ||
           participant.contactEmail,
       };
-      const { staff, smeEmail } = resolveRecipients(recipientApplication, program, recipientDirectory);
+      const { staff, staffUids, smeEmail } = resolveRecipients(recipientApplication, program, recipientDirectory);
       if (!staff.length && !smeEmail) {
         logger.warn("complianceExpiryReminderCron.noRecipients", {
           applicationId: applicationSnapshot.id,
@@ -344,6 +351,16 @@ export const complianceExpiryReminderCron = onSchedule(
       const content = buildReminderContent(application, unsent);
       const participantId = clean(application.participantId) || null;
       const programId = clean(application.programId) || null;
+
+      await createComplianceExpiryInAppNotifications({
+        applicationId: applicationSnapshot.id,
+        participantId,
+        programId,
+        staffUids,
+        smeEmail,
+        due: unsent,
+        recipientDirectory,
+      });
 
       if (staff.length) {
         await sendStatusChangeNotification(staff, content.subject, content.html, content.text);

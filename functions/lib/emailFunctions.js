@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.brevoApiKeepAlive = exports.brevoEmailWebhook = exports.sendComplianceReminderEmail = exports.sendApplicationReceivedEmail = exports.resendAccountCreationEmails = exports.sendAdminTestEmail = exports.queueSystemStatusBroadcast = exports.onMailCampaignQueued = exports.sendInterventionReminderEmail = exports.movReminderCron = exports.onMovDocumentWorkflowEmails = exports.devPlanReminderCron = exports.sendDevPlanReminders = exports.onDevPlanEditRequestEmail = exports.remindSmmeDpConfirmation = exports.appointmentCompletionNotifier = exports.onAppointmentWriteNotifyIncubatee = exports.taskDeadlineNotifier = exports.onTaskWriteSendEmails = exports.onApplicationDecisionEmail = exports.sendEmail = void 0;
+exports.notificationAction = exports.onNotificationCreatedEmail = exports.brevoApiKeepAlive = exports.brevoEmailWebhook = exports.sendComplianceReminderEmail = exports.sendApplicationReceivedEmail = exports.resendAccountCreationEmails = exports.sendAdminTestEmail = exports.queueSystemStatusBroadcast = exports.onMailCampaignQueued = exports.sendInterventionReminderEmail = exports.movReminderCron = exports.onMovDocumentWorkflowEmails = exports.devPlanReminderCron = exports.sendDevPlanReminders = exports.onDevPlanEditRequestEmail = exports.remindSmmeDpConfirmation = exports.appointmentCompletionNotifier = exports.onAppointmentWriteNotifyIncubatee = exports.taskDeadlineNotifier = exports.onTaskWriteSendEmails = exports.onApplicationDecisionEmail = exports.sendEmail = void 0;
 var emailApplications_1 = require("./emailApplications");
 Object.defineProperty(exports, "sendEmail", { enumerable: true, get: function () { return emailApplications_1.sendEmail; } });
 Object.defineProperty(exports, "onApplicationDecisionEmail", { enumerable: true, get: function () { return emailApplications_1.onApplicationDecisionEmail; } });
@@ -30,4 +30,8 @@ var emailBounceWebhook_1 = require("./emailBounceWebhook");
 Object.defineProperty(exports, "brevoEmailWebhook", { enumerable: true, get: function () { return emailBounceWebhook_1.brevoEmailWebhook; } });
 var brevoClient_1 = require("./brevoClient");
 Object.defineProperty(exports, "brevoApiKeepAlive", { enumerable: true, get: function () { return brevoClient_1.brevoApiKeepAlive; } });
+var notificationEmailFanout_1 = require("./notificationEmailFanout");
+Object.defineProperty(exports, "onNotificationCreatedEmail", { enumerable: true, get: function () { return notificationEmailFanout_1.onNotificationCreatedEmail; } });
+var notificationActions_1 = require("./notificationActions");
+Object.defineProperty(exports, "notificationAction", { enumerable: true, get: function () { return notificationActions_1.notificationAction; } });
 //# sourceMappingURL=emailFunctions.js.map

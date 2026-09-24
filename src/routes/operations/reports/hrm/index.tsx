@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-    Card,
     Row,
     Col,
     Space,
@@ -8,11 +7,8 @@ import {
     Modal,
     Button,
     Empty,
-    Spin,
-    Tag
 } from 'antd'
 import { ExpandOutlined, ReloadOutlined } from '@ant-design/icons'
-import { motion } from 'framer-motion'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import drilldownModule from 'highcharts/modules/drilldown'
@@ -22,6 +18,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { canViewControlReportData, filterReportRecords } from '@/utils/reportVisibility'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 
 // Init Highcharts modules (safe-guard for SSR)
 if (typeof Highcharts === 'function') {
@@ -36,29 +33,6 @@ Highcharts.setOptions({
 })
 
 const { Title, Text } = Typography
-
-/** Shared card + motion */
-const cardStyle: React.CSSProperties = {
-    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-    transition: 'all 0.3s ease',
-    borderRadius: 8,
-    border: '1px solid #d6e4ff'
-}
-const MotionCard: React.FC<React.ComponentProps<typeof Card>> = ({
-    children,
-    style,
-    ...rest
-}) => (
-    <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-    >
-        <Card {...rest} style={{ ...cardStyle, ...(style || {}) }}>
-            {children}
-        </Card>
-    </motion.div>
-)
 
 /** Types (lean) */
 type UserDoc = {
@@ -312,23 +286,6 @@ const HRMReportsPage: React.FC = () => {
     }, [user])
 
     /* ---------- Derived aggregates ---------- */
-    // replace deptCounts with a role-based headcount
-    const roleHeadcount = useMemo(() => {
-        const map = new Map<string, number>()
-        users.forEach(u => {
-            const role = (u.role || 'unknown').toLowerCase()
-            map.set(role, (map.get(role) || 0) + 1)
-        })
-        // prettify labels a bit
-        const nice = (r: string) =>
-            r === 'projectadmin'
-                ? 'Center Coordinator'
-                : r.charAt(0).toUpperCase() + r.slice(1)
-        return Array.from(map.entries())
-            .map(([role, count]) => ({ role: nice(role), count }))
-            .sort((a, b) => b.count - a.count)
-    }, [users])
-
     const roleCounts = useMemo(() => {
         const map = new Map<string, number>()
         users.forEach(u =>
@@ -374,12 +331,18 @@ const HRMReportsPage: React.FC = () => {
     }, [users, leaves])
 
     const hoursSeries = useMemo(() => {
-        // total worked minutes per day (last 30)
-        const days = Array.from({ length: 30 }).map((_, i) =>
-            dayjs()
-                .subtract(29 - i, 'day')
-                .format('YYYY-MM-DD')
-        )
+        // total worked minutes per day (last 30), weekends excluded so the
+        // line doesn't dip to zero every Sat/Sun when nobody's clocked in.
+        const days = Array.from({ length: 30 })
+            .map((_, i) =>
+                dayjs()
+                    .subtract(29 - i, 'day')
+                    .format('YYYY-MM-DD')
+            )
+            .filter(d => {
+                const dow = dayjs(d).day()
+                return dow !== 0 && dow !== 6
+            })
         const totals = days.map(d => {
             const mm = sheets
                 .filter(s => s.date === d)
@@ -446,6 +409,7 @@ const HRMReportsPage: React.FC = () => {
 
             dd.push({
                 id,
+                name: niceType,
                 type: 'bar',
                 data: [
                     {
@@ -476,20 +440,8 @@ const HRMReportsPage: React.FC = () => {
         return { types, dd }
     }, [leaves])
 
-    /* ---------- 8 Charts ---------- */
-    // 1) Department headcount (horizontal bar)
-    // role distribution pie is already fine; it now uses filtered `users` automatically
-    const roleBar: Highcharts.Options = {
-        chart: { type: 'bar' },
-        title: { text: undefined },
-        xAxis: { categories: roleHeadcount.map(d => d.role) },
-        yAxis: { title: { text: 'Employees' } },
-        series: [
-            { type: 'bar', name: 'Headcount', data: roleHeadcount.map(d => d.count) }
-        ]
-    }
-
-    // 2) Role distribution (pie)
+    /* ---------- Charts ---------- */
+    // Role distribution (pie)
     const rolePie: Highcharts.Options = {
         chart: { type: 'pie' },
         title: { text: undefined },
@@ -520,21 +472,25 @@ const HRMReportsPage: React.FC = () => {
 
     // 3) Worked hours timeseries (line)
     const hoursLine: Highcharts.Options = {
-        chart: { type: 'line' },
+        chart: { type: 'spline' },
         title: { text: undefined },
         xAxis: { categories: hoursSeries.cats },
         yAxis: { title: { text: 'Hours' } },
         tooltip: { valueSuffix: ' h' },
-        series: [{ type: 'line', name: 'Total Hours', data: hoursSeries.vals }]
+        plotOptions: {
+            spline: {
+                dataLabels: { enabled: true, format: '{y}' }
+            }
+        },
+        series: [{ type: 'spline', name: 'Total Hours', data: hoursSeries.vals }]
     }
 
     // 4) Leave by type with drilldown to status
-
     const leaveDrilldown: Highcharts.Options = {
         chart: { type: 'pie' },
         title: { text: undefined },
         tooltip: { pointFormat: '<b>{point.y}</b> requests' },
-        xAxis: { type: 'category' }, // ⬅ ensure names appear on the bar axis
+        xAxis: { type: 'category' },
         plotOptions: {
             pie: {
                 innerSize: '60%',
@@ -582,78 +538,44 @@ const HRMReportsPage: React.FC = () => {
             ]
         },
         legend: { align: 'right', verticalAlign: 'top', layout: 'vertical' },
+        plotOptions: {
+            heatmap: {
+                dataLabels: { enabled: true, format: '{point.value}', style: { textOutline: 'none' } }
+            }
+        },
         series: [
             { type: 'heatmap', name: 'Activity', data: heat.data, borderWidth: 1 }
         ]
     }
 
-    // 6) Pending vs Approved vs Rejected leave (current month)
-    const monthLeaves = useMemo(() => {
-        const start = dayjs().startOf('month'),
-            end = dayjs().endOf('month')
-        const cur = leaves.filter(
-            l =>
-                dayjs(l.from).isBefore(end.add(1, 'day')) &&
-                dayjs(l.to).isAfter(start.subtract(1, 'day'))
-        )
-        const c = { pending: 0, approved: 0, rejected: 0 }
-        cur.forEach(l => (c as any)[l.status]++)
-        return c
-    }, [leaves])
-    const statusColumns: Highcharts.Options = {
+    // 6) Leave days taken per month (last 12 months)
+    const leaveDaysTrend: Highcharts.Options = {
         chart: { type: 'column' },
         title: { text: undefined },
-        xAxis: { categories: ['Pending', 'Approved', 'Rejected'] },
-        yAxis: { title: { text: 'Requests' } },
-        series: [
-            {
-                type: 'column',
-                name: 'Requests',
-                data: [monthLeaves.pending, monthLeaves.approved, monthLeaves.rejected]
+        xAxis: { categories: byMonth.months },
+        yAxis: { title: { text: 'Days' } },
+        tooltip: { valueSuffix: ' day(s)' },
+        plotOptions: {
+            column: {
+                dataLabels: { enabled: true, format: '{y}' }
             }
+        },
+        series: [
+            { type: 'column', name: 'Leave Days Taken', data: byMonth.leaveDays }
         ]
     }
 
-    if (loading) {
-        return (
-            <div style={{ padding: 24, minHeight: '100vh' }}>
-                <Spin />
-            </div>
-        )
-    }
-
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
-            <MotionCard
-                style={{
-                    marginBottom: 16,
-                    background: 'linear-gradient(90deg,#eef4ff, #f9fbff)'
-                }}
-            >
-                <Row align='middle' justify='space-between'>
-                    <Col>
-                        <Title level={4} style={{ margin: 0 }}>
-                            HR Reports
-                        </Title>
-                        <Text type='secondary'>
-                            Headcount, attendance, and leave analytics
-                        </Text>
-                    </Col>
-                    <Col>
-                        <Button icon={<ReloadOutlined />} onClick={load}>
-                            Refresh
-                        </Button>
-                    </Col>
-                </Row>
-            </MotionCard>
-
+        <div style={{ padding: '5px 24px' }}>
             <Row gutter={[16, 16]}>
                 <Col xs={24} lg={12}>
-                    <ChartCard title='Headcount by Role' options={roleBar} />
-                </Col>
-
-                <Col xs={24} lg={12}>
                     <ChartCard title='Worked Hours (Last 30 Days)' options={hoursLine} />
+                </Col>
+                <Col xs={24} lg={12}>
+                    <ChartCard
+                        title='Attendance Heatmap (Weekday × Hour)'
+                        options={attendanceHeatmap}
+                    />
                 </Col>
 
                 <Col xs={24} lg={12}>
@@ -664,8 +586,8 @@ const HRMReportsPage: React.FC = () => {
                 </Col>
                 <Col xs={24} lg={12}>
                     <ChartCard
-                        title='Attendance Heatmap (Weekday × Hour)'
-                        options={attendanceHeatmap}
+                        title='Leave Days Taken (Last 12 Months)'
+                        options={leaveDaysTrend}
                     />
                 </Col>
             </Row>

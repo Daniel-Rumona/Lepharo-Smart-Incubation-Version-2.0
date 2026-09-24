@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Badge, Button, DatePicker, Modal, Segmented, Space, Tooltip, Typography } from 'antd'
-import { FilterOutlined } from '@ant-design/icons'
+import { Badge, Button, DatePicker, Modal, Space, Tooltip, Typography } from 'antd'
+import { CalendarOutlined, FilterOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
 import {
@@ -68,6 +68,27 @@ const presetRange = (key: PresetKey): DashboardDateRange => {
     }
 }
 
+const PRESET_OPTIONS: { label: string; value: Exclude<PresetKey, 'custom'> }[] = [
+    { label: 'Today', value: 'today' },
+    { label: 'This week', value: 'this-week' },
+    { label: 'This month', value: 'this-month' },
+    { label: 'Last month', value: 'last-month' },
+    { label: 'Last 30 days', value: 'last-30' },
+    { label: 'This quarter', value: 'this-quarter' },
+    { label: 'Year to date', value: 'ytd' },
+    { label: 'All time', value: 'all' }
+]
+
+/** Work out which preset (if any) the active range corresponds to. */
+const detectPreset = (range: DashboardDateRange): PresetKey => {
+    if (!range) return 'all'
+    const match = PRESET_OPTIONS.find(({ value }) => {
+        const r = presetRange(value)
+        return !!r && r[0].isSame(range[0], 'day') && r[1].isSame(range[1], 'day')
+    })
+    return match ? match.value : 'custom'
+}
+
 /**
  * Topbar reporting-period filter.
  *
@@ -81,17 +102,21 @@ export const DashboardFilterControl: React.FC<{ compact?: boolean }> = ({ compac
 
     const [open, setOpen] = useState(false)
     const [draft, setDraft] = useState<DashboardDateRange>(range)
-    const [preset, setPreset] = useState<PresetKey>('this-month')
+    const [preset, setPreset] = useState<PresetKey>(() => detectPreset(range))
 
-    // Reset the draft each time the dialog opens so a cancelled edit does not
-    // linger into the next one.
+    // Reset the draft and highlighted preset from the active range each time the
+    // dialog opens, so the selection always reflects what is really applied.
     useEffect(() => {
-        if (open) setDraft(range)
+        if (open) {
+            setDraft(range)
+            setPreset(detectPreset(range))
+        }
     }, [open, range])
 
     const applyPreset = (key: PresetKey) => {
         setPreset(key)
         if (key !== 'custom') setDraft(presetRange(key))
+        else if (!draft) setDraft(currentMonthRange())
     }
 
     return (
@@ -154,52 +179,46 @@ export const DashboardFilterControl: React.FC<{ compact?: boolean }> = ({ compac
                         active across dashboards until you change it again.
                     </Text>
 
-                    <Segmented
-                        block
-                        value={preset}
-                        onChange={value => applyPreset(value as PresetKey)}
-                        options={[
-                            { label: 'Today', value: 'today' },
-                            { label: 'This week', value: 'this-week' },
-                            { label: 'This month', value: 'this-month' }
-                        ]}
-                    />
-
-                    <Segmented
-                        block
-                        value={preset}
-                        onChange={value => applyPreset(value as PresetKey)}
-                        options={[
-                            { label: 'Last month', value: 'last-month' },
-                            { label: 'Last 30 days', value: 'last-30' }
-                        ]}
-                    />
-
-                    <Segmented
-                        block
-                        value={preset}
-                        onChange={value => applyPreset(value as PresetKey)}
-                        options={[
-                            { label: 'This quarter', value: 'this-quarter' },
-                            { label: 'Year to date', value: 'ytd' },
-                            { label: 'All time', value: 'all' }
-                        ]}
-                    />
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: 8
+                        }}
+                    >
+                        {PRESET_OPTIONS.map(opt => (
+                            <Button
+                                key={opt.value}
+                                type={preset === opt.value ? 'primary' : 'default'}
+                                onClick={() => applyPreset(opt.value)}
+                                aria-pressed={preset === opt.value}
+                            >
+                                {opt.label}
+                            </Button>
+                        ))}
+                    </div>
 
                     <div>
-                        <Text strong style={{ display: 'block', marginBottom: 6 }}>
-                            Or pick an exact range
-                        </Text>
+                        <Button
+                            type={preset === 'custom' ? 'primary' : 'dashed'}
+                            block
+                            icon={<CalendarOutlined />}
+                            onClick={() => applyPreset('custom')}
+                            aria-pressed={preset === 'custom'}
+                            style={{ marginBottom: 8 }}
+                        >
+                            Custom range
+                        </Button>
                         <RangePicker
                             value={draft}
+                            disabled={preset !== 'custom'}
                             onChange={value => {
-                                setPreset('custom')
                                 setDraft(value?.[0] && value?.[1] ? [value[0], value[1]] : null)
                             }}
                             format="DD MMM YYYY"
                             style={{ width: '100%' }}
                             allowClear
-                            placeholder={['All time', 'All time']}
+                            placeholder={['Start date', 'End date']}
                         />
                     </div>
 

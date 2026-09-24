@@ -4,11 +4,11 @@ import {
     Card,
     Button,
     Badge,
-    Table,
+    List,
     Select,
     Input,
     Modal,
-    Tabs,
+    Segmented,
     Row,
     Col,
     Tag,
@@ -28,7 +28,6 @@ import {
     DownloadOutlined,
     SearchOutlined,
     FilterOutlined,
-    EyeOutlined,
     UserOutlined,
     PieChartOutlined,
     RiseOutlined,
@@ -36,7 +35,10 @@ import {
     PhoneOutlined,
     EnvironmentOutlined,
     CopyOutlined,
-    GlobalOutlined
+    GlobalOutlined,
+    IdcardOutlined,
+    ThunderboltOutlined,
+    ClockCircleOutlined
 } from '@ant-design/icons'
 import { db, auth } from '@/firebase'
 import {
@@ -54,10 +56,9 @@ import { motion } from 'framer-motion'
 import { Helmet } from 'react-helmet'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
 import { applicationExportRow, applicationsCSV } from '@/utils/applicationExport'
 
-const { TabPane } = Tabs
 const { Option } = Select
 const { Text } = Typography
 
@@ -78,8 +79,10 @@ const ApplicationsDashboard: React.FC = () => {
     const [exporting, setExporting] = useState(false)
     const [applications, setApplications] = useState<any[]>([])
     const [selectedApplication, setSelectedApplication] = useState<any>(null)
-    const [isModalVisible, setIsModalVisible] = useState(false)
-    const [selectedDocApp, setSelectedDocApp] = useState<any>(null)
+    const [detailsTab, setDetailsTab] = useState<
+        'overview' | 'profile' | 'contact' | 'ai' | 'documents'
+    >('overview')
+    const [analyticsModalOpen, setAnalyticsModalOpen] = useState(false)
 
     const [searchTerm, setSearchTerm] = useState('')
     const [genderFilter, setGenderFilter] = useState<string>('all')
@@ -764,7 +767,7 @@ const ApplicationsDashboard: React.FC = () => {
         return Array.from(set).sort((a, b) => a.localeCompare(b))
     }, [applications])
 
-    const filteredApplications = useMemo(() => {
+    const applicationsBeforeStatusFilter = useMemo(() => {
         return applications.filter(app => {
             const matchesSearch =
                 String(app.beneficiaryName || '')
@@ -776,8 +779,6 @@ const ApplicationsDashboard: React.FC = () => {
 
             const matchesGender =
                 genderFilter === 'all' || app.gender === genderFilter
-            const matchesStatus =
-                statusFilter === 'all' || app.applicationStatus === statusFilter
             const matchesAgeGroup =
                 ageGroupFilter === 'all' || app.ageGroup === ageGroupFilter
 
@@ -785,37 +786,36 @@ const ApplicationsDashboard: React.FC = () => {
             const matchesHub = hubFilter === 'all' || appHub === hubFilter
             const hubGate = showHubFilter ? matchesHub : true
 
-            return (
-                matchesSearch &&
-                matchesGender &&
-                matchesStatus &&
-                matchesAgeGroup &&
-                hubGate
-            )
+            return matchesSearch && matchesGender && matchesAgeGroup && hubGate
         })
     }, [
         applications,
         searchTerm,
         genderFilter,
-        statusFilter,
         ageGroupFilter,
         hubFilter,
         showHubFilter
     ])
 
+    const filteredApplications = useMemo(() => {
+        return applicationsBeforeStatusFilter.filter(
+            app => statusFilter === 'all' || app.applicationStatus === statusFilter
+        )
+    }, [applicationsBeforeStatusFilter, statusFilter])
+
     const stats = useMemo(() => {
-        const total = filteredApplications.length
-        const accepted = filteredApplications.filter(
+        const total = applicationsBeforeStatusFilter.length
+        const accepted = applicationsBeforeStatusFilter.filter(
             a => a.applicationStatus === 'accepted'
         ).length
-        const rejected = filteredApplications.filter(
+        const rejected = applicationsBeforeStatusFilter.filter(
             a => a.applicationStatus === 'rejected'
         ).length
-        const pending = filteredApplications.filter(
+        const pending = applicationsBeforeStatusFilter.filter(
             a => a.applicationStatus === 'pending'
         ).length
         return { total, accepted, rejected, pending }
-    }, [filteredApplications])
+    }, [applicationsBeforeStatusFilter])
 
     const genderDistribution = useMemo(() => {
         const distribution = filteredApplications.reduce((acc, app) => {
@@ -903,70 +903,6 @@ const ApplicationsDashboard: React.FC = () => {
         }
     }
 
-    const columns = [
-        { title: 'Enterprise', dataIndex: 'beneficiaryName', key: 'beneficiaryName' },
-        {
-            title: 'Gender',
-            dataIndex: 'gender',
-            key: 'gender',
-            responsive: ['md'] as any
-        },
-        {
-            title: 'Age Group',
-            dataIndex: 'ageGroup',
-            key: 'ageGroup',
-            responsive: ['md'] as any
-        },
-        {
-            title: 'AI Score',
-            dataIndex: 'aiScore',
-            key: 'aiScore',
-            render: (score: number) => (
-                <Badge count={score} style={{ backgroundColor: '#faad14' }} />
-            )
-        },
-        {
-            title: 'Status',
-            dataIndex: 'applicationStatus',
-            key: 'status',
-            render: (status: string) => (
-                <Badge
-                    status={getStatusColor(status)}
-                    text={
-                        <span>
-                            {getStatusIcon(status)}{' '}
-                            {status?.charAt(0).toUpperCase() + status?.slice(1)}
-                        </span>
-                    }
-                />
-            )
-        },
-        {
-            title: 'Actions',
-            key: 'actions',
-            render: (_: any, record: any) => (
-                <Space>
-                    <Button
-                        type='text'
-                        icon={<EyeOutlined />}
-                        onClick={() => {
-                            setSelectedDocApp(record)
-                            setIsModalVisible(true)
-                        }}
-                    />
-                    {record.growthPlanDocUrl && (
-                        <Button
-                            type='text'
-                            icon={<DownloadOutlined />}
-                            href={record.growthPlanDocUrl}
-                            target='_blank'
-                        />
-                    )}
-                </Space>
-            )
-        }
-    ]
-
     const handleStatusSelect = async (
         value: 'accepted' | 'rejected' | 'pending',
         appId: string
@@ -984,7 +920,7 @@ const ApplicationsDashboard: React.FC = () => {
             (!isRestrictedRole && !isAllPrograms && !activeProgramId))
 
     return (
-        <div style={{ minHeight: '100vh', padding: 24 }}>
+        <div style={{ padding: "10px 24px" }}>
             <Helmet>
                 <title>Applications Overview</title>
             </Helmet>
@@ -996,43 +932,48 @@ const ApplicationsDashboard: React.FC = () => {
                 </MotionCard>
             ) : (
                 <>
-                    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                    <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
                         {[
                             {
                                 title: 'Total Applications',
                                 value: stats.total,
                                 icon: <FileTextOutlined />,
                                 color: '#1890ff',
-                                bgColor: '#e6f7ff'
+                                bgColor: '#e6f7ff',
+                                filterValue: 'all'
                             },
                             {
                                 title: 'Accepted',
                                 value: stats.accepted,
                                 icon: <CheckCircleOutlined />,
                                 color: '#52c41a',
-                                bgColor: '#f6ffed'
+                                bgColor: '#f6ffed',
+                                filterValue: 'accepted'
                             },
                             {
                                 title: 'Rejected',
                                 value: stats.rejected,
                                 icon: <CloseCircleOutlined />,
                                 color: '#f5222d',
-                                bgColor: '#fff2f0'
+                                bgColor: '#fff2f0',
+                                filterValue: 'rejected'
                             },
                             {
                                 title: 'Pending',
                                 value: stats.pending,
                                 icon: <RiseOutlined />,
                                 color: '#faad14',
-                                bgColor: '#fffbe6'
+                                bgColor: '#fffbe6',
+                                filterValue: 'pending'
                             }
-                        ].map((metric, index) => (
-                            <Col span={24} md={12} lg={6} key={metric.title}>
-                                <MotionCard>
+                        ].map(metric => {
+                            const isActive = statusFilter === metric.filterValue
+                            return (
+                                <Col span={24} md={12} lg={6} key={metric.title}>
                                     <MotionCard.Metric
                                         icon={React.cloneElement(metric.icon, {
                                             style: {
-                                                fontSize: 18,
+                                                fontSize: 16,
                                                 color: metric.color
                                             }
                                         })}
@@ -1043,269 +984,34 @@ const ApplicationsDashboard: React.FC = () => {
                                                 {metric.value}
                                             </span>
                                         }
-                                    />
-                                </MotionCard>
-                            </Col>
-                        ))}
-                    </Row>
-
-                    <Row gutter={16} style={{ marginBottom: 24 }}>
-                        <Col span={24} lg={12}>
-                            <Card
-                                title={
-                                    <span>
-                                        <UserOutlined style={{ marginRight: 8 }} />
-                                        Gender Distribution
-                                    </span>
-                                }
-                                style={{
-                                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                    border: '1px solid #d6e4ff'
-                                }}
-                            >
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: 16
-                                    }}
-                                >
-                                    {genderDistribution.map(([gender, count]) => (
-                                        <div
-                                            key={gender}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between'
-                                            }}
-                                        >
-                                            <span style={{ fontWeight: 500 }}>{gender}</span>
-                                            <div
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: 8
-                                                }}
-                                            >
-                                                <div
-                                                    style={{
-                                                        width: 160,
-                                                        height: 8,
-                                                        background: '#f0f0f0',
-                                                        borderRadius: 4,
-                                                        overflow: 'hidden'
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            height: '100%',
-                                                            background: '#1890ff',
-                                                            borderRadius: 4,
-                                                            width: `${((count as number) /
-                                                                (stats.total || 1)) *
-                                                                100
-                                                                }%`
-                                                        }}
-                                                    />
-                                                </div>
-                                                <span
-                                                    style={{
-                                                        color: 'rgba(0, 0, 0, 0.45)',
-                                                        width: 32
-                                                    }}
-                                                >
-                                                    {count as number}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </Card>
-                        </Col>
-
-                        <Col span={24} lg={12}>
-                            <Card
-                                title={
-                                    <span>
-                                        <PieChartOutlined style={{ marginRight: 8 }} />
-                                        Age Group Distribution
-                                    </span>
-                                }
-                                style={{
-                                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                    border: '1px solid #d6e4ff'
-                                }}
-                            >
-                                <Skeleton loading={loading} active paragraph={{ rows: 4 }}>
-                                    <div
-                                        style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 16
+                                        clickable
+                                        onClick={() =>
+                                            setStatusFilter(
+                                                metric.filterValue === 'all'
+                                                    ? 'all'
+                                                    : statusFilter === metric.filterValue
+                                                        ? 'all'
+                                                        : metric.filterValue
+                                            )
+                                        }
+                                        wrapperStyle={{
+                                            padding: '6px 8px',
+                                            border: isActive
+                                                ? `1.5px solid ${metric.color}`
+                                                : undefined,
+                                            background: isActive
+                                                ? `${metric.color}14`
+                                                : undefined
                                         }}
-                                    >
-                                        {ageGroupDistribution.map(([ageGroup, count]) => (
-                                            <div
-                                                key={ageGroup}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between'
-                                                }}
-                                            >
-                                                <span style={{ fontWeight: 500 }}>
-                                                    {ageGroup}
-                                                </span>
-                                                <div
-                                                    style={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 8
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            width: 160,
-                                                            height: 8,
-                                                            background: '#f0f0f0',
-                                                            borderRadius: 4,
-                                                            overflow: 'hidden'
-                                                        }}
-                                                    >
-                                                        <div
-                                                            style={{
-                                                                height: '100%',
-                                                                background: '#13c2c2',
-                                                                borderRadius: 4,
-                                                                width: `${((count as number) /
-                                                                    (stats.total || 1)) *
-                                                                    100
-                                                                    }%`
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <span
-                                                        style={{
-                                                            color: 'rgba(0, 0, 0, 0.45)',
-                                                            width: 32
-                                                        }}
-                                                    >
-                                                        {count as number}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </Skeleton>
-                            </Card>
-                        </Col>
-                    </Row>
-
-                    <MotionCard
-                        filterBar={
-                            <Row
-                                gutter={12}
-                                align='middle'
-                                wrap={false}
-                                style={{
-                                    minWidth: showHubFilter ? 1120 : 960
-                                }}
-                            >
-                                <Col flex='2 1 240px'>
-                                    <Input
-                                        placeholder='Search enterprises...'
-                                        prefix={<SearchOutlined />}
-                                        value={searchTerm}
-                                        onChange={e => setSearchTerm(e.target.value)}
-                                        allowClear
                                     />
                                 </Col>
+                            )
+                        })}
+                    </Row>
 
-                                <Col flex='1 1 145px'>
-                                    <Select
-                                        style={{ width: '100%' }}
-                                        value={genderFilter}
-                                        onChange={setGenderFilter}
-                                        placeholder='Filter by Gender'
-                                    >
-                                        <Option value='all'>All Genders</Option>
-                                        <Option value='Male'>Male</Option>
-                                        <Option value='Female'>Female</Option>
-                                        <Option value='Other'>Other</Option>
-                                    </Select>
-                                </Col>
+                    {/* <MotionCard
+                        filterBar={
 
-                                <Col flex='1 1 145px'>
-                                    <Select
-                                        style={{ width: '100%' }}
-                                        value={ageGroupFilter}
-                                        onChange={setAgeGroupFilter}
-                                        placeholder='Filter by Age Group'
-                                    >
-                                        <Option value='all'>All Age Groups</Option>
-                                        <Option value='Youth'>Youth</Option>
-                                        <Option value='Adult'>Adult</Option>
-                                        <Option value='Senior'>Senior</Option>
-                                    </Select>
-                                </Col>
-
-                                <Col flex='1 1 145px'>
-                                    <Select
-                                        style={{ width: '100%' }}
-                                        value={statusFilter}
-                                        onChange={setStatusFilter}
-                                        placeholder='Filter by Status'
-                                    >
-                                        <Option value='all'>All Statuses</Option>
-                                        <Option value='accepted'>Accepted</Option>
-                                        <Option value='rejected'>Rejected</Option>
-                                        <Option value='pending'>Pending</Option>
-                                    </Select>
-                                </Col>
-
-                                {showHubFilter && (
-                                    <Col flex='1 1 145px'>
-                                        <Select
-                                            style={{ width: '100%' }}
-                                            value={hubFilter}
-                                            onChange={setHubFilter}
-                                            placeholder='Filter by Hub'
-                                        >
-                                            <Option value='all'>All Hubs</Option>
-
-                                            {hubOptions.map(h => (
-                                                <Option key={h} value={h}>
-                                                    {h}
-                                                </Option>
-                                            ))}
-                                        </Select>
-                                    </Col>
-                                )}
-
-                                <Col flex='none'>
-                                    <Space size={8} wrap={false}>
-                                        <Button
-                                            onClick={() => {
-                                                setSearchTerm('')
-                                                setGenderFilter('all')
-                                                setAgeGroupFilter('all')
-                                                setStatusFilter('all')
-                                                setHubFilter('all')
-                                            }}
-                                        >
-                                            Clear Filters
-                                        </Button>
-
-                                        <Button
-                                            icon={<DownloadOutlined />}
-                                            onClick={exportCSV}
-                                            loading={exporting}
-                                        >
-                                            Export CSV
-                                        </Button>
-                                    </Space>
-                                </Col>
-                            </Row>
                         }
                         filterBarProps={{ marginBottom: 0 }}
                         style={{ marginBottom: 16 }}
@@ -1313,47 +1019,254 @@ const ApplicationsDashboard: React.FC = () => {
 
 
 
-                    </MotionCard>
-
-                    <Row gutter={16}>
-                        <Col span={24} lg={16}>
-                            <Card
-                                title={`Applications (${filteredApplications.length})`}
-                                bordered={false}
-                                style={{
-                                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                    borderRadius: 8,
-                                    marginBottom: 16,
-                                    border: '1px solid #d6e4ff'
-                                }}
-                            >
-                                <Table
-                                    columns={columns as any}
-                                    dataSource={filteredApplications}
-                                    rowKey='id'
-                                    loading={loading}
-                                    onRow={record => ({
-                                        onClick: () => setSelectedApplication(hydrateAI(record)),
-                                        style: { cursor: 'pointer' }
-                                    })}
-                                    pagination={{ pageSize: 10, showSizeChanger: false, position: ['bottomCenter'] }}
-                                />
-                            </Card>
+                    </MotionCard> */}
+                    <DashboardFilterBar>   <Row
+                        gutter={12}
+                        align='middle'
+                        wrap={false}
+                        style={{
+                            minWidth: showHubFilter ? 1120 : 960
+                        }}
+                    >
+                        <Col flex='2 1 240px'>
+                            <Input
+                                placeholder='Search enterprises...'
+                                prefix={<SearchOutlined />}
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                allowClear
+                            />
                         </Col>
 
-                        <Col span={24} lg={8}>
-                            <Card
-                                title='Application Details'
-                                bordered={false}
-                                style={{
-                                    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                    borderRadius: 8,
-                                    border: '1px solid #d6e4ff'
-                                }}
+                        <Col flex='1 1 145px'>
+                            <Select
+                                style={{ width: '100%' }}
+                                value={genderFilter}
+                                onChange={setGenderFilter}
+                                placeholder='Filter by Gender'
+                            >
+                                <Option value='all'>All Genders</Option>
+                                <Option value='Male'>Male</Option>
+                                <Option value='Female'>Female</Option>
+                                <Option value='Other'>Other</Option>
+                            </Select>
+                        </Col>
+
+                        <Col flex='1 1 145px'>
+                            <Select
+                                style={{ width: '100%' }}
+                                value={ageGroupFilter}
+                                onChange={setAgeGroupFilter}
+                                placeholder='Filter by Age Group'
+                            >
+                                <Option value='all'>All Age Groups</Option>
+                                <Option value='Youth'>Youth</Option>
+                                <Option value='Adult'>Adult</Option>
+                                <Option value='Senior'>Senior</Option>
+                            </Select>
+                        </Col>
+
+                        {showHubFilter && (
+                            <Col flex='1 1 145px'>
+                                <Select
+                                    style={{ width: '100%' }}
+                                    value={hubFilter}
+                                    onChange={setHubFilter}
+                                    placeholder='Filter by Hub'
+                                >
+                                    <Option value='all'>All Hubs</Option>
+
+                                    {hubOptions.map(h => (
+                                        <Option key={h} value={h}>
+                                            {h}
+                                        </Option>
+                                    ))}
+                                </Select>
+                            </Col>
+                        )}
+
+                        <Col flex='none'>
+                            <Space size={8} wrap={false}>
+                                <Button
+                                    onClick={() => {
+                                        setSearchTerm('')
+                                        setGenderFilter('all')
+                                        setAgeGroupFilter('all')
+                                        setStatusFilter('all')
+                                        setHubFilter('all')
+                                    }}
+                                >
+                                    Clear Filters
+                                </Button>
+
+                                <Button
+                                    icon={<PieChartOutlined />}
+                                    onClick={() => setAnalyticsModalOpen(true)}
+                                >
+                                    Analytics
+                                </Button>
+
+                                <Button
+                                    icon={<DownloadOutlined />}
+                                    onClick={exportCSV}
+                                    loading={exporting}
+                                >
+                                    Export CSV
+                                </Button>
+                            </Space>
+                        </Col>
+                    </Row>
+                    </DashboardFilterBar>
+
+
+                    <Row gutter={16}>
+                        <Col span={24} lg={9}>
+                            <MotionCard
+                            >
+                                <List
+                                    loading={loading}
+                                    dataSource={filteredApplications}
+                                    rowKey='id'
+                                    pagination={{
+                                        pageSize: 6,
+                                        size: 'small',
+                                        align: 'center',
+                                        showSizeChanger: false
+                                    }}
+                                    renderItem={(app: any) => {
+                                        const isSelected =
+                                            selectedApplication?.id === app.id
+                                        return (
+                                            <List.Item style={{ border: 'none', padding: 0 }}>
+                                                <Card
+                                                    size='small'
+                                                    hoverable
+                                                    onClick={() => {
+                                                        setSelectedApplication(hydrateAI(app))
+                                                        setDetailsTab('overview')
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        marginBottom: 8,
+                                                        cursor: 'pointer',
+                                                        borderColor: isSelected
+                                                            ? '#1890ff'
+                                                            : undefined,
+                                                        boxShadow: isSelected
+                                                            ? '0 0 0 2px rgba(24,144,255,0.15)'
+                                                            : undefined
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                            alignItems: 'flex-start',
+                                                            gap: 12
+                                                        }}
+                                                    >
+                                                        <div style={{ minWidth: 0 }}>
+                                                            <div style={{ fontWeight: 600 }}>
+                                                                {app.beneficiaryName}
+                                                            </div>
+                                                            <Space
+                                                                size={[4, 4]}
+                                                                wrap
+                                                                style={{ marginTop: 4 }}
+                                                            >
+                                                                {app.gender && (
+                                                                    <Tag color='blue'>
+                                                                        {app.gender}
+                                                                    </Tag>
+                                                                )}
+                                                                {app.ageGroup && (
+                                                                    <Tag>{app.ageGroup}</Tag>
+                                                                )}
+                                                            </Space>
+                                                        </div>
+
+                                                        <Space
+                                                            direction='vertical'
+                                                            align='end'
+                                                            size={4}
+                                                            style={{ flex: '0 0 auto' }}
+                                                        >
+                                                            <Badge
+                                                                count={app.aiScore}
+                                                                style={{
+                                                                    backgroundColor: '#faad14'
+                                                                }}
+                                                            />
+                                                            <Badge
+                                                                status={getStatusColor(
+                                                                    app.applicationStatus
+                                                                )}
+                                                                text={
+                                                                    <span>
+                                                                        {getStatusIcon(
+                                                                            app.applicationStatus
+                                                                        )}{' '}
+                                                                        {app.applicationStatus
+                                                                            ?.charAt(0)
+                                                                            .toUpperCase() +
+                                                                            app.applicationStatus?.slice(
+                                                                                1
+                                                                            )}
+                                                                    </span>
+                                                                }
+                                                            />
+                                                        </Space>
+                                                    </div>
+                                                </Card>
+                                            </List.Item>
+                                        )
+                                    }}
+                                />
+                            </MotionCard>
+                        </Col>
+
+                        <Col span={24} lg={15}>
+                            <MotionCard
                             >
                                 {selectedApplication ? (
-                                    <Tabs centered defaultActiveKey='overview'>
-                                        <TabPane tab='Overview' key='overview'>
+                                    <>
+                                        <Segmented
+                                            block
+                                            value={detailsTab}
+                                            onChange={value =>
+                                                setDetailsTab(value as typeof detailsTab)
+                                            }
+                                            options={[
+                                                {
+                                                    label: 'Overview',
+                                                    value: 'overview',
+                                                    icon: <UserOutlined />
+                                                },
+                                                {
+                                                    label: 'Profile',
+                                                    value: 'profile',
+                                                    icon: <IdcardOutlined />
+                                                },
+                                                {
+                                                    label: 'Contact',
+                                                    value: 'contact',
+                                                    icon: <PhoneOutlined />
+                                                },
+                                                {
+                                                    label: 'Decision',
+                                                    value: 'ai',
+                                                    icon: <ThunderboltOutlined />
+                                                },
+                                                {
+                                                    label: 'Documents',
+                                                    value: 'documents',
+                                                    icon: <FileTextOutlined />
+                                                }
+                                            ]}
+                                            style={{ marginBottom: 16 }}
+                                        />
+
+                                        {detailsTab === 'overview' && (
                                             <div
                                                 style={{
                                                     display: 'flex',
@@ -1462,10 +1375,10 @@ const ApplicationsDashboard: React.FC = () => {
                                                     </Text>
                                                 </div>
                                             </div>
-                                        </TabPane>
+                                        )}
 
-                                        <TabPane tab='Profile' key='profile'>
-                                            {(() => {
+                                        {detailsTab === 'profile' && (
+                                            (() => {
                                                 const pid = String(
                                                     selectedApplication?.programId || ''
                                                 ).trim()
@@ -1528,11 +1441,11 @@ const ApplicationsDashboard: React.FC = () => {
                                                         ))}
                                                     </div>
                                                 )
-                                            })()}
-                                        </TabPane>
+                                            })()
+                                        )}
 
-                                        <TabPane tab='Contact' key='contact'>
-                                            {(() => {
+                                        {detailsTab === 'contact' && (
+                                            (() => {
                                                 const key = emailKey(selectedApplication.email)
                                                 const cacheEntry = participantByAppEmail[key]
                                                 const hasCache =
@@ -1857,10 +1770,10 @@ const ApplicationsDashboard: React.FC = () => {
                                                         </Card>
                                                     </div>
                                                 )
-                                            })()}
-                                        </TabPane>
+                                            })()
+                                        )}
 
-                                        <TabPane tab='AI Analysis' key='ai'>
+                                        {detailsTab === 'ai' && (
                                             <Card>
                                                 <div
                                                     style={{
@@ -1873,37 +1786,93 @@ const ApplicationsDashboard: React.FC = () => {
                                                         <p
                                                             style={{
                                                                 fontWeight: 500,
-                                                                margin: 0
+                                                                margin: 0,
+                                                                marginBottom: 8
                                                             }}
                                                         >
-                                                            Current Status (Alterable)
+                                                            Current Status
                                                         </p>
-                                                        <Select
-                                                            style={{
-                                                                width: '100%',
-                                                                marginTop: 8
-                                                            }}
-                                                            value={
-                                                                selectedApplication.applicationStatus
-                                                            }
-                                                            placeholder='Update Status'
-                                                            onChange={value =>
-                                                                handleStatusSelect(
-                                                                    value,
-                                                                    selectedApplication.id
+                                                        <Row gutter={8}>
+                                                            {[
+                                                                {
+                                                                    value: 'accepted',
+                                                                    label: 'Accept',
+                                                                    icon: <CheckCircleOutlined />,
+                                                                    color: '#52c41a'
+                                                                },
+                                                                {
+                                                                    value: 'rejected',
+                                                                    label: 'Reject',
+                                                                    icon: <CloseCircleOutlined />,
+                                                                    color: '#f5222d'
+                                                                },
+                                                                {
+                                                                    value: 'pending',
+                                                                    label: 'Pending',
+                                                                    icon: <ClockCircleOutlined />,
+                                                                    color: '#faad14'
+                                                                }
+                                                            ].map(opt => {
+                                                                const isActive =
+                                                                    String(
+                                                                        selectedApplication.applicationStatus
+                                                                    ).toLowerCase() === opt.value
+                                                                return (
+                                                                    <Col span={8} key={opt.value}>
+                                                                        <Card
+                                                                            size='small'
+                                                                            hoverable
+                                                                            onClick={() =>
+                                                                                handleStatusSelect(
+                                                                                    opt.value as
+                                                                                    | 'accepted'
+                                                                                    | 'rejected'
+                                                                                    | 'pending',
+                                                                                    selectedApplication.id
+                                                                                )
+                                                                            }
+                                                                            style={{
+                                                                                textAlign:
+                                                                                    'center',
+                                                                                cursor: 'pointer',
+                                                                                borderColor:
+                                                                                    isActive
+                                                                                        ? opt.color
+                                                                                        : undefined,
+                                                                                borderWidth:
+                                                                                    isActive
+                                                                                        ? 2
+                                                                                        : 1,
+                                                                                background:
+                                                                                    isActive
+                                                                                        ? `${opt.color}14`
+                                                                                        : undefined
+                                                                            }}
+                                                                        >
+                                                                            <div
+                                                                                style={{
+                                                                                    fontSize: 20,
+                                                                                    color: opt.color
+                                                                                }}
+                                                                            >
+                                                                                {opt.icon}
+                                                                            </div>
+                                                                            <div
+                                                                                style={{
+                                                                                    marginTop: 4,
+                                                                                    fontWeight:
+                                                                                        isActive
+                                                                                            ? 600
+                                                                                            : 400
+                                                                                }}
+                                                                            >
+                                                                                {opt.label}
+                                                                            </div>
+                                                                        </Card>
+                                                                    </Col>
                                                                 )
-                                                            }
-                                                        >
-                                                            <Option value='accepted'>
-                                                                Accept
-                                                            </Option>
-                                                            <Option value='rejected'>
-                                                                Reject
-                                                            </Option>
-                                                            <Option value='pending'>
-                                                                Pending
-                                                            </Option>
-                                                        </Select>
+                                                            })}
+                                                        </Row>
                                                     </div>
 
                                                     {String(
@@ -1987,10 +1956,10 @@ const ApplicationsDashboard: React.FC = () => {
                                                     </div>
                                                 </div>
                                             </Card>
-                                        </TabPane>
+                                        )}
 
-                                        <TabPane tab='Documents' key='documents'>
-                                            {(() => {
+                                        {detailsTab === 'documents' && (
+                                            (() => {
                                                 const docs = getValidDocs(
                                                     selectedApplication?.documents
                                                 )
@@ -2121,15 +2090,15 @@ const ApplicationsDashboard: React.FC = () => {
                                                         )}
                                                     </div>
                                                 )
-                                            })()}
-                                        </TabPane>
-                                    </Tabs>
+                                            })()
+                                        )}
+                                    </>
                                 ) : (
                                     <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
                                         Select an application to view details
                                     </p>
                                 )}
-                            </Card>
+                            </MotionCard>
                         </Col>
                     </Row>
                 </>
@@ -2137,43 +2106,160 @@ const ApplicationsDashboard: React.FC = () => {
             }
 
             <Modal
-                title='Application Documents'
-                open={isModalVisible}
-                onCancel={() => setIsModalVisible(false)}
+                title='Analytics'
+                open={analyticsModalOpen}
+                onCancel={() => setAnalyticsModalOpen(false)}
                 footer={null}
-                width={800}
+                width={720}
+                centered
             >
-                {selectedDocApp?.documents?.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {selectedDocApp.documents.map((docItem: any, idx: number) => (
-                            <Card key={idx} size='small'>
+                <Row gutter={16} align='stretch'>
+                    <Col span={24} md={12}>
+                        <Card
+                            size='small'
+                            title={
+                                <span>
+                                    <UserOutlined style={{ marginRight: 8 }} />
+                                    Gender Distribution
+                                </span>
+                            }
+                            style={{ height: '100%' }}
+                        >
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 8
+                                }}
+                            >
+                                {genderDistribution.map(([gender, count]) => (
+                                    <div
+                                        key={gender}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between'
+                                        }}
+                                    >
+                                        <span style={{ fontWeight: 500 }}>{gender}</span>
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    width: 120,
+                                                    height: 6,
+                                                    background: '#f0f0f0',
+                                                    borderRadius: 4,
+                                                    overflow: 'hidden'
+                                                }}
+                                            >
+                                                <div
+                                                    style={{
+                                                        height: '100%',
+                                                        background: '#1890ff',
+                                                        borderRadius: 4,
+                                                        width: `${((count as number) /
+                                                            (stats.total || 1)) *
+                                                            100
+                                                            }%`
+                                                    }}
+                                                />
+                                            </div>
+                                            <span
+                                                style={{
+                                                    color: 'rgba(0, 0, 0, 0.45)',
+                                                    width: 32
+                                                }}
+                                            >
+                                                {count as number}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    </Col>
+
+                    <Col span={24} md={12}>
+                        <Card
+                            size='small'
+                            title={
+                                <span>
+                                    <PieChartOutlined style={{ marginRight: 8 }} />
+                                    Age Group Distribution
+                                </span>
+                            }
+                            style={{ height: '100%' }}
+                        >
+                            <Skeleton loading={loading} active paragraph={{ rows: 4 }}>
                                 <div
                                     style={{
                                         display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center'
+                                        flexDirection: 'column',
+                                        gap: 8
                                     }}
                                 >
-                                    <div>
-                                        <p style={{ fontWeight: 500 }}>{docItem.type}</p>
-                                        <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>
-                                            {docItem.fileName}
-                                        </p>
-                                    </div>
-                                    <Button
-                                        type='text'
-                                        icon={<DownloadOutlined />}
-                                        href={docItem.url}
-                                        target='_blank'
-                                    />
+                                    {ageGroupDistribution.map(([ageGroup, count]) => (
+                                        <div
+                                            key={ageGroup}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between'
+                                            }}
+                                        >
+                                            <span style={{ fontWeight: 500 }}>{ageGroup}</span>
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 8
+                                                }}
+                                            >
+                                                <div
+                                                    style={{
+                                                        width: 120,
+                                                        height: 6,
+                                                        background: '#f0f0f0',
+                                                        borderRadius: 4,
+                                                        overflow: 'hidden'
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            height: '100%',
+                                                            background: '#13c2c2',
+                                                            borderRadius: 4,
+                                                            width: `${((count as number) /
+                                                                (stats.total || 1)) *
+                                                                100
+                                                                }%`
+                                                        }}
+                                                    />
+                                                </div>
+                                                <span
+                                                    style={{
+                                                        color: 'rgba(0, 0, 0, 0.45)',
+                                                        width: 32
+                                                    }}
+                                                >
+                                                    {count as number}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            </Card>
-                        ))}
-                    </div>
-                ) : (
-                    <p style={{ color: 'rgba(0, 0, 0, 0.45)' }}>No documents uploaded</p>
-                )}
+                            </Skeleton>
+                        </Card>
+                    </Col>
+                </Row>
             </Modal>
+
         </div >
     )
 }

@@ -754,16 +754,24 @@ const AdminLeaveManagement: React.FC = () => {
             title: 'Employee',
             dataIndex: 'employeeName',
             key: 'employeeName',
-            render: (_: string, r: LeaveRequest) => (
-                <Space>
-                    <div>
-                        <div>{r.employeeName || '—'}</div>
-                        <Text type='secondary' style={{ fontSize: 12 }}>
-                            {r.employeeEmail || '—'}
-                        </Text>
-                    </div>
-                </Space>
-            )
+            render: (_: string, r: LeaveRequest) => {
+                // Older/wizard-created requests can carry a blank snapshot
+                // (e.g. the source users doc had no name field at the time).
+                // Fall back to the live employee directory by id.
+                const emp = employees.find(e => e.id === r.employeeId)
+                const name = r.employeeName || emp?.name || '—'
+                const email = r.employeeEmail || emp?.email || '—'
+                return (
+                    <Space>
+                        <div>
+                            <div>{name}</div>
+                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                {email}
+                            </Text>
+                        </div>
+                    </Space>
+                )
+            }
         },
         {
             title: 'Type',
@@ -1704,50 +1712,77 @@ const AdminLeaveManagement: React.FC = () => {
 
     // ── Render
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
-
+        <div style={{ padding: '10px 24px' }}>
             <Row style={{ marginBottom: 16 }}>
                 <Col xs={24}>
                     <Row gutter={[16, 16]}>
                         <Col xs={24} sm={12} md={6}>
-                            <MotionCard>
-                                <MotionCard.Metric
-                                    icon={<ClockCircleOutlined style={{ color: '#faad14', fontSize: 18 }} />}
-                                    iconBg="rgba(250,173,20,0.14)"
-                                    title="Pending"
-                                    value={stats.pending}
-                                />
-                            </MotionCard>
+                            <MotionCard.Metric
+                                icon={<BarChartOutlined style={{ color: '#1890ff', fontSize: 18 }} />}
+                                iconBg="rgba(24,144,255,0.12)"
+                                title="Total"
+                                value={stats.total}
+                                onClick={() => setStatusFilter(undefined)}
+                                wrapperStyle={
+                                    !statusFilter
+                                        ? { borderColor: '#1890ff', boxShadow: '0 0 0 1px #1890ff' }
+                                        : undefined
+                                }
+                            />
                         </Col>
                         <Col xs={24} sm={12} md={6}>
-                            <MotionCard>
-                                <MotionCard.Metric
-                                    icon={<CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />}
-                                    iconBg="rgba(82,196,26,0.12)"
-                                    title="Approved"
-                                    value={stats.approved}
-                                />
-                            </MotionCard>
+                            <MotionCard.Metric
+                                icon={<ClockCircleOutlined style={{ color: '#faad14', fontSize: 18 }} />}
+                                iconBg="rgba(250,173,20,0.14)"
+                                title="Pending"
+                                value={stats.pending}
+                                onClick={() =>
+                                    setStatusFilter(prev =>
+                                        prev === 'pending' ? undefined : 'pending'
+                                    )
+                                }
+                                wrapperStyle={
+                                    statusFilter === 'pending'
+                                        ? { borderColor: '#faad14', boxShadow: '0 0 0 1px #faad14' }
+                                        : undefined
+                                }
+                            />
                         </Col>
                         <Col xs={24} sm={12} md={6}>
-                            <MotionCard>
-                                <MotionCard.Metric
-                                    icon={<CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />}
-                                    iconBg="rgba(255,77,79,0.12)"
-                                    title="Rejected"
-                                    value={stats.rejected}
-                                />
-                            </MotionCard>
+                            <MotionCard.Metric
+                                icon={<CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />}
+                                iconBg="rgba(82,196,26,0.12)"
+                                title="Approved"
+                                value={stats.approved}
+                                onClick={() =>
+                                    setStatusFilter(prev =>
+                                        prev === 'approved' ? undefined : 'approved'
+                                    )
+                                }
+                                wrapperStyle={
+                                    statusFilter === 'approved'
+                                        ? { borderColor: '#52c41a', boxShadow: '0 0 0 1px #52c41a' }
+                                        : undefined
+                                }
+                            />
                         </Col>
                         <Col xs={24} sm={12} md={6}>
-                            <MotionCard>
-                                <MotionCard.Metric
-                                    icon={<BarChartOutlined style={{ color: '#1890ff', fontSize: 18 }} />}
-                                    iconBg="rgba(24,144,255,0.12)"
-                                    title="Total"
-                                    value={stats.total}
-                                />
-                            </MotionCard>
+                            <MotionCard.Metric
+                                icon={<CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />}
+                                iconBg="rgba(255,77,79,0.12)"
+                                title="Rejected"
+                                value={stats.rejected}
+                                onClick={() =>
+                                    setStatusFilter(prev =>
+                                        prev === 'rejected' ? undefined : 'rejected'
+                                    )
+                                }
+                                wrapperStyle={
+                                    statusFilter === 'rejected'
+                                        ? { borderColor: '#ff4d4f', boxShadow: '0 0 0 1px #ff4d4f' }
+                                        : undefined
+                                }
+                            />
                         </Col>
                     </Row>
                 </Col>
@@ -1791,20 +1826,6 @@ const AdminLeaveManagement: React.FC = () => {
                                 <Option value='maternity'>Maternity</Option>
                                 <Option value='parental'>Parental</Option>
                                 <Option value='personal'>Personal</Option>
-                            </Select>
-                        </Col>
-
-                        <Col flex='0 0 160px'>
-                            <Select
-                                placeholder='Filter by status'
-                                style={{ width: '100%' }}
-                                allowClear
-                                value={statusFilter}
-                                onChange={value => setStatusFilter(value)}
-                            >
-                                <Option value='pending'>Pending</Option>
-                                <Option value='approved'>Approved</Option>
-                                <Option value='rejected'>Rejected</Option>
                             </Select>
                         </Col>
 
@@ -2114,7 +2135,7 @@ const AdminLeaveManagement: React.FC = () => {
                 open={isDetailsOpen}
                 onCancel={() => setIsDetailsOpen(false)}
                 footer={null}
-                width={1000}
+                width={620}
                 destroyOnClose
             >
                 {selectedRequest ? (
@@ -2122,14 +2143,20 @@ const AdminLeaveManagement: React.FC = () => {
                         <Descriptions
                             bordered
                             size='middle'
-                            column={{ xs: 1, sm: 1, md: 2 }}
-                            labelStyle={{ width: 160 }}
+                            column={1}
+                            layout='vertical'
                         >
-                            <Descriptions.Item label='Employee' span={2}>
+                            <Descriptions.Item label='Employee'>
                                 <Space direction='vertical' size={0}>
-                                    <Text strong>{selectedRequest.employeeName || '—'}</Text>
+                                    <Text strong>
+                                        {selectedRequest.employeeName ||
+                                            employees.find(e => e.id === selectedRequest.employeeId)?.name ||
+                                            '—'}
+                                    </Text>
                                     <Text type='secondary'>
-                                        {selectedRequest.employeeEmail || '—'}
+                                        {selectedRequest.employeeEmail ||
+                                            employees.find(e => e.id === selectedRequest.employeeId)?.email ||
+                                            '—'}
                                     </Text>
                                 </Space>
                             </Descriptions.Item>
@@ -2159,7 +2186,7 @@ const AdminLeaveManagement: React.FC = () => {
                                 {selectedRequest.days} day{selectedRequest.days > 1 ? 's' : ''}
                             </Descriptions.Item>
 
-                            <Descriptions.Item label='Dates' span={2}>
+                            <Descriptions.Item label='Dates'>
                                 {dayjs(selectedRequest.from).format('MMMM D, YYYY')} –{' '}
                                 {dayjs(selectedRequest.to).format('MMMM D, YYYY')}
                             </Descriptions.Item>
@@ -2184,7 +2211,7 @@ const AdminLeaveManagement: React.FC = () => {
                                     : '—'}
                             </Descriptions.Item>
 
-                            <Descriptions.Item label='Reason' span={2}>
+                            <Descriptions.Item label='Reason'>
                                 {selectedRequest.reason || '—'}
                             </Descriptions.Item>
 
@@ -2208,7 +2235,7 @@ const AdminLeaveManagement: React.FC = () => {
                                     </Descriptions.Item>
 
                                     {selectedRequest.status === 'rejected' && (
-                                        <Descriptions.Item label='Rejection Reason' span={2}>
+                                        <Descriptions.Item label='Rejection Reason'>
                                             {selectedRequest.rejectionReason || '—'}
                                         </Descriptions.Item>
                                     )}

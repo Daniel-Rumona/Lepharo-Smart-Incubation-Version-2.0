@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onInterventionReminderQueuedEmail = exports.onAssignedInterventionEmail = exports.onInterventionRequestDecisionEmail = exports.onResourceRequestDecisionEmail = exports.onLeaveRequestDecisionEmail = exports.sendInterventionReminderEmail = void 0;
+exports.onAssignedInterventionEmail = exports.onInterventionRequestDecisionEmail = exports.onResourceRequestDecisionEmail = exports.onLeaveRequestDecisionEmail = exports.resolverEmail = exports.participant = exports.buildNotificationContent = exports.status = exports.clean = exports.sendInterventionReminderEmail = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
@@ -86,6 +86,7 @@ exports.sendInterventionReminderEmail = (0, https_1.onRequest)({ region: REGION,
 function clean(value) {
     return String(value ?? "").trim();
 }
+exports.clean = clean;
 function email(value) {
     const result = clean(value).toLowerCase();
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result) ? result : null;
@@ -100,6 +101,7 @@ function esc(value) {
 function status(value) {
     return clean(value).toLowerCase();
 }
+exports.status = status;
 function changedTo(before, after, allowed) {
     const next = status(after.status);
     return allowed.includes(next) && (!before || status(before.status) !== next);
@@ -110,18 +112,20 @@ function notificationPatch(key, state, to) {
         [`emailNotifications.${key}.${state}.to`]: to,
     };
 }
-function buildNotificationContent(heading, lines, actionPath) {
+function buildNotificationContent(heading, lines, actionPath, extraHtml) {
     const safeLines = lines.filter(Boolean);
     const actionUrl = actionPath ? `${LOGIN_URL}${actionPath}` : LOGIN_URL;
     const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.6">
     <h2>${esc(heading)}</h2>
     ${safeLines.map((line) => `<p>${esc(line)}</p>`).join("")}
     <p><a href="${esc(actionUrl)}" style="display:inline-block;padding:10px 16px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:6px">Open Smart Incubation</a></p>
+    ${extraHtml || ""}
     <p>Regards,<br><b>Lepharo Smart Incubation System</b></p>
   </div>`;
     const text = `${heading}\n\n${safeLines.join("\n\n")}\n\nOpen Smart Incubation: ${actionUrl}`;
     return { html, text };
 }
+exports.buildNotificationContent = buildNotificationContent;
 async function send(to, subject, heading, lines, actionPath) {
     const { html, text } = buildNotificationContent(heading, lines, actionPath);
     await (0, emailShared_1.getTransporter)().sendMail({ from: FROM(), to, subject, html, text });
@@ -166,6 +170,7 @@ async function participant(data) {
     }
     return { email: null, name: clean(data.participantName || data.beneficiaryName) || "Participant" };
 }
+exports.participant = participant;
 async function assignee(data) {
     const direct = email(data.assigneeEmail);
     const id = clean(data.assigneeId);
@@ -184,6 +189,21 @@ async function assignee(data) {
     }
     return { email: null, name: clean(data.assigneeName) || "Facilitator" };
 }
+/** Resolves a notification's target user (e.g. a workflow query resolver) by
+ * uid -- a fresh users/{uid} lookup rather than a payload snapshot, so it
+ * reflects the user's current email even if it changed after the doc was
+ * assigned. */
+async function resolverEmail(data) {
+    const uid = clean(data.recipientIds?.[0]) || clean(data.resolverId);
+    if (!uid)
+        return { email: null, name: "there" };
+    const snap = await emailShared_1.db.collection("users").doc(uid).get();
+    if (!snap.exists)
+        return { email: null, name: "there" };
+    const d = snap.data() || {};
+    return { email: email(d.email), name: clean(d.name || d.displayName) || "there" };
+}
+exports.resolverEmail = resolverEmail;
 exports.onLeaveRequestDecisionEmail = (0, firestore_1.onDocumentWritten)({ region: REGION, document: "leaveRequests/{requestId}" }, async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
@@ -298,37 +318,9 @@ exports.onAssignedInterventionEmail = (0, firestore_1.onDocumentWritten)({ regio
         }
     }
 });
-exports.onInterventionReminderQueuedEmail = (0, firestore_1.onDocumentWritten)({ region: REGION, document: "notifications/{notificationId}" }, async (event) => {
-    const before = event.data?.before.data();
-    const after = event.data?.after.data();
-    if (before || !after || status(after.type) !== "intervention_reminder")
-        return;
-    const recipient = await participant(after);
-    if (!recipient.email)
-        return logger.warn("intervention_reminder_email.no_recipient", { notificationId: event.params.notificationId });
-    const title = clean(after.interventionTitle) || "your intervention";
-    const subject = `Reminder: action required for ${title}`;
-    const { html, text } = buildNotificationContent("Intervention reminder", [
-        `Hello ${recipient.name},`,
-        clean(after.message) || (status(after.reminderReason) === "completion"
-            ? "Please confirm completion of your intervention."
-            : "Please accept the intervention assigned to you."),
-    ], "/incubatee/interventions");
-    const participantId = clean(after.participantId) || null;
-    const programId = clean(after.programId) || null;
-    try {
-        const { messageId } = await (0, brevoClient_1.sendViaBrevo)({ to: recipient.email, subject, html, text, tags: ["intervention-reminder"] });
-        await (0, brevoClient_1.logBrevoSend)({ type: "INTERVENTION_REMINDER", to: recipient.email, subject, status: "sent", messageId, participantId, programId });
-    }
-    catch (err) {
-        const msg = String(err?.message || err);
-        await (0, brevoClient_1.logBrevoSend)({ type: "INTERVENTION_REMINDER", to: recipient.email, subject, status: "failed", error: msg, participantId, programId });
-        logger.error("intervention_reminder_email.failed", { notificationId: event.params.notificationId, error: msg });
-        return;
-    }
-    await event.data.after.ref.update({
-        emailSentAt: emailShared_1.admin.firestore.FieldValue.serverTimestamp(),
-        emailSentTo: recipient.email,
-    });
-});
+// `intervention_reminder` notification emails are now handled generically by
+// onNotificationCreatedEmail (see notificationEmailFanout.ts), which looks up
+// NOTIFICATION_REGISTRY by `type` instead of hardcoding one type here. Do not
+// re-add a per-type trigger on `notifications/{id}` in this file -- two
+// triggers on the same new-doc guard would double-send.
 //# sourceMappingURL=workflowEmailFunctions.js.map

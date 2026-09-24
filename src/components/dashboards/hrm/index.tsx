@@ -10,16 +10,15 @@ import {
     Typography,
     Form,
     Empty,
-    Tooltip,
-    Statistic
+    Tooltip
 } from 'antd'
 import {
     TeamOutlined,
     CalendarOutlined,
     ReloadOutlined,
     FileTextOutlined,
-    UserAddOutlined,
-    CheckCircleOutlined
+    ApartmentOutlined,
+    EnvironmentOutlined
 } from '@ant-design/icons'
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/firebase'
@@ -35,7 +34,8 @@ import HighchartsReact from 'highcharts-react-official'
 import { GlobalEventModal } from '@/components/modals/Events'
 import EventsCalendarModal from '@/components/modals/EventsCalender'
 import EventDetailsModal from '@/components/modals/EventDetails'
-import AppointmentsCard from '@/components/dashboards/charts/AppointmentsCard'
+import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
+import MetricsGrid from '@/components/dashboards/metrics/MetricsGrid'
 
 const { Title, Text } = Typography
 
@@ -74,6 +74,7 @@ interface HRUser {
     name?: string
     email?: string
     role?: string
+    status?: string
 }
 interface LeaveReq {
     id: string
@@ -97,19 +98,13 @@ interface EventItem {
     description?: string
     link?: string
 }
-interface JobPosting {
-    id: string
-    title?: string
-    status?: 'open' | 'closed'
-    department?: string
-}
-
 /** HR Dashboard */
 const HRDashboard: React.FC = () => {
     const { user } = useFullIdentity()
     const [employees, setEmployees] = useState<HRUser[]>([])
     const [leaveRequests, setLeaveRequests] = useState<LeaveReq[]>([])
-    const [jobPostings, setJobPostings] = useState<JobPosting[]>([])
+    const [departmentCount, setDepartmentCount] = useState(0)
+    const [centerCount, setCenterCount] = useState(0)
     const [events, setEvents] = useState<EventItem[]>([])
     const [loading, setLoading] = useState(true)
 
@@ -138,14 +133,13 @@ const HRDashboard: React.FC = () => {
             leaveSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
         )
 
-        // Open roles (job postings)
-        const jobsSnap = await getDocs(
-            query(
-                collection(db, 'resources'),
-                where('type', '==', 'jobPosting')
-            )
-        )
-        setJobPostings(jobsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+        // Organization counts: centers are stored as branches.
+        const [departmentsSnap, centersSnap] = await Promise.all([
+            getDocs(collection(db, 'departments')),
+            getDocs(collection(db, 'branches'))
+        ])
+        setDepartmentCount(departmentsSnap.size)
+        setCenterCount(centersSnap.size)
 
         // Events
         const evSnap = await getDocs(collection(db, 'events'))
@@ -167,13 +161,9 @@ const HRDashboard: React.FC = () => {
     // HR KPIs
     const totalEmployees = employees.length
     const activeEmployees = employees.filter(
-        e => (e.role || '').toLowerCase() !== 'inactive'
+        e => (e.status || 'Active').trim().toLowerCase() !== 'inactive'
     ).length
     const pendingLeave = leaveRequests.filter(l => l.status === 'pending').length
-    const openRoles = jobPostings.filter(
-        j => (j.status || 'open') === 'open'
-    ).length
-
     // Upcoming events (Next 7 days)
     const upcomingNext7 = useMemo(() => {
         const start = dayjs().startOf('day')
@@ -278,98 +268,53 @@ const HRDashboard: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
-            {/* Header (payroll mention removed) */}
-            <MotionCard
-                style={{ background: 'linear-gradient(90deg,#eef4ff, #f9fbff)' }}
-            >
-                <Row align='middle' justify='space-between'>
-                    <Col>
-                        <Title level={4} style={{ margin: 0 }}>
-                            Human Resources Overview
-                        </Title>
-                        <Text type='secondary'>Employees overview, leave, and events.</Text>
-                    </Col>
-                    <Col>
-                        <Space>
-                            <Button
-                                icon={<CalendarOutlined />}
-                                onClick={() => setCalendarVisible(true)}
-                            >
-                                Open Calendar
-                            </Button>
-                            <Tooltip title='Refresh'>
-                                <Button icon={<ReloadOutlined />} onClick={fetchAll} />
-                            </Tooltip>
-                        </Space>
-                    </Col>
-                </Row>
-            </MotionCard>
+        <div style={{ padding: '5px 24px' }}>
 
             {/* HR KPIs */}
-            <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
-                <Col xs={24} sm={12} md={6}>
-                    <MotionCard>
-                        <Space>
-                            <TeamOutlined />
-                            <div>
-                                <Text strong>Total Employees</Text>
-                                <div>
-                                    <Statistic
-                                        value={totalEmployees}
-                                        valueStyle={{ fontSize: 22 }}
-                                    />
-                                </div>
-                            </div>
-                        </Space>
-                    </MotionCard>
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                    <MotionCard>
-                        <Space>
-                            <CheckCircleOutlined />
-                            <div>
-                                <Text strong>Active Employees</Text>
-                                <div>
-                                    <Statistic
-                                        value={activeEmployees}
-                                        valueStyle={{ fontSize: 22 }}
-                                    />
-                                </div>
-                            </div>
-                        </Space>
-                    </MotionCard>
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                    <MotionCard>
-                        <Space>
-                            <FileTextOutlined />
-                            <div>
-                                <Text strong>Pending Leave</Text>
-                                <div>
-                                    <Statistic
-                                        value={pendingLeave}
-                                        valueStyle={{ fontSize: 22 }}
-                                    />
-                                </div>
-                            </div>
-                        </Space>
-                    </MotionCard>
-                </Col>
-                <Col xs={24} sm={12} md={6}>
-                    <MotionCard>
-                        <Space>
-                            <UserAddOutlined />
-                            <div>
-                                <Text strong>Open Roles</Text>
-                                <div>
-                                    <Statistic value={openRoles} valueStyle={{ fontSize: 22 }} />
-                                </div>
-                            </div>
-                        </Space>
-                    </MotionCard>
-                </Col>
-            </Row>
+            <div style={{ marginTop: 12 }}>
+                <MetricsGrid
+                    metrics={[
+                        {
+                            key: 'employees',
+                            title: 'Employees',
+                            value: totalEmployees,
+                            subtitle: activeEmployees < totalEmployees
+                                ? `${activeEmployees} active | ${totalEmployees} all`
+                                : undefined,
+                            icon: <TeamOutlined />,
+                            loading,
+                            important: true
+                        },
+                        {
+                            key: 'departments',
+                            title: 'Departments',
+                            value: departmentCount,
+                            icon: <ApartmentOutlined />,
+                            iconBg: 'rgba(82,196,26,.12)',
+                            loading,
+                            important: true
+                        },
+                        {
+                            key: 'pending-leave',
+                            title: 'Pending Leave',
+                            value: pendingLeave,
+                            icon: <FileTextOutlined />,
+                            iconBg: 'rgba(250,173,20,.12)',
+                            loading,
+                            important: true
+                        },
+                        {
+                            key: 'centers',
+                            title: 'Centers',
+                            value: centerCount,
+                            icon: <EnvironmentOutlined />,
+                            iconBg: 'rgba(114,46,209,.12)',
+                            loading,
+                            important: true
+                        }
+                    ]}
+                />
+            </div>
 
             {/* Donut replaces the old Payroll snapshot + Upcoming events */}
             <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
@@ -387,9 +332,9 @@ const HRDashboard: React.FC = () => {
                 </Col>
 
                 <Col xs={24} md={14}>
-                    <AppointmentsCard
+                    <UpcomingAppointmentsCard
                         departmentId={user?.departmentId}
-                        pageSize={6}
+                        limit={6}
                     />
                 </Col>
             </Row>

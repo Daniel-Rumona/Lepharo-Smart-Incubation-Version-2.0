@@ -67,6 +67,15 @@ export interface ComputeResult {
 export async function computeKpi(params: ComputeParams): Promise<ComputeResult> {
   const { kpi, programId, isAllPrograms, periodType, periodKey, target } = params
 
+  // "Jobs Created"/"Jobs Sustained" live under the Business Metrics source in
+  // the UI (so they share its normal field-picking flow, no separate source
+  // card and no confusing count-mode prompt), but they're real HSE employment
+  // contracts, not self-reported monthly numbers - so they read from
+  // hseJobContracts and are always counted, regardless of whatever
+  // calculationType the wizard attached (it maps metrics+total_number to
+  // 'sum', which is right for every other metrics field, just not these two).
+  const isJobsField = kpi.sourceType === 'metrics' && (kpi.field === 'jobsCreated' || kpi.field === 'jobsSustained')
+
   let data: any[] = []
 
   /* ================= FETCH ================= */
@@ -80,7 +89,9 @@ export async function computeKpi(params: ComputeParams): Promise<ComputeResult> 
   }
 
   if (kpi.sourceType === 'metrics') {
-    data = await fetchMetrics(programId, isAllPrograms)
+    data = isJobsField
+      ? await fetchJobContracts(programId, isAllPrograms)
+      : await fetchMetrics(programId, isAllPrograms)
   }
 
   /* ================= HARD RULES ================= */
@@ -101,18 +112,34 @@ export async function computeKpi(params: ComputeParams): Promise<ComputeResult> 
 
   const { start, end } = resolvePeriod(periodType, periodKey)
 
-  data = data.filter(d => {
-   const rawDate =
-  kpi.sourceType === 'interventions'
-    ? (d.completedAt || d.createdAt || d.updatedAt)
-    : (d.createdAt || d.date || d.updatedAt)
+  if (isJobsField && kpi.field === 'jobsSustained') {
+    // "Sustained" isn't "happened during this period" like every other
+    // source - it's "already existed by the period's end, and hadn't
+    // expired yet": permanent contracts always count, temporal ones only
+    // while their end date is still on or after the period.
+    data = data.filter(d => {
+      const created = normalizeDate(d.createdAt || d.uploadMonthDate)
+      if (!created || created.isAfter(end)) return false
+      if (d.contractType === 'permanent') return true
+      const expiry = normalizeDate(d.contractEndDate)
+      return expiry ? !expiry.isBefore(end) : true
+    })
+  } else {
+    data = data.filter(d => {
+      const rawDate =
+        kpi.sourceType === 'interventions'
+          ? (d.completedAt || d.createdAt || d.updatedAt)
+          : isJobsField
+            ? (d.uploadMonthDate || d.createdAt)
+            : (d.createdAt || d.date || d.updatedAt)
 
-const date = normalizeDate(rawDate)
-    if (!date) return false
-    // A reporting period includes both its first and last day. Strict comparisons
-    // dropped records stamped exactly at either boundary.
-    return !date.isBefore(start) && !date.isAfter(end)
-  })
+      const date = normalizeDate(rawDate)
+      if (!date) return false
+      // A reporting period includes both its first and last day. Strict comparisons
+      // dropped records stamped exactly at either boundary.
+      return !date.isBefore(start) && !date.isAfter(end)
+    })
+  }
 
   /* ================= USER FILTERS ================= */
 
@@ -124,7 +151,9 @@ const date = normalizeDate(rawDate)
 
   let actual = 0
 
-  if (kpi.calculationType === 'count') {
+  if (isJobsField) {
+    actual = data.length
+  } else if (kpi.calculationType === 'count') {
     if (kpi.countMode === 'distinct') {
       const set = new Set(data.map(d => {
         if (kpi.entityKey && d[kpi.entityKey] !== undefined && d[kpi.entityKey] !== null) {
@@ -141,16 +170,16 @@ const date = normalizeDate(rawDate)
     }
   }
 
-  if (kpi.calculationType === 'sum') {
+  if (!isJobsField && kpi.calculationType === 'sum') {
     actual = data.reduce((sum, d) => sum + Number(d[kpi.field || ''] || 0), 0)
   }
 
-  if (kpi.calculationType === 'average') {
+  if (!isJobsField && kpi.calculationType === 'average') {
     const total = data.reduce((sum, d) => sum + Number(d[kpi.field || ''] || 0), 0)
     actual = data.length ? total / data.length : 0
   }
 
-  if (kpi.calculationType === 'ratio') {
+  if (!isJobsField && kpi.calculationType === 'ratio') {
     const calculatePart = (part?: RatioPartConfig | null) => {
       if (!part) return 0
       const partData = part.filters?.length ? applyFilters(data, part.filters) : data
@@ -215,6 +244,16 @@ async function fetchApplications(programId?: string | null, isAllPrograms?: bool
 
 async function fetchMetrics(programId?: string | null, isAllPrograms?: boolean) {
   const reference = collection(db, 'participantMonthlyMetrics')
+  const qRef = !isAllPrograms && programId
+    ? query(reference, where('programId', '==', programId))
+    : query(reference)
+
+  const snap = await getDocs(qRef)
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+}
+
+async function fetchJobContracts(programId?: string | null, isAllPrograms?: boolean) {
+  const reference = collection(db, 'hseJobContracts')
   const qRef = !isAllPrograms && programId
     ? query(reference, where('programId', '==', programId))
     : query(reference)

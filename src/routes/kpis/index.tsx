@@ -34,8 +34,6 @@ import {
     DatabaseOutlined,
     DeleteOutlined,
     EditOutlined,
-    EyeOutlined,
-    FileProtectOutlined,
     FileTextOutlined,
     FilterOutlined,
     LeftOutlined,
@@ -77,15 +75,7 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
-import { KpiAgreementFormModal } from '@/components/kpi-agreements/KpiAgreementFormModal'
-import { KpiAgreementDetail } from '@/components/kpi-agreements/KpiAgreementDetail'
-import { kpiAgreementService } from '@/services/kpiAgreementService'
-import type {
-    KpiAgreement,
-    KpiAgreementFormData,
-    KpiNumericTarget,
-    KpiDeliverable
-} from '@/types/types'
+import { AddKpiFlowModal, type CreateFromCandidatesInput } from '@/components/kpis/AddKpiFlowModal'
 
 dayjs.extend(quarterOfYear)
 dayjs.extend(customParseFormat)
@@ -94,10 +84,15 @@ dayjs.extend(isSameOrBefore)
 const { Option } = Select
 const { Text } = Typography
 
-const isAgreementFullySigned = (agreement: KpiAgreement) =>
-    !!agreement.signOff?.hod?.name?.trim() &&
-    !!agreement.signOff?.centerManager?.name?.trim() &&
-    !!agreement.signOff?.ceo?.name?.trim()
+// A module-level constant so every render that falls back to "no selection
+// yet" shares the exact same array reference. `Form.useWatch(...) || []`
+// instead would mint a brand-new [] every render, which breaks useMemo/
+// useEffect dependency comparisons downstream (they compare by reference) -
+// that was the actual cause of this page's "Maximum update depth exceeded"
+// loop: an effect fed by that fresh array kept calling setState with a new
+// (but logically identical) array every render, and React never bailed out.
+const EMPTY_STRING_ARRAY: string[] = []
+const EMPTY_FILTER_ARRAY: KpiFilter[] = []
 
 type FilterOp = '==' | '!=' | 'in'
 type SourceType = 'applications' | 'interventions' | 'metrics'
@@ -112,9 +107,6 @@ type DisplayKpiType = 'total_number' | 'total_amount' | 'average' | 'percentage'
 
 type MetricField =
     | 'monthlyRevenue'
-    | 'employeesPermanent'
-    | 'employeesTemporary'
-    | 'totalEmployees'
     | 'jobsCreated'
     | 'jobsSustained'
 
@@ -131,6 +123,7 @@ type FieldKey =
     | 'movStatus'
     | MetricField
     | 'createdAt'
+    | 'contractType'
 
 interface SourceField {
     key: FieldKey
@@ -213,11 +206,10 @@ interface KPI {
     latestTargetPeriodType?: TargetPeriodType | null
     latestTargetPeriodKey?: string | null
     latestTarget?: number | null
-}
 
-type UnifiedKpiItem =
-    | { kind: 'computed'; id: string; label: string; kpi: KPI }
-    | { kind: 'agreement'; id: string; label: string; agreement: KpiAgreement }
+    trackingMode?: 'computed' | 'manual' | null
+    reminderCadence?: TargetPeriodType | null
+}
 
 interface KpiTargetDoc {
     id: string
@@ -385,11 +377,15 @@ const SOURCE_CONFIGS: Record<SourceType, SourceConfig> = {
             { key: 'applicationStatus', label: 'Application Status', type: 'string', suggestFromDb: true, isCondition: true },
             { key: 'province', label: 'Province', type: 'string', suggestFromDb: true, isCondition: true },
             { key: 'sector', label: 'Sector', type: 'string', suggestFromDb: true, sourceFieldKey: 'sector', isCondition: true },
+            // Jobs Created/Sustained are counted live from real HSE employment
+            // contracts (hseJobContracts), not summed from this collection -
+            // see the sourceType==='metrics' special case in computeKpi.
+            // "Employees Permanent/Temporary" is the same underlying data as
+            // Jobs Sustained, just narrowed with the Contract Type condition
+            // below, so there's no separate field for it.
+            { key: 'contractType', label: 'Contract Type (jobs only)', type: 'enum', enumOptions: [{ label: 'Permanent', value: 'permanent' }, { label: 'Temporal', value: 'temporal' }], isCondition: true },
 
             { key: 'monthlyRevenue', label: 'Monthly Revenue', type: 'number', isNumeric: true },
-            { key: 'employeesPermanent', label: 'Permanent Employees', type: 'number', isNumeric: true },
-            { key: 'employeesTemporary', label: 'Temporary Employees', type: 'number', isNumeric: true },
-            { key: 'totalEmployees', label: 'Total Employees', type: 'number', isNumeric: true },
             { key: 'jobsCreated', label: 'Jobs Created', type: 'number', isNumeric: true },
             { key: 'jobsSustained', label: 'Jobs Sustained', type: 'number', isNumeric: true },
 
@@ -617,26 +613,16 @@ const FilterListSection: React.FC<FilterListSectionProps> = ({
     </Form.List>
 )
 
-const AddConditionButton: React.FC<{
-    listName: 'filters' | 'numeratorFilters' | 'denominatorFilters'
-}> = ({ listName }) => (
-    <Form.List name={listName}>
-        {(_, { add }) => (
-            <Button
-                shape='round'
-                type='primary'
-                htmlType='button'
-                onClick={() => add({ field: undefined, op: '==', value: undefined })}
-            >
-                Add condition
-            </Button>
-        )}
-    </Form.List>
-)
-
 const StepPanel: React.FC<{ visible: boolean; children: React.ReactNode }> = ({ visible, children }) => (
     <div style={{ display: visible ? 'block' : 'none' }}>{children}</div>
 )
+
+const DISPLAY_TYPE_LABELS: Record<DisplayKpiType, string> = {
+    total_number: 'Total number',
+    total_amount: 'Total amount',
+    average: 'Average',
+    percentage: 'Percentage'
+}
 
 const getKpiTypeLabel = (kpi: KPI) => {
     const type =
@@ -649,12 +635,7 @@ const getKpiTypeLabel = (kpi: KPI) => {
                     ? 'average'
                     : 'percentage')
 
-    const labels: Record<DisplayKpiType, string> = {
-        total_number: 'Total number',
-        total_amount: 'Total amount',
-        average: 'Average',
-        percentage: 'Percentage'
-    }
+    const labels = DISPLAY_TYPE_LABELS
 
     return labels[type as DisplayKpiType]
 }
@@ -698,15 +679,9 @@ const KPIManager: React.FC = () => {
     const { programId, isAllPrograms, activeProgramId } = useActiveProgramId()
 
     const [kpis, setKpis] = useState<KPI[]>([])
-    const [agreements, setAgreements] = useState<KpiAgreement[]>([])
     const [kpiSearch, setKpiSearch] = useState('')
     const [selectedKpiId, setSelectedKpiId] = useState<string | null>(null)
-    const [selectedAgreementId, setSelectedAgreementId] = useState<string | null>(null)
-    const [addKpiChooserVisible, setAddKpiChooserVisible] = useState(false)
-    const [agreementModalVisible, setAgreementModalVisible] = useState(false)
-    const [editingAgreement, setEditingAgreement] = useState<KpiAgreement | null>(null)
-    const [agreementDetailVisible, setAgreementDetailVisible] = useState(false)
-    const [agreementDetailTarget, setAgreementDetailTarget] = useState<KpiAgreement | null>(null)
+    const [addKpiFlowVisible, setAddKpiFlowVisible] = useState(false)
     const [kpiListPage, setKpiListPage] = useState(1)
     const [loading, setLoading] = useState(false)
     const [saving, setSaving] = useState(false)
@@ -717,6 +692,10 @@ const KPIManager: React.FC = () => {
     const [basicStage, setBasicStage] = useState<'ownership' | 'sharedMode' | 'scope' | 'identity'>('ownership')
     const [hoveredChoice, setHoveredChoice] = useState<string | null>(null)
     const [deletingId, setDeletingId] = useState<string | null>(null)
+    const [hasConditions, setHasConditions] = useState<boolean | null>(null)
+    const [draftConditionField, setDraftConditionField] = useState<string | undefined>(undefined)
+    const [draftConditionOp, setDraftConditionOp] = useState<FilterOp>('==')
+    const [returnToReview, setReturnToReview] = useState(false)
 
     const [departments, setDepartments] = useState<any[]>([])
     const [departmentsLoading, setDepartmentsLoading] = useState(false)
@@ -725,6 +704,7 @@ const KPIManager: React.FC = () => {
     const [filteredInterventions, setFilteredInterventions] = useState<any[]>([])
     const [interventionDepartmentId, setInterventionDepartmentId] = useState<string | undefined>()
     const [isMainDept, setIsMainDept] = useState(false)
+    const [isMonitoringDept, setIsMonitoringDept] = useState(false)
 
     const [valueSuggestions, setValueSuggestions] = useState<Record<string, string[]>>({})
     const [suggestionLoadingKey, setSuggestionLoadingKey] = useState<string | null>(null)
@@ -754,6 +734,9 @@ const KPIManager: React.FC = () => {
     const selectedNumeratorField = Form.useWatch('numeratorField', form) as string | undefined
     const selectedDenominatorField = Form.useWatch('denominatorField', form) as string | undefined
     const selectedPeriodType = Form.useWatch('periodType', form) as TargetPeriodType | undefined
+    const selectedPeriodKey = Form.useWatch('periodKey', form) as string | undefined
+    const selectedTarget = Form.useWatch('target', form) as number | undefined
+    const selectedDepartment = Form.useWatch('department', form) as string | undefined
     const numeratorMode = Form.useWatch('numeratorMode', form) as 'count_records' | 'sum_field' | 'avg_field' | undefined
     const denominatorMode = Form.useWatch('denominatorMode', form) as 'count_records' | 'sum_field' | 'avg_field' | undefined
     const canControlContributors = isMainDept
@@ -848,86 +831,21 @@ const KPIManager: React.FC = () => {
         }
     }, [orderedKpis, selectedKpiId])
 
-    const orderedAgreements = useMemo(() => {
-        const search = kpiSearch.trim().toLowerCase()
-        return agreements
-            .filter(agreement => {
-                if (!search) return true
-                return [agreement.serviceName, agreement.departmentName, agreement.fyLabel]
-                    .filter(Boolean)
-                    .some(value => String(value).toLowerCase().includes(search))
-            })
-            .sort((a, b) =>
-                (a.serviceName || a.departmentName || '').localeCompare(b.serviceName || b.departmentName || '')
-            )
-    }, [agreements, kpiSearch])
-
-    const unifiedItems = useMemo<UnifiedKpiItem[]>(() => {
-        const computedItems: UnifiedKpiItem[] = orderedKpis.map(kpi => ({
-            kind: 'computed',
-            id: kpi.id,
-            label: kpi.kpiLabel,
-            kpi
-        }))
-        const agreementItems: UnifiedKpiItem[] = orderedAgreements.map(agreement => ({
-            kind: 'agreement',
-            id: agreement.id,
-            label: agreement.serviceName || agreement.departmentName || 'Untitled agreement',
-            agreement
-        }))
-        return [...computedItems, ...agreementItems].sort((a, b) => a.label.localeCompare(b.label))
-    }, [orderedKpis, orderedAgreements])
-
-    const pagedUnifiedItems = useMemo(() => {
-        const start = (kpiListPage - 1) * kpiListPageSize
-        return unifiedItems.slice(start, start + kpiListPageSize)
-    }, [kpiListPage, unifiedItems])
-
-    const selectedItem = useMemo<UnifiedKpiItem | null>(() => {
-        if (selectedAgreementId) {
-            const agreement = orderedAgreements.find(a => a.id === selectedAgreementId)
-            if (agreement) {
-                return { kind: 'agreement', id: agreement.id, label: agreement.serviceName || agreement.departmentName, agreement }
-            }
-        }
-        if (selectedKpiId) {
-            const kpi = orderedKpis.find(k => k.id === selectedKpiId)
-            if (kpi) {
-                return { kind: 'computed', id: kpi.id, label: kpi.kpiLabel, kpi }
-            }
-        }
-        return null
-    }, [selectedAgreementId, orderedAgreements, selectedKpiId, orderedKpis])
-
-    useEffect(() => {
-        const pageCount = Math.max(1, Math.ceil(unifiedItems.length / kpiListPageSize))
-        setKpiListPage(current => Math.min(current, pageCount))
-    }, [unifiedItems.length])
-
-    useEffect(() => {
-        if (selectedAgreementId && orderedAgreements.some(a => a.id === selectedAgreementId)) return
-        if (selectedKpiId && orderedKpis.some(k => k.id === selectedKpiId)) return
-        if (!unifiedItems.length) return
-        const first = unifiedItems[0]
-        if (first.kind === 'computed') {
-            setSelectedKpiId(first.id)
-        } else {
-            setSelectedAgreementId(first.id)
-        }
-    }, [unifiedItems, selectedAgreementId, orderedAgreements, selectedKpiId, orderedKpis])
-
     const checkIfMainDept = async () => {
         try {
             if (!user?.departmentId) {
                 setIsMainDept(false)
+                setIsMonitoringDept(false)
                 return
             }
             const snap = await getDocs(collection(db, 'departments'))
             const deptDoc = snap.docs.find(d => d.id === user.departmentId)
             setIsMainDept(Boolean(deptDoc?.data()?.isMain))
+            setIsMonitoringDept(Boolean(deptDoc?.data()?.isMonitoring))
         } catch (err) {
             console.error(err)
             setIsMainDept(false)
+            setIsMonitoringDept(false)
         }
     }
 
@@ -1023,15 +941,6 @@ const KPIManager: React.FC = () => {
         }
     }
 
-    const fetchAgreements = async () => {
-        try {
-            const data = await kpiAgreementService.getKpiAgreements()
-            setAgreements(data)
-        } catch (err) {
-            console.error('Failed to load KPI agreements', err)
-        }
-    }
-
     const fetchTargetsForKpi = async (kpiId: string) => {
         setTargetsLoading(true)
         try {
@@ -1083,13 +992,19 @@ const KPIManager: React.FC = () => {
         fetchDepartments()
         fetchInterventions()
         fetchKPIs()
-        fetchAgreements()
     }, [user?.departmentName, isMainDept, activeProgramId, isAllPrograms])
 
     const selectedContributorDepartmentIdsRaw =
-        (Form.useWatch('contributorDepartmentIds', { form, preserve: true }) as string[] | undefined) || []
+        (Form.useWatch('contributorDepartmentIds', { form, preserve: true }) as string[] | undefined) || EMPTY_STRING_ARRAY
     const selectedInterventionIds =
-        (Form.useWatch('interventionIds', { form, preserve: true }) as string[] | undefined) || []
+        (Form.useWatch('interventionIds', { form, preserve: true }) as string[] | undefined) || EMPTY_STRING_ARRAY
+    const filters =
+        (Form.useWatch('filters', { form, preserve: true }) as KpiFilter[] | undefined) || EMPTY_FILTER_ARRAY
+
+    useEffect(() => {
+        if (step !== 2) return
+        setHasConditions(prev => prev ?? filters.length > 0)
+    }, [step, filters])
 
     const selectedContributorDepartmentIds = useMemo(() => {
         if (!canControlContributors) {
@@ -1188,7 +1103,12 @@ const KPIManager: React.FC = () => {
 
         try {
             setSuggestionLoadingKey(cacheKey)
-            const targetCollection = fieldKey === 'sector' ? 'participants' : cfg.collection
+            // participantMonthlyMetrics only holds what revenueMetricsSyncCron has
+            // synced so far (and jobs never live there at all - see
+            // kpiCalculationService's isJobsField branch), so Business Metrics
+            // condition values are suggested from the participant records they
+            // actually describe instead, same as the cross-source "sector" field.
+            const targetCollection = (st === 'metrics' || fieldKey === 'sector') ? 'participants' : cfg.collection
 
             const qRef = query(collection(db, targetCollection), limit(350))
 
@@ -1222,12 +1142,13 @@ const KPIManager: React.FC = () => {
         st: SourceType | undefined,
         fieldKey?: string,
         rowIndex?: number,
-        listName: 'filters' | 'numeratorFilters' | 'denominatorFilters' = 'filters'
+        listName: 'filters' | 'numeratorFilters' | 'denominatorFilters' = 'filters',
+        opOverride?: FilterOp
     ) => {
-        if (!st || !fieldKey || rowIndex === undefined) return null
+        if (!st || !fieldKey) return null
         const cfg = SOURCE_CONFIGS[st]
         const field = cfg.fields.find(f => f.key === fieldKey)
-        const currentOp: FilterOp = form.getFieldValue([listName, rowIndex, 'op']) || '=='
+        const currentOp: FilterOp = opOverride || (rowIndex !== undefined ? form.getFieldValue([listName, rowIndex, 'op']) : undefined) || '=='
         if (!field) return null
 
         if (field.type === 'enum' && field.enumOptions?.length) {
@@ -1361,6 +1282,10 @@ const KPIManager: React.FC = () => {
     const resetWizard = () => {
         setStep(0)
         setBasicStage(canControlContributors ? 'ownership' : 'scope')
+        setHasConditions(null)
+        setDraftConditionField(undefined)
+        setDraftConditionOp('==')
+        setReturnToReview(false)
     }
 
     const mapDisplayTypeToCalculationType = (displayType: DisplayKpiType): CalculationType => {
@@ -1759,33 +1684,85 @@ const KPIManager: React.FC = () => {
         }
     }
 
-    const handleSaveAgreement = async (values: KpiAgreementFormData) => {
-        try {
-            if (editingAgreement) {
-                await kpiAgreementService.updateKpiAgreement(editingAgreement.id, values)
-                message.success('KPI agreement updated successfully!')
-            } else {
-                const newId = await kpiAgreementService.createKpiAgreement(values)
-                setSelectedAgreementId(newId)
-                message.success('KPI agreement saved successfully!')
-            }
-            setAgreementModalVisible(false)
-            setEditingAgreement(null)
-            await fetchAgreements()
-        } catch (err: any) {
-            message.error(err.message || 'Operation failed')
-        }
-    }
+    /**
+     * Create one or more KPIs drafted by the Add KPI assistant. Targets are
+     * written directly (not through saveInitialTarget's future-only guard) -
+     * these come from an already-signed external letter, so the quarters it
+     * names are historical fact, not something being newly declared now.
+     */
+    const handleCreateFromCandidates = async (input: CreateFromCandidatesInput) => {
+        for (const decision of input.decisions) {
+            const isComputed = decision.trackingMode === 'computed' && decision.sourceType
+            const sourceType: SourceType = isComputed ? (decision.sourceType as SourceType) : 'applications'
 
-    const handleDeleteAgreement = async (agreement: KpiAgreement) => {
-        try {
-            await kpiAgreementService.deleteKpiAgreement(agreement.id)
-            message.success('KPI agreement deleted successfully!')
-            if (selectedAgreementId === agreement.id) setSelectedAgreementId(null)
-            await fetchAgreements()
-        } catch (err: any) {
-            message.error(err.message || 'Failed to delete KPI agreement')
+            const payload: any = {
+                programId: null,
+                appliesToAllPrograms: true,
+                belongsToMe: true,
+                sharedKpiMode: null,
+                leadDepartmentId: input.departmentId,
+                leadDepartmentName: input.departmentName,
+                department: input.departmentName,
+                kpiLabel: decision.kpiName,
+                unit: decision.unit,
+                description: '',
+                sourceType,
+                sourceCollection: SOURCE_CONFIGS[sourceType].collection,
+                countMode: isComputed && decision.calculationType === 'count' ? (decision.countMode || 'records') : null,
+                dateField: 'createdAt',
+                displayKpiType: null,
+                calculationType: isComputed ? decision.calculationType : 'count',
+                filters: isComputed ? decision.filters : [],
+                field: isComputed ? decision.field || null : null,
+                numerator: null,
+                denominator: null,
+                contributorDepartmentIds: [],
+                contributorDepartmentNames: [],
+                sharedContributors: [],
+                interventionIds: [],
+                trackingMode: decision.trackingMode,
+                reminderCadence: decision.trackingMode === 'manual' ? (decision.reminderCadence || 'quarterly') : null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                active: true
+            }
+
+            const ref = await addDoc(collection(db, 'kpiDefinitions'), payload)
+            const kpiForAudit: KPI = { ...payload, id: ref.id }
+
+            const quarters: Array<[number, 'q1' | 'q2' | 'q3' | 'q4']> = [[0, 'q1'], [1, 'q2'], [2, 'q3'], [3, 'q4']]
+            for (const [offset, key] of quarters) {
+                const value = decision[key]
+                if (!value) continue
+                const periodDate = input.quarterStartDate.add(offset * 3, 'month')
+                const periodKey = buildPeriodKey('quarterly', periodDate)
+                const targetRef = await addDoc(collection(db, 'kpiTargets'), {
+                    kpiId: ref.id,
+                    kpiLabel: decision.kpiName,
+                    department: input.departmentName,
+                    periodType: 'quarterly' as TargetPeriodType,
+                    periodKey,
+                    periodStartAt: parsePeriodKeyToDayjs('quarterly', periodKey).toDate(),
+                    target: value,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                    createdBy: user?.uid || 'system',
+                    updatedBy: user?.uid || 'system'
+                })
+                await writeTargetAuditLog({
+                    action: 'created',
+                    kpi: kpiForAudit,
+                    targetDocId: targetRef.id,
+                    periodType: 'quarterly',
+                    periodKey,
+                    oldTarget: null,
+                    newTarget: value,
+                    changeReason: `Imported from KPI letter${input.fyLabel ? ` (${input.fyLabel})` : ''}`
+                })
+            }
         }
+
+        await fetchKPIs()
     }
 
     const openTargetsModal = async (kpi: KPI) => {
@@ -2289,12 +2266,14 @@ const KPIManager: React.FC = () => {
                         ? ['appliesToAllPrograms']
                         : ['department', 'kpiLabel', 'unit', 'appliesToAllPrograms'],
             1: selectedSourceType === 'interventions' ? ['sourceType', 'interventionIds'] : ['sourceType'],
-            2: selectedDisplayKpiType === 'total_number'
+            2: [],
+            3: selectedDisplayKpiType === 'total_number'
                 ? resolvedSourceType === 'metrics'
                     ? ['displayKpiType', 'field']
                     : ['displayKpiType', 'countMode']
                 : ['displayKpiType'],
-            3: ['periodType', 'periodKey', 'target']
+            4: ['periodType', 'periodKey', 'target'],
+            5: []
         }
     }, [basicStage, selectedSourceType, resolvedSourceType, canControlContributors, belongsToMe, selectedDisplayKpiType])
 
@@ -2306,7 +2285,7 @@ const KPIManager: React.FC = () => {
         await form.validateFields(stepFieldMap[s] || [])
         const values = form.getFieldsValue(true)
 
-        if (s === 2) {
+        if (s === 3) {
             validateConfig(values)
         }
     }
@@ -2326,7 +2305,12 @@ const KPIManager: React.FC = () => {
                 setBasicStage('identity')
                 return
             }
-            setStep(s => Math.min(s + 1, 3))
+            if (returnToReview) {
+                setReturnToReview(false)
+                setStep(5)
+                return
+            }
+            setStep(s => Math.min(s + 1, 5))
         } catch (e: any) {
             if (e?.message) message.error(e.message)
         }
@@ -2350,9 +2334,13 @@ const KPIManager: React.FC = () => {
         }
         if (step === 0 && basicStage === 'scope') {
             if (!canControlContributors) {
+                // Same as the step-0 catch-all below: only reachable when
+                // creating a new KPI, which only ever starts from the Add
+                // KPI flow's "Configure manually" card.
                 setModalVisible(false)
                 form.resetFields()
                 resetWizard()
+                setAddKpiFlowVisible(true)
                 return
             }
             setBasicStage(belongsToMe ? 'ownership' : 'sharedMode')
@@ -2363,11 +2351,16 @@ const KPIManager: React.FC = () => {
             return
         }
         if (step === 0) {
+            // The manual wizard is only ever opened (for a new KPI) from the
+            // Add KPI flow's "Configure manually" card - stepping back off
+            // its first screen should return there, not just close outright.
             setModalVisible(false)
             form.resetFields()
             resetWizard()
+            setAddKpiFlowVisible(true)
             return
         }
+        setReturnToReview(false)
         setStep(s => Math.max(s - 1, 0))
     }
 
@@ -2389,7 +2382,7 @@ const KPIManager: React.FC = () => {
 
         // Targets have their own audit-aware workspace. Keeping them out of the
         // definition form prevents an ordinary KPI update from changing history.
-        if (nextStep === 3) {
+        if (nextStep === 4) {
             setEditingStepPicker(false)
             setModalVisible(false)
             void openTargetsModal(editingKPI)
@@ -2400,9 +2393,104 @@ const KPIManager: React.FC = () => {
         if (nextStep === 0) {
             setBasicStage(canControlContributors ? 'ownership' : 'scope')
         }
+        if (nextStep === 2) {
+            setHasConditions((form.getFieldValue('filters') || []).length > 0)
+        }
         setEditingStepPicker(false)
     }
 
+    const goToReviewSection = (targetStep: number) => {
+        setStep(targetStep)
+        setReturnToReview(true)
+        if (targetStep === 0) {
+            // Land on the last sub-stage (title/unit) rather than the start of the
+            // ownership flow - "Back" still reaches the earlier sub-stages from there.
+            setBasicStage('identity')
+        }
+        if (targetStep === 2) {
+            setHasConditions((form.getFieldValue('filters') || []).length > 0)
+        }
+    }
+
+    const reviewFieldLabel = (key?: string | null) => {
+        if (!key) return '-'
+        const pool = resolvedSourceType === 'metrics' ? metricFieldOptions : numericFields
+        return pool.find(f => f.key === key)?.label || key
+    }
+
+    const reviewModeLabel = (mode: 'count_records' | 'sum_field' | 'avg_field' | undefined, fieldKey: string | undefined) => {
+        if (mode === 'sum_field') return `Sum of ${reviewFieldLabel(fieldKey)}`
+        if (mode === 'avg_field') return `Average of ${reviewFieldLabel(fieldKey)}`
+        return 'Count of records'
+    }
+
+    const reviewCalculationSummary = () => {
+        if (!selectedDisplayKpiType) return 'Not set'
+        if (selectedDisplayKpiType === 'total_number') {
+            return resolvedSourceType === 'metrics'
+                ? `Counting ${reviewFieldLabel(selectedField)}`
+                : selectedCountMode === 'distinct' ? 'Counted once per SME' : 'Every matching record counted'
+        }
+        if (selectedDisplayKpiType === 'total_amount' || selectedDisplayKpiType === 'average') {
+            return `${DISPLAY_TYPE_LABELS[selectedDisplayKpiType]} of ${reviewFieldLabel(selectedField)}`
+        }
+        return `${reviewModeLabel(numeratorMode, selectedNumeratorField)} ÷ ${reviewModeLabel(denominatorMode, selectedDenominatorField)}`
+    }
+
+    const reviewSections = useMemo(() => {
+        const scopeLabel = appliesToAllPrograms ? 'All Programs' : 'Current Program'
+        const ownershipSummary = belongsToMe === false
+            ? `Shared KPI - ${sharedKpiMode === 'collaborative' ? 'Collaborative outcome' : 'Allocated contribution'}`
+            : `Department KPI${selectedDepartment ? ` - ${selectedDepartment}` : ''}`
+        const periodLabel = dayjs.isDayjs(selectedPeriodKey)
+            ? selectedPeriodKey.format(selectedPeriodType === 'quarterly' ? '[Q]Q YYYY' : 'MMMM YYYY')
+            : '-'
+
+        return [
+            {
+                step: 0,
+                title: 'Ownership, scope & identity',
+                icon: <ProjectOutlined style={{ color: '#1677ff' }} />,
+                background: 'rgba(22,119,255,.12)',
+                summary: `${kpiLabel || 'Untitled KPI'} • ${getUnitLabel(selectedUnit)} • ${scopeLabel} • ${ownershipSummary}`
+            },
+            {
+                step: 1,
+                title: 'What is measured',
+                icon: <FilterOutlined style={{ color: '#52c41a' }} />,
+                background: 'rgba(82,196,26,.12)',
+                summary: resolvedSourceType
+                    ? `${SOURCE_CONFIGS[resolvedSourceType].label}${resolvedSourceType === 'interventions' ? ` • ${selectedInterventionIds.length} intervention${selectedInterventionIds.length === 1 ? '' : 's'}` : ''}`
+                    : 'Not set'
+            },
+            {
+                step: 2,
+                title: 'Conditions',
+                icon: <FilterOutlined style={{ color: '#13c2c2' }} />,
+                background: 'rgba(19,194,194,.12)',
+                summary: prettyFilters(filters, resolvedSourceType)
+            },
+            {
+                step: 3,
+                title: 'Calculation',
+                icon: <BarChartOutlined style={{ color: '#722ed1' }} />,
+                background: 'rgba(114,46,209,.12)',
+                summary: `${selectedDisplayKpiType ? DISPLAY_TYPE_LABELS[selectedDisplayKpiType] : 'Not set'} • ${reviewCalculationSummary()}`
+            },
+            {
+                step: 4,
+                title: 'Target',
+                icon: <CalendarOutlined style={{ color: '#fa8c16' }} />,
+                background: 'rgba(250,140,22,.12)',
+                summary: `${selectedPeriodType === 'quarterly' ? 'Quarterly' : 'Monthly'} • ${periodLabel} • Target ${selectedTarget ?? '-'}`
+            }
+        ]
+    }, [
+        kpiLabel, selectedUnit, appliesToAllPrograms, belongsToMe, sharedKpiMode, selectedDepartment,
+        resolvedSourceType, selectedInterventionIds, filters, selectedDisplayKpiType, selectedCountMode,
+        selectedField, numeratorMode, denominatorMode, selectedNumeratorField, selectedDenominatorField,
+        selectedPeriodType, selectedPeriodKey, selectedTarget
+    ])
 
 
     const columns = useMemo<ColumnsType<KPI>>(
@@ -2715,7 +2803,7 @@ const KPIManager: React.FC = () => {
                         />
                     </Col>
                     <Col xs={24} lg={6}>
-                        <Button shape='round' block type='primary' icon={<PlusOutlined />} onClick={() => setAddKpiChooserVisible(true)}>
+                        <Button shape='round' block type='primary' icon={<PlusOutlined />} onClick={() => setAddKpiFlowVisible(true)}>
                             Add KPI
                         </Button>
                     </Col>
@@ -2735,43 +2823,14 @@ const KPIManager: React.FC = () => {
                                     </Space>
                                 ) : (
                                     <Space direction='vertical' size={10} style={{ width: '100%' }}>
-                                        {pagedUnifiedItems.map(item => {
-                                            const isSelected = selectedItem?.kind === item.kind && selectedItem?.id === item.id
-                                            if (item.kind === 'agreement') {
-                                                return (
-                                                    <Card
-                                                        key={`agreement-${item.id}`}
-                                                        size='small'
-                                                        hoverable
-                                                        onClick={() => setSelectedAgreementId(item.id)}
-                                                        style={{
-                                                            borderColor: isSelected ? token.colorPrimary : undefined,
-                                                            background: isSelected
-                                                                ? token.colorPrimaryBg
-                                                                : undefined,
-                                                            boxShadow: isSelected ? token.boxShadowSecondary : undefined,
-                                                            overflow: 'hidden'
-                                                        }}
-                                                    >
-                                                        <Text strong ellipsis={{ tooltip: item.label }} style={{ display: 'block', fontSize: 15 }}>
-                                                            {item.label}
-                                                        </Text>
-                                                        <Tag color='purple' style={{ marginTop: 8 }}>
-                                                            Funder Agreement
-                                                        </Tag>
-                                                    </Card>
-                                                )
-                                            }
-                                            const kpi = item.kpi
+                                        {pagedKpis.map(kpi => {
+                                            const isSelected = selectedKpi?.id === kpi.id
                                             return (
                                                 <Card
                                                     key={kpi.id}
                                                     size='small'
                                                     hoverable
-                                                    onClick={() => {
-                                                        setSelectedKpiId(kpi.id)
-                                                        setSelectedAgreementId(null)
-                                                    }}
+                                                    onClick={() => setSelectedKpiId(kpi.id)}
                                                     style={{
                                                         borderColor: isSelected ? token.colorPrimary : undefined,
                                                         background: isSelected
@@ -2784,20 +2843,23 @@ const KPIManager: React.FC = () => {
                                                     <Text strong ellipsis={{ tooltip: kpi.kpiLabel }} style={{ display: 'block', fontSize: 15 }}>
                                                         {kpi.kpiLabel}
                                                     </Text>
-                                                    <Tag color={kpi.appliesToAllPrograms ? 'volcano' : 'blue'} style={{ marginTop: 8 }}>
-                                                        {kpi.appliesToAllPrograms ? 'All Programs' : 'Active Program'}
-                                                    </Tag>
+                                                    <Space size={4} wrap style={{ marginTop: 8 }}>
+                                                        <Tag color={kpi.appliesToAllPrograms ? 'volcano' : 'blue'}>
+                                                            {kpi.appliesToAllPrograms ? 'All Programs' : 'Active Program'}
+                                                        </Tag>
+                                                        {kpi.trackingMode === 'manual' && <Tag color='orange'>Manual</Tag>}
+                                                    </Space>
                                                 </Card>
                                             )
                                         })}
-                                        {!pagedUnifiedItems.length && <Empty description='No KPIs yet.' />}
+                                        {!pagedKpis.length && <Empty description='No KPIs yet.' />}
                                     </Space>
                                 )}
                             </div>
 
                             <Pagination
                                 current={kpiListPage}
-                                total={unifiedItems.length}
+                                total={orderedKpis.length}
                                 pageSize={kpiListPageSize}
                                 showSizeChanger={false}
                                 hideOnSinglePage
@@ -2822,7 +2884,7 @@ const KPIManager: React.FC = () => {
                                             ))}
                                         </Row>
                                     </Space>
-                                ) : selectedItem?.kind === 'computed' && selectedKpi ? (
+                                ) : selectedKpi ? (
                                     <Space direction='vertical' size={14} style={{ width: '100%' }}>
                                         <div
                                             style={{
@@ -2840,6 +2902,9 @@ const KPIManager: React.FC = () => {
                                                         icon={<AimOutlined style={{ color: token.colorPrimary, fontSize: 16 }} />}
                                                     />
                                                     <div style={{ minWidth: 0 }}>
+                                                        <Text strong ellipsis={{ tooltip: selectedKpi.kpiLabel }} style={{ display: 'block', fontSize: 15 }}>
+                                                            {selectedKpi.kpiLabel}
+                                                        </Text>
                                                         <Text type='secondary' ellipsis={{ tooltip: selectedKpi.description }} style={{ display: 'block', fontSize: 12 }}>
                                                             {selectedKpi.description || 'No notes have been added for this KPI.'}
                                                         </Text>
@@ -2891,63 +2956,11 @@ const KPIManager: React.FC = () => {
                                             </div>
                                         )}
                                     </Space>
-                                ) : selectedItem?.kind === 'agreement' ? (
-                                    <Space direction='vertical' size={14} style={{ width: '100%' }}>
-                                        <div
-                                            style={{
-                                                padding: '9px 12px',
-                                                borderRadius: 10,
-                                                background: token.colorPrimaryBg,
-                                                border: `1px solid ${token.colorPrimaryBorder}`
-                                            }}
-                                        >
-                                            <Space align='center' size={10} style={{ width: '100%', justifyContent: 'space-between' }}>
-                                                <Space align='center' size={10} style={{ minWidth: 0 }}>
-                                                    <MotionCard.IconChip
-                                                        size={34}
-                                                        bg={token.colorPrimaryBgHover}
-                                                        icon={<FileProtectOutlined style={{ color: token.colorPrimary, fontSize: 16 }} />}
-                                                    />
-                                                    <div style={{ minWidth: 0 }}>
-                                                        <Text type='secondary' ellipsis={{ tooltip: selectedItem.agreement.serviceName }} style={{ display: 'block', fontSize: 12 }}>
-                                                            {selectedItem.agreement.serviceName || 'Funder-agreed KPI set'}
-                                                        </Text>
-                                                    </div>
-                                                </Space>
-                                                <Tag color='purple' style={{ marginInlineEnd: 0 }}>
-                                                    Funder Agreement
-                                                </Tag>
-                                            </Space>
-                                        </div>
-
-                                        <Row gutter={[10, 10]}>
-                                            {[
-                                                { label: 'Department', value: selectedItem.agreement.departmentName || 'Not set', icon: <ApartmentOutlined />, color: '#722ed1', background: 'rgba(114,46,209,.10)' },
-                                                { label: 'Financial year', value: selectedItem.agreement.fyLabel || 'Not set', icon: <CalendarOutlined />, color: '#fa8c16', background: 'rgba(250,140,22,.10)' },
-                                                { label: 'Numeric targets', value: selectedItem.agreement.numericTargets?.length || 0, icon: <AimOutlined />, color: '#1677ff', background: 'rgba(22,119,255,.10)' },
-                                                { label: 'Deliverables', value: selectedItem.agreement.deliverables?.length || 0, icon: <BarChartOutlined />, color: '#1677ff', background: 'rgba(22,119,255,.10)' },
-                                                { label: 'Monthly capacity', value: selectedItem.agreement.monthlyCapacity ?? 'Not set', icon: <TeamOutlined />, color: '#13a8a8', background: 'rgba(19,168,168,.10)' },
-                                                { label: 'Sign-off', value: isAgreementFullySigned(selectedItem.agreement) ? 'Fully signed' : 'Pending', icon: <CheckCircleOutlined />, color: isAgreementFullySigned(selectedItem.agreement) ? '#52c41a' : '#fa8c16', background: isAgreementFullySigned(selectedItem.agreement) ? 'rgba(82,196,26,.10)' : 'rgba(250,140,22,.10)' }
-                                            ].map(item => (
-                                                <Col xs={24} sm={12} xl={8} key={item.label}>
-                                                    <Card size='small' style={{ height: '100%', borderRadius: 10, background: token.colorFillAlter }} bodyStyle={{ padding: '10px 12px' }}>
-                                                        <Space size={9} align='center'>
-                                                            <MotionCard.IconChip size={30} bg={item.background} icon={React.cloneElement(item.icon, { style: { color: item.color } })} />
-                                                            <div>
-                                                                <Text type='secondary' style={{ display: 'block', fontSize: 11, lineHeight: 1.2 }}>{item.label}</Text>
-                                                                <Text strong ellipsis={{ tooltip: String(item.value) }} style={{ display: 'block', fontSize: 13, marginTop: 2 }}>{item.value}</Text>
-                                                            </div>
-                                                        </Space>
-                                                    </Card>
-                                                </Col>
-                                            ))}
-                                        </Row>
-                                    </Space>
                                 ) : (
                                     <Empty description={loading ? 'Loading KPIs...' : 'Select a KPI to view its details.'} />
                                 )}
                             </div>
-                            {selectedItem?.kind === 'computed' && selectedKpi && (
+                            {selectedKpi && (
                                 <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 12 }}>
                                     <Row gutter={[10, 10]}>
                                         <Col xs={24} sm={8}>
@@ -2971,53 +2984,6 @@ const KPIManager: React.FC = () => {
                                             >
                                                 <Button shape='round' block danger icon={<DeleteOutlined />} loading={deletingId === selectedKpi.id}>
                                                     Delete KPI
-                                                </Button>
-                                            </Popconfirm>
-                                        </Col>
-                                    </Row>
-                                </div>
-                            )}
-                            {selectedItem?.kind === 'agreement' && (
-                                <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 12 }}>
-                                    <Row gutter={[10, 10]}>
-                                        <Col xs={24} sm={8}>
-                                            <Button
-                                                shape='round'
-                                                block
-                                                icon={<EyeOutlined />}
-                                                onClick={() => {
-                                                    setAgreementDetailTarget(selectedItem.agreement)
-                                                    setAgreementDetailVisible(true)
-                                                }}
-                                            >
-                                                View Full Agreement
-                                            </Button>
-                                        </Col>
-                                        <Col xs={24} sm={8}>
-                                            <Button
-                                                shape='round'
-                                                block
-                                                type='primary'
-                                                icon={<EditOutlined />}
-                                                onClick={() => {
-                                                    setEditingAgreement(selectedItem.agreement)
-                                                    setAgreementModalVisible(true)
-                                                }}
-                                            >
-                                                Edit Agreement
-                                            </Button>
-                                        </Col>
-                                        <Col xs={24} sm={8}>
-                                            <Popconfirm
-                                                title='Delete KPI Agreement'
-                                                description='This removes the agreement and its targets.'
-                                                okText='Delete'
-                                                okButtonProps={{ danger: true }}
-                                                cancelText='Cancel'
-                                                onConfirm={() => handleDeleteAgreement(selectedItem.agreement)}
-                                            >
-                                                <Button shape='round' block danger icon={<DeleteOutlined />}>
-                                                    Delete Agreement
                                                 </Button>
                                             </Popconfirm>
                                         </Col>
@@ -3048,13 +3014,13 @@ const KPIManager: React.FC = () => {
                             <Button block shape='round' type='primary' onClick={onSave} loading={saving} icon={<SaveOutlined />}>
                                 Update KPI
                             </Button>
-                        ) : step < 3 ? (
+                        ) : step < 5 ? (
                             <Button block shape='round' type='primary' onClick={onNext} disabled={saving} icon={<RightOutlined />}>
                                 Next
                             </Button>
                         ) : (
                             <Button block shape='round' type='primary' onClick={onSave} loading={saving} icon={<SaveOutlined />}>
-                                {editingKPI ? 'Update KPI' : 'Add KPI'}
+                                Add KPI
                             </Button>
                         )}
                     </div>
@@ -3064,25 +3030,24 @@ const KPIManager: React.FC = () => {
                 confirmLoading={saving}
             >
                 <Form layout='vertical' form={form} onFinish={handleSubmit}>
+                <div style={{ maxWidth: 700, margin: '0 auto', width: '100%' }}>
                     {editingKPI && editingStepPicker ? (
-                        <div style={{ maxWidth: 760, margin: '0 auto', padding: '8px 0 16px' }}>
-                            <Text type='secondary' style={{ display: 'block', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
-                                Edit KPI
-                            </Text>
+                        <div style={{ padding: '8px 0 16px' }}>
                             <Text strong style={{ display: 'block', textAlign: 'center', fontSize: 24, margin: '8px 0 24px' }}>
                                 What would you like to update?
                             </Text>
                             <Row gutter={[12, 12]}>
                                 {[
                                     { step: 0, title: 'Ownership, scope & identity', detail: 'Ownership, program scope, title, and unit.', icon: <ProjectOutlined style={{ color: '#1677ff' }} />, background: 'rgba(22,119,255,.12)' },
-                                    { step: 1, title: 'What is measured', detail: 'Source, interventions, and conditions.', icon: <FilterOutlined style={{ color: '#52c41a' }} />, background: 'rgba(82,196,26,.12)' },
-                                    { step: 2, title: 'Calculation', detail: 'Counting, value, or percentage setup.', icon: <BarChartOutlined style={{ color: '#722ed1' }} />, background: 'rgba(114,46,209,.12)' },
-                                    { step: 3, title: 'Manage targets', detail: 'Plan future targets or revise a committed one.', icon: <CalendarOutlined style={{ color: '#fa8c16' }} />, background: 'rgba(250,140,22,.12)' }
+                                    { step: 1, title: 'What is measured', detail: 'Source and interventions.', icon: <FilterOutlined style={{ color: '#52c41a' }} />, background: 'rgba(82,196,26,.12)' },
+                                    { step: 2, title: 'Conditions', detail: 'Narrow this KPI to a subset of records.', icon: <FilterOutlined style={{ color: '#13c2c2' }} />, background: 'rgba(19,194,194,.12)' },
+                                    { step: 3, title: 'Calculation', detail: 'Counting, value, or percentage setup.', icon: <BarChartOutlined style={{ color: '#722ed1' }} />, background: 'rgba(114,46,209,.12)' },
+                                    { step: 4, title: 'Manage targets', detail: 'Plan future targets or revise a committed one.', icon: <CalendarOutlined style={{ color: '#fa8c16' }} />, background: 'rgba(250,140,22,.12)' }
                                 ].map(option => {
                                     const choiceKey = `edit-step-${option.step}`
                                     const hovered = hoveredChoice === choiceKey
                                     return (
-                                        <Col xs={24} sm={12} key={option.step}>
+                                        <Col xs={24} sm={option.step === 4 ? 24 : 12} key={option.step}>
                                             <Card
                                                 hoverable role='button' tabIndex={0}
                                                 onClick={() => selectEditSection(option.step)}
@@ -3228,7 +3193,7 @@ const KPIManager: React.FC = () => {
 
                                     <div style={{ display: basicStage === 'scope' ? 'block' : 'none', textAlign: 'center', paddingTop: 8 }}>
                                         <Text type='secondary' style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
-                                            Step 1 of 4
+                                            Step 1 of 6
                                         </Text>
                                         <Text strong style={{ display: 'block', fontSize: 24, marginTop: 8, minHeight: 32 }}>
                                             <KpiTypingPrompt text='Should this KPI apply to every program?' />
@@ -3413,7 +3378,7 @@ const KPIManager: React.FC = () => {
                                 <Form.Item name='sourceType' hidden rules={[{ required: true, message: 'Choose what you are measuring' }]}><Input /></Form.Item>
                                 <div style={{ width: '100%' }}>
                                     <Text type='secondary' style={{ display: 'block', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
-                                        Step 2 of 4
+                                        Step 2 of 6
                                     </Text>
                                     <Text strong style={{ display: 'block', textAlign: 'center', fontSize: 24, margin: '8px 0 24px', minHeight: 32 }}>
                                         <KpiTypingPrompt text='What are you measuring?' />
@@ -3422,7 +3387,7 @@ const KPIManager: React.FC = () => {
                                         {[
                                             { value: 'applications' as SourceType, title: 'Applications', detail: 'Applicant and programme records.', icon: <FileTextOutlined style={{ color: '#1677ff', fontSize: 20 }} />, background: 'rgba(22,119,255,.12)' },
                                             { value: 'interventions' as SourceType, title: 'Interventions', detail: 'Delivery and support activity.', icon: <AimOutlined style={{ color: '#52c41a', fontSize: 20 }} />, background: 'rgba(82,196,26,.12)' },
-                                            { value: 'metrics' as SourceType, title: 'Business Metrics', detail: 'Revenue, jobs, and employee data.', icon: <LineChartOutlined style={{ color: '#722ed1', fontSize: 20 }} />, background: 'rgba(114,46,209,.12)' }
+                                            { value: 'metrics' as SourceType, title: 'Business Metrics', detail: 'Revenue and jobs data.', icon: <LineChartOutlined style={{ color: '#722ed1', fontSize: 20 }} />, background: 'rgba(114,46,209,.12)' }
                                         ].map(option => {
                                             const selected = selectedSourceType === option.value
                                             const choiceKey = `source-${option.value}`
@@ -3555,43 +3520,177 @@ const KPIManager: React.FC = () => {
                                     )
                                 )}
 
-                                {resolvedSourceType && (
-                                    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }} style={{ marginTop: 28 }}>
-                                        <MotionCard
-                                            title={
-                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%' }}>
-                                                    <Space size={10}>
-                                                        <FilterOutlined style={{ color: token.colorPrimary }} />
-                                                        <span>Conditions</span>
-                                                    </Space>
-                                                    <AddConditionButton listName='filters' />
-                                                </div>
-                                            }
-                                            style={{ background: token.colorFillAlter }}
-                                        >
-                                            <Text type='secondary' style={{ display: 'block', marginBottom: 14 }}>
-                                                Add only the conditions that define this KPI. Leave the list empty to include all matching records.
-                                            </Text>
-                                            <FilterListSection
-                                                title='Condition list'
-                                                hideHeader
-                                                listName='filters'
-                                                st={resolvedSourceType}
-                                                form={form}
-                                                renderValueInput={renderValueInput}
-                                            />
-                                        </MotionCard>
-                                    </motion.div>
-                                )}
                             </StepPanel>
 
                             <StepPanel visible={step === 2}>
+                                <div style={{ width: '100%' }}>
+                                    <Text type='secondary' style={{ display: 'block', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
+                                        Step 3 of 6
+                                    </Text>
+                                    <Text strong style={{ display: 'block', textAlign: 'center', fontSize: 24, margin: '8px 0 24px', minHeight: 32 }}>
+                                        <KpiTypingPrompt text='Any conditions to narrow this down?' />
+                                    </Text>
+
+                                    <Alert
+                                        type='info'
+                                        showIcon
+                                        style={{ marginBottom: 16 }}
+                                        message="Conditions scope this KPI to a subset of records - for example, only female participants, or only one province. Leave it open to include everything that matches."
+                                    />
+
+                                    <Row gutter={[12, 12]}>
+                                        {[
+                                            { value: false, title: 'No, include everything', detail: 'Every matching record counts, with no extra narrowing.', icon: <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 20 }} />, background: 'rgba(82,196,26,.12)' },
+                                            { value: true, title: 'Yes, add conditions', detail: 'Narrow this KPI down to a specific subset of records.', icon: <FilterOutlined style={{ color: '#1677ff', fontSize: 20 }} />, background: 'rgba(22,119,255,.12)' }
+                                        ].map(option => {
+                                            const selected = (hasConditions ?? filters.length > 0) === option.value
+                                            const choiceKey = `has-conditions-${option.value}`
+                                            const hovered = hoveredChoice === choiceKey
+                                            const selectOption = () => {
+                                                setHasConditions(option.value)
+                                                if (!option.value) {
+                                                    form.setFieldsValue({ filters: [] })
+                                                    setDraftConditionField(undefined)
+                                                    setDraftConditionOp('==')
+                                                }
+                                            }
+                                            return (
+                                                <Col xs={24} sm={12} key={String(option.value)}>
+                                                    <Card
+                                                        hoverable role='button' tabIndex={0}
+                                                        onClick={selectOption}
+                                                        onKeyDown={event => {
+                                                            if (event.key !== 'Enter' && event.key !== ' ') return
+                                                            event.preventDefault()
+                                                            selectOption()
+                                                        }}
+                                                        onMouseEnter={() => setHoveredChoice(choiceKey)}
+                                                        onMouseLeave={() => setHoveredChoice(null)}
+                                                        style={{
+                                                            cursor: 'pointer',
+                                                            border: `2px solid ${selected ? token.colorPrimary : hovered ? token.colorPrimaryBorderHover : token.colorBorder}`,
+                                                            background: selected ? token.colorPrimaryBg : hovered ? token.colorFillAlter : token.colorBgContainer,
+                                                            boxShadow: selected || hovered ? token.boxShadowSecondary : token.boxShadowTertiary,
+                                                            transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease'
+                                                        }}
+                                                    >
+                                                        <Space align='start' size={12}>
+                                                            <MotionCard.IconChip size={38} bg={option.background} icon={option.icon} />
+                                                            <div>
+                                                                <Text strong style={{ display: 'block' }}>{option.title}</Text>
+                                                                <Text type='secondary'>{option.detail}</Text>
+                                                            </div>
+                                                        </Space>
+                                                    </Card>
+                                                </Col>
+                                            )
+                                        })}
+                                    </Row>
+
+                                    {(hasConditions ?? filters.length > 0) && (
+                                        <div style={{ marginTop: 24 }}>
+                                            <Row gutter={[8, 8]} align='middle' style={{ marginBottom: 16 }}>
+                                                <Col xs={24} md={8}>
+                                                    <Select
+                                                        placeholder='Condition'
+                                                        style={{ width: '100%' }}
+                                                        value={draftConditionField}
+                                                        onChange={value => setDraftConditionField(value)}
+                                                    >
+                                                        {(resolvedSourceType ? SOURCE_CONFIGS[resolvedSourceType].fields.filter(f => f.isCondition) : []).map(f => (
+                                                            <Option key={f.key} value={f.key}>{f.label}</Option>
+                                                        ))}
+                                                    </Select>
+                                                </Col>
+                                                <Col xs={24} md={5}>
+                                                    <Select
+                                                        style={{ width: '100%' }}
+                                                        value={draftConditionOp}
+                                                        onChange={value => setDraftConditionOp(value)}
+                                                    >
+                                                        <Option value='=='>is</Option>
+                                                        <Option value='!='>is not</Option>
+                                                        <Option value='in'>is one of</Option>
+                                                    </Select>
+                                                </Col>
+                                                <Col xs={24} md={7}>
+                                                    <Form.Item name='_conditionDraftValue' noStyle>
+                                                        {draftConditionField
+                                                            ? renderValueInput(resolvedSourceType, draftConditionField, undefined, 'filters', draftConditionOp)
+                                                            : <Input disabled placeholder='Choose value' />}
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col xs={24} md={4}>
+                                                    <Button
+                                                        block
+                                                        shape='round'
+                                                        type='dashed'
+                                                        icon={<PlusOutlined />}
+                                                        onClick={() => {
+                                                            const draftValue = form.getFieldValue('_conditionDraftValue')
+                                                            const isEmpty = draftValue === undefined || draftValue === null ||
+                                                                (Array.isArray(draftValue) ? draftValue.length === 0 : String(draftValue).trim() === '')
+                                                            if (!draftConditionField || isEmpty) {
+                                                                message.warning('Choose a condition and a value first')
+                                                                return
+                                                            }
+                                                            form.setFieldsValue({
+                                                                filters: [...filters, { field: draftConditionField, op: draftConditionOp, value: draftValue }],
+                                                                _conditionDraftValue: undefined
+                                                            })
+                                                            setDraftConditionField(undefined)
+                                                            setDraftConditionOp('==')
+                                                        }}
+                                                    >
+                                                        Add
+                                                    </Button>
+                                                </Col>
+                                            </Row>
+
+                                            {filters.length > 0 && (
+                                                <Space direction='vertical' size={8} style={{ width: '100%' }}>
+                                                    {filters.map((condition: KpiFilter, index: number) => {
+                                                        const fieldDef = resolvedSourceType
+                                                            ? SOURCE_CONFIGS[resolvedSourceType].fields.find(f => f.key === condition.field)
+                                                            : undefined
+                                                        const opLabel = condition.op === '==' ? 'is' : condition.op === '!=' ? 'is not' : 'is one of'
+                                                        const valueLabel = Array.isArray(condition.value) ? condition.value.join(', ') : String(condition.value ?? '')
+                                                        return (
+                                                            <Card key={`${condition.field}-${index}`} size='small' style={{ background: token.colorFillAlter, borderColor: token.colorBorderSecondary }} bodyStyle={{ padding: '8px 12px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                                                    <Text>
+                                                                        <Text strong>{fieldDef?.label || condition.field}</Text>{' '}
+                                                                        <Text type='secondary'>{opLabel}</Text>{' '}
+                                                                        <Text strong>{valueLabel}</Text>
+                                                                    </Text>
+                                                                    <Tooltip title='Remove condition'>
+                                                                        <Button
+                                                                            shape='circle'
+                                                                            danger
+                                                                            type='text'
+                                                                            size='small'
+                                                                            icon={<DeleteOutlined />}
+                                                                            onClick={() => form.setFieldsValue({ filters: filters.filter((_: KpiFilter, i: number) => i !== index) })}
+                                                                        />
+                                                                    </Tooltip>
+                                                                </div>
+                                                            </Card>
+                                                        )
+                                                    })}
+                                                </Space>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </StepPanel>
+
+                            <StepPanel visible={step === 3}>
                                 <Form.Item name='displayKpiType' hidden rules={[{ required: true, message: 'Select a KPI type' }]}>
                                     <Input />
                                 </Form.Item>
 
                                 <Text type='secondary' style={{ display: 'block', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
-                                    Step 3 of 4
+                                    Step 4 of 6
                                 </Text>
                                 <Text strong style={{ display: 'block', textAlign: 'center', fontSize: 24, margin: '8px 0 24px', minHeight: 32 }}>
                                     <KpiTypingPrompt text='How should this KPI be calculated?' />
@@ -3835,11 +3934,11 @@ const KPIManager: React.FC = () => {
                                 )}
                             </StepPanel>
 
-                            <StepPanel visible={step === 3}>
+                            <StepPanel visible={step === 4}>
                                 <Form.Item name='periodType' hidden rules={[{ required: true, message: 'Choose a target period type' }]}><Input /></Form.Item>
-                                <div style={{ maxWidth: 700, margin: '0 auto' }}>
+                                <div style={{ width: '100%' }}>
                                     <Text type='secondary' style={{ display: 'block', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
-                                        Final step
+                                        Step 5 of 6
                                     </Text>
                                     <Text strong style={{ display: 'block', textAlign: 'center', fontSize: 24, margin: '8px 0 24px', minHeight: 32 }}>
                                         <KpiTypingPrompt text='When should this target be measured?' />
@@ -3914,8 +4013,56 @@ const KPIManager: React.FC = () => {
                                     )}
                                 </div>
                             </StepPanel>
+
+                            <StepPanel visible={step === 5}>
+                                <div style={{ width: '100%' }}>
+                                    <Text type='secondary' style={{ display: 'block', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
+                                        Step 6 of 6
+                                    </Text>
+                                    <Text strong style={{ display: 'block', textAlign: 'center', fontSize: 24, margin: '8px 0 8px', minHeight: 32 }}>
+                                        <KpiTypingPrompt text='Review before adding' />
+                                    </Text>
+                                    <Text type='secondary' style={{ display: 'block', textAlign: 'center', marginBottom: 20 }}>
+                                        Select any section to jump back and change it.
+                                    </Text>
+                                    <Space direction='vertical' size={10} style={{ width: '100%' }}>
+                                        {reviewSections.map(section => {
+                                            const choiceKey = `review-${section.step}`
+                                            const hovered = hoveredChoice === choiceKey
+                                            return (
+                                                <Card
+                                                    key={section.step}
+                                                    hoverable role='button' tabIndex={0}
+                                                    onClick={() => goToReviewSection(section.step)}
+                                                    onKeyDown={event => {
+                                                        if (event.key !== 'Enter' && event.key !== ' ') return
+                                                        event.preventDefault()
+                                                        goToReviewSection(section.step)
+                                                    }}
+                                                    onMouseEnter={() => setHoveredChoice(choiceKey)}
+                                                    onMouseLeave={() => setHoveredChoice(null)}
+                                                    style={{ cursor: 'pointer', borderColor: hovered ? token.colorPrimaryBorderHover : token.colorBorder, background: hovered ? token.colorFillAlter : token.colorBgContainer, transition: 'all .2s ease' }}
+                                                    bodyStyle={{ padding: 14 }}
+                                                >
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                                        <Space align='start' size={12} style={{ minWidth: 0 }}>
+                                                            <MotionCard.IconChip size={38} bg={section.background} icon={section.icon} />
+                                                            <div style={{ minWidth: 0 }}>
+                                                                <Text strong style={{ display: 'block' }}>{section.title}</Text>
+                                                                <Text type='secondary' ellipsis={{ tooltip: section.summary }} style={{ display: 'block' }}>{section.summary}</Text>
+                                                            </div>
+                                                        </Space>
+                                                        <EditOutlined style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
+                                                    </div>
+                                                </Card>
+                                            )
+                                        })}
+                                    </Space>
+                                </div>
+                            </StepPanel>
                         </>
                     )}
+                </div>
                 </Form>
             </Modal>
 
@@ -4172,77 +4319,17 @@ const KPIManager: React.FC = () => {
                 )}
             </Modal>
 
-            <Modal
-                title='Add KPI'
-                open={addKpiChooserVisible}
-                onCancel={() => setAddKpiChooserVisible(false)}
-                footer={null}
-                centered
-                width={640}
-            >
-                <Text type='secondary' style={{ display: 'block', marginBottom: 16 }}>
-                    Choose how you'd like to define this KPI.
-                </Text>
-                <Row gutter={[12, 12]}>
-                    <Col xs={24} sm={12}>
-                        <Card
-                            hoverable
-                            onClick={() => {
-                                setAddKpiChooserVisible(false)
-                                openModal()
-                            }}
-                            style={{ height: '100%' }}
-                        >
-                            <Space direction='vertical' size={8}>
-                                <MotionCard.IconChip size={36} bg='rgba(22,119,255,.12)' icon={<BarChartOutlined style={{ color: '#1677ff', fontSize: 18 }} />} />
-                                <Text strong>Compute from live data</Text>
-                                <Text type='secondary' style={{ fontSize: 12 }}>
-                                    Build a formula-driven KPI from participants, interventions, or other live system data.
-                                </Text>
-                            </Space>
-                        </Card>
-                    </Col>
-                    <Col xs={24} sm={12}>
-                        <Card
-                            hoverable
-                            onClick={() => {
-                                setAddKpiChooserVisible(false)
-                                setEditingAgreement(null)
-                                setAgreementModalVisible(true)
-                            }}
-                            style={{ height: '100%' }}
-                        >
-                            <Space direction='vertical' size={8}>
-                                <MotionCard.IconChip size={36} bg='rgba(114,46,209,.12)' icon={<FileProtectOutlined style={{ color: '#722ed1', fontSize: 18 }} />} />
-                                <Text strong>Set from a funder agreement</Text>
-                                <Text type='secondary' style={{ fontSize: 12 }}>
-                                    Upload or capture a signed KPI letter with annual/quarterly targets and deliverables.
-                                </Text>
-                            </Space>
-                        </Card>
-                    </Col>
-                </Row>
-            </Modal>
-
-            <KpiAgreementFormModal
-                open={agreementModalVisible}
-                onClose={() => {
-                    setAgreementModalVisible(false)
-                    setEditingAgreement(null)
+            <AddKpiFlowModal
+                open={addKpiFlowVisible}
+                onClose={() => setAddKpiFlowVisible(false)}
+                departments={departments}
+                defaultDepartmentId={user?.departmentId}
+                isMonitoring={isMonitoringDept}
+                onManualConfigure={() => {
+                    setAddKpiFlowVisible(false)
+                    openModal()
                 }}
-                onSaved={handleSaveAgreement}
-                initialValues={editingAgreement}
-            />
-
-            <KpiAgreementDetail
-                agreement={agreementDetailTarget}
-                open={agreementDetailVisible}
-                onClose={() => setAgreementDetailVisible(false)}
-                onEdit={agreement => {
-                    setAgreementDetailVisible(false)
-                    setEditingAgreement(agreement)
-                    setAgreementModalVisible(true)
-                }}
+                onCreateCandidates={handleCreateFromCandidates}
             />
         </div>
     )

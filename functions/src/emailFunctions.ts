@@ -29,3 +29,5 @@ export {
 } from "./emailCampaigns";
 export { brevoEmailWebhook } from "./emailBounceWebhook";
 export { brevoApiKeepAlive } from "./brevoClient";
+export { onNotificationCreatedEmail } from "./notificationEmailFanout";
+export { notificationAction } from "./notificationActions";

@@ -62,9 +62,6 @@ export default function DirectorDashboard() {
         url?: string
         title?: string
     }>({ open: false })
-    const [notifications, setNotifications] = useState<any[]>([])
-    const [notificationDrawerVisible, setNotificationDrawerVisible] =
-        useState(false)
     const [loading, setLoading] = useState(false)
     const auth = getAuth()
     const currentUser = auth.currentUser
@@ -497,31 +494,6 @@ export default function DirectorDashboard() {
             </Spin>
 
             {/* Drawers */}
-            <Drawer
-                title='Director Notifications'
-                placement='right'
-                width={400}
-                onClose={() => setNotificationDrawerVisible(false)}
-                open={notificationDrawerVisible}
-            >
-                <List
-                    itemLayout='horizontal'
-                    dataSource={notifications}
-                    renderItem={(item: any) => (
-                        <List.Item>
-                            <List.Item.Meta
-                                title={item.message?.director || 'Untitled'}
-                                description={
-                                    item.createdAt?.seconds
-                                        ? new Date(item.createdAt.seconds * 1000).toLocaleString()
-                                        : ''
-                                }
-                            />
-                        </List.Item>
-                    )}
-                />
-            </Drawer>
-
             <Drawer
                 title={invoiceViewer.title || 'Invoice'}
                 placement='right'

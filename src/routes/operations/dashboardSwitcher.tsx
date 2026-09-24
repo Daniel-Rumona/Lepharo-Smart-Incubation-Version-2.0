@@ -18,7 +18,6 @@ import HSEDashboard from '@/components/dashboards/hse'
 import PDSDashboard from '@/components/dashboards/pds'
 import HRDashboard from '@/components/dashboards/hrm'
 import StakeholderEngagementDashboard from '@/components/dashboards/stakeholder'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 
 const LEGAL_DEPT_NAME = 'Legal Advisory Services'
 const TRAINING_DEPT_NAME = 'Training Academy'
@@ -140,14 +139,6 @@ export const DashboardSwitcher: React.FC = () => {
     }, [user])
 
     const normalizedDept = useMemo(() => normalize(effectiveDeptName), [effectiveDeptName])
-
-    if (loading || resolvingDept) {
-        return (
-            <div style={{ minHeight: '100vh' }}>
-                <LoadingOverlay tip='Getting your dashboard ready' />
-            </div>
-        )
-    }
 
     if (!user) {
         return <Result status='warning' title='User not found or not authenticated.' />

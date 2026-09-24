@@ -148,3 +148,32 @@ export async function askAssistant(params: AskAssistantParams): Promise<AskAssis
         sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined
     }
 }
+
+/**
+ * Turns a reply into speech via the backend's /tts route (ElevenLabs,
+ * keyed server-side — no key ever reaches the client). Throws if voice
+ * output isn't configured or the request fails; callers should fall back
+ * to a silent/text-only experience rather than surface this as a hard error.
+ */
+export async function synthesizeSpeech(text: string, signal?: AbortSignal): Promise<Blob> {
+    const firebaseUser = getAuth().currentUser
+    if (!firebaseUser) throw new Error('Please sign in again to use voice output.')
+
+    const token = await firebaseUser.getIdToken()
+    const response = await fetch(`${AI_BASE_URL}/tts`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ text }),
+        signal
+    })
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data?.detail || `Voice output failed (${response.status}).`)
+    }
+
+    return response.blob()
+}

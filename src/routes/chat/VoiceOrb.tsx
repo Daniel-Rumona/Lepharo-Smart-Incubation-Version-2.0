@@ -7,26 +7,66 @@ interface VoiceOrbProps {
     mode: VoiceOrbMode
     size?: number
     className?: string
+    /** The <audio> element currently playing a spoken reply, if any — while
+     * present and `mode === 'speaking'`, the orb reacts to its real playback
+     * level via an AnalyserNode instead of the simulated speaking waveform. */
+    audioElement?: HTMLAudioElement | null
 }
 
 const LAYER_BASE_DURATIONS = [7, 9, 11]
 
-// Drives the orb's "liveliness" purely from a simulated amplitude — there is
-// no real audio signal yet (ElevenLabs isn't wired in). Each mode has its own
-// waveform shape so listening/thinking/speaking read as visually distinct
-// states; once real playback/mic levels exist, swap the per-mode math below
-// for an AnalyserNode reading and the rest of the component is unchanged.
-export const VoiceOrb: React.FC<VoiceOrbProps> = ({ mode, size = 220, className }) => {
+// Drives the orb's "liveliness" from a simulated amplitude for idle/
+// listening/thinking (there's no mic-level signal worth reacting to for
+// those) and from real ElevenLabs playback levels for speaking, when an
+// audioElement is supplied — see the AnalyserNode setup below.
+export const VoiceOrb: React.FC<VoiceOrbProps> = ({ mode, size = 220, className, audioElement }) => {
     const scaleRef = useRef<HTMLDivElement | null>(null)
     const glowRef = useRef<HTMLDivElement | null>(null)
     const layerRefs = useRef<Array<HTMLDivElement | null>>([])
     const modeRef = useRef(mode)
     const tickRef = useRef(0)
     const noiseRef = useRef(0)
+    const audioContextRef = useRef<AudioContext | null>(null)
+    const analyserRef = useRef<AnalyserNode | null>(null)
+    const analyserDataRef = useRef<Uint8Array | null>(null)
 
     useEffect(() => {
         modeRef.current = mode
     }, [mode])
+
+    // A MediaElementAudioSourceNode can only ever be created once per <audio>
+    // element (the browser throws on a second attempt), which is fine here —
+    // ConversationMode hands us a fresh element per reply, never reuses one.
+    useEffect(() => {
+        analyserRef.current = null
+        if (!audioElement) return
+
+        try {
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+            const context = new AudioCtx()
+            const source = context.createMediaElementSource(audioElement)
+            const analyser = context.createAnalyser()
+            analyser.fftSize = 256
+            analyser.smoothingTimeConstant = 0.7
+            source.connect(analyser)
+            // Routing through Web Audio replaces the element's own output path,
+            // so the analyser must still connect onward or playback goes silent.
+            analyser.connect(context.destination)
+
+            audioContextRef.current = context
+            analyserRef.current = analyser
+            analyserDataRef.current = new Uint8Array(analyser.frequencyBinCount)
+        } catch {
+            analyserRef.current = null
+        }
+
+        return () => {
+            analyserRef.current = null
+            const context = audioContextRef.current
+            audioContextRef.current = null
+            if (context) void context.close().catch(() => {})
+        }
+    }, [audioElement])
 
     useEffect(() => {
         const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -52,9 +92,20 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ mode, size = 220, className 
                     break
                 }
                 case 'speaking': {
-                    const wave = Math.sin(t * 0.15) * 0.5 + Math.sin(t * 0.37) * 0.3 + Math.sin(t * 0.61) * 0.2
-                    amplitude = 0.14 + Math.abs(wave) * 0.16
-                    speed = 2.2
+                    const analyser = analyserRef.current
+                    const data = analyserDataRef.current
+                    if (analyser && data) {
+                        analyser.getByteFrequencyData(data)
+                        let sum = 0
+                        for (let i = 0; i < data.length; i++) sum += data[i]
+                        const level = sum / data.length / 255
+                        amplitude = 0.06 + level * 0.42
+                        speed = 1.1 + level * 2.4
+                    } else {
+                        const wave = Math.sin(t * 0.15) * 0.5 + Math.sin(t * 0.37) * 0.3 + Math.sin(t * 0.61) * 0.2
+                        amplitude = 0.14 + Math.abs(wave) * 0.16
+                        speed = 2.2
+                    }
                     break
                 }
                 default: {

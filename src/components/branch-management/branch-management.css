@@ -1,0 +1,41 @@
+.branch-section-choice.ant-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: auto;
+  padding: 20px;
+  border-radius: 14px;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .025);
+}
+
+.branch-section-choice-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 46px;
+  height: 46px;
+  border-radius: 12px;
+  color: #1677ff;
+  background: rgba(22, 119, 255, .09);
+  font-size: 21px;
+}
+
+.branch-section-choice-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 5px;
+  line-height: 1.45;
+}
+
+.branch-section-choice-title { font-size: 16px; font-weight: 600; }
+.branch-section-choice-copy .ant-typography { font-size: 13px; }
+.branch-section-choice-arrow { opacity: .55; transition: transform .15s ease; }
+.branch-section-choice:hover .branch-section-choice-arrow { transform: translateX(3px); opacity: 1; }
+.branch-section-choice:focus-visible { outline: 2px solid #1677ff; outline-offset: 3px; }
+
+@media (max-width: 480px) {
+  .branch-section-choice.ant-btn { padding: 16px; gap: 12px; }
+}

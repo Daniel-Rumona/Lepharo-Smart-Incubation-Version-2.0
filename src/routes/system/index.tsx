@@ -271,18 +271,13 @@ const SystemSetupForm: React.FC = () => {
             width: '25%'
         },
         {
-            title: 'Created',
-            dataIndex: 'createdAt',
-            key: 'createdAt',
-            render: (ts: any) => (ts ? dayjs(ts).format('YYYY-MM-DD') : '—')
-        },
-        {
             title: 'Actions',
             key: 'actions',
             width: 112,
             render: (_: any, record: any) => (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Button
+                        shape='circle'
                         icon={<EditOutlined />}
                         onClick={() => openEdit(record)}
                     />
@@ -300,6 +295,7 @@ const SystemSetupForm: React.FC = () => {
                     >
                         <Button
                             danger
+                            shape='circle'
                             icon={<DeleteOutlined />}
                             loading={deletingDepartmentId === record.id}
                         />

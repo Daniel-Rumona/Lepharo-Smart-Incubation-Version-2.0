@@ -17,6 +17,9 @@ import {
     message
 } from 'antd'
 import {
+    ArrowLeftOutlined,
+    ArrowRightOutlined,
+    ClockCircleOutlined,
     CloseOutlined,
     DeleteOutlined,
     EditOutlined,
@@ -38,6 +41,7 @@ import { Branch, BranchFormData } from '@/types/types'
 import { defaultOperatingHours, OPERATING_DAYS } from '@/utils/branchOperatingHours'
 import { OperatingHoursFields } from './OperatingHoursFields'
 import { MotionCard } from '../dashboards/metrics/Header'
+import './branch-management.css'
 
 const { Search } = Input
 const { Text } = Typography
@@ -101,6 +105,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
     const [isEditMode, setIsEditMode] = useState(false)
     const [currentBranch, setCurrentBranch] = useState<Branch | null>(null)
     const [searchText, setSearchText] = useState('')
+    const [formSection, setFormSection] = useState<'choose' | 'details' | 'hours'>('details')
 
     const selectedCoordinatorId = Form.useWatch('centreCoordinatorUserId', form)
 
@@ -191,6 +196,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
     }, [branches, searchText])
 
     const showModal = (edit = false, branch: Branch | null = null) => {
+        setFormSection(edit ? 'choose' : 'details')
         setIsEditMode(edit)
         setCurrentBranch(branch)
 
@@ -235,10 +241,26 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
         })
     }
 
-    const handleSubmit = async (values: BranchFormValues) => {
+    const handleSubmit = async () => {
+        if (formSection === 'choose') return
+        if (!isEditMode && formSection === 'details') {
+            setFormSection('hours')
+            return
+        }
+        const values = form.getFieldsValue(true) as BranchFormValues
         setSaving(true)
 
         try {
+            if (isEditMode && currentBranch && formSection === 'hours') {
+                await branchService.updateBranch(currentBranch.id, {
+                    operatingHours: values.operatingHours
+                })
+                message.success('Operating hours updated successfully!')
+                handleCancel()
+                await fetchBranches()
+                return
+            }
+
             const coordinator = centreCoordinators.find(
                 item => item.id === values.centreCoordinatorUserId
             )
@@ -258,7 +280,8 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
             }
 
             if (isEditMode && currentBranch) {
-                await branchService.updateBranch(currentBranch.id, payload)
+                const { operatingHours, ...details } = payload
+                await branchService.updateBranch(currentBranch.id, details)
                 message.success('Branch updated successfully!')
             } else {
                 await branchService.createBranch(payload)
@@ -314,7 +337,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                     </div>
                 )
             },
-            width: '22%'
+            width: '18%'
         },
         {
             title: 'Location',
@@ -371,19 +394,28 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                     </div>
                 )
             },
-            width: '26%'
+            width: '22%'
         },
         {
             title: 'Operating hours',
             key: 'operatingHours',
             render: (_: unknown, record: Branch) => (
-                <Tooltip title={OPERATING_DAYS.map(({ key, label }) => {
-                    const day = (record.operatingHours || defaultOperatingHours())[key]
-                    return <div key={key}>{label}: {day.closed ? 'Closed' : `${day.opens}–${day.closes}`}</div>
-                })}>
-                    <Text>{record.operatingHours ? 'Weekly schedule' : 'Default: Mon–Fri 07:00–15:00'}</Text>
+                <Tooltip title={<>
+                    {OPERATING_DAYS.map(({ key, label }) => {
+                        const day = (record.operatingHours || defaultOperatingHours())[key]
+                        return <div key={key}>{label}: {day.closed ? 'Closed' : `${day.opens}–${day.closes}`}</div>
+                    })}
+                    <div>Public holidays: {record.operatingHours?.rules?.publicHolidays
+                        ? record.operatingHours.rules.publicHolidays.closed ? 'Closed'
+                            : `${record.operatingHours.rules.publicHolidays.opens}–${record.operatingHours.rules.publicHolidays.closes}`
+                        : 'Regular schedule'}</div>
+                </>}>
+                    <Text>{record.operatingHours?.rules
+                        ? `${record.operatingHours.rules.defaultHours.opens}–${record.operatingHours.rules.defaultHours.closes}`
+                        : record.operatingHours ? 'Weekly schedule' : 'Default: Mon–Fri 07:00–15:00'}</Text>
                 </Tooltip>
-            )
+            ),
+            width: '18%'
         },
         {
             title: 'Actions',
@@ -392,7 +424,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                 <Space size='small'>
                     <Tooltip title='Edit Branch'>
                         <Button
-                            type='text'
+                            shape='circle'
                             icon={<EditOutlined />}
                             onClick={() => showModal(true, record)}
                             size='small'
@@ -416,7 +448,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                     >
                         <Tooltip title='Delete Branch'>
                             <Button
-                                type='text'
+                                shape='circle'
                                 icon={<DeleteOutlined />}
                                 danger
                                 size='small'
@@ -485,9 +517,12 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
             </MotionCard>
 
             <Modal
-                title={isEditMode ? 'Edit Branch' : 'Create New Branch'}
+                title={isEditMode
+                    ? formSection === 'choose' ? 'Edit Branch' : formSection === 'details' ? 'Edit Branch Details' : 'Edit Operating Hours'
+                    : formSection === 'details' ? 'Create New Branch' : 'Branch Operating Hours'}
                 open={isModalVisible}
-                onCancel={handleCancel}
+                onCancel={saving ? undefined : handleCancel}
+                closable={!saving}
                 footer={null}
                 centered
                 maskClosable={false}
@@ -499,96 +534,126 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                     layout='vertical'
                     onFinish={handleSubmit}
                     requiredMark='optional'
+                    disabled={saving}
                 >
-                    <Form.Item
-                        name='name'
-                        label='Branch Name'
-                        rules={[
-                            { required: true, message: 'Please enter the branch name' },
-                            { max: 120, message: 'Branch name cannot exceed 120 characters' }
-                        ]}
-                    >
-                        <Input placeholder='e.g. Lephalale Centre' />
-                    </Form.Item>
-
-                    <Form.Item
-                        name='location'
-                        label='Location'
-                        rules={[
-                            { required: true, message: 'Please enter the branch location' },
-                            { max: 250, message: 'Location cannot exceed 250 characters' }
-                        ]}
-                    >
-                        <Input
-                            prefix={<EnvironmentOutlined />}
-                            placeholder='e.g. Lephalale, Limpopo'
-                        />
-                    </Form.Item>
-
-                    <Form.Item
-                        name='centreCoordinatorUserId'
-                        label='Centre Coordinator'
-                    >
-                        <Select
-                            allowClear
-                            showSearch
-                            loading={coordinatorsLoading}
-                            placeholder='Select Centre Coordinator'
-                            optionFilterProp='label'
-                            onChange={handleCoordinatorChange}
-                            options={centreCoordinators.map(coordinator => ({
-                                value: coordinator.id,
-                                label: coordinator.email
-                                    ? `${coordinator.name} — ${coordinator.email}`
-                                    : coordinator.name
-                            }))}
-                        />
-                    </Form.Item>
-
-                    <Row gutter={16}>
-                        <Col xs={24} md={12}>
+                    {formSection === 'choose' && (
+                        <Row gutter={[16, 16]} style={{ marginTop: 16, marginBottom: 16 }}>
+                            {([
+                                { section: 'details', title: 'Details', description: 'Name, location and contact details', icon: <EditOutlined /> },
+                                { section: 'hours', title: 'Operating Hours', description: 'Default hours, public holidays and day exceptions', icon: <ClockCircleOutlined /> }
+                            ] as const).map(option => (
+                                <Col span={24} key={option.section}>
+                                    <Button
+                                        block
+                                        className='branch-section-choice'
+                                        onClick={() => setFormSection(option.section)}
+                                    >
+                                        <span className='branch-section-choice-icon'>{option.icon}</span>
+                                        <span className='branch-section-choice-copy'>
+                                            <span className='branch-section-choice-title'>{option.title}</span>
+                                            <Text type='secondary'>{option.description}</Text>
+                                        </span>
+                                        <ArrowRightOutlined className='branch-section-choice-arrow' />
+                                    </Button>
+                                </Col>
+                            ))}
+                        </Row>
+                    )}
+                    {formSection === 'details' && (
+                        <>
                             <Form.Item
-                                name='contactEmail'
-                                label='Contact Email'
+                                name='name'
+                                label='Branch Name'
                                 rules={[
-                                    { required: true, message: 'Please enter a contact email' },
-                                    { type: 'email', message: 'Please enter a valid email address' }
+                                    { required: true, message: 'Please enter the branch name' },
+                                    { max: 120, message: 'Branch name cannot exceed 120 characters' }
+                                ]}
+                            >
+                                <Input placeholder='e.g. Lephalale Centre' />
+                            </Form.Item>
+
+                            <Form.Item
+                                name='location'
+                                label='Location'
+                                rules={[
+                                    { required: true, message: 'Please enter the branch location' },
+                                    { max: 250, message: 'Location cannot exceed 250 characters' }
                                 ]}
                             >
                                 <Input
-                                    prefix={<MailOutlined />}
-                                    placeholder='centre@example.com'
-                                    disabled={Boolean(selectedCoordinator?.email)}
+                                    prefix={<EnvironmentOutlined />}
+                                    placeholder='e.g. Lephalale, Limpopo'
                                 />
                             </Form.Item>
-                        </Col>
 
-                        <Col xs={24} md={12}>
                             <Form.Item
-                                name='contactPhone'
-                                label='Phone'
+                                name='centreCoordinatorUserId'
+                                label='Centre Coordinator'
                             >
-                                <Input
-                                    prefix={<PhoneOutlined />}
-                                    placeholder='Enter phone number'
-                                    disabled={Boolean(selectedCoordinator?.phone)}
+                                <Select
+                                    allowClear
+                                    showSearch
+                                    loading={coordinatorsLoading}
+                                    placeholder='Select Centre Coordinator'
+                                    optionFilterProp='label'
+                                    onChange={handleCoordinatorChange}
+                                    options={centreCoordinators.map(coordinator => ({
+                                        value: coordinator.id,
+                                        label: coordinator.email
+                                            ? `${coordinator.name} — ${coordinator.email}`
+                                            : coordinator.name
+                                    }))}
                                 />
                             </Form.Item>
-                        </Col>
-                    </Row>
 
-                    <OperatingHoursFields />
+                            <Row gutter={16}>
+                                <Col xs={24} md={12}>
+                                    <Form.Item
+                                        name='contactEmail'
+                                        label='Contact Email'
+                                        rules={[
+                                            { required: true, message: 'Please enter a contact email' },
+                                            { type: 'email', message: 'Please enter a valid email address' }
+                                        ]}
+                                    >
+                                        <Input
+                                            prefix={<MailOutlined />}
+                                            placeholder='centre@example.com'
+                                            disabled={Boolean(selectedCoordinator?.email)}
+                                        />
+                                    </Form.Item>
+                                </Col>
 
-                    <Row gutter={12} style={{ marginTop: 8 }}>
+                                <Col xs={24} md={12}>
+                                    <Form.Item
+                                        name='contactPhone'
+                                        label='Phone'
+                                    >
+                                        <Input
+                                            prefix={<PhoneOutlined />}
+                                            placeholder='Enter phone number'
+                                            disabled={Boolean(selectedCoordinator?.phone)}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                        </>
+                    )}
+                    {formSection === 'hours' && <OperatingHoursFields />}
+
+                    {formSection !== 'choose' && <Row gutter={12} style={{ marginTop: 8 }}>
                         <Col span={12}>
                             <Button
                                 block
-                                danger
-                                icon={<CloseOutlined />}
-                                onClick={handleCancel}
+                                icon={!isEditMode && formSection === 'details' ? <CloseOutlined /> : <ArrowLeftOutlined />}
+                                onClick={() => {
+                                    if (isEditMode) setFormSection('choose')
+                                    else if (formSection === 'hours') setFormSection('details')
+                                    else handleCancel()
+                                }}
                                 disabled={saving}
                             >
-                                Cancel
+                                {!isEditMode && formSection === 'details' ? 'Cancel' : 'Back'}
                             </Button>
                         </Col>
 
@@ -598,12 +663,12 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                                 type='primary'
                                 htmlType='submit'
                                 loading={saving}
-                                icon={isEditMode ? <EditOutlined /> : <PlusOutlined />}
+                                icon={isEditMode ? <EditOutlined /> : formSection === 'details' ? <ArrowRightOutlined /> : <PlusOutlined />}
                             >
-                                {isEditMode ? 'Update Branch' : 'Create Branch'}
+                                {isEditMode ? 'Update' : formSection === 'details' ? 'Next' : 'Create Branch'}
                             </Button>
                         </Col>
-                    </Row>
+                    </Row>}
                 </Form>
             </Modal>
         </>

@@ -109,17 +109,6 @@ service cloud.firestore {
         (currentUser().role == 'director' || isHrManager());
     }
 
-    // KPI Agreements (LEP-QMS 054 F) - signed funder/stakeholder KPI letters
-    // digitised per department. Directors and operations staff manage their
-    // own department's agreements; everyone else with company-wide read
-    // access can view.
-    match /kpiAgreements/{kpiAgreementId} {
-      allow read, write: if isSuperAdmin();
-      allow read: if request.auth != null &&
-        currentUser().role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin'];
-      allow create, update, delete: if request.auth != null &&
-        currentUser().role in ['director', 'operations', 'projectadmin'];
-    }
 
     // Leave requests - the requester can create/read their own and edit it
     // while still pending (fixing a mistake); HR/director can manage every
@@ -618,10 +607,34 @@ service cloud.firestore {
       allow read: if request.auth != null && (resource.data.learnerId == request.auth.uid || resource.data.owner == request.auth.uid);
       allow write: if false;
     }
+    // A notification is only visible to the users/roles it was addressed to.
+    // Updates are restricted to marking it read so a recipient can't rewrite
+    // its content or reassign it to someone else.
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null && (
+        isSuperAdmin() ||
+        (resource.data.keys().hasAny(['recipientIds']) && request.auth.uid in resource.data.recipientIds) ||
+        (resource.data.keys().hasAny(['recipientRoles']) && currentUser().role in resource.data.recipientRoles)
+      );
+      allow create: if request.auth != null;
+      allow update: if request.auth != null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']) &&
+        (
+          isSuperAdmin() ||
+          (resource.data.keys().hasAny(['recipientIds']) && request.auth.uid in resource.data.recipientIds) ||
+          (resource.data.keys().hasAny(['recipientRoles']) && currentUser().role in resource.data.recipientRoles)
+        );
+      allow delete: if isSuperAdmin();
+    }
+    // Email-action tokens are minted and consumed only by Cloud Functions
+    // (admin SDK bypasses rules) -- no client ever reads or writes these.
+    match /notificationActions/{token} {
+      allow read, write: if false;
+    }
     match /{collectionId}/{document=**} {
       allow read, write: if isSuperAdmin();
       allow read, write: if request.auth != null &&
-        !(collectionId in ['academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'kpiAgreements', 'leaveRequests', 'appointments', 'appointmentSessions']);
+        !(collectionId in ['academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions']);
     }
   }
 }

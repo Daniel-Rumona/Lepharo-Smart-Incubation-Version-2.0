@@ -28,7 +28,7 @@ import {
     useRef,
     useState
 } from 'react'
-import { getNameInitials } from '@/utilities'
+import { getNameInitials } from '@/utils/get-name-initials'
 import { auth, db, storage } from '@/firebase'
 import {
     EmailAuthProvider,
