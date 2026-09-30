@@ -1221,3 +1221,64 @@ def get_kpi_targets_by_department(department_id: str, max_results: int = 200):
         return []
 
     return query_collection("kpiTargets", "department", department_name, max_results)
+
+
+# -------------------------
+# Chat history persistence
+# -------------------------
+# Every /chat turn is written here regardless of what the frontend shows or
+# discards, so the full conversation history survives for later review and
+# for training/improving the assistant. The frontend (chatSessions collection
+# under src/routes/chat/) only ever reads its own rows straight from
+# Firestore — see firestore.rules — and never writes here; only this admin
+# SDK write path does, from app.py's /chat handler.
+
+def save_chat_turn(
+    session_id: str,
+    uid: str,
+    date_key: str,
+    route: str | None,
+    user_text: str,
+    assistant_text: str,
+    chart: dict | None,
+) -> None:
+    if not uid or not session_id:
+        return
+
+    try:
+        session_ref = db.collection("chatSessions").document(session_id)
+        if not session_ref.get().exists:
+            session_ref.set({
+                "userId": uid,
+                "dateKey": date_key,
+                "route": route,
+                "title": user_text[:120],
+                "createdAt": firestore.SERVER_TIMESTAMP,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+                "messageCount": 0,
+            })
+
+        messages_ref = session_ref.collection("messages")
+        batch = db.batch()
+        batch.set(messages_ref.document(), {
+            "userId": uid,
+            "sender": "user",
+            "content": user_text,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        })
+        batch.set(messages_ref.document(), {
+            "userId": uid,
+            "sender": "assistant",
+            "content": assistant_text,
+            "chart": chart,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        })
+        batch.update(session_ref, {
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "messageCount": firestore.Increment(2),
+        })
+        batch.commit()
+    except Exception as error:
+        # Best-effort: a persistence failure must never break the chat
+        # response the user is actually waiting on.
+        print("save_chat_turn failed:", type(error).__name__, str(error), flush=True)

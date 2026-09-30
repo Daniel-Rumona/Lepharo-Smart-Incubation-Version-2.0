@@ -1,0 +1,40 @@
+{
+  "createdAt": "2026-09-25T10:36:32.397Z",
+  "records": [
+    {
+      "id": "HEhP51roVddawADKZBng",
+      "participantId": null,
+      "isRepresentative": false,
+      "company": "Cart.IT PTY LTD",
+      "email": "cart.deliveryservice@gmail.com"
+    },
+    {
+      "id": "JGCKrLLEuKXu54w6eVmb",
+      "participantId": null,
+      "isRepresentative": false,
+      "company": "Molubi Industry ",
+      "email": "molubijohn@gmail.com"
+    },
+    {
+      "id": "RlmIw89owt3YyTG6Rn5j",
+      "participantId": null,
+      "isRepresentative": false,
+      "company": "Molubi Industry ",
+      "email": "molubijohn@gmail.com"
+    },
+    {
+      "id": "XzSdvOG2za4Ip1vflo6u",
+      "participantId": null,
+      "isRepresentative": false,
+      "company": "Cart.IT PTY LTD",
+      "email": "cart.deliveryservice@gmail.com"
+    },
+    {
+      "id": "hCOTvwkVmIzBlCfMAfMC",
+      "participantId": null,
+      "isRepresentative": false,
+      "company": "Tlouyamakwena Holdings",
+      "email": "amoswanakwela@gmail.com"
+    }
+  ]
+}

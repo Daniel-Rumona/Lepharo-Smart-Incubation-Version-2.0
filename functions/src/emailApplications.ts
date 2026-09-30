@@ -80,7 +80,9 @@ export const sendEmail = onRequest({ region: "us-central1", invoker: "public" },
 
   const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const transporter = getTransporter();
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER!;
+  // Every email sent through this endpoint shows the support team as the sender.
+  const fromAddress = process.env.SMTP_FROM || process.env.SMTP_USER!;
+  const from = `"Lepharo Smart Incubation Support" <${(fromAddress.match(/<([^>]+)>/)?.[1] || fromAddress).trim()}>`;
 
   type Personalized = { to: string; subject: string; html?: string; text?: string };
   const body = (req.body || {}) as

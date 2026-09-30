@@ -1,7 +1,9 @@
 type ExportRecord = Record<string, any>
 
 const firstValue = (...values: unknown[]): string => {
-    for (const value of values) {
+    for (const raw of values) {
+        // Ward and hub are sometimes stored as a list; the first entry is the one shown elsewhere.
+        const value = Array.isArray(raw) ? raw.find(item => String(item ?? '').trim()) : raw
         if (value == null) continue
         const text = String(value).trim()
         if (text && text.toLowerCase() !== 'n/a') return text
@@ -22,7 +24,7 @@ export const applicationExportRow = (app: ExportRecord, participant: ExportRecor
     firstValue(app.beeLevel, app.bbeeeLevel, participant.beeLevel, participant.bbeeeLevel),
     firstValue(app.email, app.participantEmail, participant.email, participant.participantEmail),
     firstValue(app.phone, app.mobile, app.whatsapp, participant.phone, participant.mobile, participant.whatsapp),
-    firstValue(app.ward, participant.ward)
+    firstValue(app.ward, app.hub, app._location?.hub, participant.ward, participant.hub)
 ]
 
 export const applicationsCSV = (rows: string[][]): string => {

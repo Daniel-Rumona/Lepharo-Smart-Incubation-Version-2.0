@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Empty,
     Modal,
-    Segmented,
     Space,
     Tag,
     Typography,
@@ -25,23 +24,22 @@ import {
     VideoCameraOutlined,
     TeamOutlined,
     AppstoreOutlined,
-    BarsOutlined,
     CheckSquareOutlined,
     FilterOutlined,
     ApartmentOutlined,
     PhoneOutlined,
-    NotificationOutlined
+    NotificationOutlined,
+    LeftOutlined,
+    RightOutlined
 } from '@ant-design/icons'
 import { Helmet } from 'react-helmet'
 import FullCalendar from '@fullcalendar/react'
-import timeGridPlugin from '@fullcalendar/timegrid'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import type { EventClickArg, EventInput, EventContentArg } from '@fullcalendar/core'
+import type { DateClickArg } from '@fullcalendar/interaction'
+import type { EventClickArg, EventInput, EventContentArg, DayCellContentArg } from '@fullcalendar/core'
 import {
     collection,
-    doc,
-    getDoc,
     getDocs,
     onSnapshot,
     query,
@@ -62,13 +60,114 @@ import {
     resolveAppointmentActor
 } from '@/services/appointmentService'
 import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
+import {
+    getDepartmentDescendants,
+    type DepartmentCapabilityRecord
+} from '@/services/departmentCapabilities'
 import NoticeBoard from './NoticeBoard'
 
 const { Title, Text } = Typography
 
 type CalendarSource = 'event' | 'appointment' | 'task'
-type ViewMode = 'timeGridDay' | 'timeGridWeek' | 'dayGridMonth'
 type WorkspaceView = 'calendar' | 'notices'
+
+const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => ({
+    value: i,
+    label: dayjs().month(i).format('MMMM')
+}))
+
+const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+
+const isWeekend = (date: Date) => {
+    const day = date.getDay()
+    return day === 0 || day === 6
+}
+
+// The grid only shows Monday–Friday, so a date landing on a weekend needs to
+// snap to the nearest day the grid actually renders — Saturday back to
+// Friday, Sunday forward to Monday.
+const nearestWeekday = (date: Date) => {
+    const next = new Date(date)
+    if (next.getDay() === 6) next.setDate(next.getDate() - 1)
+    else if (next.getDay() === 0) next.setDate(next.getDate() + 1)
+    return next
+}
+
+const AVATAR_PALETTE = ['#7e22ce', '#1d4ed8', '#0f766e', '#b45309', '#be123c', '#4338ca']
+
+const avatarColorFor = (name: string) => {
+    let hash = 0
+    for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+    return AVATAR_PALETTE[hash % AVATAR_PALETTE.length]
+}
+
+const initialsFor = (name: string) =>
+    name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join('') || '?'
+
+const formatDuration = (start: Date, end?: Date) => {
+    if (!end) return ''
+    const minutes = Math.round((end.getTime() - start.getTime()) / 60000)
+    if (minutes <= 0) return ''
+    if (minutes < 60) return `${minutes} min`
+    const hours = minutes / 60
+    const label = Number.isInteger(hours) ? String(hours) : hours.toFixed(1)
+    return `${label} hour${hours === 1 ? '' : 's'}`
+}
+
+type CalendarRowLike = { source: string; raw: any }
+
+const getRowParticipants = (row: CalendarRowLike): string[] => {
+    const raw = row.raw || {}
+
+    if (row.source === 'appointment') {
+        if (raw.isGroupAppointment && Array.isArray(raw.groupMembers)) {
+            return raw.groupMembers
+                .map((member: any) => member?.participantName)
+                .filter(Boolean)
+        }
+        return [raw.participantName, raw.consultantName].filter(Boolean)
+    }
+
+    if (row.source === 'event' && Array.isArray(raw.participants)) {
+        return raw.participants
+            .map((p: any) => p?.name || p?.participantName || p?.email)
+            .filter(Boolean)
+    }
+
+    return []
+}
+
+const getRowSubtitle = (row: CalendarRowLike): string => {
+    const raw = row.raw || {}
+
+    if (row.source === 'appointment') {
+        return raw.isGroupAppointment
+            ? `${raw.groupParticipantCount || raw.groupMembers?.length || 0} participants`
+            : raw.participantName || raw.consultantName || raw.location || ''
+    }
+
+    if (row.source === 'task') {
+        return raw.priority || raw.status || ''
+    }
+
+    return raw.location || raw.type || ''
+}
+
+// "Alex W and Ivan M" for two, "Julia K, Ivan M +5 more" beyond that.
+const formatParticipantsLabel = (names: string[]) => {
+    const shown = names.slice(0, 2)
+    const overflow = names.length - shown.length
+    const label = shown.length === 2 ? `${shown[0]} and ${shown[1]}` : shown.join(', ')
+    return overflow > 0 ? `${label} +${overflow} more` : label
+}
 
 type CalendarRow = {
     id: string
@@ -282,11 +381,6 @@ const MyCalendarPage: React.FC = () => {
     const [eventRows, setEventRows] = useState<CalendarRow[]>([])
     const [appointmentRows, setAppointmentRows] = useState<CalendarRow[]>([])
     const [taskRows, setTaskRows] = useState<CalendarRow[]>([])
-    const [viewMode, setViewMode] = useState<ViewMode>(() =>
-        typeof window !== 'undefined' && window.innerWidth < 768
-            ? 'dayGridMonth'
-            : 'timeGridWeek'
-    )
     const [isMobile, setIsMobile] = useState(
         () => typeof window !== 'undefined' && window.innerWidth < 768
     )
@@ -295,6 +389,20 @@ const MyCalendarPage: React.FC = () => {
     const [consultantDocId, setConsultantDocId] = useState<string | null>(null)
     const [appointmentAssigneeIds, setAppointmentAssigneeIds] = useState<string[]>([])
     const [participantIdentityIds, setParticipantIdentityIds] = useState<string[]>([])
+
+    const calendarRef = useRef<FullCalendar | null>(null)
+    const today = useMemo(() => new Date(), [])
+    const [currentMonth, setCurrentMonth] = useState(() => today.getMonth())
+    const [currentYear, setCurrentYear] = useState(() => today.getFullYear())
+    const [selectedDate, setSelectedDate] = useState<Date>(() => {
+        const d = new Date()
+        d.setHours(0, 0, 0, 0)
+        return nearestWeekday(d)
+    })
+    const yearOptions = useMemo(() => {
+        const thisYear = today.getFullYear()
+        return Array.from({ length: 11 }, (_, i) => thisYear - 5 + i)
+    }, [today])
 
     const [typeFilter, setTypeFilter] = useState<'all' | 'event' | 'appointment' | 'task'>('all')
     const [departmentFilter, setDepartmentFilter] = useState<string>('all')
@@ -314,6 +422,42 @@ const MyCalendarPage: React.FC = () => {
         return () => mediaQuery.removeEventListener('change', updateMobileState)
     }, [])
 
+    useEffect(() => {
+        calendarRef.current?.getApi()?.gotoDate(new Date(currentYear, currentMonth, 1))
+    }, [currentMonth, currentYear])
+
+    // Moves the day panel's selected date, following the big calendar's
+    // month/year along with it when the new date crosses into another month.
+    // The grid is Monday–Friday only, so this steps past any weekend it
+    // lands on (in the same direction) instead of stopping on a day the
+    // grid can't show — otherwise Friday -> next lands on Saturday, which
+    // needed a second click to get past.
+    const changeSelectedDate = (deltaDays: number) => {
+        const step = deltaDays >= 0 ? 1 : -1
+
+        setSelectedDate(prev => {
+            const next = new Date(prev)
+            next.setDate(next.getDate() + deltaDays)
+            while (isWeekend(next)) {
+                next.setDate(next.getDate() + step)
+            }
+            next.setHours(0, 0, 0, 0)
+            if (next.getMonth() !== currentMonth || next.getFullYear() !== currentYear) {
+                setCurrentMonth(next.getMonth())
+                setCurrentYear(next.getFullYear())
+            }
+            return next
+        })
+    }
+
+    const goToToday = () => {
+        const now = nearestWeekday(new Date())
+        now.setHours(0, 0, 0, 0)
+        setSelectedDate(now)
+        setCurrentMonth(now.getMonth())
+        setCurrentYear(now.getFullYear())
+    }
+
     const myRole = lower(user?.role)
     const myUid = String(user?.uid || user?.id || '').trim()
     const myEmail = lower(user?.email)
@@ -327,7 +471,18 @@ const MyCalendarPage: React.FC = () => {
         ''
     ).trim()
 
+    // Three tiers of operations visibility:
+    // - a plain department sees only itself
+    // - a "parent" department (others point at it via parentDeptId /
+    //   parentDepartmentId) also sees its direct and indirect children
+    // - a department flagged isMain sees everything, org-wide
     const [isMainDepartment, setIsMainDepartment] = useState(false)
+    const [childDepartmentIds, setChildDepartmentIds] = useState<string[]>([])
+    const isParentDepartment = childDepartmentIds.length > 0
+    const visibleDepartmentIds = useMemo(
+        () => new Set([myDepartmentId, ...childDepartmentIds].filter(Boolean)),
+        [myDepartmentId, childDepartmentIds]
+    )
     const consultantFilterId = consultantDocId || myConsultantId
 
     const selectedAppointment = useMemo<AppointmentDetailsV2Record | null>(() => {
@@ -355,7 +510,8 @@ const MyCalendarPage: React.FC = () => {
     const isConsultant = myRole === 'consultant'
     const isIncubatee = myRole === 'incubatee'
 
-    const canFilterByDepartment = isCentreCoordinator || (isOperations && isMainDepartment)
+    const canFilterByDepartment =
+        isCentreCoordinator || (isOperations && (isMainDepartment || isParentDepartment))
 
     useEffect(() => {
         const baseIds = [
@@ -425,7 +581,13 @@ const MyCalendarPage: React.FC = () => {
                 const constraints: any[] = []
                 const snap = await getDocs(query(collection(db, 'departments'), ...constraints))
 
+                // A parent (non-main) operations department only filters
+                // across its own subtree, not every department in the org.
                 const options = snap.docs
+                    .filter(
+                        (docSnap) =>
+                            !isOperations || isMainDepartment || visibleDepartmentIds.has(docSnap.id)
+                    )
                     .map((docSnap) => {
                         const data = docSnap.data() as any
                         const labelText = String(data?.name || data?.departmentName || docSnap.id)
@@ -467,7 +629,7 @@ const MyCalendarPage: React.FC = () => {
         return () => {
             cancelled = true
         }
-    }, [canFilterByDepartment])
+    }, [canFilterByDepartment, isOperations, isMainDepartment, visibleDepartmentIds])
     useEffect(() => {
         let cancelled = false
 
@@ -509,21 +671,33 @@ const MyCalendarPage: React.FC = () => {
         const run = async () => {
             if (myRole !== 'operations' || !user?.departmentId) {
                 setIsMainDepartment(false)
+                setChildDepartmentIds([])
                 return
             }
 
             try {
-                const deptSnap = await getDoc(doc(db, 'departments', String(user.departmentId)))
-                const deptData = deptSnap.exists() ? deptSnap.data() : null
-                const nextIsMain = Boolean(deptData?.isMain)
+                const snap = await getDocs(collection(db, 'departments'))
+                const departments: DepartmentCapabilityRecord[] = snap.docs.map(docSnap => ({
+                    id: docSnap.id,
+                    ...(docSnap.data() as any)
+                }))
+                const myDept = departments.find(
+                    department => department.id === String(user.departmentId)
+                )
+                const descendants = getDepartmentDescendants(
+                    String(user.departmentId),
+                    departments
+                ).map(department => department.id)
 
                 if (!cancelled) {
-                    setIsMainDepartment(prev => (prev === nextIsMain ? prev : nextIsMain))
+                    setIsMainDepartment(Boolean((myDept as any)?.isMain))
+                    setChildDepartmentIds(descendants)
                 }
             } catch (error) {
-                console.error('Failed to resolve operations department isMain:', error)
+                console.error('Failed to resolve operations department hierarchy:', error)
                 if (!cancelled) {
                     setIsMainDepartment(false)
+                    setChildDepartmentIds([])
                 }
             }
         }
@@ -534,6 +708,12 @@ const MyCalendarPage: React.FC = () => {
             cancelled = true
         }
     }, [myRole, user?.departmentId])
+
+    useEffect(() => {
+        if (isOperations && workspaceView === 'notices') {
+            setWorkspaceView('calendar')
+        }
+    }, [isOperations, workspaceView])
 
     useEffect(() => {
         if (!myUid || !myRole) {
@@ -566,6 +746,18 @@ const MyCalendarPage: React.FC = () => {
             return String(rowProgramId || '').trim() === String(activeProgramId).trim()
         }
 
+        // An operations user sees their own department's items, plus any
+        // department that sits under them in the parentDeptId hierarchy
+        // (visibleDepartmentIds already includes both). A department flagged
+        // isMain sees everything, org-wide.
+        const matchesVisibleDepartment = (data: any) => {
+            if (isMainDepartment) return true
+            const singleId = String(data?.departmentId || data?.department?.id || '').trim()
+            if (singleId) return visibleDepartmentIds.has(singleId)
+            const multiIds: any[] = Array.isArray(data?.departmentIds) ? data.departmentIds : []
+            return multiIds.some((id) => visibleDepartmentIds.has(String(id || '').trim()))
+        }
+
         unsubscribers.push(
             onSnapshot(
                 query(collection(db, 'events'), ...baseConstraints),
@@ -583,7 +775,7 @@ const MyCalendarPage: React.FC = () => {
                         } else if (isReceptionist) {
                             allow = matchesMyBranch(data)
                         } else if (isOperations) {
-                            allow = isMainDepartment
+                            allow = matchesVisibleDepartment(data)
                         } else if (isProjectCoordinator) {
                             allow = true
                         } else if (isConsultant) {
@@ -682,7 +874,7 @@ const MyCalendarPage: React.FC = () => {
                         } else if (isReceptionist) {
                             allow = matchesMyBranch(data)
                         } else if (isOperations) {
-                            allow = isMainDepartment
+                            allow = matchesVisibleDepartment(data)
                         } else if (isProjectCoordinator) {
                             allow = belongsToCurrentAssignee
                         } else if (isConsultant) {
@@ -754,7 +946,16 @@ const MyCalendarPage: React.FC = () => {
                         const assignedToMe = assignees.some((a: any) => {
                             const uid = String(a?.userId || '').trim()
                             const deptId = String(a?.departmentId || '').trim()
-                            return uid === myUid || (deptId && deptId === String(user?.departmentId || '').trim())
+                            // For operations this also covers a parent
+                            // department's children, since
+                            // visibleDepartmentIds already includes them.
+                            return (
+                                uid === myUid ||
+                                (deptId &&
+                                    (isOperations
+                                        ? visibleDepartmentIds.has(deptId)
+                                        : deptId === String(user?.departmentId || '').trim()))
+                            )
                         })
 
                         let allow = false
@@ -802,7 +1003,9 @@ const MyCalendarPage: React.FC = () => {
         myBranchId,
         activeProgramId,
         isAllPrograms,
-        isMainDepartment
+        isMainDepartment,
+        isParentDepartment,
+        visibleDepartmentIds
     ])
 
     const getRowDepartmentId = (row: CalendarRow): string => {
@@ -868,54 +1071,48 @@ const MyCalendarPage: React.FC = () => {
         }))
     }, [visibleRows])
 
+    const selectedDayRows = useMemo(() => {
+        return visibleRows
+            .filter((row) => isSameDay(row.start, selectedDate))
+            .sort((a, b) => a.start.getTime() - b.start.getTime())
+    }, [visibleRows, selectedDate])
+
+    // The agenda groups the day's rows under their starting hour, like the
+    // "09:00 / 10:00 / 13:00" timeline sections of the day panel.
+    const selectedDayGroups = useMemo(() => {
+        const groups: Array<{ hour: string; rows: CalendarRow[] }> = []
+        selectedDayRows.forEach((row) => {
+            const hour = row.allDay ? 'All day' : dayjs(row.start).format('HH:00')
+            const last = groups[groups.length - 1]
+            if (last && last.hour === hour) {
+                last.rows.push(row)
+            } else {
+                groups.push({ hour, rows: [row] })
+            }
+        })
+        return groups
+    }, [selectedDayRows])
+
+    const handleDateClick = (arg: DateClickArg) => {
+        const clicked = new Date(arg.date)
+        clicked.setHours(0, 0, 0, 0)
+        setSelectedDate(clicked)
+    }
+
     const handleEventClick = (arg: EventClickArg) => {
         const match = visibleRows.find((x) => x.id === arg.event.id)
         if (match) setSelectedItem(match)
     }
 
+    // Month cells are compact "bento" cards, so each day only has room for a
+    // short list of dot-and-title pills rather than the full detail card.
     const renderEventContent = (eventInfo: EventContentArg) => {
         const source = eventInfo.event.extendedProps?.source as CalendarSource
-        const raw = eventInfo.event.extendedProps?.raw || {}
-        const durationMs =
-            eventInfo.event.start && eventInfo.event.end
-                ? eventInfo.event.end.getTime() - eventInfo.event.start.getTime()
-                : 0
-        // Short, consecutive appointments do not have enough vertical space
-        // for the regular three-line event card.
-        const isCompactTimedEvent =
-            !eventInfo.event.allDay &&
-            durationMs > 0 &&
-            durationMs <= 30 * 60 * 1000
-        // Do not use FullCalendar's locale-dependent time text for timed
-        // events. In a 12-hour locale it can render 15:00 as “03:00” when
-        // the meridiem is hidden, which is misleading for appointments.
-        const timeText = eventInfo.event.allDay
-            ? eventInfo.timeText
-            : formatTimeRange(eventInfo.event.start || undefined, eventInfo.event.end || undefined)
-
-        let badge = 'Event'
-        let subtitle = raw?.location || raw?.type || ''
-
-        if (source === 'appointment') {
-            badge = raw?.isGroupAppointment ? 'Group' : lower(raw?.deliveryMethod) === 'virtual' ? 'Virtual' : 'Appointment'
-            subtitle = raw?.isGroupAppointment
-                ? `${raw?.groupParticipantCount || raw?.groupMembers?.length || 0} participants`
-                : raw?.participantName || raw?.consultantName || raw?.location || ''
-        }
-
-        if (source === 'task') {
-            badge = 'Task'
-            subtitle = raw?.priority || raw?.status || ''
-        }
 
         return (
-            <div className={`smart-event-card ${source}${isCompactTimedEvent ? ' smart-event-card--compact' : ''}`}>
-                <div className="smart-event-card__top">
-                    <span className={`smart-event-card__badge ${source}`}>{badge}</span>
-                    <span className="smart-event-card__time">{timeText}</span>
-                </div>
-                <div className="smart-event-card__title">{eventInfo.event.title}</div>
-                {subtitle ? <div className="smart-event-card__subtitle">{subtitle}</div> : null}
+            <div className={`smart-month-pill ${source}`}>
+                <span className={`smart-month-pill__dot ${source}`} />
+                <span className="smart-month-pill__title">{eventInfo.event.title}</span>
             </div>
         )
     }
@@ -998,6 +1195,34 @@ const MyCalendarPage: React.FC = () => {
         }
     ]
 
+    // Operations does not use the notice board — it is scoped to branch and
+    // programme announcements that don't apply to their workflow.
+    const canSeeNoticeBoard = !isOperations
+    const workspaceTabItems = [
+        {
+            key: 'calendar',
+            label: (
+                <Space size={7}>
+                    <CalendarOutlined />
+                    Calendar
+                </Space>
+            )
+        },
+        ...(canSeeNoticeBoard
+            ? [
+                {
+                    key: 'notices',
+                    label: (
+                        <Space size={7}>
+                            <NotificationOutlined />
+                            Notice board
+                        </Space>
+                    )
+                }
+            ]
+            : [])
+    ]
+
     return (
         <div className="smart-calendar-workspace">
             <Helmet>
@@ -1005,89 +1230,79 @@ const MyCalendarPage: React.FC = () => {
             </Helmet>
 
             <div className="smart-calendar-page">
-                <Tabs
-                    className="smart-workspace-tabs"
-                    activeKey={workspaceView}
-                    onChange={value => setWorkspaceView(value as WorkspaceView)}
-                    items={[
-                        {
-                            key: 'calendar',
-                            label: (
-                                <Space size={7}>
-                                    <CalendarOutlined />
-                                    Calendar
-                                </Space>
-                            )
-                        },
-                        {
-                            key: 'notices',
-                            label: (
-                                <Space size={7}>
-                                    <NotificationOutlined />
-                                    Notice board
-                                </Space>
-                            )
-                        }
-                    ]}
-                />
+                {workspaceTabItems.length > 1 && (
+                    <Tabs
+                        className="smart-workspace-tabs"
+                        activeKey={workspaceView}
+                        onChange={value => setWorkspaceView(value as WorkspaceView)}
+                        items={workspaceTabItems}
+                    />
+                )}
                 <Row gutter={[16, 16]} align="middle" justify="space-between" className="smart-calendar-topbar">
-                    {!isMobile && (
-                        <Col xs={24} xl={10}>
-                            <div className="smart-calendar-title-wrap">
-                                <div className="smart-calendar-title-icon">
-                                    {workspaceView === 'calendar'
-                                        ? <CalendarOutlined />
-                                        : <NotificationOutlined />}
-                                </div>
-                                <div>
-                                    <Title level={4} style={{ margin: 0 }}>
-                                        {workspaceView === 'calendar' ? 'My calendar' : 'Notice board'}
-                                    </Title>
-                                    <Text type="secondary">
-                                        {workspaceView === 'calendar'
-                                            ? isIncubatee
-                                                ? 'Appointments and events that include you'
-                                                : 'Events, appointments, and due tasks'
-                                            : 'Announcements for your branch and programme'}
-                                    </Text>
-                                </div>
+                    <Col xs={24} xl={10}>
+                        {workspaceView === 'calendar' ? (
+                            <div className="smart-calendar-nav">
+                                <Select
+                                    value={currentMonth}
+                                    onChange={setCurrentMonth}
+                                    options={MONTH_OPTIONS}
+                                    popupMatchSelectWidth={false}
+                                    variant="borderless"
+                                    className="smart-calendar-month-select"
+                                />
+                                <Select
+                                    value={currentYear}
+                                    onChange={setCurrentYear}
+                                    options={yearOptions.map((year) => ({ value: year, label: String(year) }))}
+                                    popupMatchSelectWidth={false}
+                                    variant="borderless"
+                                    className="smart-calendar-year-select"
+                                />
                             </div>
-                        </Col>
-                    )}
+                        ) : (
+                            !isMobile && (
+                                <div className="smart-calendar-title-wrap">
+                                    <div className="smart-calendar-title-icon">
+                                        <NotificationOutlined />
+                                    </div>
+                                    <div>
+                                        <Title level={4} style={{ margin: 0 }}>
+                                            Notice board
+                                        </Title>
+                                        <Text type="secondary">
+                                            Announcements for your branch and programme
+                                        </Text>
+                                    </div>
+                                </div>
+                            )
+                        )}
+                    </Col>
 
                     <Col xs={24} xl={14}>
                         {workspaceView === 'calendar' && <div className="smart-calendar-actions">
-                            <Tag className="smart-pill smart-pill-purple">{eventRows.length} Events</Tag>
-                            <Tag className="smart-pill smart-pill-blue">{appointmentRows.length} Appointments</Tag>
-                            {!isIncubatee && (
-                                <Tag className="smart-pill smart-pill-gold">{taskRows.length} Tasks</Tag>
-                            )}
-                            <Tag className="smart-pill smart-pill-slate">{calendarEvents.length} Showing</Tag>
-
                             <div
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 12,
+                                    gap: 10,
                                     flexWrap: 'wrap',
-                                    padding: '10px 12px',
+                                    padding: '6px 10px',
                                     border: '1px solid #e6efff',
-                                    borderRadius: 14,
+                                    borderRadius: 12,
                                     boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
                                     width: '100%'
                                 }}
                             >
-                                <Space
-                                    size={8}
+                                <span
                                     style={{
                                         color: '#1677ff',
-                                        fontWeight: 600,
-                                        flex: '0 0 auto'
+                                        flex: '0 0 auto',
+                                        display: 'flex',
+                                        alignItems: 'center'
                                     }}
                                 >
                                     <FilterOutlined />
-                                    <span>Filters</span>
-                                </Space>
+                                </span>
 
                                 {/* Type + Delivery */}
                                 <div
@@ -1112,7 +1327,6 @@ const MyCalendarPage: React.FC = () => {
                                             optionLabelProp="label"
                                             suffixIcon={<AppstoreOutlined />}
                                             popupMatchSelectWidth={false}
-                                            size="large"
                                         />
                                     </div>
 
@@ -1130,7 +1344,6 @@ const MyCalendarPage: React.FC = () => {
                                             optionLabelProp="label"
                                             suffixIcon={<ClockCircleOutlined />}
                                             popupMatchSelectWidth={false}
-                                            size="large"
                                         />
                                     </div>
                                 </div>
@@ -1152,7 +1365,6 @@ const MyCalendarPage: React.FC = () => {
                                             suffixIcon={<ApartmentOutlined />}
                                             placeholder="Filter by department"
                                             popupMatchSelectWidth={false}
-                                            size="large"
                                             optionRender={(option) => (
                                                 <Space size={8}>
                                                     <ApartmentOutlined />
@@ -1169,45 +1381,11 @@ const MyCalendarPage: React.FC = () => {
                                     </div>
                                 ) : null}
                             </div>
-                            <Segmented
-                                className="smart-calendar-segmented"
-                                value={viewMode}
-                                onChange={(value) => setViewMode(value as ViewMode)}
-                                options={[
-                                    {
-                                        label: (
-                                            <Space size={6}>
-                                                <BarsOutlined />
-                                                <span>Day</span>
-                                            </Space>
-                                        ),
-                                        value: 'timeGridDay'
-                                    },
-                                    {
-                                        label: (
-                                            <Space size={6}>
-                                                <CalendarOutlined />
-                                                <span>Week</span>
-                                            </Space>
-                                        ),
-                                        value: 'timeGridWeek'
-                                    },
-                                    {
-                                        label: (
-                                            <Space size={6}>
-                                                <AppstoreOutlined />
-                                                <span>Month</span>
-                                            </Space>
-                                        ),
-                                        value: 'dayGridMonth'
-                                    }
-                                ]}
-                            />
                         </div>}
                     </Col>
                 </Row>
 
-                {workspaceView === 'notices' ? (
+                {workspaceView === 'notices' && canSeeNoticeBoard ? (
                     <NoticeBoard
                         user={user}
                         activeProgramId={activeProgramId}
@@ -1225,48 +1403,135 @@ const MyCalendarPage: React.FC = () => {
                         />
                     </div>
                 ) : (
-                    <div className="smart-calendar-shell">
-                        <FullCalendar
-                            key={`${viewMode}-${activeProgramId || 'all'}-${isAllPrograms ? 'all' : 'single'}`}
-                            plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
-                            initialView={viewMode}
-                            headerToolbar={{
-                                left: 'prev,next today',
-                                center: 'title',
-                                right: ''
-                            }}
-                            events={calendarEvents}
-                            eventClick={handleEventClick}
-                            eventContent={renderEventContent}
-                            nowIndicator
-                            editable={false}
-                            selectable={false}
-                            allDaySlot={viewMode === 'dayGridMonth'}
-                            // Timed events that overlap are allocated separate
-                            // columns: two use half the lane, three use thirds,
-                            // and so on. They never conceal one another.
-                            slotEventOverlap={false}
-                            slotMinTime={viewMode === 'dayGridMonth' ? '00:00:00' : '08:00:00'}
-                            slotMaxTime={viewMode === 'dayGridMonth' ? '24:00:00' : '18:00:00'}
-                            slotDuration="00:30:00"
-                            slotLabelInterval="01:00"
-                            height={
-                                viewMode === 'dayGridMonth' || isMobile
-                                    ? 'auto'
-                                    : 'calc(100vh - 300px)'
-                            }
-                            contentHeight={isMobile ? 'auto' : '100%'}
-                            expandRows={!isMobile}
-                            dayMaxEventRows={3}
-                            stickyHeaderDates
-                            weekends={viewMode !== 'timeGridWeek'}
-                            eventTimeFormat={{
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hour12: false,
-                                meridiem: false
-                            }}
-                        />
+                    <div className="smart-calendar-body">
+                        <div className="smart-calendar-shell">
+                            <FullCalendar
+                                ref={calendarRef}
+                                key={`${activeProgramId || 'all'}-${isAllPrograms ? 'all' : 'single'}`}
+                                plugins={[dayGridPlugin, interactionPlugin]}
+                                initialView="dayGridMonth"
+                                initialDate={new Date(currentYear, currentMonth, 1)}
+                                headerToolbar={false}
+                                events={calendarEvents}
+                                eventClick={handleEventClick}
+                                eventContent={renderEventContent}
+                                dateClick={handleDateClick}
+                                dayCellClassNames={(arg: DayCellContentArg) =>
+                                    isSameDay(arg.date, selectedDate) ? ['smart-calendar-selected-day'] : []
+                                }
+                                editable={false}
+                                selectable={false}
+                                height="auto"
+                                dayMaxEventRows={3}
+                                stickyHeaderDates
+                                weekends={false}
+                                eventTimeFormat={{
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: false,
+                                    meridiem: false
+                                }}
+                            />
+                        </div>
+
+                        <div className="smart-calendar-day-panel">
+                            <div className="smart-calendar-day-panel__header">
+                                <div className="smart-calendar-day-panel__headline">
+                                    <Text strong className="smart-calendar-day-panel__title">Scheduled</Text>
+                                    <div className="smart-calendar-day-panel__nav">
+                                        <Button
+                                            type="text"
+                                            shape="circle"
+                                            icon={<CalendarOutlined />}
+                                            onClick={goToToday}
+                                            aria-label="Jump to today"
+                                        />
+                                        <Button
+                                            type="text"
+                                            shape="circle"
+                                            icon={<LeftOutlined />}
+                                            onClick={() => changeSelectedDate(-1)}
+                                            aria-label="Previous day"
+                                        />
+                                        <Button
+                                            type="text"
+                                            shape="circle"
+                                            icon={<RightOutlined />}
+                                            onClick={() => changeSelectedDate(1)}
+                                            aria-label="Next day"
+                                        />
+                                    </div>
+                                </div>
+                                <Text type="secondary">{dayjs(selectedDate).format('D MMMM YYYY')}</Text>
+                            </div>
+                            <div className="smart-calendar-day-panel__list">
+                                {selectedDayRows.length === 0 ? (
+                                    <Empty
+                                        description="Nothing scheduled"
+                                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                    />
+                                ) : (
+                                    selectedDayGroups.map((group) => (
+                                        <div className="smart-agenda-group" key={group.hour}>
+                                            <div className="smart-agenda-group__divider">
+                                                <span className="smart-agenda-group__time">{group.hour}</span>
+                                            </div>
+                                            <div className="smart-agenda-group__items">
+                                                {group.rows.map((row) => {
+                                                    const participants = getRowParticipants(row)
+                                                    const shownParticipants = participants.slice(0, 3)
+                                                    const overflow = Math.max(participants.length - shownParticipants.length, 0)
+
+                                                    return (
+                                                        <button
+                                                            type="button"
+                                                            key={row.id}
+                                                            className={`smart-agenda-card ${row.source}`}
+                                                            onClick={() => setSelectedItem(row)}
+                                                        >
+                                                            <span className={`smart-agenda-card__accent ${row.source}`} />
+                                                            <span className="smart-agenda-card__title">{row.title}</span>
+                                                            {getRowSubtitle(row) && (
+                                                                <span className="smart-agenda-card__subtitle">
+                                                                    {getRowSubtitle(row)}
+                                                                </span>
+                                                            )}
+                                                            <span className="smart-agenda-card__meta">
+                                                                <ClockCircleOutlined />
+                                                                {row.allDay
+                                                                    ? 'All day'
+                                                                    : formatTimeRange(row.start, row.end)}
+                                                                {!row.allDay && formatDuration(row.start, row.end) && (
+                                                                    <> · {formatDuration(row.start, row.end)}</>
+                                                                )}
+                                                            </span>
+                                                            {participants.length > 0 && (
+                                                                <span className="smart-agenda-card__avatars">
+                                                                    <span className="smart-agenda-card__avatar-stack">
+                                                                        {shownParticipants.map((name, index) => (
+                                                                            <Avatar
+                                                                                key={`${row.id}-${index}`}
+                                                                                size={22}
+                                                                                style={{ backgroundColor: avatarColorFor(name) }}
+                                                                            >
+                                                                                {initialsFor(name)}
+                                                                            </Avatar>
+                                                                        ))}
+                                                                    </span>
+                                                                    <span className="smart-agenda-card__avatar-names">
+                                                                        {formatParticipantsLabel(participants)}
+                                                                    </span>
+                                                                </span>
+                                                            )}
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

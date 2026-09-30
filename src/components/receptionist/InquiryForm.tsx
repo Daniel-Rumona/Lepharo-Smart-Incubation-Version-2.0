@@ -11,16 +11,36 @@ import {
     Space,
     message,
     Switch,
-    Steps
+    Checkbox,
+    Typography,
+    Steps,
+    theme
 } from 'antd'
 import {
     SaveOutlined,
     ClearOutlined,
-    SearchOutlined,
     ArrowLeftOutlined,
-    ArrowRightOutlined
+    ArrowRightOutlined,
+    UserOutlined,
+    IdcardOutlined,
+    MessageOutlined,
+    FlagOutlined,
+    BellOutlined,
+    RightOutlined,
+    TeamOutlined,
+    ArrowDownOutlined,
+    ArrowUpOutlined,
+    MinusOutlined,
+    FireOutlined,
+    InfoCircleOutlined,
+    StarOutlined,
+    PhoneOutlined,
+    MailOutlined,
+    EnvironmentOutlined,
+    VideoCameraOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import dayjs from 'dayjs'
 import {
     InquiryFormData,
     InquiryType,
@@ -33,6 +53,7 @@ import {
 } from '@/types/inquiry'
 import { inquiryService } from '@/services/inquiryService'
 import { useAuth } from '@/hooks/useAuth'
+import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import {
     collection,
     getDocs,
@@ -43,8 +64,15 @@ import {
     doc
 } from 'firebase/firestore'
 import { db } from '@/firebase'
+import {
+    AUDIENCE_LABEL,
+    MANUAL_CHANNELS,
+    channelLabel,
+    resolveInquiryChannel
+} from '@/utils/inquirySource'
 
 const { TextArea } = Input
+const { Text } = Typography
 const { Option } = Select
 
 type SourceType = 'Incubatee' | 'Non-Incubatee'
@@ -55,6 +83,10 @@ interface InquiryFormProps {
     onSuccess?: () => void
     embedded?: boolean
     stepped?: boolean
+    /** Edit mode: open on cards for each section, edit one section at a time. */
+    sectioned?: boolean
+    /** Show the Contact / Inquiry / Follow-up indicator above a stepped form. */
+    showSteps?: boolean
     forcedProgramId?: string
     forcedProgramName?: string
 }
@@ -67,26 +99,210 @@ interface Program {
 
 const ACCEPTED_VALUES = ['accepted', 'approved', 'Accepted', 'Approved', true]
 
+type SectionKey = 'who' | 'contact' | 'inquiry' | 'management' | 'followup'
+
+const SECTION_STEP: Record<SectionKey, number> = { who: 0, contact: 0, inquiry: 1, management: 1, followup: 2 }
+
+const SECTION_FIELDS: Record<SectionKey, string[]> = {
+    who: ['sourceTypeInternal', 'source', 'smeParticipantId'],
+    // Who it is from and the contact details depend on each other, so editing shares one section.
+    contact: ['sourceTypeInternal', 'source', 'smeParticipantId', 'firstName', 'lastName', 'email', 'phone'],
+    inquiry: ['inquiryType', 'department', 'description'],
+    management: ['priority', 'classification'],
+    followup: ['nextFollowUpDate', 'followUpMethod', 'followUpNotes']
+}
+
+const SECTION_CARDS: { key: SectionKey; title: string; hint: string; icon: React.ReactNode }[] = [
+    { key: 'contact', title: 'Contact', hint: 'Who it is from, how they reached us and their details', icon: <IdcardOutlined /> },
+    { key: 'inquiry', title: 'Inquiry', hint: 'What they are asking for', icon: <MessageOutlined /> },
+    { key: 'management', title: 'Priority & classification', hint: 'How urgent and what kind', icon: <FlagOutlined /> },
+    { key: 'followup', title: 'Follow-up', hint: 'Next touchpoint', icon: <BellOutlined /> }
+]
+
+type CardOption = { value: string; label: string; icon: React.ReactNode; color?: string }
+
+const AUDIENCE_CARDS: CardOption[] = [
+    { value: 'Incubatee', label: AUDIENCE_LABEL.Incubatee, icon: <TeamOutlined /> },
+    { value: 'Non-Incubatee', label: AUDIENCE_LABEL['Non-Incubatee'], icon: <UserOutlined /> }
+]
+
+const PRIORITY_CARDS: CardOption[] = [
+    { value: 'Low', label: 'Low', icon: <ArrowDownOutlined />, color: '#8c8c8c' },
+    { value: 'Medium', label: 'Medium', icon: <MinusOutlined />, color: '#1677ff' },
+    { value: 'High', label: 'High', icon: <ArrowUpOutlined />, color: '#fa8c16' },
+    { value: 'Urgent', label: 'Urgent', icon: <FireOutlined />, color: '#ff4d4f' }
+]
+
+const CLASSIFICATION_CARDS: CardOption[] = [
+    { value: 'General', label: 'General', icon: <InfoCircleOutlined /> },
+    { value: 'Potential', label: 'Potential', icon: <StarOutlined />, color: '#faad14' }
+]
+
+const FOLLOW_UP_METHOD_CARDS: CardOption[] = [
+    { value: 'Phone', label: 'Phone', icon: <PhoneOutlined /> },
+    { value: 'Email', label: 'Email', icon: <MailOutlined /> },
+    { value: 'In-person', label: 'In-person', icon: <EnvironmentOutlined /> },
+    { value: 'Video Call', label: 'Video call', icon: <VideoCameraOutlined /> }
+]
+
+/** A short list of choices as one row of cards. Works as a Form.Item control. */
+const CardSelect: React.FC<{
+    value?: string
+    onChange?: (value: string) => void
+    options: CardOption[]
+}> = ({ value, onChange, options }) => {
+    const { token } = theme.useToken()
+
+    return (
+        <div
+            role='radiogroup'
+            style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+                gap: 10
+            }}
+        >
+            {options.map(option => {
+                const active = value === option.value
+                const accent = option.color || token.colorPrimary
+
+                return (
+                    <button
+                        key={option.value}
+                        type='button'
+                        role='radio'
+                        aria-checked={active}
+                        onClick={() => onChange?.(option.value)}
+                        style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            minWidth: 0,
+                            padding: '12px 6px',
+                            borderRadius: 12,
+                            cursor: 'pointer',
+                            font: 'inherit',
+                            color: active ? accent : token.colorText,
+                            border: `1px solid ${active ? accent : token.colorBorderSecondary}`,
+                            background: active
+                                ? `color-mix(in srgb, ${accent} 12%, transparent)`
+                                : token.colorBgContainer,
+                            boxShadow: active ? `0 0 0 1px ${accent}` : 'none',
+                            transition: 'border-color .15s, background .15s, box-shadow .15s'
+                        }}
+                    >
+                        <span style={{ fontSize: 20, lineHeight: 1 }}>{option.icon}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, textAlign: 'center' }}>
+                            {option.label}
+                        </span>
+                    </button>
+                )
+            })}
+        </div>
+    )
+}
+
+type SmeOption = {
+    value: string
+    label: string
+    company: string
+    email: string
+    owner: string
+}
+
+type FormSectionProps = {
+    icon: React.ReactNode
+    title: string
+    hint?: string
+    extra?: React.ReactNode
+    children?: React.ReactNode
+}
+
+const FormSection: React.FC<FormSectionProps> = ({ icon, title, hint, extra, children }) => {
+    const { token } = theme.useToken()
+
+    return (
+        <section style={{ marginBottom: 12 }}>
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    marginBottom: 20,
+                    paddingBottom: 12,
+                    borderBottom: `1px solid ${token.colorBorderSecondary}`
+                }}
+            >
+                <span
+                    style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 10,
+                        display: 'grid',
+                        placeItems: 'center',
+                        flex: '0 0 auto',
+                        color: token.colorPrimary,
+                        background: token.colorPrimaryBg,
+                        fontSize: 16
+                    }}
+                >
+                    {icon}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <Text strong style={{ fontSize: 15, display: 'block', lineHeight: 1.25 }}>
+                        {title}
+                    </Text>
+                    {hint ? (
+                        <Text type='secondary' style={{ fontSize: 12 }}>
+                            {hint}
+                        </Text>
+                    ) : null}
+                </div>
+                {extra}
+            </div>
+            {children}
+        </section>
+    )
+}
+
 const InquiryForm: React.FC<InquiryFormProps> = ({
     initialData,
     inquiryId,
     onSuccess,
     embedded = false,
     stepped = false,
-    forcedProgramId,
+    sectioned = false,
+    showSteps = false,
+    forcedProgramId: forcedProgramIdProp,
     forcedProgramName
 }) => {
     const [form] = Form.useForm()
+    // The programme comes from the top bar; there is no separate selector.
+    const { activeProgramId } = useActiveProgramId()
+    const forcedProgramId = forcedProgramIdProp || activeProgramId || undefined
     const [loading, setLoading] = useState(false)
     const [requiresFollowUp, setRequiresFollowUp] = useState(false)
     const [sourceType, setSourceType] = useState<SourceType>('Non-Incubatee')
     const [programs, setPrograms] = useState<Program[]>([])
-    const [fetchingIncubatee, setFetchingIncubatee] = useState(false)
+    const [smeOptions, setSmeOptions] = useState<SmeOption[]>([])
+    const [smeLoading, setSmeLoading] = useState(false)
+    const [representative, setRepresentative] = useState(false)
+    const watchedProgramId = Form.useWatch('programId', form)
+    const selectedSmeId = Form.useWatch('smeParticipantId', form)
+    const smeProgramId = forcedProgramId || watchedProgramId
     const [contactLocked, setContactLocked] = useState(false)
     const [departmentOptions, setDepartmentOptions] = useState<string[]>([])
+    const { token } = theme.useToken()
     const [currentStep, setCurrentStep] = useState(0)
+    const [activeSection, setActiveSection] = useState<SectionKey | null>(null)
     const navigate = useNavigate()
     const { user } = useAuth()
+
+    // Inquiries an SME sent from their portal keep the source they arrived with;
+    // it is not a channel staff can pick.
+    const portalOrigin = resolveInquiryChannel((initialData as any)?.source) === 'System'
 
     useEffect(() => {
         if (forcedProgramId) {
@@ -100,6 +316,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
         if (initialSourceType === 'Incubatee' || initialSourceType === 'Non-Incubatee') {
             setSourceType(initialSourceType)
         }
+        setRepresentative(Boolean(values?.representative))
         setRequiresFollowUp(
             Boolean(values?.nextFollowUpDate || values?.followUpMethod || values?.followUpNotes)
         )
@@ -117,7 +334,6 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
         'Partnership',
         'Other'
     ]
-    const priorities: InquiryPriority[] = ['Low', 'Medium', 'High', 'Urgent']
     const budgetRanges: BudgetRange[] = [
         'Under R10k',
         'R10k - R50k',
@@ -135,12 +351,6 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
         '6-12 months',
         'Over 1 year',
         'Flexible'
-    ]
-    const followUpMethods: FollowUpMethod[] = [
-        'Phone',
-        'Email',
-        'In-person',
-        'Video Call'
     ]
 
     // Load programs from the canonical programs collection only.
@@ -206,83 +416,97 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
         return { firstName, lastName }
     }
 
-    const fetchIncubatee = useCallback(async () => {
-        const email: string = normalizeEmail(form.getFieldValue('email'))
-        const programId: string = form.getFieldValue('programId')
+    // Accepted SMEs of the selected programme, so a walk-in can be linked to the
+    // company even when the person at the desk is not the owner on file.
+    useEffect(() => {
+        if (sourceType !== 'Incubatee' || !smeProgramId) {
+            setSmeOptions([])
+            return
+        }
 
-        if (!email) {
-            message.warning('Please enter the incubatee email.')
-            return
-        }
-        if (!programId) {
-            message.warning('Please select a program first.')
-            return
-        }
-        setFetchingIncubatee(true)
-        try {
-            // 1) Find accepted application for this email+program
-            const appsQ = query(
-                collection(db, 'applications'),
-                where('email', '==', email),
-                where('programId', '==', programId),
-                limit(5)
-            )
-            const appsSnap = await getDocs(appsQ)
-            const acceptedApp = appsSnap.docs.find(d => {
-                const data = d.data() as any
-                const status = data?.status ?? data?.applicationStatus ?? data?.decision
-                return ACCEPTED_VALUES.includes(status)
+        let cancelled = false
+        setSmeLoading(true)
+
+        getDocs(query(collection(db, 'applications'), where('programId', '==', smeProgramId)))
+            .then(snap => {
+                if (cancelled) return
+                const seen = new Set<string>()
+                const rows: SmeOption[] = []
+
+                snap.docs.forEach(d => {
+                    const app = d.data() as any
+                    const status = app?.status ?? app?.applicationStatus ?? app?.decision
+                    const participantId = String(app?.participantId || '').trim()
+                    if (!ACCEPTED_VALUES.includes(status) || !participantId || seen.has(participantId)) return
+                    seen.add(participantId)
+
+                    const company = String(app?.beneficiaryName || app?.companyName || '').trim()
+                    const owner = String(app?.participantName || app?.applicantName || app?.directorName || '').trim()
+                    const email = String(app?.email || '').trim()
+                    rows.push({
+                        value: participantId,
+                        company,
+                        owner,
+                        email,
+                        label: [company || 'Unnamed company', owner, email].filter(Boolean).join(' · ')
+                    })
+                })
+
+                rows.sort((x, y) => x.label.localeCompare(y.label, undefined, { sensitivity: 'base' }))
+                setSmeOptions(rows)
+            })
+            .catch(err => {
+                console.error('Failed to load SMEs', err)
+                if (!cancelled) setSmeOptions([])
+            })
+            .finally(() => {
+                if (!cancelled) setSmeLoading(false)
             })
 
-            if (!acceptedApp) {
-                message.error('No accepted application found for this email & program.')
+        return () => {
+            cancelled = true
+        }
+    }, [sourceType, smeProgramId])
+
+    // Fill the form from the chosen SME. A representative keeps their own contact
+    // details; only the company is taken from the SME.
+    const applySme = useCallback(
+        async (participantId: string, asRepresentative: boolean) => {
+            const option = smeOptions.find(item => item.value === participantId)
+            form.setFieldsValue({ company: option?.company || '' })
+
+            if (asRepresentative) {
                 setContactLocked(false)
                 return
             }
-            const app = acceptedApp.data() as any
-            const participantId = app?.participantId
-            if (!participantId) {
-                message.error('Application has no participantId link.')
-                setContactLocked(false)
-                return
-            }
 
-            // 2) Fetch participant by participantId
-            const participantRef = doc(db, 'participants', participantId)
-            const pSnap = await getDoc(participantRef)
-
-            if (pSnap.exists()) {
-                const participant = pSnap.data()
-
-                // Autofill form
-                const [firstName, ...lastNameParts] = (
-                    participant.participantName || ''
-                ).split(' ')
+            try {
+                const pSnap = await getDoc(doc(db, 'participants', participantId))
+                const participant = pSnap.exists() ? (pSnap.data() as any) : null
+                const [firstName, ...lastNameParts] = String(
+                    participant?.participantName || option?.owner || ''
+                )
+                    .trim()
+                    .split(/\s+/)
 
                 form.setFieldsValue({
-                    firstName,
+                    firstName: firstName || '',
                     lastName: lastNameParts.join(' '),
-                    phone: participant.phone || '',
-                    company: participant.beneficiaryName || '',
+                    email: option?.email || participant?.email || '',
+                    phone: participant?.phone || '',
+                    company: participant?.beneficiaryName || option?.company || '',
                     position: 'CEO',
-                    businessStage: app.stage || '',
-                    industry: participant.sector || ''
+                    industry: participant?.sector || ''
                 })
-            } else {
-                message.error('Participant record not found.')
+                setContactLocked(true)
+            } catch (err) {
+                console.error('Error loading SME details', err)
+                message.error('Could not load the SME details. Enter the contact manually.')
+                setContactLocked(false)
             }
-
-            // Lock contact fields after autofill
-            setContactLocked(true)
-            message.success('Incubatee verified and details autofilled.')
-        } catch (err) {
-            console.error('Error fetching incubatee:', err)
-            message.error('Failed to fetch incubatee details.')
-            setContactLocked(false)
-        } finally {
-            setFetchingIncubatee(false)
-        }
-    }, [form])
+        },
+        [form, smeOptions]
+    )
 
     // Reset locks when toggling source type
     useEffect(() => {
@@ -305,6 +529,8 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                     ? forcedProgramId || values.programId
                     : null
 
+            const linkedSmeId = sourceType === 'Incubatee' ? values.smeParticipantId || null : null
+
             const inquiryData: InquiryFormData = {
                 contactInfo: {
                     firstName: values.firstName,
@@ -324,9 +550,12 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                     timeline: values.timeline || ''
                 },
                 priority: values.priority,
-                // store the new meaning here
-                source: 'Walk-in',
+                source: portalOrigin
+                    ? (initialData as any).source
+                    : values.source || 'Walk-in',
                 classification: values.classification || 'General',
+                participantId: linkedSmeId,
+                isRepresentative: Boolean(linkedSmeId) && representative,
                 tags: values.tags || [],
                 ...(requiresFollowUp &&
                     (values.nextFollowUpDate ||
@@ -340,6 +569,8 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                             followUpMethod: values.followUpMethod
                         }),
                         assignedTo: values.assignedTo || user.uid,
+                        assignedToName: user.name || user.email || '',
+                        assignedToEmail: user.email || '',
                         ...(values.followUpNotes && { notes: values.followUpNotes })
                     }
                 })
@@ -383,6 +614,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
         form.resetFields()
         setRequiresFollowUp(false)
         setContactLocked(false)
+        setRepresentative(false)
         setSourceType('Non-Incubatee')
         setCurrentStep(0)
         if (forcedProgramId) {
@@ -393,7 +625,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
     const handleNextStep = async () => {
         const fields =
             currentStep === 0
-                ? ['sourceTypeInternal', 'firstName', 'lastName', 'email', 'phone']
+                ? ['sourceTypeInternal', 'source', 'smeParticipantId', 'firstName', 'lastName', 'email', 'phone']
                 : ['inquiryType', 'department', 'description', 'priority', 'classification']
 
         try {
@@ -402,6 +634,49 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
         } catch {
             // Ant Design displays the relevant field validation messages.
         }
+    }
+
+    const sectionStyle = (key: SectionKey): React.CSSProperties => ({
+        display: sectioned
+            ? activeSection === (key === 'who' ? 'contact' : key) ? 'block' : 'none'
+            : !stepped || currentStep === SECTION_STEP[key] ? 'block' : 'none'
+    })
+
+    const sectionSummary = (key: SectionKey): string => {
+        const values = form.getFieldsValue(true) as any
+        switch (key) {
+            case 'who':
+            case 'contact':
+                return [
+                    AUDIENCE_LABEL[sourceType],
+                    channelLabel(resolveInquiryChannel(values.source)),
+                    `${values.firstName || ''} ${values.lastName || ''}`.trim(),
+                    values.company
+                ].filter(Boolean).join(' · ')
+            case 'inquiry':
+                return [values.inquiryType, values.department].filter(Boolean).join(' · ') || 'Not set'
+            case 'management':
+                return [values.priority && `${values.priority} priority`, values.classification]
+                    .filter(Boolean).join(' · ') || 'Not set'
+            case 'followup':
+                return requiresFollowUp && values.nextFollowUpDate
+                    ? [dayjs(values.nextFollowUpDate).format('DD MMM YYYY'), values.followUpMethod]
+                        .filter(Boolean).join(' · ')
+                    : 'No follow-up scheduled'
+        }
+    }
+
+    // Only the open section is validated; the others stay mounted (hidden) so their values are saved as they are.
+    const handleSectionUpdate = async () => {
+        if (!activeSection) return
+        const fields = activeSection === 'followup' && !requiresFollowUp ? [] : SECTION_FIELDS[activeSection]
+
+        try {
+            await form.validateFields(fields)
+        } catch {
+            return
+        }
+        await handleSubmit(form.getFieldsValue(true))
     }
 
     // Guard: user without branch
@@ -438,10 +713,11 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
         >
             <Card
                 bordered={!embedded}
+                style={embedded ? { background: 'transparent', boxShadow: 'none' } : undefined}
                 styles={{ body: { padding: embedded ? 0 : 24 } }}
                 title={embedded ? undefined : inquiryId ? 'Edit Inquiry' : 'New Inquiry'}
                 extra={
-                    embedded || stepped ? null : <Space>
+                    embedded || stepped || sectioned ? null : <Space>
                         <Button
                             icon={<ClearOutlined />}
                             onClick={handleClear}
@@ -460,7 +736,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                     </Space>
                 }
             >
-                {stepped && (
+                {stepped && showSteps && (
                     <Steps
                         current={currentStep}
                         size='small'
@@ -477,20 +753,84 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                     layout='vertical'
                     onFinish={handleSubmit}
                     initialValues={initialData}
-                    size='large'
+                    size={embedded ? 'middle' : 'large'}
+                    requiredMark='optional'
                 >
-                    <div style={{ display: !stepped || currentStep === 0 ? 'block' : 'none' }}>
+                    {sectioned && !activeSection && (
+                        <div
+                            style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                                gap: 12,
+                                marginBottom: 12
+                            }}
+                        >
+                            {SECTION_CARDS.map(card => (
+                                <div
+                                    key={card.key}
+                                    role='button'
+                                    tabIndex={0}
+                                    onClick={() => setActiveSection(card.key)}
+                                    onKeyDown={event => {
+                                        if (event.key === 'Enter' || event.key === ' ') setActiveSection(card.key)
+                                    }}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 14,
+                                        padding: '16px 18px',
+                                        borderRadius: 14,
+                                        cursor: 'pointer',
+                                        border: `1px solid ${token.colorBorderSecondary}`,
+                                        background: token.colorBgContainer
+                                    }}
+                                >
+                                    <span
+                                        style={{
+                                            width: 40,
+                                            height: 40,
+                                            borderRadius: 12,
+                                            display: 'grid',
+                                            placeItems: 'center',
+                                            flex: '0 0 auto',
+                                            fontSize: 18,
+                                            color: token.colorPrimary,
+                                            background: token.colorPrimaryBg
+                                        }}
+                                    >
+                                        {card.icon}
+                                    </span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <Text strong style={{ display: 'block' }}>
+                                            {card.title}
+                                        </Text>
+                                        <Text
+                                            type='secondary'
+                                            ellipsis
+                                            style={{ display: 'block', fontSize: 12 }}
+                                        >
+                                            {sectionSummary(card.key)}
+                                        </Text>
+                                    </div>
+                                    <RightOutlined style={{ opacity: 0.45, fontSize: 12 }} />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div>
                         {/* Program & Source */}
-                        <Card
-                            type='inner'
-                            title='Contact Type'
-                            style={{ marginBottom: 24 }}
+                        <div style={sectionStyle('who')}>
+                        <FormSection
+                            icon={<IdcardOutlined />}
+                            title='Who is this from?'
+                            hint='Contact type and how they reached us'
                         >
                             {/* Source row reacts to sourceType:
                 - Non-Incubatee: Source spans full width
                 - Incubatee: Source + Email share the row, aligned */}
                             <Row gutter={[16, 0]}>
-                                <Col xs={24} sm={sourceType === 'Incubatee' ? 12 : 24}>
+                                <Col xs={24}>
                                     <Form.Item
                                         label='Contact Type'
                                         name='sourceTypeInternal'
@@ -499,10 +839,10 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                             { required: true, message: 'Please select a source type' }
                                         ]}
                                     >
-                                        <Select
-                                            value={sourceType}
-                                            onChange={(v: SourceType) => {
-                                                setSourceType(v)
+                                        <CardSelect
+                                            options={AUDIENCE_CARDS}
+                                            onChange={(v: string) => {
+                                                setSourceType(v as SourceType)
                                                 if (v === 'Non-Incubatee') {
                                                     setContactLocked(false)
                                                     form.setFieldsValue({
@@ -510,45 +850,96 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                                     })
                                                 }
                                             }}
-                                        >
-                                            <Option value='Incubatee'>Incubatee</Option>
-                                            <Option value='Non-Incubatee'>Non-Incubatee</Option>
+                                        />
+                                    </Form.Item>
+                                </Col>
+
+                                <Col xs={24}>
+                                    <Form.Item
+                                        label='How did they reach us?'
+                                        name='source'
+                                        initialValue={portalOrigin ? 'System' : 'Walk-in'}
+                                        rules={[{ required: true, message: 'Please select how they reached us' }]}
+                                    >
+                                        <Select disabled={portalOrigin}>
+                                            {portalOrigin ? (
+                                                <Option value='System'>{channelLabel('System')}</Option>
+                                            ) : (
+                                                MANUAL_CHANNELS.map(option => (
+                                                    <Option key={option.value} value={option.value}>
+                                                        {channelLabel(option.value)}
+                                                    </Option>
+                                                ))
+                                            )}
                                         </Select>
                                     </Form.Item>
                                 </Col>
 
                                 {sourceType === 'Incubatee' && (
-                                    <Col xs={24} sm={12}>
-                                        <Form.Item
-                                            label='Incubatee Email'
-                                            name='email'
-                                            rules={[
-                                                {
-                                                    required: true,
-                                                    message: 'Email is required for Incubatee'
-                                                },
-                                                {
-                                                    type: 'email',
-                                                    message: 'Please enter a valid email address'
-                                                }
-                                            ]}
-                                        >
-                                            <Input
-                                                placeholder='Enter incubatee email'
-                                                addonAfter={
-                                                    <Button
-                                                        size='small'
-                                                        type='primary'
-                                                        icon={<SearchOutlined />}
-                                                        loading={fetchingIncubatee}
-                                                        onClick={fetchIncubatee}
-                                                    >
-                                                        Verify & Autofill
-                                                    </Button>
-                                                }
-                                            />
-                                        </Form.Item>
-                                    </Col>
+                                    <>
+                                        <Col xs={24}>
+                                            <Form.Item
+                                                label='Which SME is this about?'
+                                                name='smeParticipantId'
+                                                extra='Search by company, owner or email. If the person at the desk is not the owner, tick the box below.'
+                                                rules={[
+                                                    {
+                                                        required: !inquiryId,
+                                                        message: 'Please choose the SME'
+                                                    }
+                                                ]}
+                                            >
+                                                <Select
+                                                    showSearch
+                                                    allowClear
+                                                    loading={smeLoading}
+                                                    placeholder={
+                                                        smeProgramId
+                                                            ? 'Search company, owner or email'
+                                                            : 'Choose a program in the top bar first'
+                                                    }
+                                                    disabled={!smeProgramId}
+                                                    options={smeOptions}
+                                                    optionFilterProp='label'
+                                                    notFoundContent={
+                                                        smeLoading ? 'Loading SMEs...' : 'No accepted SME found'
+                                                    }
+                                                    onChange={(value?: string) => {
+                                                        if (value) applySme(value, representative)
+                                                        else {
+                                                            setContactLocked(false)
+                                                            form.setFieldsValue({ company: '' })
+                                                        }
+                                                    }}
+                                                />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24}>
+                                            <Form.Item>
+                                                <Checkbox
+                                                    checked={representative}
+                                                    onChange={event => {
+                                                        const checked = event.target.checked
+                                                        setRepresentative(checked)
+                                                        if (checked) {
+                                                            setContactLocked(false)
+                                                            form.setFieldsValue({
+                                                                firstName: '',
+                                                                lastName: '',
+                                                                email: '',
+                                                                phone: '',
+                                                                position: ''
+                                                            })
+                                                        } else if (selectedSmeId) {
+                                                            applySme(selectedSmeId, false)
+                                                        }
+                                                    }}
+                                                >
+                                                    Someone is attending on the SME&apos;s behalf (a representative)
+                                                </Checkbox>
+                                            </Form.Item>
+                                        </Col>
+                                    </>
                                 )}
                             </Row>
 
@@ -557,45 +948,15 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                     <Input />
                                 </Form.Item>
                             )}
-
-                            {sourceType === 'Incubatee' && !forcedProgramId && (
-                                <Row gutter={[16, 0]}>
-                                    <Col xs={24} sm={12}>
-                                        <Form.Item
-                                            label='Program'
-                                            name='programId'
-                                            rules={[
-                                                { required: true, message: 'Please select a program' }
-                                            ]}
-                                        >
-                                            <Select
-                                                placeholder='Select program'
-                                                loading={!programs}
-                                                showSearch
-                                                optionFilterProp='children'
-                                                filterOption={(input, option) =>
-                                                    (option?.children as string)
-                                                        ?.toLowerCase()
-                                                        .includes(input.toLowerCase())
-                                                }
-                                            >
-                                                {programs.map(p => (
-                                                    <Option key={p.id} value={p.id}>
-                                                        {p.name}
-                                                    </Option>
-                                                ))}
-                                            </Select>
-                                        </Form.Item>
-                                    </Col>
-                                </Row>
-                            )}
-                        </Card>
+                        </FormSection>
+                        </div>
 
                         {/* Contact Information */}
-                        <Card
-                            type='inner'
-                            title='Contact Information'
-                            style={{ marginBottom: 24 }}
+                        <div style={sectionStyle('contact')}>
+                        <FormSection
+                            icon={<UserOutlined />}
+                            title='Contact details'
+                            hint='Email or phone is required'
                         >
                             <Row gutter={[16, 0]}>
                                 <Col xs={24} sm={12}>
@@ -687,13 +1048,13 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                     <Form.Item label='Company' name='company'>
                                         <Input
                                             placeholder='Enter company name (optional)'
-                                            disabled={contactLocked}
+                                            disabled={contactLocked || (sourceType === 'Incubatee' && Boolean(selectedSmeId))}
                                         />
                                     </Form.Item>
                                 </Col>
                                 <Col xs={24} sm={12}>
                                     <Form.Item
-                                        label='Position'
+                                        label={representative ? 'Position at the SME' : 'Position'}
                                         name='position'
                                         initialValue={sourceType === 'Incubatee' ? 'CEO' : undefined}
                                     >
@@ -725,15 +1086,17 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                             >
                                 <div />
                             </Form.Item>
-                        </Card>
+                        </FormSection>
+                        </div>
                     </div>
 
-                    <div style={{ display: !stepped || currentStep === 1 ? 'block' : 'none' }}>
+                    <div>
                         {/* Inquiry Details */}
-                        <Card
-                            type='inner'
-                            title='Inquiry Details'
-                            style={{ marginBottom: 24 }}
+                        <div style={sectionStyle('inquiry')}>
+                        <FormSection
+                            icon={<MessageOutlined />}
+                            title='Inquiry'
+                            hint='What they are asking for'
                         >
                             <Row gutter={[16, 0]}>
                                 <Col xs={24} sm={12}>
@@ -821,16 +1184,17 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                     maxLength={INQUIRY_VALIDATION.MAX_DESCRIPTION_LENGTH}
                                 />
                             </Form.Item>
-                        </Card>
+                        </FormSection>
+                        </div>
 
                         {/* Inquiry Management */}
-                        <Card
-                            type='inner'
-                            title='Inquiry Management'
-                            style={{ marginBottom: 24 }}
+                        <div style={sectionStyle('management')}>
+                        <FormSection
+                            icon={<FlagOutlined />}
+                            title='Priority & classification'
                         >
                             <Row gutter={[16, 0]}>
-                                <Col xs={24} sm={12}>
+                                <Col xs={24}>
                                     <Form.Item
                                         label='Priority'
                                         name='priority'
@@ -838,52 +1202,43 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                             { required: true, message: 'Please select a priority' }
                                         ]}
                                     >
-                                        <Select placeholder='Select priority'>
-                                            {priorities.map(priority => (
-                                                <Option key={priority} value={priority}>
-                                                    {priority}
-                                                </Option>
-                                            ))}
-                                        </Select>
+                                        <CardSelect options={PRIORITY_CARDS} />
                                     </Form.Item>
                                 </Col>
-                                <Col xs={24} sm={12}>
+                                <Col xs={24}>
                                     <Form.Item
                                         label='Classification'
                                         name='classification'
                                         initialValue='General'
                                         rules={[{ required: true, message: 'Please select a classification' }]}
                                     >
-                                        <Select
-                                            options={[
-                                                { value: 'General', label: 'General' },
-                                                { value: 'Potential', label: 'Potential' }
-                                            ]}
-                                        />
+                                        <CardSelect options={CLASSIFICATION_CARDS} />
                                     </Form.Item>
                                 </Col>
                             </Row>
-                        </Card>
+                        </FormSection>
+                        </div>
                     </div>
 
-                    <div style={{ display: !stepped || currentStep === 2 ? 'block' : 'none' }}>
+                    <div>
                         {/* Follow-up */}
-                        <Card
-                            type='inner'
-                            title={
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span>Follow-up</span>
-                                    <Switch
-                                        size='small'
-                                        checked={requiresFollowUp}
-                                        onChange={setRequiresFollowUp}
-                                    />
-                                </div>
+                        <div style={sectionStyle('followup')}>
+                        <FormSection
+                            icon={<BellOutlined />}
+                            title='Follow-up'
+                            hint={requiresFollowUp ? 'Schedule the next touchpoint' : 'Optional'}
+                            extra={
+                                <Switch
+                                    checked={requiresFollowUp}
+                                    onChange={setRequiresFollowUp}
+                                    checkedChildren='On'
+                                    unCheckedChildren='Off'
+                                />
                             }
                         >
                             {requiresFollowUp && (
                                 <Row gutter={[16, 0]}>
-                                    <Col xs={24} sm={12}>
+                                    <Col xs={24}>
                                         <Form.Item
                                             label='Next Follow-up Date'
                                             name='nextFollowUpDate'
@@ -907,7 +1262,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                             />
                                         </Form.Item>
                                     </Col>
-                                    <Col xs={24} sm={12}>
+                                    <Col xs={24}>
                                         <Form.Item
                                             label='Follow-up Method'
                                             name='followUpMethod'
@@ -922,13 +1277,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                                     : []
                                             }
                                         >
-                                            <Select placeholder='Select follow-up method'>
-                                                {followUpMethods.map(method => (
-                                                    <Option key={method} value={method}>
-                                                        {method}
-                                                    </Option>
-                                                ))}
-                                            </Select>
+                                            <CardSelect options={FOLLOW_UP_METHOD_CARDS} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24}>
@@ -952,16 +1301,61 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                     </Col>
                                 </Row>
                             )}
-                        </Card>
+                        </FormSection>
+                        </div>
                     </div>
 
+                    {sectioned && activeSection && (
+                        <div
+                            style={{
+                                position: 'sticky',
+                                bottom: 0,
+                                zIndex: 2,
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                gap: 12,
+                                margin: '4px -36px 0',
+                                padding: '14px 36px 18px',
+                                background: token.colorBgElevated,
+                                borderTop: `1px solid ${token.colorBorderSecondary}`
+                            }}
+                        >
+                            <Button
+                                block
+                                shape='round'
+                                size='large'
+                                icon={<ArrowLeftOutlined />}
+                                onClick={() => setActiveSection(null)}
+                                disabled={loading}
+                            >
+                                Back
+                            </Button>
+                            <Button
+                                block
+                                shape='round'
+                                size='large'
+                                type='primary'
+                                icon={<SaveOutlined />}
+                                loading={loading}
+                                onClick={handleSectionUpdate}
+                            >
+                                Update
+                            </Button>
+                        </div>
+                    )}
                     {stepped && (
                         <div
                             style={{
+                                position: 'sticky',
+                                bottom: 0,
+                                zIndex: 2,
                                 display: 'grid',
                                 gridTemplateColumns: `repeat(${currentStep > 0 ? 3 : 2}, minmax(0, 1fr))`,
                                 gap: 12,
-                                marginTop: 20
+                                margin: '4px -36px 0',
+                                padding: '14px 36px 18px',
+                                background: token.colorBgElevated,
+                                borderTop: `1px solid ${token.colorBorderSecondary}`
                             }}
                         >
                             <Button
@@ -1004,7 +1398,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                     loading={loading}
                                     onClick={() => form.submit()}
                                 >
-                                    Save Inquiry
+                                    {inquiryId ? 'Update' : 'Save'} Inquiry
                                 </Button>
                             )}
                         </div>

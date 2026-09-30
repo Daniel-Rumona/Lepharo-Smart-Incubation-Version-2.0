@@ -74,6 +74,8 @@ import {
           programId: inquiryData.programId || null,
           programName: inquiryData.programName || null,
           sourceType: inquiryData.sourceType || (inquiryData.programId ? 'Incubatee' : 'Non-Incubatee'),
+          participantId: inquiryData.participantId || null,
+          isRepresentative: Boolean(inquiryData.isRepresentative),
           updatedAt: serverTimestamp(),
           isActive: true
         }
@@ -92,7 +94,11 @@ import {
               priority: inquiryData.priority,
               notes: inquiryData.followUp.notes,
               assignedTo: inquiryData.followUp.assignedTo || submittedBy,
-              assignedToName: inquiryData.followUp.assignedTo || submittedBy, // This should be resolved to actual name
+              assignedToName:
+                inquiryData.followUp.assignedToName ||
+                inquiryData.followUp.assignedTo ||
+                submittedBy,
+              assignedToEmail: inquiryData.followUp.assignedToEmail || '',
             })
             console.log('Follow-up created successfully for inquiry:', docRef.id)
           } catch (followUpError) {

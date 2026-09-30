@@ -832,3 +832,47 @@ structured intent/action response
         ↓
 Firebase executes action
 ```
+
+---
+
+## Staff agent, greeting and role-aware menu (added)
+
+**What changed**
+
+- `POST /api/chat` now looks up who is messaging (Firebase gateway `resolve_identity`): an SME (`participants`) or Lepharo staff (`users.phone`).
+- A greeting ("hi", "hie", "hey", "menu", "help", "good morning") is answered without the model: `Hey there, {first name}! What can I help you with today?` followed by that role's menu (`whatsapp_menu.py`). A bare number picks the option that was last shown.
+- Staff free text goes to `whatsapp_staff.py`: Gemini selects a read tool or a write *proposal*, the gateway validates it, and a write only runs after the same person replies YES.
+- SMEs keep the existing appointment agent, plus a menu option that lists invitations awaiting a reply and moves into the RSVP flow.
+
+**Menus by role**
+
+| Role | Options |
+|---|---|
+| Admin | Feature governance (log meeting, log feature, pipeline summary), user stats, upcoming appointments (view only), intervention status (view only). Admins cannot set up appointments or interventions. |
+| Director | Governance summary, user stats, appointments, interventions |
+| Head of department | Interventions, appointments (upcoming, set up), find an SME |
+| Coordinator / employee | Appointments (upcoming, set up), find an SME |
+| Receptionist | Today's appointments |
+| SME | My appointments, respond to an invitation |
+| Funder / government | No actions (pointed to the platform) |
+
+**Gateway actions added** (`functions/src/whatsappStaff.ts`, staff identity only): `staff_overview`, `governance_summary`, `my_appointments`, `search_participants`, `search_assignments`, `propose_action` (`log_meeting`, `log_feature`, `schedule_appointment`), `confirm_proposal`, `cancel_proposal`, `agent_state_get`, `agent_state_set`. Proposals live in `whatsappAgentProposals` (30 minute expiry); a short conversation history lives in `whatsappAgentState`.
+
+**Configuration** - the ai-backend now needs `LPH_WHATSAPP_GATEWAY_URL` (the deployed `lphWhatsAppGateway` URL) and `LPH_WHATSAPP_GATEWAY_SECRET` (same value as the gateway's `WHATSAPP_GATEWAY_SECRET`). Without them it still greets and serves SME appointment questions, but staff features are off.
+
+**Not built yet** - assigning interventions from WhatsApp. It depends on assignment modes, recurrence/cycle keys, sub-interventions and the once-off/backlog rules that live in the web app, so it needs a shared server-side implementation first. Appointment scheduling is for heads of department, coordinators and employees (their own assignments only), covers individual sessions for an existing assignment; group sessions stay in the web app.
+
+**Tests** - `python -m unittest test_whatsapp test_whatsapp_staff` (model and gateway are stubbed).
+
+### Buttons and lists (interactive messages)
+
+`/api/chat` responses may carry an optional `interactive` object next to `reply` (which always remains a complete text fallback):
+
+- `{"type": "list", "body", "button", "sections": [{"title", "rows": [{"id", "title", "description"}]}]}` - the role menu, sub-menus and the list of pending invitations.
+- `{"type": "buttons", "body", "buttons": [{"id", "title"}]}` - Confirm / Discard on a proposal, and "Yes, I'll attend" / "Can't make it" on an invitation.
+
+Limits enforced by the response model: list rows <= 10, row title <= 24, description <= 72, button title <= 20, at most 3 buttons.
+
+Tapped ids come back to `/api/chat` as the message text: `lph:menu:<scope>:<n>`, `lph:menu`, `lph:confirm`, `lph:cancel`, `lph:rsvp_yes`, `lph:rsvp_no`, `lph:invite:<appointmentId>`. They do not depend on conversation state, so a button from an older message still works (the gateway checks the pending proposal and its 30 minute expiry).
+
+The router (`whatsappBot.ts`, `processAiMessage`) renders `interactive` for the LPH engine with `sendButtons` / `sendMenuList` and falls back to the plain text `reply` otherwise.

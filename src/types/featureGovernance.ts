@@ -8,6 +8,7 @@ export type FeatureStatus =
   | "planned"
   | "in-progress"
   | "blocked"
+  | "awaiting-meeting"
   | "released";
 
 export interface AudienceScope {
@@ -21,7 +22,9 @@ export interface AudienceScope {
 export interface FeatureMeeting {
   id: string;
   title: string;
-  status: "held" | "pending";
+  status: "held" | "pending" | "not-held";
+  notHeldReason?: string;
+  notHeldAt?: string;
   meetingDate?: string;
   dueDate?: string;
   withName: string;
@@ -40,7 +43,10 @@ export interface GovernanceChallenge {
 }
 
 export interface GovernanceMeeting extends FeatureMeeting {
-  source?: "meeting" | "direct-challenge";
+  source?: "meeting" | "direct-challenge" | "recurring";
+  scheduleId?: string;
+  occurrenceDate?: string;
+  remindersSent?: number;
   relatedFeatureIds: string[];
   createdFeatureIds: string[];
   createdBy: string;
@@ -60,6 +66,7 @@ export interface FeatureGovernanceRecord {
   status: FeatureStatus;
   progress: number;
   dueDate?: string;
+  completedAt?: string | null;
   audience: AudienceScope;
   meetings: FeatureMeeting[];
   whatsNew?: {
@@ -69,6 +76,28 @@ export interface FeatureGovernanceRecord {
     releaseDate?: string;
     imageUrls: string[];
   };
+  createdBy: string;
+  createdByName: string;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export type MeetingFrequency = "weekly" | "biweekly" | "monthly";
+
+export interface GovernanceMeetingSchedule {
+  id: string;
+  title: string;
+  withName: string;
+  frequency: MeetingFrequency;
+  /** 0 (Sunday) - 6 (Saturday); used by weekly and biweekly schedules */
+  weekday?: number;
+  /** 1 - 31; used by monthly schedules */
+  dayOfMonth?: number;
+  /** HH:mm in Africa/Johannesburg */
+  time: string;
+  startDate: string;
+  active: boolean;
+  reminderEmail: string;
   createdBy: string;
   createdByName: string;
   createdAt?: any;

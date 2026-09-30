@@ -99,7 +99,9 @@ exports.sendEmail = (0, https_1.onRequest)({ region: "us-central1", invoker: "pu
     }
     const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const transporter = (0, emailShared_1.getTransporter)();
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+    // Every email sent through this endpoint shows the support team as the sender.
+    const fromAddress = process.env.SMTP_FROM || process.env.SMTP_USER;
+    const from = `"Lepharo Smart Incubation Support" <${(fromAddress.match(/<([^>]+)>/)?.[1] || fromAddress).trim()}>`;
     const body = (req.body || {});
     try {
         if ("messages" in body && Array.isArray(body.messages)) {

@@ -1,5 +1,6 @@
+import { DashboardLoader } from "@/components/layout/DashboardLoader";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Button, Spin, theme } from "antd";
+import { Alert, Button, theme } from "antd";
 import {
   ApartmentOutlined,
   AppstoreOutlined,
@@ -78,9 +79,7 @@ export default function TrainingDashboard() {
   );
   if (loading)
     return (
-      <div style={{ padding: 48, textAlign: "center" }}>
-        <Spin />
-      </div>
+      <DashboardLoader />
     );
   if (error)
     return (

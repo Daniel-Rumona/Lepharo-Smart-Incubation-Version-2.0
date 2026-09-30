@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   Card,
   Descriptions,
@@ -17,11 +17,11 @@ import {
   Select,
   DatePicker,
   Form,
+  Grid,
   message,
   Modal,
   Spin,
-  Tooltip,
-  Checkbox
+  Tooltip
 } from 'antd'
 import {
   UserOutlined,
@@ -29,6 +29,8 @@ import {
   PhoneOutlined,
   EditOutlined,
   MessageOutlined,
+  FileTextOutlined,
+  EyeOutlined,
   CalendarOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -36,6 +38,7 @@ import {
   PlusOutlined,
   SendOutlined
 } from '@ant-design/icons'
+import '@/styles/nav-segmented.css'
 import { format } from 'date-fns'
 import { inquiryService } from '@/services/inquiryService'
 import type {
@@ -46,6 +49,11 @@ import type {
 } from '@/types/inquiry'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { auth } from '@/firebase'
+import {
+  channelLabel,
+  resolveInquiryAudience,
+  resolveInquiryChannel
+} from '@/utils/inquirySource'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
@@ -58,8 +66,12 @@ const escapeHtml = (value: string) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 
-// Quick response templates
-const QUICK_RESPONSE_TEMPLATES = [
+// Every email leaves the platform as this sender.
+const SUPPORT_SENDER = 'Lepharo Smart Incubation Support'
+
+// Response templates for Add Communication. "Custom" starts from a blank message.
+const CUSTOM_RESPONSE = 'custom'
+const RESPONSE_TEMPLATES = [
   {
     id: 'initial_response',
     title: 'Initial Response',
@@ -74,7 +86,7 @@ In the meantime, if you have any urgent questions, please don't hesitate to cont
 
 Best regards,
 {{senderName}}
-Incubation Platform Team`
+Lepharo Smart Incubation Support`
   },
   {
     id: 'information_request',
@@ -96,7 +108,7 @@ Looking forward to hearing from you.
 
 Best regards,
 {{senderName}}
-Incubation Platform Team`
+Lepharo Smart Incubation Support`
   },
   {
     id: 'schedule_meeting',
@@ -116,7 +128,7 @@ Looking forward to our conversation.
 
 Best regards,
 {{senderName}}
-Incubation Platform Team`
+Lepharo Smart Incubation Support`
   },
   {
     id: 'follow_up',
@@ -134,7 +146,7 @@ Please let me know if you're still interested or if you have any questions. I'm 
 
 Best regards,
 {{senderName}}
-Incubation Platform Team`
+Lepharo Smart Incubation Support`
   },
   {
     id: 'referral',
@@ -146,20 +158,51 @@ Thank you for your inquiry about {{inquiryType}}.
 
 Based on your specific requirements, I'm connecting you with our specialist who has extensive experience in this area. They will be able to provide you with detailed insights and tailored solutions.
 
-{{specialistName}} will reach out to you within the next 24 hours to schedule a consultation.
+{{specialistName}} ({{specialistEmail}}) will reach out to you within the next 24 hours to schedule a consultation.
 
 If you have any immediate questions, please don't hesitate to contact me.
 
 Best regards,
 {{senderName}}
-Incubation Platform Team`
+Lepharo Smart Incubation Support`
   }
 ]
+
+/** The next step for an inquiry, so a page can show its button (e.g. in its own header). */
+export type InquiryStatusAction = {
+  status: InquiryStatus
+  label: string
+  loading: boolean
+  run: () => void
+}
+
+const nextStatusFor = (status?: InquiryStatus): InquiryStatus | null => {
+  switch (status) {
+    case 'New':
+      return 'In Progress'
+    case 'In Progress':
+    case 'Contacted':
+      return 'Resolved'
+    case 'Resolved':
+    case 'Converted':
+      return 'Closed'
+    default:
+      return null
+  }
+}
+
+const statusActionLabel = (next: InquiryStatus) =>
+  next === 'In Progress' ? 'Move to In Progress' : next === 'Resolved' ? 'Mark as Resolved' : 'Close Inquiry'
 
 interface InquiryDetailProps {
   inquiryId: string
   onEdit?: () => void
   embedded?: boolean
+  /**
+   * When given, the page owns the status and edit buttons (in its header): the next status is
+   * reported here and the buttons at the bottom of the details are not shown.
+   */
+  onStatusAction?: (action: InquiryStatusAction | null) => void
 }
 
 // Firestore Timestamp | Date | number | ISO string -> Date | null
@@ -188,15 +231,40 @@ const asDate = (v: any): Date | null => {
 const InquiryDetail: React.FC<InquiryDetailProps> = ({
   inquiryId,
   onEdit,
-  embedded = false
+  embedded = false,
+  onStatusAction
 }) => {
   const [inquiry, setInquiry] = useState<Inquiry | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [showCommunicationModal, setShowCommunicationModal] = useState(false)
-  const [showQuickResponseModal, setShowQuickResponseModal] = useState(false)
   const [communicationForm] = Form.useForm()
-  const [quickResponseForm] = Form.useForm()
+  const [composeView, setComposeView] = useState<'write' | 'preview'>('write')
+  const isMobile = !Grid.useBreakpoint().md
+  const watchedSubject: string = Form.useWatch('subject', communicationForm) || ''
+  const watchedContent: string = Form.useWatch('content', communicationForm) || ''
+  const watchedResponse: string = Form.useWatch('response', communicationForm) || 'custom'
+  const specialistName: string = Form.useWatch('specialistName', communicationForm) || ''
+  const specialistEmail: string = Form.useWatch('specialistEmail', communicationForm) || ''
+  const isReferral = watchedResponse === 'referral'
+  const updateStatusRef = useRef<(status: InquiryStatus) => void>(() => {})
+
+  useEffect(() => {
+    if (!onStatusAction) return
+    const next = nextStatusFor(inquiry?.status)
+    onStatusAction(
+      next
+        ? {
+            status: next,
+            label: statusActionLabel(next),
+            loading: statusUpdating,
+            run: () => updateStatusRef.current(next)
+          }
+        : null
+    )
+  }, [inquiry?.status, statusUpdating, onStatusAction])
+
+  useEffect(() => () => onStatusAction?.(null), [onStatusAction])
   const [activeSection, setActiveSection] = useState('details')
   const { user } = useFullIdentity()
 
@@ -320,61 +388,111 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
       console.log('=== STATUS UPDATE COMPLETE ===')
     }
   }
+  updateStatusRef.current = updateStatus
+
+  // Replaces {{firstName}}, {{inquiryType}}, {{submittedDate}} and {{senderName}} in a response.
+  const fillTemplate = (text: string) => {
+    if (!inquiry) return text
+    return text
+      .replace(/\{\{firstName\}\}/g, inquiry.contactInfo.firstName)
+      .replace(/\{\{inquiryType\}\}/g, inquiry.inquiryDetails.inquiryType)
+      .replace(/\{\{submittedDate\}\}/g, format(inquiry.submittedAt, 'PPP'))
+      .replace(/\{\{senderName\}\}/g, user?.name || user?.displayName || 'Team Member')
+      .replace(/\{\{specialistName\}\}/g, specialistName.trim() || '{{specialistName}}')
+      .replace(/\{\{specialistEmail\}\}/g, specialistEmail.trim() || '{{specialistEmail}}')
+  }
+
+  // {{variables}} nobody fills and [bracketed] prompts in a template are for the sender to complete.
+  const PLACEHOLDER = /(\{\{[^}]+\}\}|\[[^\]\n]+\])/g
+  const unresolvedIn = (text: string) => text.match(PLACEHOLDER) || []
+
+  const renderWithHighlights = (text: string) =>
+    text.split(PLACEHOLDER).map((part, index) =>
+      index % 2 === 1 ? (
+        <mark key={index} style={{ background: '#fff1b8', color: '#ad6800', padding: '0 3px', borderRadius: 3 }}>
+          {part}
+        </mark>
+      ) : (
+        <React.Fragment key={index}>{part}</React.Fragment>
+      )
+    )
+
+  // What the specialist is emailed (the same text is previewed and sent).
+  const specialistEmailContent = () => {
+    if (!inquiry) return { subject: '', text: '' }
+    const contact = inquiry.contactInfo
+    const who = contact.company || `${contact.firstName} ${contact.lastName}`.trim()
+    const sender = user?.name || user?.displayName || 'A colleague'
+    return {
+      subject: `Inquiry referred to you: ${inquiry.inquiryDetails.inquiryType} - ${who}`,
+      text: [
+        `Dear ${specialistName.trim() || '{{specialistName}}'},`,
+        '',
+        `${sender} has referred an inquiry to you and told the SME to expect your contact within 24 hours.`,
+        '',
+        `SME: ${who}`,
+        `Contact: ${`${contact.firstName} ${contact.lastName}`.trim()}${contact.email ? ` - ${contact.email}` : ''}${contact.phone ? ` - ${contact.phone}` : ''}`,
+        `Inquiry type: ${inquiry.inquiryDetails.inquiryType}`,
+        `Submitted: ${format(inquiry.submittedAt, 'PPP')}`,
+        inquiry.inquiryDetails.description ? `\nWhat they asked:\n${inquiry.inquiryDetails.description}` : '',
+        '',
+        'Please reach out to them and update the team on the outcome.',
+        '',
+        'Best regards,',
+        SUPPORT_SENDER
+      ].join('\n')
+    }
+  }
+
+  const notifySpecialist = async () => {
+    const { subject, text } = specialistEmailContent()
+    const idToken = await auth.currentUser?.getIdToken()
+    if (!idToken) throw new Error('You must be signed in to send email.')
+    const response = await fetch(
+      'https://us-central1-lph-smart-inc.cloudfunctions.net/notifyInquirySpecialist',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          inquiryId,
+          specialistName: specialistName.trim(),
+          specialistEmail: specialistEmail.trim(),
+          subject,
+          text
+        })
+      }
+    )
+    if (!response.ok) throw new Error('The specialist could not be notified.')
+    return (await response.json()) as { notified?: boolean }
+  }
+
+  const chooseResponse = (id: string) => {
+    if (id === CUSTOM_RESPONSE) {
+      communicationForm.setFieldsValue({ subject: '', content: '' })
+      return
+    }
+    const template = RESPONSE_TEMPLATES.find(item => item.id === id)
+    if (template) {
+      communicationForm.setFieldsValue({ subject: template.subject, content: template.content })
+    }
+  }
 
   const addCommunication = async (values: any) => {
     if (!inquiry) return
 
     try {
-      if (!values.isInternal) {
-        await sendInquiryEmail(values.subject, values.content)
+      const content = fillTemplate(values.content)
+
+      const pending = [
+        ...unresolvedIn(values.subject || ''),
+        ...unresolvedIn(content),
+        ...(isReferral ? unresolvedIn(specialistEmailContent().text) : [])
+      ]
+      if (pending.length) {
+        setComposeView('preview')
+        message.error(`Fill in ${Array.from(new Set(pending)).join(', ')} before sending.`)
+        return
       }
-      const communicationEntry: Omit<CommunicationEntry, 'id'> = {
-        type: 'response',
-        message: `Subject: ${values.subject}\n\n${values.content}`,
-        sentAt: new Date(),
-        sentBy: user?.uid || 'system',
-        sentByName: user?.displayName || 'System',
-        sentByRole: 'receptionist',
-        isInternal: values.isInternal || false
-      }
-
-      await inquiryService.addCommunication(inquiryId, communicationEntry)
-      await loadInquiry() // Reload to show the new communication
-      setShowCommunicationModal(false)
-      communicationForm.resetFields()
-      message.success(
-        values.isInternal
-          ? 'Internal communication added successfully'
-          : 'Email sent and communication logged successfully'
-      )
-    } catch (error) {
-      console.error('Error adding communication:', error)
-      message.error('Failed to add communication')
-    }
-  }
-
-  const handleQuickResponse = async (values: any) => {
-    if (!inquiry) return
-
-    try {
-      // Replace template variables
-      let content = values.content
-      content = content.replace(
-        /\{\{firstName\}\}/g,
-        inquiry.contactInfo.firstName
-      )
-      content = content.replace(
-        /\{\{inquiryType\}\}/g,
-        inquiry.inquiryDetails.inquiryType
-      )
-      content = content.replace(
-        /\{\{submittedDate\}\}/g,
-        format(inquiry.submittedAt, 'PPP')
-      )
-      content = content.replace(
-        /\{\{senderName\}\}/g,
-        user?.displayName || 'Team Member'
-      )
 
       await sendInquiryEmail(values.subject, content)
 
@@ -385,17 +503,40 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
         sentBy: user?.uid || 'system',
         sentByName: user?.displayName || 'System',
         sentByRole: 'receptionist',
-        isInternal: false // Quick responses are always external
+        isInternal: false
       }
 
       await inquiryService.addCommunication(inquiryId, communicationEntry)
-      await loadInquiry()
-      setShowQuickResponseModal(false)
-      quickResponseForm.resetFields()
-      message.success('Quick response sent successfully')
+
+      let specialistNote = ''
+      if (isReferral) {
+        try {
+          const result = await notifySpecialist()
+          await inquiryService.addCommunication(inquiryId, {
+            type: 'response',
+            message: `Referred to ${specialistName.trim()} <${specialistEmail.trim()}>. They were emailed${result.notified ? ' and notified in the system' : ''}.`,
+            sentBy: user?.uid || 'system',
+            sentByName: user?.displayName || 'System',
+            sentByRole: 'receptionist',
+            isInternal: true
+          })
+          specialistNote = result.notified
+            ? ` ${specialistName.trim()} was emailed and notified in the system.`
+            : ` ${specialistName.trim()} was emailed (no system account found for that address, so no in-app notification).`
+        } catch (referralError) {
+          console.error('Specialist notification failed', referralError)
+          message.warning('The SME was emailed, but the specialist could not be notified. Please contact them directly.')
+        }
+      }
+
+      await loadInquiry() // Reload to show the new communication
+      setShowCommunicationModal(false)
+      setComposeView('write')
+      communicationForm.resetFields()
+      message.success(`Email sent and communication logged successfully.${specialistNote}`)
     } catch (error) {
-      console.error('Error sending quick response:', error)
-      message.error('Failed to send quick response')
+      console.error('Error adding communication:', error)
+      message.error('Failed to add communication')
     }
   }
 
@@ -477,6 +618,7 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
   const tabItems = [
     {
       key: 'details',
+      icon: <FileTextOutlined />,
       label: 'Details',
       children: (
         <Row gutter={[24, 24]}>
@@ -487,7 +629,7 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
                   <Space>
                     {inquiry.contactInfo?.firstName || 'N/A'}{' '}
                     {inquiry.contactInfo?.lastName || 'N/A'}
-                    {inquiry.source === 'SME' && (
+                    {resolveInquiryAudience(inquiry as any) === 'Incubatee' && (
                       <Badge
                         count={<UserOutlined style={{ color: '#1890ff' }} />}
                         size='small'
@@ -548,7 +690,7 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
                   </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label='Source'>
-                  <Tag>{inquiry.source}</Tag>
+                  <Tag>{channelLabel(resolveInquiryChannel(inquiry.source))}</Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label='Classification'>
                   <Tag color={inquiry.classification === 'Potential' ? 'gold' : 'blue'}>
@@ -634,6 +776,7 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
     },
     {
       key: 'communications',
+      icon: <MessageOutlined />,
       label: `Communications ${
         inquiry.communications && Array.isArray(inquiry.communications)
           ? `(${inquiry.communications.length})`
@@ -641,33 +784,17 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
       }`,
       children: (
         <div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 12,
-              marginBottom: 16
-            }}
+          <Button
+            shape='round'
+            block
+            size='large'
+            type='primary'
+            icon={<PlusOutlined />}
+            onClick={() => setShowCommunicationModal(true)}
+            style={{ marginBottom: 16 }}
           >
-            <Button
-              block
-              size='large'
-              type='primary'
-              icon={<PlusOutlined />}
-              onClick={() => setShowCommunicationModal(true)}
-            >
-              Add Communication
-            </Button>
-            <Button
-              block
-              size='large'
-              type='default'
-              icon={<SendOutlined />}
-              onClick={() => setShowQuickResponseModal(true)}
-            >
-              Quick Response
-            </Button>
-          </div>
+            Add Communication
+          </Button>
 
           {(() => {
             const comms = (
@@ -721,6 +848,7 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
                         </div>
                         <Paragraph>{content}</Paragraph>
                         <Text type='secondary' style={{ fontSize: 12 }}>
+                          {comm.isInternal ? '' : `From: ${SUPPORT_SENDER} · `}
                           By: {comm.sentByName} ({comm.sentByRole})
                         </Text>
                       </Card>
@@ -743,31 +871,18 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
     }
   ]
 
-  const nextStatus: InquiryStatus | null = (() => {
-    switch (inquiry.status) {
-      case 'New':
-        return 'In Progress'
-      case 'In Progress':
-      case 'Contacted':
-        return 'Resolved'
-      case 'Resolved':
-      case 'Converted':
-        return 'Closed'
-      default:
-        return null
-    }
-  })()
+  const nextStatus = nextStatusFor(inquiry.status)
 
   return (
     <div style={{ padding: embedded ? 0 : '24px' }}>
-      {!embedded && (
       <Row
         justify='space-between'
         align='middle'
-        style={{ marginBottom: 24 }}
+        gutter={[16, 12]}
+        style={{ marginBottom: 20, paddingRight: embedded ? 36 : 0 }}
       >
-        <Col>
-          <Space direction='vertical' size='small'>
+        <Col flex='auto' style={{ textAlign: isMobile ? 'center' : 'left' }}>
+          <Space direction='vertical' size='small' align={isMobile ? 'center' : 'start'} style={{ width: '100%' }}>
             <Title level={3} style={{ margin: 0 }}>
               Inquiry Details
               {inquiry.priority === 'Urgent' && (
@@ -782,20 +897,26 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
             </Text>
           </Space>
         </Col>
+        <Col xs={24} md={{ flex: '0 0 400px' }}>
+          <Segmented
+            block
+            className='nav-pill-segmented'
+            value={activeSection}
+            onChange={value => setActiveSection(String(value))}
+            options={tabItems.map(item => ({
+              label: item.label,
+              value: item.key,
+              icon: item.icon
+            }))}
+          />
+        </Col>
       </Row>
-      )}
 
-      <Segmented
-        block
-        value={activeSection}
-        onChange={value => setActiveSection(String(value))}
-        options={tabItems.map(item => ({ label: item.label, value: item.key }))}
-      />
       <div style={{ marginTop: 20 }}>
         {tabItems.find(item => item.key === activeSection)?.children}
       </div>
 
-      {(nextStatus || onEdit) && (
+      {!onStatusAction && (nextStatus || onEdit) && (
         <div
           style={{
             display: 'grid',
@@ -805,22 +926,18 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
           }}
         >
           {nextStatus && (
-            <Button
+            <Button shape='round'
               block
               size='large'
               type='primary'
               loading={statusUpdating}
               onClick={() => updateStatus(nextStatus)}
             >
-              {nextStatus === 'In Progress'
-                ? 'Move to In Progress'
-                : nextStatus === 'Resolved'
-                  ? 'Mark as Resolved'
-                  : 'Close Inquiry'}
+              {statusActionLabel(nextStatus)}
             </Button>
           )}
           {onEdit && (
-            <Button
+            <Button shape='round'
               block
               size='large'
               type='default'
@@ -837,97 +954,132 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
       <Modal
         title='Add Communication'
         open={showCommunicationModal}
-        onCancel={() => setShowCommunicationModal(false)}
+        onCancel={() => {
+          setShowCommunicationModal(false)
+          setComposeView('write')
+        }}
         footer={null}
-        width={600}
+        width={640}
       >
         <Form
           form={communicationForm}
           layout='vertical'
           onFinish={addCommunication}
+          initialValues={{ response: CUSTOM_RESPONSE }}
         >
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                label='Subject'
-                name='subject'
-                rules={[{ required: true, message: 'Please enter a subject' }]}
-              >
-                <Input placeholder='Email subject' />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                label='Internal Communication'
-                name='isInternal'
-                valuePropName='checked'
-              >
-                <Checkbox>Mark as internal note (not visible to SMEs)</Checkbox>
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item
-            label='Content'
-            name='content'
-            rules={[
-              {
-                required: true,
-                message: 'Please enter the communication content'
-              }
-            ]}
-          >
-            <TextArea rows={6} placeholder='Enter your message here...' />
-          </Form.Item>
-
-          <Form.Item style={{ marginBottom: 0 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Button block size='large' onClick={() => setShowCommunicationModal(false)}>
-                Cancel
-              </Button>
-              <Button block size='large' type='primary' htmlType='submit' icon={<SendOutlined />}>
-                Send Communication
-              </Button>
-            </div>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* Quick Response Modal */}
-      <Modal
-        title='Quick Response'
-        open={showQuickResponseModal}
-        onCancel={() => setShowQuickResponseModal(false)}
-        footer={null}
-        width={700}
-      >
-        <Form
-          form={quickResponseForm}
-          layout='vertical'
-          onFinish={handleQuickResponse}
-        >
-          <Form.Item label='Template' name='template'>
-            <Select
-              placeholder='Choose a template or write custom message'
-              onChange={value => {
-                const template = QUICK_RESPONSE_TEMPLATES.find(
-                  t => t.id === value
-                )
-                if (template) {
-                  quickResponseForm.setFieldsValue({
-                    subject: template.subject,
-                    content: template.content
-                  })
-                }
-              }}
-            >
-              {QUICK_RESPONSE_TEMPLATES.map(template => (
+          <Form.Item label='Response' name='response'>
+            <Select onChange={chooseResponse}>
+              {RESPONSE_TEMPLATES.map(template => (
                 <Option key={template.id} value={template.id}>
                   {template.title}
                 </Option>
               ))}
+              <Option value={CUSTOM_RESPONSE}>Custom</Option>
             </Select>
           </Form.Item>
+
+          <Segmented
+            block
+            className='nav-pill-segmented'
+            value={composeView}
+            onChange={value => setComposeView(value as 'write' | 'preview')}
+            options={[
+              { label: 'Write', value: 'write', icon: <EditOutlined /> },
+              { label: 'Preview', value: 'preview', icon: <EyeOutlined /> }
+            ]}
+            style={{ marginBottom: 16 }}
+          />
+
+          <div style={{ display: composeView === 'preview' ? 'block' : 'none' }}>
+            {(() => {
+              const previewContent = fillTemplate(watchedContent)
+              const specialistMail = specialistEmailContent()
+              const pending = Array.from(
+                new Set([
+                  ...unresolvedIn(watchedSubject),
+                  ...unresolvedIn(previewContent),
+                  ...(isReferral ? unresolvedIn(specialistMail.text) : [])
+                ])
+              )
+              const mailCard = (to: string, subject: string, body: string) => (
+                <div
+                  style={{
+                    border: '1px solid rgba(128,128,128,0.35)',
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    marginBottom: 12
+                  }}
+                >
+                  <div style={{ padding: '10px 14px', background: 'rgba(128,128,128,0.10)', fontSize: 13 }}>
+                    <div><b>From:</b> {SUPPORT_SENDER}</div>
+                    <div><b>To:</b> {to || 'No email address'}</div>
+                    <div><b>Subject:</b> {subject ? renderWithHighlights(subject) : '—'}</div>
+                  </div>
+                  <div
+                    style={{
+                      padding: '14px',
+                      fontFamily: 'Arial, sans-serif',
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap',
+                      minHeight: 100
+                    }}
+                  >
+                    {body ? renderWithHighlights(body) : 'Nothing written yet.'}
+                  </div>
+                </div>
+              )
+              return (
+                <>
+                  {isReferral && <div style={{ fontWeight: 600, marginBottom: 6 }}>Email to the SME</div>}
+                  {mailCard(inquiry?.contactInfo.email || '', watchedSubject, previewContent)}
+                  {isReferral && (
+                    <>
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                        Email to the specialist
+                        <span style={{ fontWeight: 400, opacity: 0.65 }}>
+                          {' '}
+                          - they also get a notification in the system if they have an account
+                        </span>
+                      </div>
+                      {mailCard(specialistEmail, specialistMail.subject, specialistMail.text)}
+                    </>
+                  )}
+                  {pending.length > 0 && (
+                    <div style={{ padding: '10px 12px', marginBottom: 16, borderRadius: 8, background: '#fff1b8', color: '#ad6800', fontSize: 12 }}>
+                      Still to fill in before this can be sent: {pending.join(', ')}. Go back to Write and replace them.
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+
+          <div style={{ display: composeView === 'write' ? 'block' : 'none' }}>
+          {isReferral && (
+            <Row gutter={16}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label='Specialist name'
+                  name='specialistName'
+                  rules={[{ required: true, message: "Enter the specialist's name" }]}
+                >
+                  <Input placeholder='Who will reach out' />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  label='Specialist email'
+                  name='specialistEmail'
+                  rules={[
+                    { required: true, message: "Enter the specialist's email" },
+                    { type: 'email', message: 'Enter a valid email address' }
+                  ]}
+                >
+                  <Input placeholder='name@example.com' />
+                </Form.Item>
+              </Col>
+            </Row>
+          )}
 
           <Form.Item
             label='Subject'
@@ -941,12 +1093,15 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
             label='Content'
             name='content'
             rules={[
-              { required: true, message: 'Please enter the message content' }
+              {
+                required: true,
+                message: 'Please enter the communication content'
+              }
             ]}
           >
             <TextArea
               rows={8}
-              placeholder='Your message will automatically replace template variables like {{firstName}}, {{inquiryType}}, etc.'
+              placeholder='Enter your message here. {{firstName}}, {{inquiryType}}, {{submittedDate}} and {{senderName}} are filled in when it is sent.'
             />
           </Form.Item>
 
@@ -955,21 +1110,31 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
               padding: '10px 12px',
               marginBottom: 16,
               borderRadius: 8,
-              background: '#f5f5f5',
-              color: '#595959'
+              background: 'rgba(128, 128, 128, 0.12)',
+              fontSize: 12
             }}
           >
-            Available variables: {'{{firstName}}'}, {'{{inquiryType}}'},{' '}
-            {'{{submittedDate}}'}, {'{{senderName}}'}
+            Emails are sent from {SUPPORT_SENDER}. For a referral, the specialist is also emailed and notified in the system. Filled in automatically: {'{{firstName}}'},{' '}
+            {'{{inquiryType}}'} and {'{{submittedDate}}'} from this inquiry, and {'{{senderName}}'} from
+            your profile. Anything in [square brackets] is for you to complete. Use Preview to check.
+          </div>
           </div>
 
           <Form.Item style={{ marginBottom: 0 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Button block size='large' onClick={() => setShowQuickResponseModal(false)}>
+              <Button
+                shape='round'
+                block
+                size='large'
+                onClick={() => {
+                  setShowCommunicationModal(false)
+                  setComposeView('write')
+                }}
+              >
                 Cancel
               </Button>
-              <Button block size='large' type='primary' htmlType='submit' icon={<SendOutlined />}>
-                Send Quick Response
+              <Button shape='round' block size='large' type='primary' htmlType='submit' icon={<SendOutlined />}>
+                Send Communication
               </Button>
             </div>
           </Form.Item>

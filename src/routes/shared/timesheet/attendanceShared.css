@@ -1,0 +1,202 @@
+.attendance-heatmap__legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.attendance-heatmap__legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #595959;
+}
+
+.attendance-heatmap__legend-item b {
+    color: #262626;
+    font-weight: 600;
+}
+
+.attendance-heatmap__legend-item--muted {
+    opacity: .65;
+}
+
+.attendance-heatmap__legend-item i {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+}
+
+.attendance-heatmap__modal {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.attendance-heatmap__modal-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: -4px -4px 0;
+    padding: 14px 16px;
+    border-radius: 12px;
+}
+
+.attendance-heatmap__modal-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.day-detail__timeline {
+    padding: 2px 2px 0;
+}
+
+.day-detail__timeline-track {
+    position: relative;
+    height: 10px;
+    border-radius: 5px;
+    background: #f1f4f8;
+    overflow: hidden;
+}
+
+.day-detail__timeline-segment {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 5px;
+}
+
+.day-detail__timeline-segment--live {
+    animation: day-detail-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes day-detail-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .6; }
+}
+
+.day-detail__timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #434343;
+}
+
+.day-detail__stats {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid #f0f0f0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.day-detail__stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 6px;
+    text-align: center;
+}
+
+.day-detail__stat-icon {
+    font-size: 16px;
+}
+
+.day-detail__stat-label {
+    font-size: 11px;
+    color: #8c8c8c;
+}
+
+.day-detail__stat-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: #262626;
+}
+
+.day-detail__stat-divider {
+    width: 1px;
+    background: #f0f0f0;
+}
+
+.day-detail__location {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid #f0f0f0;
+    border-radius: 12px;
+}
+
+.day-detail__location-icon {
+    margin-top: 3px;
+    font-size: 15px;
+    color: #13c2c2;
+}
+
+.day-detail__tooltip {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 2px 0;
+}
+
+.day-detail__tooltip-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    margin-top: 4px;
+    border-radius: 2px;
+}
+
+.day-detail__tooltip-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.day-detail__tooltip-range {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+html[data-theme="dark"] .attendance-heatmap__legend-item {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .attendance-heatmap__legend-item b {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .day-detail__timeline-track {
+    background: rgba(255, 255, 255, .08);
+}
+
+html[data-theme="dark"] .day-detail__timeline-labels {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .day-detail__stats,
+html[data-theme="dark"] .day-detail__location {
+    border-color: var(--app-border);
+}
+
+html[data-theme="dark"] .day-detail__stat-label {
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .day-detail__stat-value {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .day-detail__stat-divider {
+    background: var(--app-border);
+}

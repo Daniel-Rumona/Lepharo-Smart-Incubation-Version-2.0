@@ -111,6 +111,85 @@
     max-width: 220px;
 }
 
+.clock-day-ended {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 220px;
+    padding: 10px 14px;
+    border: 1px solid #e8edf3;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #8492a6;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.35;
+    text-align: left;
+}
+
+.clock-day-ended .anticon {
+    flex: 0 0 auto;
+    font-size: 15px;
+    color: #a0aec0;
+}
+
+.clock-break {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    max-width: 280px;
+    padding: 10px 10px 10px 14px;
+    border: 1px solid #e8edf3;
+    border-radius: 999px;
+    background: #f8fafc;
+    transition: background .2s ease, border-color .2s ease;
+}
+
+.clock-break--active {
+    border-color: #ffd591;
+    background: #fffaf0;
+}
+
+.clock-break__info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.clock-break__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(22, 119, 255, .12);
+    color: #1677ff;
+    font-size: 14px;
+}
+
+.clock-break--active .clock-break__icon {
+    background: rgba(229, 154, 22, .16);
+    color: #e59a16;
+}
+
+.clock-break__copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    text-align: left;
+}
+
+.clock-break__copy .ant-typography {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .clock-orb {
     position: relative;
     display: flex;
@@ -208,6 +287,58 @@
     .location-check { align-items: flex-start; flex-wrap: wrap; }
     .location-check .ant-btn { margin-left: 33px; }
     .clock-orb { width: 154px; height: 154px; }
+    .clock-break { max-width: 100%; }
     .timesheet-chart-card__controls,
     .timesheet-chart-card__controls .ant-picker { width: 100%; }
+}
+
+html[data-theme="dark"] .clock-panel__dot {
+    background: var(--app-text-subtle);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, .08);
+}
+
+html[data-theme="dark"] .clock-panel__time {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .location-check {
+    border-color: var(--app-border);
+}
+
+html[data-theme="dark"] .location-check--ready {
+    border-color: rgba(82, 196, 26, .35);
+    background: var(--app-wash-success) !important;
+}
+
+html[data-theme="dark"] .clock-day-ended {
+    border-color: var(--app-border);
+    background: rgba(255, 255, 255, .04);
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .clock-day-ended .anticon {
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .clock-break {
+    border-color: var(--app-border);
+    background: rgba(255, 255, 255, .04);
+}
+
+html[data-theme="dark"] .clock-break--active {
+    border-color: rgba(229, 154, 22, .35);
+    background: var(--app-wash-warning, rgba(229, 154, 22, .12));
+}
+
+html[data-theme="dark"] .clock-break__icon {
+    background: rgba(22, 119, 255, .18);
+}
+
+html[data-theme="dark"] .clock-break--active .clock-break__icon {
+    background: rgba(229, 154, 22, .22);
+}
+
+html[data-theme="dark"] .clock-orb:disabled {
+    background: rgba(255, 255, 255, .08);
+    color: var(--app-text-subtle);
 }

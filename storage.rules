@@ -84,6 +84,18 @@ service firebase.storage {
       allow delete: if canAccessProposals();
     }
 
+    // SME ID copies and qualification/report documents captured when enrolling
+    // an SME into a Training Academy training. Staff-only, like academyMaterials.
+    match /training_enrollments/{trainingId}/{fileName} {
+      function isTrainingStaff() {
+        return request.auth != null
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['operations', 'coordinator', 'admin', 'system_admin', 'superadmin', 'director', 'projectadmin'];
+      }
+      allow read: if isTrainingStaff();
+      allow create: if isTrainingStaff() && request.resource.size <= 15 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+
     match /feature-releases/{releaseId}/{fileName} {
       allow read: if request.auth != null;
       allow create: if request.auth != null

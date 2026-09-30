@@ -248,6 +248,8 @@ const CourseBuilder = lazy(() => import("./components/courses/index"));
 const CoursesRepository = lazy(() => import("./components/courses/repository"));
 const LearnerCoursePage = lazy(() => import("./components/courses/CoursePlayer"));
 const AcademyCatalog = lazy(() => import("./components/courses/repository").then(module => ({ default: module.AcademyCatalog })));
+const AddTraining = lazy(() => import("./components/trainings/AddTraining"));
+const EnrollSme = lazy(() => import("./components/trainings/EnrollSme"));
 const SurveysDetailsPage = lazy(() => import("./components/surveys/SurveysDetails"));
 const SystemSetupForm = lazy(() => import("./routes/system"));
 const TasksModule = lazy(() => import("./components/tasks/TaskModule"));
@@ -291,7 +293,7 @@ const App = () => {
     useEffect(() => {
         ConfigProvider.config({
             holderRender: (children) => (
-                <ConfigProvider theme={getAntdTheme(mode, accent)}>{children}</ConfigProvider>
+                <ConfigProvider theme={getAntdTheme(mode, accent)} modal={{ centered: true }}>{children}</ConfigProvider>
             ),
         });
     }, [mode, accent]);
@@ -309,7 +311,8 @@ const App = () => {
         <>
             <QueryClientProvider client={queryClient}>
                 <BrowserRouter>
-                    <ConfigProvider theme={getAntdTheme(mode, accent)}>
+                    {/* Every modal opens centred unless a page says otherwise. */}
+                    <ConfigProvider theme={getAntdTheme(mode, accent)} modal={{ centered: true }}>
                         <AntdApp>
                             <LoginPromptProvider>
                                 <AuthSessionTracker />
@@ -639,6 +642,8 @@ const App = () => {
                                                             <Route path="training/courses/builder" element={<CourseBuilder />} />
                                                             <Route path="training/courses/builder/:id" element={<CourseBuilder />} />
                                                             <Route path="training/courses" element={<CoursesRepository />} />
+                                                            <Route path="training/new" element={<AddTraining />} />
+                                                            <Route path="training/enroll" element={<EnrollSme />} />
                                                             <Route
                                                                 path="requests"
                                                                 element={<InterventionsRequests />}

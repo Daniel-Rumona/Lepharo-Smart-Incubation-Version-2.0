@@ -20,7 +20,7 @@ import {
 } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import { collection, doc, getDocs, updateDoc } from 'firebase/firestore'
+import { addDoc, collection, doc, getDocs, updateDoc } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { Link } from 'react-router-dom'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -28,7 +28,7 @@ import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { computeKpi } from '@/services/kpiCalculationService'
 import dayjs, { Dayjs } from 'dayjs'
 import quarterOfYear from 'dayjs/plugin/quarterOfYear'
-import { CheckCircleOutlined, AimOutlined, WarningOutlined, QuestionCircleOutlined, SaveOutlined, LineChartOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, CloseCircleOutlined, AimOutlined, WarningOutlined, QuestionCircleOutlined, SaveOutlined, LineChartOutlined } from '@ant-design/icons'
 import { motion } from 'framer-motion'
 import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
 
@@ -63,6 +63,10 @@ type KpiDef = {
     appliesToAllPrograms?: boolean
     programId?: string | null
     trackingMode: 'computed' | 'manual'
+    kpiKind: 'numeric' | 'qualitative'
+    deliverable?: string | null
+    measurementIndicator?: string | null
+    reminderCadence?: TargetPeriodType | null
 }
 
 type LatestTarget = {
@@ -193,7 +197,11 @@ const KPITrackerView: React.FC = () => {
                             denominator: data.denominator || null,
                             appliesToAllPrograms: !!data.appliesToAllPrograms,
                             programId: data.programId || null,
-                            trackingMode: data.trackingMode === 'manual' ? 'manual' : 'computed'
+                            trackingMode: data.trackingMode === 'manual' ? 'manual' : 'computed',
+                            kpiKind: data.kpiKind === 'qualitative' ? 'qualitative' : 'numeric',
+                            deliverable: data.deliverable || null,
+                            measurementIndicator: data.measurementIndicator || null,
+                            reminderCadence: data.reminderCadence === 'quarterly' ? 'quarterly' : 'monthly'
                         }
                     })
 
@@ -255,18 +263,28 @@ const KPITrackerView: React.FC = () => {
         return 'needs-attention'
     }
 
+    // The period a qualitative KPI's Done/Not-Done toggle should write to when
+    // no target doc exists yet for the currently-viewed month.
+    const currentPeriodKeyFor = (def: KpiDef, monthKey: string) =>
+        def.reminderCadence === 'quarterly' ? `${dayjs(monthKey).year()}-Q${dayjs(monthKey).quarter()}` : monthKey
+
     const computeRow = async (def: KpiDef, monthKey: string): Promise<KpiRow> => {
         const targetInfo = targetForPeriod(def.id, monthKey)
         const target = targetInfo?.target ?? null
 
         if (def.trackingMode === 'manual') {
             const actual = targetInfo?.actual ?? null
-            const status: KpiRowStatus = !targetInfo ? 'no-target' : actual == null ? 'awaiting-update' : (classify(target, actual) || 'needs-attention')
+            // A qualitative KPI has no separate "set a target" step - Done/Not
+            // Done implicitly commits target=1 for the period, so treat a
+            // missing target doc as "not recorded yet" rather than "no target".
+            const status: KpiRowStatus = !targetInfo
+                ? (def.kpiKind === 'qualitative' ? 'awaiting-update' : 'no-target')
+                : actual == null ? 'awaiting-update' : (classify(target, actual) || 'needs-attention')
             return {
                 def,
-                periodKey: targetInfo?.periodKey ?? null,
+                periodKey: targetInfo?.periodKey ?? (def.kpiKind === 'qualitative' ? currentPeriodKeyFor(def, monthKey) : null),
                 targetId: targetInfo?.id ?? null,
-                target,
+                target: targetInfo ? target : (def.kpiKind === 'qualitative' ? 1 : null),
                 actual,
                 achievementPercent: target && actual != null ? Math.round((actual / target) * 100) : null,
                 status
@@ -381,6 +399,64 @@ const KPITrackerView: React.FC = () => {
         })()
         return () => { cancelled = true }
     }, [compareKpiIds, compareRange, defsByDept, targetsByKpi])
+
+    const periodKeyToDate = (periodType: TargetPeriodType, periodKey: string): Date => {
+        if (periodType === 'quarterly') {
+            const [year, quarterRaw] = periodKey.split('-Q')
+            return dayjs(`${year}-01-01`).add((Number(quarterRaw) - 1) * 3, 'month').startOf('month').toDate()
+        }
+        return dayjs(periodKey, 'YYYY-MM').startOf('month').toDate()
+    }
+
+    // Qualitative KPIs skip the "set a target" step entirely - marking a period
+    // Done/Not Done commits target=1 for it on first save, reusing the same
+    // achieved/needs-attention math every other manual KPI already uses.
+    const saveQualitativeStatus = async (row: KpiRow, done: boolean) => {
+        const periodKey = row.periodKey || currentPeriodKeyFor(row.def, viewPeriod.format('YYYY-MM'))
+        const periodType: TargetPeriodType = row.def.reminderCadence === 'quarterly' ? 'quarterly' : 'monthly'
+        const actual = done ? 1 : 0
+        setSavingManualTargetId(row.targetId || row.def.id)
+        try {
+            if (row.targetId) {
+                await updateDoc(doc(db, 'kpiTargets', row.targetId), {
+                    actual,
+                    actualUpdatedBy: user?.uid || 'system',
+                    actualUpdatedAt: new Date()
+                })
+                setTargetsByKpi(current => ({
+                    ...current,
+                    [row.def.id]: (current[row.def.id] || []).map(t => t.id === row.targetId ? { ...t, actual } : t)
+                }))
+            } else {
+                const ref = await addDoc(collection(db, 'kpiTargets'), {
+                    kpiId: row.def.id,
+                    kpiLabel: row.def.kpiLabel,
+                    department: row.def.department,
+                    periodType,
+                    periodKey,
+                    periodStartAt: periodKeyToDate(periodType, periodKey),
+                    target: 1,
+                    actual,
+                    actualUpdatedBy: user?.uid || 'system',
+                    actualUpdatedAt: new Date(),
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                    createdBy: user?.uid || 'system',
+                    updatedBy: user?.uid || 'system'
+                })
+                setTargetsByKpi(current => ({
+                    ...current,
+                    [row.def.id]: [...(current[row.def.id] || []), { id: ref.id, target: 1, periodKey, periodType, actual }]
+                }))
+            }
+            message.success(done ? 'Marked as done.' : 'Marked as not done.')
+        } catch (err) {
+            console.error(err)
+            message.error('Failed to record this period.')
+        } finally {
+            setSavingManualTargetId(null)
+        }
+    }
 
     const saveManualActual = async (row: KpiRow) => {
         if (!row.targetId) return
@@ -529,7 +605,9 @@ const KPITrackerView: React.FC = () => {
                 }}
             >
                 <div style={{ flex: '1 1 320px', minWidth: 200 }}>
-                    <Text strong ellipsis={{ tooltip: row.def.kpiLabel }} style={{ display: 'block' }}>{row.def.kpiLabel}</Text>
+                    <Tooltip title={row.def.measurementIndicator || undefined}>
+                        <Text strong ellipsis={{ tooltip: row.def.kpiLabel }} style={{ display: 'block' }}>{row.def.kpiLabel}</Text>
+                    </Tooltip>
                     <Space size={4} style={{ marginTop: 2 }}>
                         <Tag color={row.def.trackingMode === 'manual' ? 'orange' : 'blue'}>{row.def.trackingMode === 'manual' ? 'Manual' : 'Computed'}</Tag>
                         <Tag icon={meta.icon} color={meta.color}>{meta.label}</Tag>
@@ -537,7 +615,11 @@ const KPITrackerView: React.FC = () => {
                 </div>
 
                 <div style={{ flex: '0 1 220px', minWidth: 160 }}>
-                    {row.status === 'no-target' ? (
+                    {row.def.kpiKind === 'qualitative' ? (
+                        <Text type='secondary' ellipsis={{ tooltip: row.def.deliverable }} style={{ display: 'block' }}>
+                            {row.def.deliverable || 'Recurring deliverable'}
+                        </Text>
+                    ) : row.status === 'no-target' ? (
                         <Text type='secondary'>No target committed for this period.</Text>
                     ) : row.status === 'awaiting-update' ? (
                         <Text type='secondary'>Target {row.target} — actual not recorded yet.</Text>
@@ -552,7 +634,29 @@ const KPITrackerView: React.FC = () => {
                 </div>
 
                 <div style={{ flexShrink: 0 }}>
-                    {row.status === 'no-target' ? (
+                    {row.def.kpiKind === 'qualitative' ? (
+                        <Space>
+                            <Button
+                                size='small'
+                                type={row.actual === 1 ? 'primary' : 'default'}
+                                icon={<CheckCircleOutlined />}
+                                loading={savingManualTargetId === (row.targetId || row.def.id)}
+                                onClick={() => saveQualitativeStatus(row, true)}
+                            >
+                                Done
+                            </Button>
+                            <Button
+                                size='small'
+                                danger={row.actual === 0}
+                                type={row.actual === 0 ? 'primary' : 'default'}
+                                icon={<CloseCircleOutlined />}
+                                loading={savingManualTargetId === (row.targetId || row.def.id)}
+                                onClick={() => saveQualitativeStatus(row, false)}
+                            >
+                                Not done
+                            </Button>
+                        </Space>
+                    ) : row.status === 'no-target' ? (
                         <Link to='/kpis/setup'><Button size='small'>Set a target</Button></Link>
                     ) : row.def.trackingMode === 'manual' ? (
                         <Space>

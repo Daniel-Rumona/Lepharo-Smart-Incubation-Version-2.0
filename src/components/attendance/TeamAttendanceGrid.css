@@ -1,0 +1,377 @@
+.team-grid__cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(22, 119, 255, .08);
+    color: #1677ff;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.team-grid__cell--late {
+    background: rgba(255, 77, 79, .08);
+    color: #ff4d4f;
+}
+
+.team-grid__cell--leave {
+    background: rgba(250, 173, 20, .1);
+    color: #d48806;
+}
+
+.team-grid__cell-arrow {
+    opacity: .55;
+    font-weight: 400;
+}
+
+.team-grid__cell-date {
+    opacity: .75;
+    padding-right: 4px;
+    border-right: 1px solid currentColor;
+    margin-right: 2px;
+}
+
+.team-grid__cell--empty {
+    display: inline-block;
+    color: #bfbfbf;
+    font-size: 12px;
+    padding: 4px 8px;
+}
+
+.team-grid__table .ant-table-tbody > tr > td {
+    padding: 6px 0 !important;
+    border-bottom: none !important;
+}
+
+.team-grid__table .ant-table-tbody > tr:hover > td {
+    background: transparent !important;
+}
+
+.team-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid #f0f0f0;
+    border-radius: 12px;
+    background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.team-card:hover {
+    border-color: rgba(22, 119, 255, .3);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .06);
+}
+
+.team-card__identity {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.team-card__position {
+    font-size: 12px;
+    color: #8c8c8c;
+}
+
+.team-card__arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border: 1px solid #f0f0f0;
+    border-radius: 999px;
+    background: #fafafa;
+    color: #8c8c8c;
+    font-size: 11px;
+    transition: border-color .15s ease, color .15s ease, background .15s ease, transform .15s ease;
+}
+
+.team-card--clickable {
+    cursor: pointer;
+}
+
+.team-card--clickable:hover .team-card__arrow,
+.team-card--clickable:focus-visible .team-card__arrow {
+    border-color: rgba(22, 119, 255, .35);
+    color: #1677ff;
+    background: rgba(22, 119, 255, .08);
+    transform: translateX(2px);
+}
+
+.team-card--clickable:focus-visible {
+    outline: 2px solid rgba(22, 119, 255, .45);
+    outline-offset: 2px;
+}
+
+.team-card__row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.team-card__row .team-card__identity {
+    flex: 0 0 200px;
+}
+
+.team-card__days {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+.team-card__stats-inline {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.team-card__stat-inline {
+    font-size: 12px;
+    color: #8c8c8c;
+    white-space: nowrap;
+}
+
+.team-card__stat-inline b {
+    color: #262626;
+    font-weight: 700;
+}
+
+.team-card__stat-divider {
+    width: 1px;
+    height: 14px;
+    background: #f0f0f0;
+}
+
+.team-grid__drill-stats {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid #f0f0f0;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.team-grid__drill-stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 10px 4px;
+    text-align: center;
+    border-right: 1px solid #f0f0f0;
+}
+
+.team-grid__drill-stat:last-child {
+    border-right: none;
+}
+
+.team-grid__drill-stat-value {
+    font-size: 15px;
+    font-weight: 700;
+    color: #262626;
+}
+
+.team-grid__drill-stat-label {
+    font-size: 10px;
+    color: #8c8c8c;
+}
+
+.team-grid__drill-chips {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.team-grid__drill-week {
+    display: flex;
+    gap: 8px;
+}
+
+.team-grid__drill-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 68px;
+    padding: 8px 4px;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    background: #fafafa;
+    cursor: default;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.team-grid__drill-chip--padding {
+    border-color: transparent;
+    background: transparent;
+}
+
+.team-grid__drill-chip-day {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #8c8c8c;
+}
+
+.team-grid__drill-chip-date {
+    font-size: 12px;
+    font-weight: 600;
+    color: #595959;
+}
+
+.team-grid__drill-chip--present {
+    border-color: rgba(22, 119, 255, .35);
+    background: rgba(22, 119, 255, .08);
+}
+
+.team-grid__drill-chip--present .team-grid__drill-chip-date {
+    color: #1677ff;
+}
+
+.team-grid__drill-chip--late {
+    border-color: rgba(255, 77, 79, .35);
+    background: rgba(255, 77, 79, .08);
+}
+
+.team-grid__drill-chip--late .team-grid__drill-chip-date {
+    color: #ff4d4f;
+}
+
+.team-grid__drill-chip--leave {
+    border-color: rgba(250, 173, 20, .35);
+    background: rgba(250, 173, 20, .1);
+}
+
+.team-grid__drill-chip--leave .team-grid__drill-chip-date {
+    color: #d48806;
+}
+
+.team-grid__drill-chip--present,
+.team-grid__drill-chip--late,
+.team-grid__drill-chip--leave {
+    cursor: pointer;
+}
+
+.team-grid__drill-chip--present:hover,
+.team-grid__drill-chip--late:hover,
+.team-grid__drill-chip--leave:hover {
+    transform: translateY(-1px);
+}
+
+.team-grid__drill-chip:disabled {
+    cursor: default;
+    opacity: .55;
+}
+
+html[data-theme="dark"] .team-grid__cell {
+    background: rgba(74, 155, 255, .16);
+    color: var(--app-accent-strong);
+}
+
+html[data-theme="dark"] .team-grid__cell--empty {
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .team-grid__cell--leave {
+    background: rgba(250, 173, 20, .18);
+    color: #ffc95c;
+}
+
+html[data-theme="dark"] .team-grid__drill-chip {
+    border-color: var(--app-border);
+    background: rgba(255, 255, 255, .03);
+}
+
+html[data-theme="dark"] .team-grid__drill-chip-day {
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .team-grid__drill-chip-date {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .team-grid__drill-chip--present {
+    border-color: rgba(74, 155, 255, .35);
+    background: rgba(74, 155, 255, .14);
+}
+
+html[data-theme="dark"] .team-grid__drill-chip--present .team-grid__drill-chip-date {
+    color: var(--app-accent-strong);
+}
+
+html[data-theme="dark"] .team-grid__drill-chip--late {
+    border-color: rgba(255, 77, 79, .35);
+    background: rgba(255, 77, 79, .14);
+}
+
+html[data-theme="dark"] .team-grid__drill-chip--leave {
+    border-color: rgba(250, 173, 20, .35);
+    background: rgba(250, 173, 20, .16);
+}
+
+html[data-theme="dark"] .team-grid__drill-chip--leave .team-grid__drill-chip-date {
+    color: #ffc95c;
+}
+
+html[data-theme="dark"] .team-grid__drill-stats,
+html[data-theme="dark"] .team-grid__drill-stat {
+    border-color: var(--app-border);
+}
+
+html[data-theme="dark"] .team-grid__drill-stat-value {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .team-grid__drill-stat-label {
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .team-card {
+    border-color: var(--app-border);
+    background: var(--app-surface);
+}
+
+html[data-theme="dark"] .team-card:hover {
+    border-color: rgba(74, 155, 255, .35);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+}
+
+html[data-theme="dark"] .team-card__position,
+html[data-theme="dark"] .team-card__stat-inline {
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .team-card__arrow {
+    border-color: var(--app-border);
+    background: rgba(255, 255, 255, .04);
+    color: var(--app-text-subtle);
+}
+
+html[data-theme="dark"] .team-card--clickable:hover .team-card__arrow,
+html[data-theme="dark"] .team-card--clickable:focus-visible .team-card__arrow {
+    border-color: rgba(74, 155, 255, .35);
+    color: var(--app-accent-strong);
+    background: rgba(74, 155, 255, .12);
+}
+
+html[data-theme="dark"] .team-card__stat-inline b {
+    color: var(--app-text);
+}
+
+html[data-theme="dark"] .team-card__stat-divider {
+    background: var(--app-border);
+}

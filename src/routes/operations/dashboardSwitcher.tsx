@@ -1,6 +1,8 @@
 // src/routes/dashboard/DashboardSwitcher.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import { Result } from 'antd'
+import { AnimatePresence, motion } from 'framer-motion'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { db } from '@/firebase'
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore'
@@ -140,24 +142,49 @@ export const DashboardSwitcher: React.FC = () => {
 
     const normalizedDept = useMemo(() => normalize(effectiveDeptName), [effectiveDeptName])
 
-    if (!user) {
-        return <Result status='warning' title='User not found or not authenticated.' />
+    const isPending = loading || resolvingDept
+
+    const renderDashboard = () => {
+        if (normalizedDept === normalize(LEGAL_DEPT_NAME)) return <LegalDashboard />
+        if (normalizedDept === normalize(TRAINING_DEPT_NAME)) return <TrainingDashboard />
+        if (normalizedDept === normalize(STAKEHOLDER_DEPT_NAME)) return <StakeholderEngagementDashboard />
+        if (normalizedDept === normalize(ROM_DEPT_NAME)) return <ROMDashboard />
+        if (normalizedDept === normalize(PDS_DEPT_NAME)) return <PDSDashboard />
+        if (normalizedDept === normalize(WELLNESS_DEPT_NAME)) return <WellnessDashboard />
+        if (normalizedDept === normalize(MARKETING_DEPT_NAME)) return <MarketingDashboard />
+        if (normalizedDept === normalize(FINANCIAL_DEPT_NAME)) return <FinanceDashboard />
+        if (normalizedDept === normalize(INHOUSE_DEPT_NAME)) return <InhouseFinanceDashboard />
+        if (normalizedDept === normalize(LINKAGES_DEPT_NAME)) return <MarketLinkagesDashboard />
+        if (normalizedDept === normalize(HSE_DEPT_NAME)) return <HSEDashboard />
+        if (normalizedDept === normalize(HRM_DEPT_NAME)) return <HRDashboard />
+        return <OperationsDashboard />
     }
 
-    if (normalizedDept === normalize(LEGAL_DEPT_NAME)) return <LegalDashboard />
-    if (normalizedDept === normalize(TRAINING_DEPT_NAME)) return <TrainingDashboard />
-    if (normalizedDept === normalize(STAKEHOLDER_DEPT_NAME)) return <StakeholderEngagementDashboard />
-    if (normalizedDept === normalize(ROM_DEPT_NAME)) return <ROMDashboard />
-    if (normalizedDept === normalize(PDS_DEPT_NAME)) return <PDSDashboard />
-    if (normalizedDept === normalize(WELLNESS_DEPT_NAME)) return <WellnessDashboard />
-    if (normalizedDept === normalize(MARKETING_DEPT_NAME)) return <MarketingDashboard />
-    if (normalizedDept === normalize(FINANCIAL_DEPT_NAME)) return <FinanceDashboard />
-    if (normalizedDept === normalize(INHOUSE_DEPT_NAME)) return <InhouseFinanceDashboard />
-    if (normalizedDept === normalize(LINKAGES_DEPT_NAME)) return <MarketLinkagesDashboard />
-    if (normalizedDept === normalize(HSE_DEPT_NAME)) return <HSEDashboard />
-    if (normalizedDept === normalize(HRM_DEPT_NAME)) return <HRDashboard />
-
-    return <OperationsDashboard />
+    return (
+        <AnimatePresence mode='wait'>
+            {isPending ? (
+                <motion.div
+                    key='dashboard-loader'
+                    initial={{ opacity: 1 }}
+                    exit={{ opacity: 0, scale: 0.94, filter: 'blur(4px)' }}
+                    transition={{ duration: 0.3, ease: 'easeIn' }}
+                >
+                    <DashboardLoader />
+                </motion.div>
+            ) : !user ? (
+                <Result key='no-user' status='warning' title='User not found or not authenticated.' />
+            ) : (
+                <motion.div
+                    key={`dashboard-${normalizedDept || 'operations'}`}
+                    initial={{ opacity: 0, y: 24, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                >
+                    {renderDashboard()}
+                </motion.div>
+            )}
+        </AnimatePresence>
+    )
 }
 
 export default DashboardSwitcher

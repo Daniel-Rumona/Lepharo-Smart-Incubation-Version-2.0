@@ -22,7 +22,7 @@ import HighchartsReact from 'highcharts-react-official'
 import dayjs, { Dayjs } from 'dayjs'
 
 import { db } from '@/firebase'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MotionCard, useMetricPalette } from '@/components/dashboards/metrics/Header'
 
 const { Text } = Typography
 
@@ -37,7 +37,7 @@ const QX_FINANCE_PASSWORD =
     ''
 const FINANCE_SESSION_KEY = 'qx_finance_session'
 
-type DateRangeValue = [Dayjs | null, Dayjs | null] | null
+export type DateRangeValue = [Dayjs | null, Dayjs | null] | null
 
 type Props = {
     programId?: string | null
@@ -66,18 +66,18 @@ type FirestoreApplication = {
     programId?: string
 }
 
-type MonthlyRevenueRow = {
+export type MonthlyRevenueRow = {
     month: string
     label: string
     revenue: number
 }
 
-type FinanceCompanySeries = {
+export type FinanceCompanySeries = {
     months: MonthlyRevenueRow[]
 }
 
 
-type JobContract = {
+export type JobContract = {
     id: string
     applicationId: string
     participantId?: string
@@ -92,18 +92,18 @@ type JobContract = {
     updatedAt?: any
 }
 
-const moneyCompact = (value: number) =>
+export const moneyCompact = (value: number) =>
     `R ${Intl.NumberFormat('en-ZA', {
         notation: 'compact',
         maximumFractionDigits: 1
     }).format(Number(value || 0))}`
 
-const signedPercent = (current: number, previous: number) => {
+export const signedPercent = (current: number, previous: number) => {
     if (previous === 0) return current > 0 ? 100 : 0
     return Number((((current - previous) / previous) * 100).toFixed(1))
 }
 
-const formatSignedPercent = (value: number) =>
+export const formatSignedPercent = (value: number) =>
     `${value > 0 ? '+' : ''}${value}%`
 
 const normaliseMonthlyFinance = (rows: any[]): MonthlyRevenueRow[] => {
@@ -136,7 +136,7 @@ const parseReportingMonth = (row: Pick<MonthlyRevenueRow, 'month' | 'label'>) =>
 
 const monthKey = (value: Dayjs) => value.format('YYYY-MM')
 
-const getFullReportingMonths = (range?: DateRangeValue) => {
+export const getFullReportingMonths = (range?: DateRangeValue) => {
     const [rawStart, rawEnd] = range || []
     if (!rawStart || !rawEnd) return []
 
@@ -162,7 +162,7 @@ const getFullReportingMonths = (range?: DateRangeValue) => {
     return months
 }
 
-const getPreviousReportingMonths = (months: Dayjs[]) => {
+export const getPreviousReportingMonths = (months: Dayjs[]) => {
     if (!months.length) return []
 
     const count = months.length
@@ -186,7 +186,7 @@ const isCalendarQuarter = (months: Dayjs[]) => {
     )
 }
 
-const periodLabel = (months: Dayjs[]) => {
+export const periodLabel = (months: Dayjs[]) => {
     if (!months.length) return 'No monthly period'
 
     if (months.length === 1) {
@@ -215,7 +215,7 @@ const periodMonthsLabel = (months: Dayjs[]) => {
         .join(' · ')
 }
 
-const sumPeriodRevenue = (
+export const sumPeriodRevenue = (
     rows: MonthlyRevenueRow[],
     months: Dayjs[]
 ) => {
@@ -228,7 +228,7 @@ const sumPeriodRevenue = (
     }, 0)
 }
 
-const hasPeriodRevenueData = (
+export const hasPeriodRevenueData = (
     rows: MonthlyRevenueRow[],
     months: Dayjs[]
 ) => {
@@ -353,10 +353,9 @@ const isCompanyOutsideProgram = (
             .filter(Boolean)
     )
 
-    // An account with no accepted application is unassigned or unmatched.
-    // Those still report revenue, so they stay in the programme population.
-    if (applicationProgramIds.size === 0) return false
-
+    // Only accounts with an accepted application in this programme belong to
+    // it. Unassigned or unmatched accounts used to be kept "just in case",
+    // which leaked their revenue into every programme.
     return !applicationProgramIds.has(programId)
 }
 
@@ -364,7 +363,7 @@ const isCompanyOutsideProgram = (
 const safeLower = (value: any) =>
     String(value || '').trim().toLowerCase()
 
-const toDayjs = (value: any): Dayjs | null => {
+export const toDayjs = (value: any): Dayjs | null => {
     if (!value) return null
     if (dayjs.isDayjs(value)) return value
 
@@ -382,14 +381,14 @@ const toDayjs = (value: any): Dayjs | null => {
     return parsed.isValid() ? parsed : null
 }
 
-const buildEmployeeKey = (contract: Partial<JobContract>) =>
+export const buildEmployeeKey = (contract: Partial<JobContract>) =>
     [
         contract.applicationId || '',
         safeLower(contract.employeeName),
         safeLower(contract.position)
     ].join('::')
 
-const getContractMonthStart = (contract: Partial<JobContract>) =>
+export const getContractMonthStart = (contract: Partial<JobContract>) =>
 (
     toDayjs(contract.uploadMonthDate)?.startOf('month') ||
     (contract.uploadMonth
@@ -427,7 +426,7 @@ const isContractActiveInMonth = (
     return !end.endOf('day').isBefore(monthStart)
 }
 
-const getEffectiveContractsForMonth = (
+export const getEffectiveContractsForMonth = (
     contracts: JobContract[],
     month: Dayjs
 ) => {
@@ -459,7 +458,7 @@ const getEffectiveContractsForMonth = (
     return Array.from(map.values())
 }
 
-const getUniqueJobsForPeriod = (
+export const getUniqueJobsForPeriod = (
     contracts: JobContract[],
     months: Dayjs[]
 ) => {
@@ -569,10 +568,116 @@ const getFinanceToken = async () => {
     return token as string
 }
 
+export const loadProgramFinanceSeries = async (
+    programId: string | null | undefined
+) => {
+    const token = await getFinanceToken()
+
+    const [participantsSnap, applicationsSnap, membershipsResponse] =
+        await Promise.all([
+            getDocs(collection(db, 'participants')),
+            getDocs(collection(db, 'applications')),
+            axios.get(`${API_BASE_URL}/admin/all-memberships`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            })
+        ])
+
+    const participants = participantsSnap.docs.map(item => ({
+        id: item.id,
+        ...item.data()
+    }) as FirestoreParticipant)
+
+    const acceptedApplications = applicationsSnap.docs
+        .map(item => ({
+            id: item.id,
+            ...item.data()
+        }) as FirestoreApplication)
+        .filter(isAcceptedApplication)
+
+    const companies = Array.isArray(
+        membershipsResponse.data?.companies
+    )
+        ? membershipsResponse.data.companies
+        : []
+
+    const scopedCompanies = companies.filter((company: any) => {
+        if (isExcludedScopedCompanyEmail(getCompanyEmail(company))) {
+            return false
+        }
+
+        return !isCompanyOutsideProgram(
+            company,
+            programId,
+            participants,
+            acceptedApplications
+        )
+    })
+
+    const results = await Promise.allSettled(
+        scopedCompanies.map(async (company: any) => {
+            const email = getCompanyEmail(company)
+
+            if (!email) {
+                return {
+                    months: [] as MonthlyRevenueRow[]
+                }
+            }
+
+            const months = await fetchCompanyMonthlyRevenue(email)
+
+            return { months }
+        })
+    )
+
+    const failed = results.filter(
+        result => result.status === 'rejected'
+    )
+
+    failed.forEach(result => {
+        console.error(
+            '[ProjectAdminProgramPulse] monthly revenue failed',
+            (result as PromiseRejectedResult).reason
+        )
+    })
+
+    return {
+        series: results
+            .filter(
+                (result): result is PromiseFulfilledResult<FinanceCompanySeries> =>
+                    result.status === 'fulfilled'
+            )
+            .map(result => result.value),
+        failed: failed.length,
+        total: results.length
+    }
+}
+
 const ProjectAdminProgramPulse: React.FC<Props> = ({
     programId,
     dateRange
 }) => {
+    const palette = useMetricPalette()
+    const { isDark } = palette
+    const pulse = {
+        panel: isDark ? 'rgba(255, 255, 255, 0.03)' : '#fbfdff',
+        panelBorder: palette.border,
+        inner: palette.surface,
+        innerBorder: isDark ? 'rgba(255, 255, 255, 0.10)' : '#edf2f7',
+        divider: isDark ? 'rgba(255, 255, 255, 0.10)' : '#edf2f7',
+        jobsBorder: palette.filterBarBorder,
+        track: isDark ? 'rgba(255, 255, 255, 0.10)' : '#f0f0f0',
+        emptyBg: palette.filterBarBg,
+        emptyBorder: palette.chipBorder,
+        axisLine: isDark ? 'rgba(255, 255, 255, 0.18)' : '#e5e7eb',
+        axisLabel: isDark ? 'rgba(255, 255, 255, 0.62)' : '#6b7280',
+        axisLabelSoft: isDark ? 'rgba(255, 255, 255, 0.45)' : '#9ca3af',
+        grid: isDark ? 'rgba(255, 255, 255, 0.08)' : '#f3f4f6',
+        previousBar: isDark ? '#5b6675' : '#cbd5e1',
+        currentBar: isDark ? '#4096ff' : '#1677ff'
+    }
+
     const reportingMonths = useMemo(
         () => getFullReportingMonths(dateRange),
         [dateRange]
@@ -758,97 +863,18 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
             setFinanceError('')
 
             try {
-                const token = await getFinanceToken()
-
-                const [participantsSnap, applicationsSnap, membershipsResponse] =
-                    await Promise.all([
-                        getDocs(collection(db, 'participants')),
-                        getDocs(collection(db, 'applications')),
-                        axios.get(`${API_BASE_URL}/admin/all-memberships`, {
-                            headers: {
-                                Authorization: `Bearer ${token}`
-                            }
-                        })
-                    ])
+                const { series, failed, total } =
+                    await loadProgramFinanceSeries(programId)
 
                 if (cancelled || tokenId !== loadTokenRef.current) return
 
-                const participants = participantsSnap.docs.map(item => ({
-                    id: item.id,
-                    ...item.data()
-                }) as FirestoreParticipant)
-
-                const acceptedApplications = applicationsSnap.docs
-                    .map(item => ({
-                        id: item.id,
-                        ...item.data()
-                    }) as FirestoreApplication)
-                    .filter(isAcceptedApplication)
-
-                const companies = Array.isArray(
-                    membershipsResponse.data?.companies
-                )
-                    ? membershipsResponse.data.companies
-                    : []
-
-                const scopedCompanies = companies.filter((company: any) => {
-                    if (isExcludedScopedCompanyEmail(getCompanyEmail(company))) {
-                        return false
-                    }
-
-                    return !isCompanyOutsideProgram(
-                        company,
-                        programId,
-                        participants,
-                        acceptedApplications
-                    )
-                })
-
-                const results = await Promise.allSettled(
-                    scopedCompanies.map(async (company: any) => {
-                        const email = getCompanyEmail(company)
-
-                        if (!email) {
-                            return {
-                                months: [] as MonthlyRevenueRow[]
-                            }
-                        }
-
-                        const months = await fetchCompanyMonthlyRevenue(email)
-
-                        return { months }
-                    })
-                )
-
-                if (cancelled || tokenId !== loadTokenRef.current) return
-
-                const failed = results.filter(
-                    result => result.status === 'rejected'
-                )
-
-                failed.forEach(result => {
-                    console.error(
-                        '[ProjectAdminProgramPulse] monthly revenue failed',
-                        (result as PromiseRejectedResult).reason
-                    )
-                })
-
-                setFinanceCompanies(
-                    results
-                        .filter(
-                            (
-                                result
-                            ): result is PromiseFulfilledResult<FinanceCompanySeries> =>
-                                result.status === 'fulfilled'
-                        )
-                        .map(result => result.value)
-                )
+                setFinanceCompanies(series)
 
                 // A silent partial failure looks identical to an SME that
                 // simply has not reported, so say when figures are missing.
                 setFinanceError(
-                    failed.length
-                        ? `Monthly revenue could not be loaded for ${failed.length} of ${results.length} SMEs.`
+                    failed
+                        ? `Monthly revenue could not be loaded for ${failed} of ${total} SMEs.`
                         : ''
                 )
             } catch (error) {
@@ -995,29 +1021,35 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
         const selectedMonths = revenueChartMonths.selected
         const months = [...previousMonths, ...selectedMonths]
 
-        const previousValues = previousMonths.map(month =>
-            getProgramRevenueForMonth(month)
-        )
-        const selectedValues = selectedMonths.map(month =>
-            getProgramRevenueForMonth(month)
-        )
+        // A month nobody reported is a gap, not a fall to zero.
+        const valueForMonth = (month: Dayjs) =>
+            financeCompanies.some(company =>
+                hasPeriodRevenueData(company.months, [month])
+            )
+                ? getProgramRevenueForMonth(month)
+                : null
+
+        const previousValues = previousMonths.map(valueForMonth)
+        const selectedValues = selectedMonths.map(valueForMonth)
 
         const visibleValues = [...previousValues, ...selectedValues]
-        const highestVisibleRevenue = Math.max(0, ...visibleValues)
+        const highestVisibleRevenue = Math.max(
+            0,
+            ...visibleValues.map(value => Number(value || 0))
+        )
 
-        // Keep a small amount of breathing room above the tallest column,
-        // instead of letting Highcharts choose an oversized ceiling.
+        // Headroom above the highest point so its figure is not clipped.
         const yAxisMax =
             highestVisibleRevenue > 0
-                ? Math.ceil((highestVisibleRevenue * 1.12) / 10000) * 10000
+                ? Math.ceil((highestVisibleRevenue * 1.3) / 10000) * 10000
                 : undefined
 
         return {
             chart: {
-                type: 'column',
-                height: 82,
+                type: 'spline',
+                height: 130,
                 backgroundColor: 'transparent',
-                spacing: [0, 2, 0, 2]
+                spacing: [4, 8, 0, 8]
             },
             title: { text: undefined },
             credits: { enabled: false },
@@ -1027,11 +1059,11 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
             },
             xAxis: {
                 categories: months.map(month => month.format('MMM')),
-                lineColor: '#e5e7eb',
+                lineColor: pulse.axisLine,
                 tickLength: 0,
                 labels: {
                     style: {
-                        color: '#6b7280',
+                        color: pulse.axisLabel,
                         fontSize: '9px'
                     }
                 }
@@ -1042,11 +1074,11 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                 endOnTick: false,
                 maxPadding: 0,
                 title: { text: undefined },
-                gridLineColor: '#f3f4f6',
+                gridLineColor: pulse.grid,
                 tickAmount: 2,
                 labels: {
                     style: {
-                        color: '#9ca3af',
+                        color: pulse.axisLabelSoft,
                         fontSize: '8px'
                     },
                     formatter: function () {
@@ -1070,12 +1102,23 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                 }
             },
             plotOptions: {
-                column: {
-                    borderWidth: 0,
-                    borderRadius: 7,
-                    maxPointWidth: 14,
-                    groupPadding: 0.22,
-                    pointPadding: 0.14
+                spline: {
+                    lineWidth: 2.5,
+                    marker: { enabled: true, radius: 3 },
+                    dataLabels: {
+                        enabled: true,
+                        crop: false,
+                        overflow: 'allow',
+                        y: -6,
+                        style: {
+                            fontSize: '9px',
+                            fontWeight: '600',
+                            textOutline: 'none'
+                        },
+                        formatter: function () {
+                            return moneyCompact(Number(this.y || 0))
+                        }
+                    }
                 },
                 series: {
                     animation: false,
@@ -1088,9 +1131,9 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
             },
             series: [
                 {
-                    type: 'column',
+                    type: 'spline',
                     name: previousPeriodLabel,
-                    color: '#cbd5e1',
+                    color: pulse.previousBar,
                     data: months.map((_month, index) =>
                         index < previousMonths.length
                             ? previousValues[index]
@@ -1098,9 +1141,9 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                     )
                 },
                 {
-                    type: 'column',
+                    type: 'spline',
                     name: selectedPeriodLabel,
-                    color: '#1677ff',
+                    color: pulse.currentBar,
                     data: months.map((_month, index) =>
                         index >= previousMonths.length
                             ? selectedValues[
@@ -1115,7 +1158,14 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
         revenueChartMonths,
         selectedPeriodLabel,
         previousPeriodLabel,
-        getProgramRevenueForMonth
+        getProgramRevenueForMonth,
+        financeCompanies,
+        pulse.axisLine,
+        pulse.axisLabel,
+        pulse.axisLabelSoft,
+        pulse.grid,
+        pulse.previousBar,
+        pulse.currentBar
     ])
 
     const isLoading = jobsLoading || financeLoading
@@ -1167,8 +1217,8 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                         style={{
                             padding: '24px 14px',
                             borderRadius: 12,
-                            border: '1px dashed #d9d9d9',
-                            background: '#fafafa',
+                            border: `1px dashed ${pulse.emptyBorder}`,
+                            background: pulse.emptyBg,
                             textAlign: 'center'
                         }}
                     >
@@ -1205,8 +1255,8 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                             style={{
                                 padding: 10,
                                 borderRadius: 10,
-                                border: '1px solid #e6efff',
-                                background: '#fbfdff'
+                                border: `1px solid ${pulse.panelBorder}`,
+                                background: pulse.panel
                             }}
                         >
                             <Space
@@ -1301,8 +1351,8 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                                         style={{
                                             padding: '4px 7px 0',
                                             borderRadius: 8,
-                                            border: '1px solid #edf2f7',
-                                            background: '#fff'
+                                            border: `1px solid ${pulse.innerBorder}`,
+                                            background: pulse.inner
                                         }}
                                     >
                                         <Row
@@ -1364,7 +1414,7 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                                     data-guide="project-metrics-sme-movement"
                                     style={{
                                         paddingTop: 5,
-                                        borderTop: '1px solid #edf2f7'
+                                        borderTop: `1px solid ${pulse.divider}`
                                     }}
                                 >
                                     <Space
@@ -1427,8 +1477,8 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                             style={{
                                 padding: 9,
                                 borderRadius: 10,
-                                border: '1px solid #f0f0f0',
-                                background: '#fff'
+                                border: `1px solid ${pulse.jobsBorder}`,
+                                background: pulse.inner
                             }}
                         >
                             <Space
@@ -1500,7 +1550,7 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                                                 height: 6,
                                                 borderRadius: 999,
                                                 overflow: 'hidden',
-                                                background: '#f0f0f0'
+                                                background: pulse.track
                                             }}
                                         >
                                             {jobs.permanentJobs > 0 ? (
@@ -1543,8 +1593,8 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                                         style={{
                                             padding: '10px 12px',
                                             borderRadius: 8,
-                                            border: '1px dashed #d9d9d9',
-                                            background: '#fafafa'
+                                            border: `1px dashed ${pulse.emptyBorder}`,
+                                            background: pulse.emptyBg
                                         }}
                                     >
                                         <Text type='secondary'>
@@ -1559,7 +1609,7 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
                                     align='middle'
                                     style={{
                                         paddingTop: 4,
-                                        borderTop: '1px solid #f0f0f0'
+                                        borderTop: `1px solid ${pulse.jobsBorder}`
                                     }}
                                 >
                                     <Col>

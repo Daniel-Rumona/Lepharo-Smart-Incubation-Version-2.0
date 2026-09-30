@@ -22,8 +22,7 @@ import {
     signInWithEmailAndPassword,
     GoogleAuthProvider,
     signInWithPopup,
-    fetchSignInMethodsForEmail,
-    signOut
+    fetchSignInMethodsForEmail
 } from 'firebase/auth'
 import { httpsCallable } from 'firebase/functions'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -39,6 +38,7 @@ import { auth, db, functions } from '@/firebase'
 import { Helmet } from 'react-helmet'
 import { useAuthSurfacePalette } from '@/hooks/useAuthSurfacePalette'
 import { ThemeToggle } from '@/components/layout/theme-toggle'
+import { signOutApp } from '@/lib/firestoreCache'
 
 const { Title, Text } = Typography
 const { useBreakpoint } = Grid
@@ -397,16 +397,14 @@ const LoginPageContent: React.FC = () => {
         }
     }
 
+    // Goes through signOutApp rather than a bare signOut(): that also hands the
+    // Firestore cache back unowned. Otherwise the next account to sign in is
+    // detected as a different owner mid-session and IdentityContext forces a
+    // reload, which reads as having to sign in twice. It ends in a full page
+    // navigation back here, so the modal never needs closing by hand.
     const handlePickupDifferentAccount = async () => {
         setPickupBusy(true)
-        try {
-            await signOut(auth)
-        } catch {
-            // Best effort -- the empty form below still lets them sign in fresh.
-        } finally {
-            setPickupBusy(false)
-            setPickupUser(null)
-        }
+        await signOutApp(window.location.pathname + window.location.search)
     }
 
     const spinnerVariants = {

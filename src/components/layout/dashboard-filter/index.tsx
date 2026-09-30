@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { Badge, Button, DatePicker, Modal, Space, Tooltip, Typography } from 'antd'
-import { CalendarOutlined, FilterOutlined } from '@ant-design/icons'
+import { Badge, Button, DatePicker, Dropdown, Modal, Space, Tooltip, Typography } from 'antd'
+import type { MenuProps } from 'antd'
+import { CalendarOutlined, CheckOutlined, DownOutlined, FilterOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
 import {
@@ -12,16 +13,7 @@ import {
 const { Text } = Typography
 const { RangePicker } = DatePicker
 
-type PresetKey =
-    | 'today'
-    | 'this-week'
-    | 'this-month'
-    | 'last-month'
-    | 'last-30'
-    | 'this-quarter'
-    | 'ytd'
-    | 'all'
-    | 'custom'
+type PresetKey = 'this-week' | 'this-month' | 'this-quarter' | 'ytd' | 'custom'
 
 /**
  * Quick ranges. Built per call so a session left open overnight does not keep
@@ -36,8 +28,6 @@ const presetRange = (key: PresetKey): DashboardDateRange => {
     const quarterStartMonth = Math.floor(now.month() / 3) * 3
 
     switch (key) {
-        case 'today':
-            return [now.startOf('day'), now.endOf('day')]
         case 'this-week':
             // startOf('week') without the isoWeek plugin is locale-dependent and
             // starts on Sunday. Deriving Monday by hand keeps this consistent
@@ -48,13 +38,6 @@ const presetRange = (key: PresetKey): DashboardDateRange => {
             ]
         case 'this-month':
             return currentMonthRange()
-        case 'last-month':
-            return [
-                now.subtract(1, 'month').startOf('month'),
-                now.subtract(1, 'month').endOf('month')
-            ]
-        case 'last-30':
-            return [now.subtract(29, 'day').startOf('day'), now.endOf('day')]
         case 'this-quarter':
             return [
                 now.month(quarterStartMonth).startOf('month'),
@@ -62,26 +45,21 @@ const presetRange = (key: PresetKey): DashboardDateRange => {
             ]
         case 'ytd':
             return [now.startOf('year'), now.endOf('day')]
-        case 'all':
         default:
             return null
     }
 }
 
 const PRESET_OPTIONS: { label: string; value: Exclude<PresetKey, 'custom'> }[] = [
-    { label: 'Today', value: 'today' },
-    { label: 'This week', value: 'this-week' },
-    { label: 'This month', value: 'this-month' },
-    { label: 'Last month', value: 'last-month' },
-    { label: 'Last 30 days', value: 'last-30' },
-    { label: 'This quarter', value: 'this-quarter' },
-    { label: 'Year to date', value: 'ytd' },
-    { label: 'All time', value: 'all' }
+    { label: 'This Week', value: 'this-week' },
+    { label: 'This Month', value: 'this-month' },
+    { label: 'This Quarter', value: 'this-quarter' },
+    { label: 'Year To Date', value: 'ytd' }
 ]
 
 /** Work out which preset (if any) the active range corresponds to. */
 const detectPreset = (range: DashboardDateRange): PresetKey => {
-    if (!range) return 'all'
+    if (!range) return 'custom'
     const match = PRESET_OPTIONS.find(({ value }) => {
         const r = presetRange(value)
         return !!r && r[0].isSame(range[0], 'day') && r[1].isSame(range[1], 'day')
@@ -98,36 +76,51 @@ const detectPreset = (range: DashboardDateRange): PresetKey => {
  * a window its user cannot see.
  */
 export const DashboardFilterControl: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
-    const { range, setRange, label, isCustom } = useDashboardDateRange()
+    const { range, setRange, label: rangeLabel, isCustom } = useDashboardDateRange()
 
-    const [open, setOpen] = useState(false)
+    const [customOpen, setCustomOpen] = useState(false)
     const [draft, setDraft] = useState<DashboardDateRange>(range)
-    const [preset, setPreset] = useState<PresetKey>(() => detectPreset(range))
+    const activePreset = detectPreset(range)
+    const label = PRESET_OPTIONS.find(opt => opt.value === activePreset)?.label ?? rangeLabel
 
-    // Reset the draft and highlighted preset from the active range each time the
-    // dialog opens, so the selection always reflects what is really applied.
+    // Start the custom dialog from what is really applied.
     useEffect(() => {
-        if (open) {
-            setDraft(range)
-            setPreset(detectPreset(range))
-        }
-    }, [open, range])
+        if (customOpen) setDraft(range ?? currentMonthRange())
+    }, [customOpen, range])
 
-    const applyPreset = (key: PresetKey) => {
-        setPreset(key)
-        if (key !== 'custom') setDraft(presetRange(key))
-        else if (!draft) setDraft(currentMonthRange())
+    const menu: MenuProps = {
+        selectedKeys: [activePreset],
+        onClick: ({ key }) => {
+            if (key === 'custom') {
+                setCustomOpen(true)
+                return
+            }
+            setRange(presetRange(key as PresetKey))
+        },
+        items: [
+            ...PRESET_OPTIONS.map(opt => ({
+                key: opt.value,
+                label: opt.label,
+                icon: activePreset === opt.value ? <CheckOutlined /> : <span style={{ width: 14, display: 'inline-block' }} />
+            })),
+            { type: 'divider' as const },
+            {
+                key: 'custom',
+                label: 'Custom range…',
+                icon: activePreset === 'custom' ? <CheckOutlined /> : <CalendarOutlined />
+            }
+        ]
     }
 
     return (
         <>
             <Tooltip title={`Reporting period: ${label}`}>
                 <Badge dot={isCustom} offset={[-2, 4]}>
+                  <Dropdown menu={menu} trigger={['click']} placement="bottomRight">
                     <Button
                         type="text"
                         shape="round"
                         icon={<FilterOutlined />}
-                        onClick={() => setOpen(true)}
                         className="workspace-dashboard-filter"
                         style={{
                             height: 32,
@@ -157,74 +150,39 @@ export const DashboardFilterControl: React.FC<{ compact?: boolean }> = ({ compac
                                 {label}
                             </span>
                         )}
+                        {compact ? null : <DownOutlined style={{ fontSize: 10, marginInlineStart: 6 }} />}
                     </Button>
+                  </Dropdown>
                 </Badge>
             </Tooltip>
 
             <Modal
-                open={open}
+                open={customOpen}
                 centered
-                title="Reporting period"
-                onCancel={() => setOpen(false)}
+                title="Custom reporting period"
+                onCancel={() => setCustomOpen(false)}
                 okText="Apply"
+                okButtonProps={{ disabled: !draft }}
                 onOk={() => {
                     setRange(draft)
-                    setOpen(false)
+                    setCustomOpen(false)
                 }}
-                width={520}
+                width={440}
             >
-                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
                     <Text type="secondary">
-                        Dashboards show the current month by default. This selection stays
-                        active across dashboards until you change it again.
+                        This selection stays active across dashboards until you change it again.
                     </Text>
-
-                    <div
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(3, 1fr)',
-                            gap: 8
+                    <RangePicker
+                        value={draft}
+                        onChange={value => {
+                            setDraft(value?.[0] && value?.[1] ? [value[0], value[1]] : null)
                         }}
-                    >
-                        {PRESET_OPTIONS.map(opt => (
-                            <Button
-                                key={opt.value}
-                                type={preset === opt.value ? 'primary' : 'default'}
-                                onClick={() => applyPreset(opt.value)}
-                                aria-pressed={preset === opt.value}
-                            >
-                                {opt.label}
-                            </Button>
-                        ))}
-                    </div>
-
-                    <div>
-                        <Button
-                            type={preset === 'custom' ? 'primary' : 'dashed'}
-                            block
-                            icon={<CalendarOutlined />}
-                            onClick={() => applyPreset('custom')}
-                            aria-pressed={preset === 'custom'}
-                            style={{ marginBottom: 8 }}
-                        >
-                            Custom range
-                        </Button>
-                        <RangePicker
-                            value={draft}
-                            disabled={preset !== 'custom'}
-                            onChange={value => {
-                                setDraft(value?.[0] && value?.[1] ? [value[0], value[1]] : null)
-                            }}
-                            format="DD MMM YYYY"
-                            style={{ width: '100%' }}
-                            allowClear
-                            placeholder={['Start date', 'End date']}
-                        />
-                    </div>
-
-                    <Text type="secondary">
-                        Selected: <Text strong>{draft ? `${draft[0].format('DD MMM YYYY')} – ${draft[1].format('DD MMM YYYY')}` : 'All time'}</Text>
-                    </Text>
+                        format="DD MMM YYYY"
+                        style={{ width: '100%' }}
+                        allowClear={false}
+                        placeholder={['Start date', 'End date']}
+                    />
                 </Space>
             </Modal>
         </>

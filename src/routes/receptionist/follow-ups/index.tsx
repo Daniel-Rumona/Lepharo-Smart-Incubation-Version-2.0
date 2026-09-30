@@ -214,7 +214,8 @@ const FollowUpsList: React.FC = () => {
                 priority: values.priority,
                 notes: values.notes,
                 assignedTo: user?.uid || '',
-                assignedToName: user?.name || user?.email || ''
+                assignedToName: user?.name || user?.email || '',
+                assignedToEmail: user?.email || ''
             })
 
             // Refresh data

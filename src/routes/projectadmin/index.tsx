@@ -40,6 +40,7 @@ import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { useDashboardDateRange } from '@/lib/useDashboardDateRange'
 import ProjectAdminProgramPulse from '@/components/dashboards/projectadmin/ProjectAdminProgramPulse'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
+import DepartmentMonthlyUploadStatusCard from '@/components/dashboards/metrics/DepartmentMonthlyUploadStatusCard'
 import {
     guideTarget,
     usePageGuides,
@@ -415,6 +416,8 @@ const CenterCoordinatorDashboard: React.FC = () => {
     const [inquiries, setInquiries] = useState<any[]>([])
     const [interventions, setInterventions] = useState<any[]>([])
     const [consolidatedMovs, setConsolidatedMovs] = useState<any[]>([])
+    const [uploadDepartments, setUploadDepartments] = useState<string[]>([])
+    const [departmentsLoading, setDepartmentsLoading] = useState(true)
     const [participants, setParticipants] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
 
@@ -669,6 +672,55 @@ const CenterCoordinatorDashboard: React.FC = () => {
             })
         },
         [dateRange]
+    )
+
+    useEffect(() => {
+        let cancelled = false
+
+        void (async () => {
+            try {
+                const snap = await getDocs(collection(db, 'departments'))
+                if (cancelled) return
+
+                const names = snap.docs
+                    .map(docSnap => docSnap.data() as any)
+                    .filter(data => data.interventionsDepartment === true)
+                    .map(data =>
+                        String(data.name || data.departmentName || '').trim()
+                    )
+                    .filter(name => name && name !== 'Unspecified')
+
+                setUploadDepartments(
+                    Array.from(new Set(names)).sort((a, b) =>
+                        a.localeCompare(b, undefined, { sensitivity: 'base' })
+                    )
+                )
+            } catch (err) {
+                console.error('[CC Dashboard] departments failed', err)
+                if (!cancelled) setUploadDepartments([])
+            } finally {
+                if (!cancelled) setDepartmentsLoading(false)
+            }
+        })()
+
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
+    // A department counts as uploaded once its pack has been submitted by the HOD.
+    const submittedMovPacks = useMemo(
+        () =>
+            consolidatedMovs.filter(
+                pack =>
+                    Array.isArray(pack.approvals) &&
+                    pack.approvals.some(
+                        (approval: any) =>
+                            String(approval?.step || '').toLowerCase() ===
+                            'hod_submission'
+                    )
+            ),
+        [consolidatedMovs]
     )
 
     const filteredInquiries = useMemo(
@@ -953,6 +1005,15 @@ const CenterCoordinatorDashboard: React.FC = () => {
 
             <Row gutter={[16, 16]} align='stretch'>
                 <Col xs={24} lg={14}>
+                    <div style={{ marginBottom: 16 }}>
+                        <DepartmentMonthlyUploadStatusCard
+                            departments={uploadDepartments}
+                            submissions={submittedMovPacks}
+                            loading={loading || departmentsLoading}
+                            dateRange={dateRange}
+                        />
+                    </div>
+
                     <div data-guide="cc-upcoming-appointments">
                         <UpcomingAppointmentsCard
                             title='Upcoming Appointments'

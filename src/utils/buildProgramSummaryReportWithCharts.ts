@@ -113,7 +113,9 @@ function eventDate(ai: AssignedInterventionDoc): Date | undefined {
 function inPeriod(d: Date | undefined, start: dayjs.Dayjs, end: dayjs.Dayjs) {
   if (!d) return false
   const x = dayjs(d)
-  return x.isSameOrAfter(start) && x.isSameOrBefore(end)
+  // Plain isAfter/isBefore are exclusive, so isSame covers the boundary instants
+  // instead of depending on the isSameOrAfter/isSameOrBefore dayjs plugin.
+  return (x.isAfter(start) || x.isSame(start)) && (x.isBefore(end) || x.isSame(end))
 }
 
 function pickDateForRow(d: AssignedInterventionDoc) {
@@ -170,6 +172,18 @@ async function fetchProgramName(programId?: string | null) {
   } catch {
     return undefined
   }
+}
+
+/** Used when building a report across every program, to label each one. */
+async function fetchProgramNames(programIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  await Promise.all(
+    programIds.map(async programId => {
+      const name = await fetchProgramName(programId)
+      if (name) out.set(programId, name)
+    })
+  )
+  return out
 }
 
 const sumMap = (m: Map<string, number>) => Array.from(m.values()).reduce((a, b) => a + b, 0)
@@ -244,6 +258,69 @@ export async function buildConsolidatedMeProgramReport(
 
 
   const assignedInPeriod = allAssigned.filter(ai => inPeriod(eventDate(ai), start, end))
+
+  // -----------------------------
+  // Delivery by department (totals, not a row-by-row listing)
+  // -----------------------------
+  const deptCounts = new Map<string, number>()
+  assignedInPeriod.forEach(ai => {
+    const dept = deptKeyFromArea(ai.areaOfSupport)
+    deptCounts.set(dept, (deptCounts.get(dept) || 0) + 1)
+  })
+  const interventionsByDepartment = Array.from(deptCounts.entries())
+    .map(([department, count]) => ({ department, count }))
+    .sort((a, b) => b.count - a.count)
+
+  // -----------------------------
+  // Consolidated MOV packs touching this period.
+  // Every pack that exists was, by construction, submitted (its approvals array
+  // starts with an hod_submission entry when the HOD first creates it) -- "validated"
+  // is the subset M&E has since signed off, mirroring hasApprovalStep() in the MOV
+  // pages (src/components/dashboards/rom/romDashboard.tsx, src/routes/operations/movs).
+  // -----------------------------
+  const movBase: QueryConstraint[] = programId ? [where("programId", "==", programId)] : []
+  const movSnap = await getDocs(query(collection(db, "consolidatedMOVs"), ...movBase))
+
+  const periodMonthKeys = new Set<string>()
+  for (let cursor = start.startOf("month"); cursor.valueOf() <= end.valueOf(); cursor = cursor.add(1, "month")) {
+    periodMonthKeys.add(cursor.format("YYYY-MM"))
+  }
+
+  const movPacksInPeriod = movSnap.docs
+    .map(d => d.data() as any)
+    .filter(pack => {
+      const monthKey = norm(pack.month)
+      if (monthKey) return periodMonthKeys.has(monthKey)
+      // Older packs may not carry a month string; fall back to their own date range.
+      const from = pack.range?.from?.toDate?.() || pack.range?.from
+      return from ? inPeriod(from, start, end) : false
+    })
+
+  const hasMovApprovalStep = (pack: any, step: string) =>
+    Array.isArray(pack.approvals) &&
+    pack.approvals.some((a: any) => low(a?.step) === step)
+
+  const isMovPackValidated = (pack: any) =>
+    hasMovApprovalStep(pack, "validation") ||
+    hasMovApprovalStep(pack, "me_validation") ||
+    hasMovApprovalStep(pack, "me_signature")
+
+  // A pack bundles several individual MOVs (one per intervention); validation
+  // applies to the whole pack, so an item counts as validated when its pack does.
+  const movItemCount = (pack: any) => {
+    const total = Number(pack.totalItems)
+    if (Number.isFinite(total) && total > 0) return total
+    return Array.isArray(pack.interventions) ? pack.interventions.length : 0
+  }
+
+  const validatedMovPacks = movPacksInPeriod.filter(isMovPackValidated)
+
+  const movStats = {
+    submitted: movPacksInPeriod.length,
+    validated: validatedMovPacks.length,
+    items: movPacksInPeriod.reduce((sum, pack) => sum + movItemCount(pack), 0),
+    itemsValidated: validatedMovPacks.reduce((sum, pack) => sum + movItemCount(pack), 0)
+  }
 
   const rejectedExamples = allAssigned
     .filter(ai => !inPeriod(eventDate(ai), start, end))
@@ -324,7 +401,33 @@ const points = deptNames.map(dept => {
   const overallPending = Math.max(0, overallRequired - overallCompleted)
 
 
-  const programName = await fetchProgramName(programId)
+  // -----------------------------
+  // Programmes represented in this period, when the report spans all of them
+  // (programId is unset). Report-player-only for now: the DOCX export still
+  // requires a specific program, so a single-program report never needs this.
+  // -----------------------------
+  let programsBreakdown: Array<{ programId: string; programName: string; count: number }> | undefined
+  let programName: string | undefined
+
+  if (programId) {
+    programName = await fetchProgramName(programId)
+  } else {
+    const programIdCounts = new Map<string, number>()
+    assignedInPeriod.forEach(ai => {
+      const pid = norm(ai.programId)
+      if (!pid) return
+      programIdCounts.set(pid, (programIdCounts.get(pid) || 0) + 1)
+    })
+    const programNamesById = await fetchProgramNames(Array.from(programIdCounts.keys()))
+    programsBreakdown = Array.from(programIdCounts.entries())
+      .map(([pid, count]) => ({
+        programId: pid,
+        programName: programNamesById.get(pid) || "Unnamed Program",
+        count
+      }))
+      .sort((a, b) => b.count - a.count)
+    programName = programsBreakdown.length === 1 ? programsBreakdown[0].programName : "All Programmes"
+  }
 
   // Tables
 // 1) Build applicationsByParticipantId
@@ -476,6 +579,10 @@ const interventionsThisMonth = await buildMonthlyInterventionTrackerRows({
       notServiced: engagementsWithoutMOV.length,
       notServicedReasons: reasonRows.length ? reasonRows : undefined
     },
+
+    movStats,
+    interventionsByDepartment,
+    programsBreakdown,
 
     interventionsThisMonth,
     engagementsWithoutMOV,

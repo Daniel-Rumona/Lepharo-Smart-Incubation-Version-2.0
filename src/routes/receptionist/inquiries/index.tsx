@@ -15,7 +15,8 @@ import {
     message,
     Statistic,
     Empty,
-    Modal
+    Modal,
+    Progress
 } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -30,7 +31,8 @@ import {
     CheckCircleOutlined,
     ClockCircleOutlined,
     ExclamationCircleOutlined,
-    BarChartOutlined
+    BarChartOutlined,
+    FilterOutlined
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { format } from 'date-fns'
@@ -38,17 +40,25 @@ import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import {
     Inquiry,
-    InquiryFormFields,
     InquiryPriority,
     InquiryStatus,
-    InquirySource
 } from '@/types/inquiry'
 import { inquiryService } from '@/services/inquiryService'
+import {
+    ALL_CHANNELS,
+    AUDIENCE_LABEL,
+    channelLabel,
+    resolveInquiryAudience,
+    resolveInquiryChannel,
+    type InquiryAudience,
+    type InquiryChannel
+} from '@/utils/inquirySource'
 import { useAuth } from '@/hooks/useAuth'
 import {
     MotionCard
 } from '@/components/dashboards/metrics/Header'
 import InquiryForm from '@/components/receptionist/InquiryForm'
+import InquiryEditModal from '@/components/receptionist/InquiryEditModal'
 import InquiryDetail from '@/components/receptionist/InquiryDetail'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 
@@ -69,24 +79,39 @@ const statusOrder: InquiryStatus[] = [
     'Closed'
 ]
 
+type StatusFilter = InquiryStatus | 'all' | 'group:progress' | 'group:resolved'
+
+// The metric cards count these groups, so clicking a card filters to the same set.
+const STATUS_GROUPS: Record<'group:progress' | 'group:resolved', string[]> = {
+    'group:progress': ['In Progress', 'Follow-up Required'],
+    'group:resolved': ['Resolved', 'Converted', 'Closed']
+}
+
+const matchesStatusFilter = (status: string, filter: StatusFilter) =>
+    filter === 'all' ||
+    (filter in STATUS_GROUPS ? STATUS_GROUPS[filter as keyof typeof STATUS_GROUPS].includes(status) : status === filter)
+
 const InquiriesList: React.FC = () => {
     const [inquiries, setInquiries] = useState<Inquiry[]>([])
     const [loading, setLoading] = useState(true)
 
     const [searchText, setSearchText] = useState('')
-    const [statusFilter, setStatusFilter] = useState<InquiryStatus | 'all'>('all')
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+    const [page, setPage] = useState(1)
     const [priorityFilter, setPriorityFilter] = useState<InquiryPriority | 'all'>(
         'all'
     )
-    const [sourceFilter, setSourceFilter] = useState<InquirySource | 'all'>('all')
+    const [sourceFilter, setSourceFilter] = useState<InquiryChannel | 'all'>('all')
+    const [audienceFilter, setAudienceFilter] = useState<InquiryAudience | 'all'>('all')
     const [dateRange, setDateRange] = useState<RangeValue>(null)
+    const [filtersOpen, setFiltersOpen] = useState(false)
+    const [analyticsOpen, setAnalyticsOpen] = useState(false)
+    const [draftStatus, setDraftStatus] = useState<StatusFilter>('all')
+    const [draftAudience, setDraftAudience] = useState<InquiryAudience | 'all'>('all')
+    const [draftRange, setDraftRange] = useState<RangeValue>(null)
     const [newInquiryOpen, setNewInquiryOpen] = useState(false)
     const [viewInquiryId, setViewInquiryId] = useState<string | null>(null)
     const [editInquiryId, setEditInquiryId] = useState<string | null>(null)
-    const [editInitialData, setEditInitialData] = useState<
-        (Partial<InquiryFormFields> & Record<string, any>) | null
-    >(null)
-    const [editLoading, setEditLoading] = useState(false)
 
     const { user, loading: userLoading } = useAuth()
     const { activeProgramId } = useActiveProgramId()
@@ -150,58 +175,7 @@ const InquiriesList: React.FC = () => {
         return colors[priority] || 'default'
     }
 
-    const openEditInquiry = async (inquiryId: string) => {
-        try {
-            setEditInquiryId(inquiryId)
-            setEditInitialData(null)
-            setEditLoading(true)
-            const inquiry = await inquiryService.getInquiryById(inquiryId)
-            if (!inquiry) {
-                message.error('Inquiry not found')
-                setEditInquiryId(null)
-                return
-            }
-
-            setEditInitialData({
-                firstName: inquiry.contactInfo.firstName,
-                lastName: inquiry.contactInfo.lastName,
-                email: inquiry.contactInfo.email,
-                phone: inquiry.contactInfo.phone,
-                company: inquiry.contactInfo.company,
-                position: inquiry.contactInfo.position,
-                inquiryType: inquiry.inquiryDetails.inquiryType,
-                businessStage: inquiry.inquiryDetails.businessStage,
-                industry: inquiry.inquiryDetails.industry,
-                department:
-                    inquiry.inquiryDetails.department ||
-                    inquiry.inquiryDetails.servicesOfInterest?.[0],
-                description: inquiry.inquiryDetails.description,
-                budget: inquiry.inquiryDetails.budget,
-                timeline: inquiry.inquiryDetails.timeline,
-                priority: inquiry.priority,
-                classification: inquiry.classification || 'General',
-                sourceTypeInternal:
-                    inquiry.sourceType ||
-                    (inquiry.programId ? 'Incubatee' : 'Non-Incubatee'),
-                sourceType:
-                    inquiry.sourceType ||
-                    (inquiry.programId ? 'Incubatee' : 'Non-Incubatee'),
-                programId: inquiry.programId || undefined,
-                tags: inquiry.tags,
-                nextFollowUpDate: inquiry.followUp?.nextFollowUpDate
-                    ? dayjs(inquiry.followUp.nextFollowUpDate)
-                    : undefined,
-                followUpMethod: inquiry.followUp?.followUpMethod,
-                followUpNotes: inquiry.followUp?.notes
-            })
-        } catch (error) {
-            console.error('Error loading inquiry for editing:', error)
-            message.error('Failed to load inquiry for editing')
-            setEditInquiryId(null)
-        } finally {
-            setEditLoading(false)
-        }
-    }
+    const openEditInquiry = (inquiryId: string) => setEditInquiryId(inquiryId)
 
     const normalizeDate = (value: any): Date | null => {
         if (!value) return null
@@ -216,7 +190,7 @@ const InquiriesList: React.FC = () => {
         return Number.isNaN(parsed.getTime()) ? null : parsed
     }
 
-    const filteredInquiries = useMemo(() => {
+    const baseFilteredInquiries = useMemo(() => {
         return inquiries.filter(inquiry => {
             const firstName = inquiry.contactInfo?.firstName?.toLowerCase?.() || ''
             const lastName = inquiry.contactInfo?.lastName?.toLowerCase?.() || ''
@@ -240,14 +214,12 @@ const InquiriesList: React.FC = () => {
                 description.includes(search) ||
                 inquiryType.includes(search)
 
-            const matchesStatus =
-                statusFilter === 'all' || inquiry.status === statusFilter
-
             const matchesPriority =
                 priorityFilter === 'all' || inquiry.priority === priorityFilter
 
             const matchesSource =
-                sourceFilter === 'all' || inquiry.source === sourceFilter
+                (sourceFilter === 'all' || resolveInquiryChannel(inquiry.source) === sourceFilter) &&
+                (audienceFilter === 'all' || resolveInquiryAudience(inquiry) === audienceFilter)
 
             const submittedDate = normalizeDate(inquiry.submittedAt)
 
@@ -261,35 +233,46 @@ const InquiriesList: React.FC = () => {
 
             return (
                 matchesSearch &&
-                matchesStatus &&
                 matchesPriority &&
                 matchesSource &&
                 matchesDateRange
             )
         })
-    }, [inquiries, searchText, statusFilter, priorityFilter, sourceFilter, dateRange])
+    }, [inquiries, searchText, priorityFilter, sourceFilter, audienceFilter, dateRange])
+
+    const filteredInquiries = useMemo(
+        () => baseFilteredInquiries.filter(inquiry => matchesStatusFilter(inquiry.status, statusFilter)),
+        [baseFilteredInquiries, statusFilter]
+    )
+
+    // Back to the first page whenever the visible set changes.
+    useEffect(() => {
+        setPage(1)
+    }, [statusFilter, searchText, priorityFilter, sourceFilter, audienceFilter, dateRange])
 
     const metrics = useMemo(() => {
-        const total = filteredInquiries.length
-        const newCount = filteredInquiries.filter(item => item.status === 'New').length
-        const inProgressCount = filteredInquiries.filter(
-            item => item.status === 'In Progress' || item.status === 'Follow-up Required'
+        const total = baseFilteredInquiries.length
+        const newCount = baseFilteredInquiries.filter(item => item.status === 'New').length
+        const inProgressCount = baseFilteredInquiries.filter(item =>
+            matchesStatusFilter(item.status, 'group:progress')
         ).length
-        const resolvedCount = filteredInquiries.filter(item =>
-            ['Resolved', 'Converted', 'Closed'].includes(item.status)
-        ).length
-        const urgentCount = filteredInquiries.filter(
-            item => item.priority === 'Urgent' || item.priority === 'High'
+        const resolvedCount = baseFilteredInquiries.filter(item =>
+            matchesStatusFilter(item.status, 'group:resolved')
         ).length
 
+        return { total, newCount, inProgressCount, resolvedCount }
+    }, [baseFilteredInquiries])
+
+    const metricProps = (filter: StatusFilter) => {
+        const active = statusFilter === filter
         return {
-            total,
-            newCount,
-            inProgressCount,
-            resolvedCount,
-            urgentCount
+            clickable: true,
+            onClick: () => setStatusFilter(active ? 'all' : filter),
+            wrapperStyle: active
+                ? { border: '1px solid #1677ff', boxShadow: '0 0 0 2px rgba(22,119,255,0.18)' }
+                : undefined
         }
-    }, [filteredInquiries])
+    }
 
     const inquiryTypeFrequency = useMemo(() => {
         const map = new Map<string, number>()
@@ -364,7 +347,8 @@ const InquiriesList: React.FC = () => {
                         <Text strong>
                             {record.contactInfo?.firstName} {record.contactInfo?.lastName}
                         </Text>
-                        {record.source === 'SME' ? (
+                        {record.isRepresentative ? <Tag color="purple">Representative</Tag> : null}
+                        {resolveInquiryAudience(record) === 'Incubatee' ? (
                             <Badge
                                 count={<UserOutlined style={{ color: '#1677ff' }} />}
                                 size="small"
@@ -395,7 +379,10 @@ const InquiriesList: React.FC = () => {
                         <Tag color={record.classification === 'Potential' ? 'gold' : 'blue'}>
                             {record.classification || 'General'}
                         </Tag>
-                        <Tag>{record.source || '—'}</Tag>
+                        <Tag>{channelLabel(resolveInquiryChannel(record.source))}</Tag>
+                        <Tag color={resolveInquiryAudience(record) === 'Incubatee' ? 'green' : 'default'}>
+                            {AUDIENCE_LABEL[resolveInquiryAudience(record)]}
+                        </Tag>
                     </div>
                     {record.inquiryDetails?.department ? (
                         <div style={{ color: 'rgba(0,0,0,.45)', fontSize: 12, marginTop: 4 }}>
@@ -487,6 +474,68 @@ const InquiriesList: React.FC = () => {
         }
     ]
 
+    const activeFilterCount =
+        (statusFilter !== 'all' ? 1 : 0) +
+        (audienceFilter !== 'all' ? 1 : 0) +
+        (dateRange?.[0] && dateRange?.[1] ? 1 : 0)
+
+    const openFilters = () => {
+        setDraftStatus(statusFilter)
+        setDraftAudience(audienceFilter)
+        setDraftRange(dateRange)
+        setFiltersOpen(true)
+    }
+
+    const applyFilters = () => {
+        setStatusFilter(draftStatus)
+        setAudienceFilter(draftAudience)
+        setDateRange(draftRange)
+        setFiltersOpen(false)
+    }
+
+    const resetFilters = () => {
+        setDraftStatus('all')
+        setDraftAudience('all')
+        setDraftRange(null)
+    }
+
+    const sourceBreakdown = useMemo(() => {
+        const counts = new Map<InquiryChannel, number>()
+        filteredInquiries.forEach(item => {
+            const channel = resolveInquiryChannel(item.source)
+            counts.set(channel, (counts.get(channel) || 0) + 1)
+        })
+        const total = filteredInquiries.length
+
+        return ALL_CHANNELS
+            .map(option => {
+                const count = counts.get(option.value) || 0
+                return {
+                    channel: option.value,
+                    count,
+                    percent: total ? Math.round((count / total) * 100) : 0
+                }
+            })
+            .filter(row => row.count > 0)
+            .sort((a, b) => b.count - a.count)
+    }, [filteredInquiries])
+
+    const audienceBreakdown = useMemo(() => {
+        const total = filteredInquiries.length
+        const counts: Record<InquiryAudience, number> = { Incubatee: 0, 'Non-Incubatee': 0 }
+        filteredInquiries.forEach(item => {
+            counts[resolveInquiryAudience(item)] += 1
+        })
+
+        return (Object.keys(counts) as InquiryAudience[])
+            .map(audience => ({
+                audience,
+                count: counts[audience],
+                percent: total ? Math.round((counts[audience] / total) * 100) : 0
+            }))
+            .sort((a, b) => b.count - a.count)
+    }, [filteredInquiries])
+
     const filterBar = (
         <div
             style={{
@@ -507,21 +556,6 @@ const InquiriesList: React.FC = () => {
                 style={{ minWidth: 260, flex: '1 1 320px' }}
             />
             <Select
-                value={statusFilter}
-                onChange={setStatusFilter}
-                style={{ minWidth: 155 }}
-                options={[
-                    { value: 'all', label: 'All statuses' },
-                    { value: 'New', label: 'New' },
-                    { value: 'In Progress', label: 'In Progress' },
-                    { value: 'Follow-up Required', label: 'Follow-up Required' },
-                    { value: 'Contacted', label: 'Contacted' },
-                    { value: 'Resolved', label: 'Resolved' },
-                    { value: 'Converted', label: 'Converted' },
-                    { value: 'Closed', label: 'Closed' }
-                ]}
-            />
-            <Select
                 value={priorityFilter}
                 onChange={setPriorityFilter}
                 style={{ minWidth: 140 }}
@@ -539,24 +573,24 @@ const InquiriesList: React.FC = () => {
                 style={{ minWidth: 145 }}
                 options={[
                     { value: 'all', label: 'All sources' },
-                    { value: 'Walk-in', label: 'Walk-in' },
-                    { value: 'Phone', label: 'Phone' },
-                    { value: 'Email', label: 'Email' },
-                    { value: 'Website', label: 'Website' },
-                    { value: 'Referral', label: 'Referral' },
-                    { value: 'Social Media', label: 'Social Media' },
-                    { value: 'Event', label: 'Event' },
-                    { value: 'SME', label: 'SME' },
-                    { value: 'Incubatee', label: 'Incubatee' },
-                    { value: 'Non-Incubatee', label: 'Non-Incubatee' },
-                    { value: 'Other', label: 'Other' }
+                    ...ALL_CHANNELS.map(option => ({
+                        value: option.value,
+                        label: channelLabel(option.value)
+                    }))
                 ]}
             />
-            <RangePicker
-                value={dateRange}
-                onChange={value => setDateRange(value as RangeValue)}
-                style={{ minWidth: 250 }}
-            />
+            <Badge count={activeFilterCount} size="small" offset={[-6, 4]}>
+                <Button shape="round" icon={<FilterOutlined />} onClick={openFilters}>
+                    Filters
+                </Button>
+            </Badge>
+            <Button
+                shape="round"
+                icon={<BarChartOutlined />}
+                onClick={() => setAnalyticsOpen(true)}
+            >
+                Analytics
+            </Button>
             <Button
                 shape="round"
                 icon={<ReloadOutlined />}
@@ -614,51 +648,47 @@ const InquiriesList: React.FC = () => {
         <div style={{ padding: 24, minHeight: '100vh' }}>
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard>
-                        <MotionCard.Metric
-                            icon={<MessageOutlined style={{ color: '#1677ff' }} />}
-                            iconBg="rgba(22,119,255,0.12)"
-                            title="Total Inquiries"
-                            value={metrics.total}
-                            subtitle="All inquiries in current view"
-                        />
-                    </MotionCard>
+                    <MotionCard.Metric
+                        {...metricProps('all')}
+                        icon={<MessageOutlined style={{ color: '#1677ff' }} />}
+                        iconBg="rgba(22,119,255,0.12)"
+                        title="Total Inquiries"
+                        value={metrics.total}
+                        subtitle="Click to show all"
+                    />
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard>
-                        <MotionCard.Metric
-                            icon={<ExclamationCircleOutlined style={{ color: '#faad14' }} />}
-                            iconBg="rgba(250,173,20,0.14)"
-                            title="New"
-                            value={metrics.newCount}
-                            subtitle="Awaiting first action"
-                        />
-                    </MotionCard>
+                    <MotionCard.Metric
+                        {...metricProps('New')}
+                        icon={<ExclamationCircleOutlined style={{ color: '#faad14' }} />}
+                        iconBg="rgba(250,173,20,0.14)"
+                        title="New"
+                        value={metrics.newCount}
+                        subtitle="Awaiting first action"
+                    />
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard>
-                        <MotionCard.Metric
-                            icon={<ClockCircleOutlined style={{ color: '#722ed1' }} />}
-                            iconBg="rgba(114,46,209,0.12)"
-                            title="In Progress"
-                            value={metrics.inProgressCount}
-                            subtitle="Being handled or followed up"
-                        />
-                    </MotionCard>
+                    <MotionCard.Metric
+                        {...metricProps('group:progress')}
+                        icon={<ClockCircleOutlined style={{ color: '#722ed1' }} />}
+                        iconBg="rgba(114,46,209,0.12)"
+                        title="In Progress"
+                        value={metrics.inProgressCount}
+                        subtitle="Being handled or followed up"
+                    />
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard>
-                        <MotionCard.Metric
-                            icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                            iconBg="rgba(82,196,26,0.12)"
-                            title="Resolved / Closed"
-                            value={metrics.resolvedCount}
-                            subtitle="Completed outcomes"
-                        />
-                    </MotionCard>
+                    <MotionCard.Metric
+                        {...metricProps('group:resolved')}
+                        icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                        iconBg="rgba(82,196,26,0.12)"
+                        title="Resolved / Closed"
+                        value={metrics.resolvedCount}
+                        subtitle="Completed outcomes"
+                    />
                 </Col>
             </Row>
 
@@ -684,46 +714,206 @@ const InquiriesList: React.FC = () => {
                                 emptyText: <Empty description="No inquiries found" />
                             }}
                             pagination={{
+                                current: page,
+                                onChange: setPage,
                                 total: filteredInquiries.length,
                                 pageSize: 10,
+                                position: ['bottomCenter'],
                                 showSizeChanger: false,
-                                showQuickJumper: false,
-                                showTotal: (total, range) =>
-                                    `${range[0]}-${range[1]} of ${total} inquiries`
+                                showQuickJumper: false
                             }}
                         />
                     </MotionCard>
                 </Col>
             </Row>
 
-            <Row gutter={[16, 16]}>
-                <Col xs={24}>
-                    <MotionCard
-                        title="Inquiry Type Frequency"
-                        extra={
-                            <Tag icon={<BarChartOutlined />}>
-                                {inquiryTypeFrequency.length} types
-                            </Tag>
-                        }
-                    >
-                        {inquiryTypeFrequency.length ? (
-                            <HighchartsReact highcharts={Highcharts} options={inquiryTypeChartOptions} />
-                        ) : (
-                            <Empty description="No inquiry type data available" />
-                        )}
-                    </MotionCard>
-                </Col>
-            </Row>
+            <Modal
+                title="Filters"
+                open={filtersOpen}
+                onCancel={() => setFiltersOpen(false)}
+                width={440}
+                centered
+                destroyOnClose
+                styles={{ body: { padding: '20px 24px 4px' } }}
+                footer={
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <Button block size="large" onClick={resetFilters}>
+                            Reset
+                        </Button>
+                        <Button block size="large" type="primary" onClick={applyFilters}>
+                            Apply filters
+                        </Button>
+                    </div>
+                }
+            >
+                <Space direction="vertical" size={18} style={{ width: '100%' }}>
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: 8 }}>Status</Text>
+                        <Select
+                            size="large"
+                            value={draftStatus}
+                            onChange={setDraftStatus}
+                            style={{ width: '100%' }}
+                            options={[
+                                { value: 'all', label: 'All statuses' },
+                                { value: 'New', label: 'New' },
+                                { value: 'group:progress', label: 'In progress (incl. follow-up required)' },
+                                { value: 'In Progress', label: 'In Progress only' },
+                                { value: 'Follow-up Required', label: 'Follow-up Required' },
+                                { value: 'Contacted', label: 'Contacted' },
+                                { value: 'group:resolved', label: 'Resolved / closed (incl. converted)' },
+                                { value: 'Resolved', label: 'Resolved' },
+                                { value: 'Converted', label: 'Converted' },
+                                { value: 'Closed', label: 'Closed' }
+                            ]}
+                        />
+                    </div>
+
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: 8 }}>Contact type</Text>
+                        <Select
+                            size="large"
+                            value={draftAudience}
+                            onChange={setDraftAudience}
+                            style={{ width: '100%' }}
+                            options={[
+                                { value: 'all', label: 'All contacts' },
+                                { value: 'Incubatee', label: AUDIENCE_LABEL.Incubatee },
+                                { value: 'Non-Incubatee', label: AUDIENCE_LABEL['Non-Incubatee'] }
+                            ]}
+                        />
+                    </div>
+
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: 8 }}>Date received</Text>
+                        <RangePicker
+                            size="large"
+                            value={draftRange}
+                            onChange={value => setDraftRange(value as RangeValue)}
+                            style={{ width: '100%' }}
+                            presets={[
+                                { label: 'This week', value: [dayjs().startOf('week'), dayjs().endOf('week')] },
+                                { label: 'This month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
+                                { label: 'Last 30 days', value: [dayjs().subtract(29, 'day'), dayjs()] }
+                            ]}
+                        />
+                    </div>
+                </Space>
+            </Modal>
 
             <Modal
-                title="New Inquiry"
+                title="Inquiry analytics"
+                open={analyticsOpen}
+                onCancel={() => setAnalyticsOpen(false)}
+                footer={null}
+                width={1040}
+                style={{ maxWidth: 'calc(100vw - 24px)' }}
+                centered
+                destroyOnClose
+                styles={{ body: { maxHeight: '75vh', overflowY: 'auto', padding: '20px 24px' } }}
+            >
+                <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                    Based on the {filteredInquiries.length} inquiries matching your current filters.
+                </Text>
+                <Row gutter={[16, 16]}>
+                    <Col xs={24} lg={14}>
+                        <MotionCard
+                            style={{ height: '100%' }}
+                            title="Inquiry Type Frequency"
+                            extra={
+                                <Tag icon={<BarChartOutlined />}>
+                                    {inquiryTypeFrequency.length} types
+                                </Tag>
+                            }
+                        >
+                            {inquiryTypeFrequency.length ? (
+                                <HighchartsReact highcharts={Highcharts} options={inquiryTypeChartOptions} />
+                            ) : (
+                                <Empty description="No inquiry type data available" />
+                            )}
+                        </MotionCard>
+                    </Col>
+
+                    <Col xs={24} lg={10}>
+                        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                        <MotionCard
+                            title="Sources"
+                            extra={<Tag>{sourceBreakdown.length} channels</Tag>}
+                        >
+                            {sourceBreakdown.length ? (
+                                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                                    {sourceBreakdown.map(row => (
+                                        <div key={row.channel}>
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'baseline',
+                                                    gap: 8,
+                                                    marginBottom: 4
+                                                }}
+                                            >
+                                                <Text strong>{channelLabel(row.channel)}</Text>
+                                                <Text type="secondary">
+                                                    {row.count} · {row.percent}%
+                                                </Text>
+                                            </div>
+                                            <Progress
+                                                percent={row.percent}
+                                                showInfo={false}
+                                                size={{ height: 10 }}
+                                                strokeLinecap="round"
+                                            />
+                                        </div>
+                                    ))}
+                                </Space>
+                            ) : (
+                                <Empty description="No source data available" />
+                            )}
+                        </MotionCard>
+                        <MotionCard title="Contact type">
+                            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                                {audienceBreakdown.map(row => (
+                                    <div key={row.audience}>
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'baseline',
+                                                gap: 8,
+                                                marginBottom: 4
+                                            }}
+                                        >
+                                            <Text strong>{AUDIENCE_LABEL[row.audience]}</Text>
+                                            <Text type="secondary">
+                                                {row.count} · {row.percent}%
+                                            </Text>
+                                        </div>
+                                        <Progress
+                                            percent={row.percent}
+                                            showInfo={false}
+                                            size={{ height: 10 }}
+                                            strokeLinecap="round"
+                                            strokeColor={row.audience === 'Incubatee' ? '#52c41a' : undefined}
+                                        />
+                                    </div>
+                                ))}
+                            </Space>
+                        </MotionCard>
+                        </Space>
+                    </Col>
+                </Row>
+            </Modal>
+
+            <Modal
+                title="New inquiry"
                 open={newInquiryOpen}
                 onCancel={() => setNewInquiryOpen(false)}
                 footer={null}
-                width={920}
+                width={860}
                 centered
                 destroyOnClose
-                styles={{ body: { maxHeight: '75vh', overflowY: 'auto' } }}
+                styles={{ body: { maxHeight: '75vh', overflowY: 'auto', padding: '24px 36px 0' } }}
             >
                 {activeProgramId && (
                     <InquiryForm
@@ -767,38 +957,14 @@ const InquiriesList: React.FC = () => {
                 )}
             </Modal>
 
-            <Modal
-                title="Edit Inquiry"
-                open={Boolean(editInquiryId)}
-                onCancel={() => {
+            <InquiryEditModal
+                inquiryId={editInquiryId}
+                onClose={() => setEditInquiryId(null)}
+                onSaved={() => {
                     setEditInquiryId(null)
-                    setEditInitialData(null)
+                    loadInquiries()
                 }}
-                footer={null}
-                width={920}
-                centered
-                destroyOnClose
-                confirmLoading={editLoading}
-                styles={{ body: { maxHeight: '75vh', overflowY: 'auto' } }}
-            >
-                {editLoading && (
-                    <div style={{ padding: 32, textAlign: 'center' }}>Loading inquiry...</div>
-                )}
-                {!editLoading && editInquiryId && editInitialData && (
-                    <InquiryForm
-                        embedded
-                        stepped
-                        inquiryId={editInquiryId}
-                        initialData={editInitialData as any}
-                        forcedProgramId={editInitialData.programId || undefined}
-                        onSuccess={() => {
-                            setEditInquiryId(null)
-                            setEditInitialData(null)
-                            loadInquiries()
-                        }}
-                    />
-                )}
-            </Modal>
+            />
         </div>
     )
 }

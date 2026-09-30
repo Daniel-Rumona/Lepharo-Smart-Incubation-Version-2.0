@@ -7,7 +7,10 @@ from typing import Any, Literal, Optional, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from lph_gateway import GatewayError, LphGateway
 from whatsapp_actions import AVAILABLE_ACTIONS, MUTATING_ACTIONS, READ_ACTIONS
+from whatsapp_menu import greeting_reply, is_greeting, resolve_choice, resolve_choice_id, role_group
+from whatsapp_staff import StaffReasoner, TurnResult, handle_staff_turn, pick_sme_invitation, run_menu_action
 
 MAX_TOOL_ROUNDS = 3
 
@@ -80,6 +83,32 @@ class ToolCallSelection(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class InteractiveRow(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=24)
+    description: Optional[str] = Field(default=None, max_length=72)
+
+
+class InteractiveSection(BaseModel):
+    title: str = Field(min_length=1, max_length=24)
+    rows: list[InteractiveRow] = Field(min_length=1, max_length=10)
+
+
+class InteractiveButton(BaseModel):
+    id: str = Field(min_length=1, max_length=256)
+    title: str = Field(min_length=1, max_length=20)
+
+
+class InteractiveMessage(BaseModel):
+    """Optional rich message. `reply` stays a complete text fallback for routers that only send text."""
+
+    type: Literal["buttons", "list"]
+    body: str = Field(min_length=1, max_length=1024)
+    buttons: Optional[list[InteractiveButton]] = Field(default=None, max_length=3)
+    button: Optional[str] = Field(default=None, max_length=20)
+    sections: Optional[list[InteractiveSection]] = None
+
+
 class WhatsAppChatResponse(BaseModel):
     ok: bool
     reply: str
@@ -88,6 +117,7 @@ class WhatsAppChatResponse(BaseModel):
     action: Optional[LepharoAction] = None
     toolCall: Optional[ToolCallSelection] = None
     conversation: WhatsAppConversation = Field(default_factory=WhatsAppConversation)
+    interactive: Optional[InteractiveMessage] = None
     error: Optional[WhatsAppError] = None
 
 
@@ -304,10 +334,12 @@ def _response(
     awaiting: Optional[str] = None,
     appointment_id: Optional[str] = None,
     tool_call: Optional[ToolCallSelection] = None,
+    interactive: Optional[dict[str, Any]] = None,
 ) -> WhatsAppChatResponse:
     return WhatsAppChatResponse(
+        interactive=InteractiveMessage.model_validate(interactive) if interactive else None,
         ok=True,
-        reply=_WS.sub(" ", reply.strip())[:1000],
+        reply=re.sub(r"[ 	]+", " ", reply.strip())[:3500],
         intent=intent,
         confidence=max(0.0, min(1.0, confidence)),
         action=action,
@@ -484,11 +516,92 @@ def _apply_action_policy(
     )
 
 
+def _turn_response(turn: TurnResult) -> WhatsAppChatResponse:
+    return _response(
+        turn.reply,
+        turn.intent,
+        1.0,
+        awaiting=turn.awaiting,
+        appointment_id=turn.appointment_id,
+        interactive=turn.interactive,
+    )
+
+
+def _remember(store: WhatsAppConversationStore, store_key: str, response: WhatsAppChatResponse) -> WhatsAppChatResponse:
+    if response.conversation.awaiting:
+        store.set(store_key, response.conversation.awaiting, response.conversation.appointmentId)
+    else:
+        store.clear(store_key)
+    return response
+
+
+def _handle_identity_turn(
+    payload: WhatsAppChatRequest,
+    context: WhatsAppContext,
+    pending: Optional[_PendingConversation],
+    store_key: str,
+    store: WhatsAppConversationStore,
+    gateway: Optional[LphGateway],
+    staff_reasoner: Optional[StaffReasoner],
+) -> Optional[WhatsAppChatResponse]:
+    """Greeting, role-aware menu and staff agent. Returns None to fall through to the SME appointment agent."""
+    message = _WS.sub(" ", payload.message.strip())
+    phone = payload.userId.strip()
+    awaiting = pending.awaiting if pending else None
+
+    identity: Optional[dict[str, Any]] = None
+    lookup_failed = gateway is None or not gateway.configured
+    if gateway is not None and gateway.configured:
+        try:
+            identity = gateway.resolve_identity(phone)
+        except GatewayError as error:
+            lookup_failed = True
+            print("WhatsApp identity lookup failed:", str(error), flush=True)
+
+    if message.strip().lower() == "lph:menu":
+        message = "menu"
+
+    if is_greeting(message):
+        if identity is None and lookup_failed:
+            reply = "Hey there! 👋 What can I help you with today? You can ask about your Lepharo appointments."
+            return _remember(store, store_key, _response(reply, "greeting", 1.0))
+        reply, next_awaiting, ui = greeting_reply(identity)
+        return _remember(store, store_key, _response(reply, "greeting", 1.0, awaiting=next_awaiting, interactive=ui))
+
+    if identity is None or gateway is None:
+        return None
+    group = role_group(identity)
+
+    choice = resolve_choice_id(message, identity) or resolve_choice(message, identity, awaiting)
+    if choice is not None:
+        return _remember(store, store_key, _turn_response(run_menu_action(choice, identity, phone, gateway)))
+
+    if group == "sme":
+        if awaiting == "appointment_pick":
+            picked = pick_sme_invitation(message, gateway, phone)
+            if picked is not None:
+                return _remember(store, store_key, _turn_response(picked))
+        return None
+
+    if identity.get("kind") == "staff" and staff_reasoner is not None:
+        if message in {"lph:confirm", "lph:cancel"}:
+            # Buttons stay valid even if the conversation moved on; the gateway checks the pending proposal itself.
+            message, awaiting = ("yes" if message == "lph:confirm" else "no"), "confirm_proposal"
+        turn = handle_staff_turn(message, identity, phone, awaiting, gateway, staff_reasoner)
+        return _remember(store, store_key, _turn_response(turn))
+    return None
+
+
 def interpret_whatsapp_message(
     payload: WhatsAppChatRequest,
     store: WhatsAppConversationStore,
     reasoner: WhatsAppReasoner,
+    gateway: Optional[LphGateway] = None,
+    staff_reasoner: Optional[StaffReasoner] = None,
 ) -> WhatsAppChatResponse:
+    rsvp_buttons = {"lph:rsvp_yes": "Yes, I will attend.", "lph:rsvp_no": "I can't attend."}
+    if payload.message.strip() in rsvp_buttons:
+        payload = payload.model_copy(update={"message": rsvp_buttons[payload.message.strip()]})
     context = payload.context
     store_key = f"whatsapp:{payload.userId.strip()}"
     if context.engine and context.engine.strip().upper() != "LPH":
@@ -510,6 +623,10 @@ def interpret_whatsapp_message(
             )
     else:
         pending = store.get(store_key)
+
+    result = _handle_identity_turn(payload, context, pending, store_key, store, gateway, staff_reasoner)
+    if result is not None:
+        return result
 
     appointment_id = (
         (pending.appointment_id if pending else None) or context.appointmentId or ""

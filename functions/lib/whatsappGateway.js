@@ -3,47 +3,33 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.lphWhatsAppGateway = void 0;
 const https_1 = require("firebase-functions/v2/https");
 const firebase_1 = require("./firebase");
-const normalizePhone = (value) => String(value || "").replace(/[^0-9]/g, "");
-const clean = (value) => String(value || "").trim();
+const whatsappCommon_1 = require("./whatsappCommon");
+const whatsappStaff_1 = require("./whatsappStaff");
 const json = (res, status, body) => {
     res.status(status).json(body);
 };
-const gatewaySecret = () => clean(process.env.WHATSAPP_GATEWAY_SECRET);
+const gatewaySecret = () => (0, whatsappCommon_1.clean)(process.env.WHATSAPP_GATEWAY_SECRET);
 const isAuthorized = (req) => {
     const expected = gatewaySecret();
-    const supplied = clean(req.get("X-WhatsApp-Gateway-Secret"));
+    const supplied = (0, whatsappCommon_1.clean)(req.get("X-WhatsApp-Gateway-Secret"));
     return Boolean(expected && supplied && supplied === expected);
 };
-const candidatePhoneValues = (digits) => {
-    const values = new Set();
-    if (!digits)
-        return [];
-    values.add(digits);
-    values.add(`+${digits}`);
-    if (digits.startsWith("27") && digits.length >= 11) {
-        values.add(`0${digits.slice(2)}`);
-    }
-    if (digits.startsWith("263") && digits.length >= 12) {
-        values.add(`0${digits.slice(3)}`);
-    }
-    return Array.from(values);
-};
-const participantNameFrom = (data) => clean(data?.beneficiaryName) ||
-    clean(data?.participantName) ||
-    clean(data?.businessName) ||
-    clean(data?.companyName) ||
-    clean(data?.name) ||
+const participantNameFrom = (data) => (0, whatsappCommon_1.clean)(data?.beneficiaryName) ||
+    (0, whatsappCommon_1.clean)(data?.participantName) ||
+    (0, whatsappCommon_1.clean)(data?.businessName) ||
+    (0, whatsappCommon_1.clean)(data?.companyName) ||
+    (0, whatsappCommon_1.clean)(data?.name) ||
     "SME";
 const participantIdsFrom = (id, data) => Array.from(new Set([
     id,
-    clean(data?.participantId),
-    clean(data?.uid),
+    (0, whatsappCommon_1.clean)(data?.participantId),
+    (0, whatsappCommon_1.clean)(data?.uid),
 ].filter(Boolean)));
 async function resolveParticipantByPhone(phoneNumber) {
-    const digits = normalizePhone(phoneNumber);
+    const digits = (0, whatsappCommon_1.normalizePhone)(phoneNumber);
     if (digits.length < 8)
         return null;
-    const candidates = candidatePhoneValues(digits);
+    const candidates = (0, whatsappCommon_1.candidatePhoneValues)(digits);
     const exactMatches = new Map();
     for (const candidate of candidates) {
         const snapshot = await firebase_1.db.collection("participants").where("phone", "==", candidate).limit(3).get();
@@ -54,7 +40,7 @@ async function resolveParticipantByPhone(phoneNumber) {
         const suffix = digits.slice(-9);
         const snapshot = await firebase_1.db.collection("participants").limit(1000).get();
         matches = snapshot.docs.filter((doc) => {
-            const stored = normalizePhone(doc.data()?.phone);
+            const stored = (0, whatsappCommon_1.normalizePhone)(doc.data()?.phone);
             return suffix.length >= 8 && stored.length >= 8 && stored.slice(-9) === suffix;
         });
     }
@@ -66,43 +52,32 @@ async function resolveParticipantByPhone(phoneNumber) {
         id: match.id,
         participantIds: participantIdsFrom(match.id, data),
         participantName: participantNameFrom(data),
-        phoneNumber: clean(data.phone) || phoneNumber,
-        email: clean(data.email) || null,
-        programId: clean(data.programId) || null,
-        uid: clean(data.uid) || null,
+        phoneNumber: (0, whatsappCommon_1.clean)(data.phone) || phoneNumber,
+        email: (0, whatsappCommon_1.clean)(data.email) || null,
+        programId: (0, whatsappCommon_1.clean)(data.programId) || null,
+        uid: (0, whatsappCommon_1.clean)(data.uid) || null,
+        kind: "sme",
+        name: participantNameFrom(data),
+        role: "incubatee",
     };
 }
-const timestampToIso = (value) => {
-    try {
-        if (value?.toDate && typeof value.toDate === "function")
-            return value.toDate().toISOString();
-        if (value instanceof Date)
-            return value.toISOString();
-        if (typeof value === "string")
-            return value || null;
-        return null;
-    }
-    catch {
-        return null;
-    }
-};
 // A v5 appointment (SME invitation) carries no schedule/delivery/food data of
 // its own; those live on the appointmentSessions document it points to via
 // appointmentSessionId. Every summary and mutation here works off the joined
 // pair, matching the canonical shapes in src/types/appointment.ts.
 const appointmentSummary = (id, data, session) => ({
     id,
-    interventionTitle: clean(data?.interventionTitle) || clean(session?.interventionTitle) || "Appointment",
-    assigneeName: clean(data?.assigneeName) || null,
+    interventionTitle: (0, whatsappCommon_1.clean)(data?.interventionTitle) || (0, whatsappCommon_1.clean)(session?.interventionTitle) || "Appointment",
+    assigneeName: (0, whatsappCommon_1.clean)(data?.assigneeName) || null,
     date: session?.startAt?.toDate ? session.startAt.toDate().toISOString().slice(0, 10) : null,
-    startTime: timestampToIso(session?.startAt),
-    endTime: timestampToIso(session?.endAt),
-    deliveryMode: clean(session?.deliveryMethod) || null,
-    meetingLink: clean(session?.meetingLink) || null,
-    location: clean(session?.location) || null,
-    status: clean(data?.status) || "scheduled",
-    smeConfirmation: clean(data?.smeConfirmation) || "pending",
-    programId: clean(data?.programId) || null,
+    startTime: (0, whatsappCommon_1.timestampToIso)(session?.startAt),
+    endTime: (0, whatsappCommon_1.timestampToIso)(session?.endAt),
+    deliveryMode: (0, whatsappCommon_1.clean)(session?.deliveryMethod) || null,
+    meetingLink: (0, whatsappCommon_1.clean)(session?.meetingLink) || null,
+    location: (0, whatsappCommon_1.clean)(session?.location) || null,
+    status: (0, whatsappCommon_1.clean)(data?.status) || "scheduled",
+    smeConfirmation: (0, whatsappCommon_1.clean)(data?.smeConfirmation) || "pending",
+    programId: (0, whatsappCommon_1.clean)(data?.programId) || null,
 });
 async function fetchSessionsByIds(ids) {
     const unique = Array.from(new Set(ids.filter(Boolean)));
@@ -126,10 +101,10 @@ async function appointmentForParticipant(appointmentId, identity) {
     if (!snapshot.exists)
         return null;
     const data = snapshot.data() || {};
-    const smeId = clean(data.smeId);
+    const smeId = (0, whatsappCommon_1.clean)(data.smeId);
     if (!identity.participantIds.includes(smeId))
         return null;
-    const sessionId = clean(data.appointmentSessionId);
+    const sessionId = (0, whatsappCommon_1.clean)(data.appointmentSessionId);
     const sessionSnapshot = sessionId ? await firebase_1.db.collection("appointmentSessions").doc(sessionId).get() : null;
     const session = sessionSnapshot?.exists ? sessionSnapshot.data() || {} : {};
     return { ref: snapshot.ref, id: snapshot.id, data, session };
@@ -144,13 +119,13 @@ async function upcomingAppointments(identity) {
         snapshot.docs.forEach((doc) => rows.set(doc.id, doc));
     }
     const candidates = Array.from(rows.values()).filter((doc) => {
-        const status = clean(doc.data()?.status).toLowerCase();
+        const status = (0, whatsappCommon_1.clean)(doc.data()?.status).toLowerCase();
         return !["cancelled", "completed"].includes(status);
     });
-    const sessions = await fetchSessionsByIds(candidates.map((doc) => clean(doc.data()?.appointmentSessionId)));
+    const sessions = await fetchSessionsByIds(candidates.map((doc) => (0, whatsappCommon_1.clean)(doc.data()?.appointmentSessionId)));
     const now = Date.now();
     return candidates
-        .map((doc) => ({ doc, session: sessions.get(clean(doc.data()?.appointmentSessionId)) || {} }))
+        .map((doc) => ({ doc, session: sessions.get((0, whatsappCommon_1.clean)(doc.data()?.appointmentSessionId)) || {} }))
         .filter(({ session }) => {
         const start = session?.startAt?.toDate?.() || null;
         return !start || start.getTime() >= now - 60 * 60 * 1000;
@@ -178,7 +153,7 @@ exports.lphWhatsAppGateway = (0, https_1.onRequest)({
     }
     const payload = (req.body || {});
     const action = payload.action;
-    const phoneNumber = clean(payload.phoneNumber);
+    const phoneNumber = (0, whatsappCommon_1.clean)(payload.phoneNumber);
     if (!action || !phoneNumber) {
         json(res, 400, { ok: false, error: "invalid_request" });
         return;
@@ -186,7 +161,40 @@ exports.lphWhatsAppGateway = (0, https_1.onRequest)({
     try {
         const identity = await resolveParticipantByPhone(phoneNumber);
         if (!identity) {
-            json(res, 200, { ok: true, matched: false });
+            // Not an SME: this may be a Lepharo staff member with the number on their user profile.
+            const staff = await (0, whatsappStaff_1.resolveStaffByPhone)(phoneNumber);
+            if (!staff) {
+                json(res, 200, { ok: true, matched: false });
+                return;
+            }
+            if (action === "resolve_identity") {
+                json(res, 200, {
+                    ok: true,
+                    matched: true,
+                    identity: {
+                        id: staff.id,
+                        participantIds: [],
+                        participantName: staff.name,
+                        phoneNumber: staff.phoneNumber,
+                        email: staff.email,
+                        programId: null,
+                        uid: staff.uid,
+                        kind: "staff",
+                        name: staff.name,
+                        role: staff.role,
+                        roleGroup: staff.roleGroup,
+                        departmentId: staff.departmentId,
+                        branchId: staff.branchId,
+                    },
+                });
+                return;
+            }
+            if (!whatsappStaff_1.STAFF_ACTIONS.has(action)) {
+                json(res, 403, { ok: false, error: "action_not_available_for_staff" });
+                return;
+            }
+            const result = await (0, whatsappStaff_1.handleStaffAction)(action, staff, payload);
+            json(res, result.status, result.body);
             return;
         }
         if (action === "resolve_identity") {
@@ -198,7 +206,7 @@ exports.lphWhatsAppGateway = (0, https_1.onRequest)({
             json(res, 200, { ok: true, matched: true, identity, appointments });
             return;
         }
-        const appointmentId = clean(payload.appointmentId);
+        const appointmentId = (0, whatsappCommon_1.clean)(payload.appointmentId);
         const appointment = await appointmentForParticipant(appointmentId, identity);
         if (!appointment) {
             json(res, 404, { ok: false, error: "appointment_not_found_or_not_authorized" });
@@ -232,9 +240,9 @@ exports.lphWhatsAppGateway = (0, https_1.onRequest)({
                 matched: true,
                 identity,
                 foodMenu: menu.map((item) => ({
-                    id: clean(item?.id),
-                    name: clean(item?.name),
-                    category: clean(item?.category),
+                    id: (0, whatsappCommon_1.clean)(item?.id),
+                    name: (0, whatsappCommon_1.clean)(item?.name),
+                    category: (0, whatsappCommon_1.clean)(item?.category),
                 })).filter((item) => item.id && item.name),
                 foodSelections: selections,
             });
@@ -249,7 +257,7 @@ exports.lphWhatsAppGateway = (0, https_1.onRequest)({
             return;
         }
         if (action === "appointment_decline") {
-            const reason = clean(payload.reason);
+            const reason = (0, whatsappCommon_1.clean)(payload.reason);
             if (!reason) {
                 json(res, 400, { ok: false, error: "decline_reason_required" });
                 return;
@@ -269,12 +277,12 @@ exports.lphWhatsAppGateway = (0, https_1.onRequest)({
             // request as a decline with the requested wording folded into the reason
             // keeps it visible to the programme team without inventing a status the
             // rest of the app does not know how to read.
-            const whenText = [clean(payload.requestedDateText), clean(payload.requestedTimeText)]
+            const whenText = [(0, whatsappCommon_1.clean)(payload.requestedDateText), (0, whatsappCommon_1.clean)(payload.requestedTimeText)]
                 .filter(Boolean)
                 .join(" at ");
             const reasonText = [
                 `Requested reschedule via WhatsApp${whenText ? ` to ${whenText}` : ""}`,
-                clean(payload.reason),
+                (0, whatsappCommon_1.clean)(payload.reason),
             ].filter(Boolean).join(" — ");
             await appointment.ref.set({
                 smeConfirmation: "declined",
@@ -286,17 +294,17 @@ exports.lphWhatsAppGateway = (0, https_1.onRequest)({
         }
         if (action === "select_food_items") {
             const menu = Array.isArray(appointment.session?.foodMenu) ? appointment.session.foodMenu : [];
-            const requested = Array.isArray(payload.foodItems) ? payload.foodItems.map(clean).filter(Boolean) : [];
+            const requested = Array.isArray(payload.foodItems) ? payload.foodItems.map(whatsappCommon_1.clean).filter(Boolean) : [];
             const chosen = requested
-                .map((name) => menu.find((item) => clean(item?.name).toLowerCase() === name.toLowerCase()))
+                .map((name) => menu.find((item) => (0, whatsappCommon_1.clean)(item?.name).toLowerCase() === name.toLowerCase()))
                 .filter(Boolean)
-                .map((item) => clean(item.id))
+                .map((item) => (0, whatsappCommon_1.clean)(item.id))
                 .filter(Boolean);
             if (!chosen.length) {
                 json(res, 400, {
                     ok: false,
                     error: "no_matching_food_items",
-                    foodMenu: menu.map((item) => clean(item?.name)).filter(Boolean),
+                    foodMenu: menu.map((item) => (0, whatsappCommon_1.clean)(item?.name)).filter(Boolean),
                 });
                 return;
             }

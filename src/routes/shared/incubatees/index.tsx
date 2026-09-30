@@ -83,6 +83,8 @@ import {
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
+import TrainingSmesRepository from '@/components/trainings/TrainingSmesRepository'
+import { listTrainings as listTrainingsForRepository } from '@/components/trainings/trainingStorage'
 
 const FINANCE_API_BASE_URL = 'https://quantnow-sa1e.onrender.com'
 
@@ -713,6 +715,38 @@ const SMEOverview: React.FC = () => {
     const navigate = useNavigate()
     const isQuantilytixViewer = isQuantilytixDomain(user?.email)
     const { token } = theme.useToken()
+
+    // Departments granted "repository" access to a training (Training.access,
+    // src/components/trainings/trainingStorage.ts) can view that training's
+    // SMEs here via a separate, self-contained view rather than mixed into
+    // the incubatee table below, since training-sourced SMEs have none of
+    // the intervention/KPI/compliance history that table assumes.
+    const [viewMode, setViewMode] = useState<'incubatees' | 'training'>('incubatees')
+    const [hasTrainingAccess, setHasTrainingAccess] = useState(false)
+    const viewerRecord = user as Record<string, unknown> | null
+    const viewerDepartmentName = String(viewerRecord?.departmentName || '').trim()
+    const viewerIsCenterCoordinator = viewerRecord?.role === 'projectadmin'
+    const viewerAssignedBranch = String(viewerRecord?.assignedBranch || '').trim()
+    useEffect(() => {
+        let cancelled = false
+        if (!viewerDepartmentName && !(viewerIsCenterCoordinator && viewerAssignedBranch)) return
+        listTrainingsForRepository()
+            .then((trainings) => {
+                if (cancelled) return
+                setHasTrainingAccess(
+                    trainings.some((t) => {
+                        const departmentGranted = t.access?.some((a) => a.department === viewerDepartmentName && a.capabilities.includes('repository'))
+                        const coordinatorGranted =
+                            viewerIsCenterCoordinator && t.centerCoordinatorAccess && t.centers.some((c) => c.id === viewerAssignedBranch)
+                        return departmentGranted || coordinatorGranted
+                    })
+                )
+            })
+            .catch(() => setHasTrainingAccess(false))
+        return () => {
+            cancelled = true
+        }
+    }, [viewerDepartmentName, viewerIsCenterCoordinator, viewerAssignedBranch])
 
     const guideRegistration = useMemo<PageGuideRegistration>(
         () => ({
@@ -3002,6 +3036,22 @@ const SMEOverview: React.FC = () => {
         )
     }
 
+    if (viewMode === 'training') {
+        return (
+            <div
+                style={{
+                    padding: screens.xs ? 12 : screens.sm ? 16 : 20,
+                    minHeight: '100vh'
+                }}
+            >
+                <Helmet>
+                    <title>Training SMEs | Smart Incubation</title>
+                </Helmet>
+                <TrainingSmesRepository onBack={() => setViewMode('incubatees')} />
+            </div>
+        )
+    }
+
     return (
         <div
             style={{
@@ -3012,6 +3062,12 @@ const SMEOverview: React.FC = () => {
             <Helmet>
                 <title>SME Overview | Smart Incubation</title>
             </Helmet>
+
+            {hasTrainingAccess && (
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button onClick={() => setViewMode('training')}>View Training SMEs</Button>
+                </div>
+            )}
 
             <Row
                 data-guide='sme-overview-metrics'

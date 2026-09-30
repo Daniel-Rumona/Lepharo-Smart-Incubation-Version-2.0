@@ -166,6 +166,7 @@ const OPERATIONS_PRIMARY_KEYS: Record<string, string[]> = {
     "M&E": ["dashboard", "kpis-tracker", "monitoring-participants", "reports"],
     IHF: ["dashboard", "requested", "invoices", "reported"],
     "Stakeholder Engagement": ["dashboard", "engagement", "reports", "timesheet"],
+    "Training Academy": ["dashboard", "course-builder", "appointments", "reports"],
     DEFAULT: ["dashboard", "assignments", "appointments", "reports"],
 };
 
@@ -1070,7 +1071,7 @@ export const CustomLayout: React.FC = () => {
                 key: "interventions",
                 icon: <FileSearchOutlined />,
                 to: "/projectadmin/movs",
-                label: "MOVs Verification",
+                label: "MOVs",
             },
             {
                 key: "inquiries",
@@ -1687,10 +1688,29 @@ export const CustomLayout: React.FC = () => {
                 icon: <LinkOutlined />,
             },
             {
-                key: "course-builder",
-                to: "/operations/training/courses",
-                label: "Courses",
+                key: "training",
+                label: "Training",
                 icon: <ReadOutlined />,
+                children: [
+                    {
+                        key: "course-builder",
+                        to: "/operations/training/courses",
+                        label: "Courses",
+                        icon: <ReadOutlined />,
+                    },
+                    {
+                        key: "add-training",
+                        to: "/operations/training/new",
+                        label: "Trainings",
+                        icon: <ScheduleOutlined />,
+                    },
+                    {
+                        key: "enroll-sme",
+                        to: "/operations/training/enroll",
+                        label: "Training SMEs",
+                        icon: <TeamOutlined />,
+                    },
+                ],
             },
             {
                 key: "engagement",
@@ -1754,16 +1774,16 @@ export const CustomLayout: React.FC = () => {
                 label: "Interventions",
                 children: [
                     {
-                        key: "hod-active",
-                        label: "My Interventions",
-                        to: "/coordinator/allocated",
-                        icon: <BlockOutlined />,
+                        key: "assignments",
+                        to: "/operations/assignments",
+                        label: "Assignments",
+                        icon: <FileProtectOutlined />,
                     },
                     {
-                        key: "appointments",
-                        to: "/interventions/appointments",
-                        label: "Appointments",
-                        icon: <CalendarOutlined />,
+                        key: "hod-active",
+                        label: "My Assignments",
+                        to: "/coordinator/allocated",
+                        icon: <BlockOutlined />,
                     },
                     {
                         key: "movs",
@@ -1786,6 +1806,25 @@ export const CustomLayout: React.FC = () => {
                 ],
             },
             {
+                key: "operations-calendar",
+                icon: <CalendarOutlined />,
+                label: "Calendar",
+                children: [
+                    {
+                        key: "appointments",
+                        to: "/interventions/appointments",
+                        label: "Appointments",
+                        icon: <CalendarOutlined />,
+                    },
+                    {
+                        key: "calendar",
+                        to: "/calendar",
+                        label: "Calendar & Notices",
+                        icon: <CalendarOutlined />,
+                    },
+                ],
+            },
+            {
                 key: "monitoring-interventions",
                 icon: <FileSearchOutlined />,
                 label: "Interventions",
@@ -1793,7 +1832,7 @@ export const CustomLayout: React.FC = () => {
                     {
                         key: "movs",
                         to: "/operations/monitoring/movs",
-                        label: "MOVs Verification ",
+                        label: "MOVs",
                         icon: <PaperClipOutlined />,
                     },
                     {
@@ -1808,26 +1847,6 @@ export const CustomLayout: React.FC = () => {
                 to: "/operations/coordinators",
                 label: "Coordinators",
                 icon: <TeamOutlined />,
-                children: [
-                    {
-                        key: "coordinators-db",
-                        to: "/operations/coordinators",
-                        label: "Manage",
-                        icon: <DatabaseOutlined />,
-                    },
-                    {
-                        key: "assignments",
-                        to: "/operations/assignments",
-                        label: "Assignments",
-                        icon: <FileProtectOutlined />,
-                    },
-                    {
-                        key: "department-workroom",
-                        to: "/operations/tasks",
-                        label: "Tasks",
-                        icon: <LaptopOutlined />,
-                    },
-                ],
             },
             {
                 key: "personnel",
@@ -2246,6 +2265,7 @@ export const CustomLayout: React.FC = () => {
         "monitoring",
         "employee-performance",
         "interventions",
+        "operations-calendar",
         "op-library",
         "kpis",
         "reports",
@@ -2258,6 +2278,7 @@ export const CustomLayout: React.FC = () => {
         "movs",
         "interventions-req",
         "interventions-manager",
+        "assignments",
     ];
 
     const SHARED_COORDINATOR_TOP = [
@@ -2281,9 +2302,6 @@ export const CustomLayout: React.FC = () => {
                 "coordinators",
                 "finance",
             ],
-            children: {
-                coordinators: ["coordinators-db", "assignments"],
-            },
         },
 
         HSE: {
@@ -2347,9 +2365,6 @@ export const CustomLayout: React.FC = () => {
 
         "Market Linkages": {
             topLevel: [...SHARED_OPERATIONS_TOP, "coordinators", "linkages"],
-            children: {
-                coordinators: ["coordinators-db", "assignments"],
-            },
         },
 
         "Stakeholder Engagement": {
@@ -2364,7 +2379,6 @@ export const CustomLayout: React.FC = () => {
                 "interventions",
             ],
             children: {
-                coordinators: ["coordinators-db", "assignments"],
                 interventions: OPERATIONS_INTERVENTION_CHILDREN,
             },
         },
@@ -2372,14 +2386,14 @@ export const CustomLayout: React.FC = () => {
         "Training Academy": {
             topLevel: [
                 ...SHARED_OPERATIONS_TOP,
-                "course-builder",
+                "training",
                 "coordinators",
                 "surveys-portal",
                 "interventions",
             ],
             children: {
-                coordinators: ["coordinators-db", "assignments"],
                 interventions: OPERATIONS_INTERVENTION_CHILDREN,
+                training: ["course-builder", "add-training", "enroll-sme"],
             },
         },
 
@@ -2391,7 +2405,6 @@ export const CustomLayout: React.FC = () => {
                 "interventions",
             ],
             children: {
-                coordinators: ["coordinators-db", "assignments"],
                 interventions: OPERATIONS_INTERVENTION_CHILDREN,
             },
         },
@@ -2404,7 +2417,6 @@ export const CustomLayout: React.FC = () => {
                 "interventions",
             ],
             children: {
-                coordinators: ["coordinators-db", "assignments"],
                 interventions: OPERATIONS_INTERVENTION_CHILDREN,
             },
         },
@@ -2417,7 +2429,6 @@ export const CustomLayout: React.FC = () => {
                 "interventions",
             ],
             children: {
-                coordinators: ["coordinators-db", "assignments"],
                 interventions: OPERATIONS_INTERVENTION_CHILDREN,
             },
         },
@@ -2687,20 +2698,29 @@ export const CustomLayout: React.FC = () => {
         return primaryDestinations.slice(0, limit);
     }, [primaryDestinations, isMobile, isCompactHeader]);
 
-    const analyticsDropdownDestinations = useMemo(() => {
-        if (role !== "operations") return [];
-        return flatNavigation.filter(
-            (destination) => destination.parentKey === "reports"
-        );
-    }, [role, flatNavigation]);
+    // Destinations that belong to a menu group (e.g. Analytics, Training)
+    // collapse into a single dropdown pill in the primary nav whenever more
+    // than one of that group's children is available — keeps the toolbar a
+    // fixed size regardless of how many sub-pages a group grows to hold.
+    const groupedDestinations = useMemo(() => {
+        const groups: Record<string, NavigationDestination[]> = {};
+        flatNavigation.forEach((destination) => {
+            if (!destination.parentKey) return;
+            (groups[destination.parentKey] ||= []).push(destination);
+        });
+        return groups;
+    }, [flatNavigation]);
 
-    const analyticsTriggerRoute = visiblePrimaryDestinations.find(
-        (destination) =>
-            destination.parentKey === "reports" &&
-            analyticsDropdownDestinations.some(
-                (item) => item.route === destination.route
-            )
-    )?.route;
+    const groupTriggerRoutes = useMemo(() => {
+        const triggers: Record<string, string> = {};
+        visiblePrimaryDestinations.forEach((destination) => {
+            const parentKey = destination.parentKey;
+            if (parentKey && (groupedDestinations[parentKey]?.length || 0) > 1) {
+                triggers[parentKey] ??= destination.route;
+            }
+        });
+        return triggers;
+    }, [visiblePrimaryDestinations, groupedDestinations]);
 
     /*
       Departments whose dashboard runs on the shared InterventionsDashboard
@@ -2749,13 +2769,13 @@ export const CustomLayout: React.FC = () => {
 
     const primaryCoveredRouteSet = useMemo(() => {
         const routes = new Set(primaryRouteSet);
-        if (analyticsTriggerRoute) {
-            analyticsDropdownDestinations.forEach((destination) =>
+        Object.keys(groupTriggerRoutes).forEach((parentKey) => {
+            groupedDestinations[parentKey]?.forEach((destination) =>
                 routes.add(destination.route)
             );
-        }
+        });
         return routes;
-    }, [primaryRouteSet, analyticsTriggerRoute, analyticsDropdownDestinations]);
+    }, [primaryRouteSet, groupTriggerRoutes, groupedDestinations]);
 
     const moreSections = useMemo(() => {
         const grouped = new Map<string, NavigationDestination[]>();
@@ -2776,7 +2796,14 @@ export const CustomLayout: React.FC = () => {
             grouped.set(section, current);
             seenRoutes.add(destination.route);
         });
-        return Array.from(grouped.entries())
+        // Sections holding a single destination aren't worth a tab of their
+        // own, so fold them into "Tools".
+        const merged = new Map<string, NavigationDestination[]>();
+        grouped.forEach((items, title) => {
+            const target = items.length === 1 ? "Tools" : title;
+            merged.set(target, [...(merged.get(target) || []), ...items]);
+        });
+        return Array.from(merged.entries())
             .map(([title, items]) => ({ title, items }))
             .sort((a, b) => {
                 if (a.title === "Tools") return 1;
@@ -2804,12 +2831,8 @@ export const CustomLayout: React.FC = () => {
     const routeActiveSegment =
         activeDestination?.key === "chat"
             ? "chat"
-            : analyticsTriggerRoute &&
-                activeDestination &&
-                analyticsDropdownDestinations.some(
-                    (destination) => destination.route === activeDestination.route
-                )
-                ? analyticsTriggerRoute
+            : activeDestination?.parentKey && groupTriggerRoutes[activeDestination.parentKey]
+                ? groupTriggerRoutes[activeDestination.parentKey]
                 : activeDestination && primaryRouteSet.has(activeDestination.route)
                     ? activeDestination.route
                     : hasMoreDestinations
@@ -3012,11 +3035,14 @@ export const CustomLayout: React.FC = () => {
         return (
             <>
                 {visiblePrimaryDestinations.map((destination) => {
-                    const isAnalyticsDropdown =
-                        destination.route === analyticsTriggerRoute &&
-                        analyticsDropdownDestinations.length > 1;
+                    const groupKey = destination.parentKey;
+                    const groupMembers = groupKey ? groupedDestinations[groupKey] : undefined;
+                    const isGroupDropdown =
+                        !!groupKey &&
+                        groupTriggerRoutes[groupKey as string] === destination.route &&
+                        (groupMembers?.length || 0) > 1;
                     const isActive = activeSegment === destination.route;
-                    const label = isAnalyticsDropdown ? "Analytics" : destination.label;
+                    const label = isGroupDropdown ? destination.parentLabel || destination.label : destination.label;
 
                     const segment = (
                         <button
@@ -3025,9 +3051,9 @@ export const CustomLayout: React.FC = () => {
                             aria-selected={isActive}
                             aria-current={isBottom && isActive ? "page" : undefined}
                             aria-label={isBottom ? label : undefined}
-                            aria-haspopup={isAnalyticsDropdown ? "menu" : undefined}
+                            aria-haspopup={isGroupDropdown ? "menu" : undefined}
                             className={`${base} ${isActive ? activeClass : ""}`}
-                            onClick={isAnalyticsDropdown
+                            onClick={isGroupDropdown
                                 ? undefined
                                 : () => {
                                     const route = destination.route;
@@ -3037,7 +3063,7 @@ export const CustomLayout: React.FC = () => {
                         >
                             <span className={iconClass}>{destination.icon}</span>
                             <span className={labelClass}>{label}</span>
-                            {isAnalyticsDropdown && !isBottom && (
+                            {isGroupDropdown && !isBottom && (
                                 <DownOutlined className="workspace-segment-chevron" />
                             )}
                             {destination.attentionCount > 0 && (
@@ -3050,7 +3076,7 @@ export const CustomLayout: React.FC = () => {
                         </button>
                     );
 
-                    if (!isAnalyticsDropdown) {
+                    if (!isGroupDropdown) {
                         return <React.Fragment key={destination.route}>{segment}</React.Fragment>;
                     }
 
@@ -3065,7 +3091,7 @@ export const CustomLayout: React.FC = () => {
                                 selectedKeys: activeDestination
                                     ? [activeDestination.route]
                                     : [],
-                                items: analyticsDropdownDestinations.map((item) => ({
+                                items: (groupMembers || []).map((item) => ({
                                     key: item.route,
                                     icon: item.icon,
                                     label: item.label,
@@ -3137,6 +3163,12 @@ export const CustomLayout: React.FC = () => {
         </Tooltip>
     );
 
+    // The reporting-period button adds width to the topbar actions, which would
+    // squeeze the primary nav into scrolling on dashboards that show it. Collapse
+    // the action labels a little earlier there so the nav has the same room on
+    // every page.
+    const isCompactActions = isCompactHeader || (showDashboardFilter && width < 1320);
+
     return (
         <Layout className="workspace-shell" style={{ minHeight: "100vh", background: pageBg }}>
             {!/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && !isImmersiveChatMobile && (
@@ -3190,23 +3222,23 @@ export const CustomLayout: React.FC = () => {
                                     {renderAssistantAction()}
                                     <ProgramControl />
                                     {showDashboardFilter && (
-                                        <DashboardFilterControl compact={isCompactHeader} />
+                                        <DashboardFilterControl compact />
                                     )}
                                     <GuideLauncher
-                                        label={isCompactHeader ? "" : "Guide"}
+                                        label={isCompactActions ? "" : "Guide"}
                                         buttonProps={{
                                             type: "text",
                                             shape: "round",
                                             style: {
                                                 height: 32,
-                                                paddingInline: isCompactHeader ? 10 : 14,
+                                                paddingInline: isCompactActions ? 10 : 14,
                                                 flex: "0 0 auto",
                                             },
                                             "aria-label": "Guide",
                                         }}
                                     />
-                                    <ViewAsControls compact={isCompactHeader} />
-                                    <ThemeToggle compact={isCompactHeader} />
+                                    <ViewAsControls compact={isCompactActions} />
+                                    <ThemeToggle compact={isCompactActions} />
                                     <CurrentUser />
                                     {renderLogoutAction()}
                                 </div>
@@ -3279,7 +3311,6 @@ export const CustomLayout: React.FC = () => {
                 className="workspace-more-modal"
                 title={
                     <div className="workspace-more-heading">
-                        <span className="workspace-more-heading-icon"><AppstoreOutlined /></span>
                         <span>
                             <strong>Explore your workspace</strong>
                             <small>Open the tools and pages available for your role.</small>

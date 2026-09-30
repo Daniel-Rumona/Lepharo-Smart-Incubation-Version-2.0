@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-    Button,
     Alert,
     Card,
     Col,
@@ -9,8 +8,6 @@ import {
     Input,
     Modal,
     Row,
-    Segmented,
-    Select,
     Space,
     Table,
     Tag,
@@ -28,6 +25,7 @@ import {
     LinkOutlined,
     PhoneOutlined,
     SearchOutlined,
+    TagsOutlined,
     TeamOutlined,
     UserOutlined,
     VideoCameraOutlined,
@@ -36,6 +34,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import * as appointmentService from '@/services/appointmentService'
+import './AppointmentDetails.css'
 
 dayjs.extend(customParseFormat)
 
@@ -266,6 +265,37 @@ const statusTag = (value?: string) => {
 
     return <Tag>{capitalize(value)}</Tag>
 }
+
+const CONFIRMATION_FILTER_OPTIONS: Array<{
+    value: 'all' | 'confirmed' | 'pending' | 'declined'
+    label: string
+    color: string
+    bg: string
+    icon: React.ReactNode
+}> = [
+    { value: 'all', label: 'All', color: '#1677ff', bg: 'rgba(22,119,255,.1)', icon: <TeamOutlined /> },
+    {
+        value: 'confirmed',
+        label: 'Confirmed',
+        color: '#16a34a',
+        bg: 'rgba(22,163,74,.1)',
+        icon: <CheckCircleOutlined />,
+    },
+    {
+        value: 'pending',
+        label: 'Pending',
+        color: '#d97706',
+        bg: 'rgba(217,119,6,.1)',
+        icon: <ClockCircleOutlined />,
+    },
+    {
+        value: 'declined',
+        label: 'Declined',
+        color: '#dc2626',
+        bg: 'rgba(220,38,38,.1)',
+        icon: <CloseCircleOutlined />,
+    },
+]
 
 const appointmentStatusTag = (value?: string) => {
     const normalized = normalizeStatus(value)
@@ -563,13 +593,6 @@ const isGroupAppointment = (appointment?: AppointmentDetailsRecord | null) =>
     appointment?.allocationType === 'group' ||
     getMembers(appointment).length > 1
 
-const getMemberCount = (appointment?: AppointmentDetailsRecord | null) => {
-    const members = getMembers(appointment)
-    return Number(
-        appointment?.groupParticipantCount || appointment?.groupMemberCount || members.length || 0
-    )
-}
-
 const normalizeFoodMenuItems = (value: any): AppointmentFoodMenuItem[] => {
     if (!Array.isArray(value)) return []
 
@@ -681,70 +704,6 @@ const isEmailInList = (email: string, list: string[]) =>
             .toLowerCase()
     )
 
-const GroupHero: React.FC<{ appointment?: AppointmentDetailsRecord | null }> = ({
-    appointment,
-}) => {
-    const count = getMemberCount(appointment)
-
-    if (!isGroupAppointment(appointment)) return null
-
-    return (
-        <div
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 14,
-                padding: '14px 16px',
-                borderRadius: 16,
-                background: 'linear-gradient(135deg, rgba(114,46,209,.12), rgba(22,119,255,.09))',
-                border: '1px solid rgba(114,46,209,.18)',
-                marginBottom: 14,
-                flexWrap: 'wrap',
-            }}
-        >
-            <Space align="center" size={12}>
-                <div
-                    style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 14,
-                        display: 'grid',
-                        placeItems: 'center',
-                        background: '#fff',
-                        color: '#722ed1',
-                        boxShadow: '0 8px 20px rgba(114,46,209,.14)',
-                    }}
-                >
-                    <TeamOutlined style={{ fontSize: 20 }} />
-                </div>
-                <div>
-                    <Text strong style={{ display: 'block' }}>
-                        Group Session
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                        {count} SME{count === 1 ? '' : 's'} linked to this appointment slot
-                    </Text>
-                </div>
-            </Space>
-
-            <Tag
-                style={{
-                    borderRadius: 999,
-                    padding: '5px 12px',
-                    marginInlineEnd: 0,
-                    fontWeight: 700,
-                    border: '1px solid rgba(114,46,209,.25)',
-                    color: '#391085',
-                    background: '#fff',
-                }}
-            >
-                {appointment?.groupTitle || 'Grouped appointment'}
-            </Tag>
-        </div>
-    )
-}
-
 const AppointmentDetailsModal: React.FC<Props> = ({
     open,
     onClose,
@@ -807,6 +766,17 @@ const AppointmentDetailsModal: React.FC<Props> = ({
             return matchesQuery && matchesStatus
         })
     }, [members, participantQuery, confirmationFilter])
+
+    const confirmationCounts = useMemo(() => {
+        const counts = { all: members.length, confirmed: 0, pending: 0, declined: 0 }
+        members.forEach((member) => {
+            const label = statusLabel(member.confirmationStatus)
+            if (label === 'confirmed') counts.confirmed += 1
+            else if (label === 'declined') counts.declined += 1
+            else counts.pending += 1
+        })
+        return counts
+    }, [members])
 
     if (!appointment) {
         return (
@@ -936,14 +906,11 @@ const AppointmentDetailsModal: React.FC<Props> = ({
             centered
             open={open}
             onCancel={onClose}
-            footer={[
-                <Button danger key="close" onClick={onClose}>
-                    Close
-                </Button>,
-            ]}
+            footer={null}
             title={title}
             width={width}
             destroyOnClose
+            rootClassName="appointment-details-modal"
             styles={{ body: { maxHeight: '76vh', overflowY: 'auto', overflowX: 'hidden' } }}
         >
             <div style={{ padding: 8 }}>
@@ -986,13 +953,16 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                     <Space wrap>
                         {appointmentStatusTag(appointment.status)}
                         {deliveryTag(appointment)}
+                        {isGroupAppointment(appointment) && (
+                            <Tag color="purple">
+                                {appointment?.groupTitle || 'Grouped appointment'}
+                            </Tag>
+                        )}
                     </Space>
                 </div>
 
-                <GroupHero appointment={appointment} />
-
-                <Row gutter={[10, 10]} style={{ marginBottom: 14 }}>
-                    <Col xs={12} md={6}>
+                <Row gutter={[10, 10]} wrap={false} style={{ marginBottom: 14 }}>
+                    <Col span={6}>
                         <MotionCard.Metric
                             title="SMEs"
                             value={memberCount}
@@ -1000,7 +970,7 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                             iconBg="rgba(22,119,255,.1)"
                         />
                     </Col>
-                    <Col xs={12} md={6}>
+                    <Col span={6}>
                         <MotionCard.Metric
                             title="Confirmed"
                             value={metrics.confirmed}
@@ -1008,7 +978,7 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                             iconBg="rgba(22,163,74,.1)"
                         />
                     </Col>
-                    <Col xs={12} md={6}>
+                    <Col span={6}>
                         <MotionCard.Metric
                             title="Attended"
                             value={attendanceCount}
@@ -1016,7 +986,7 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                             iconBg="rgba(114,46,209,.1)"
                         />
                     </Col>
-                    <Col xs={12} md={6}>
+                    <Col span={6}>
                         <MotionCard.Metric
                             title="Absent"
                             value={absentCount}
@@ -1027,21 +997,37 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                 </Row>
 
                 <MotionCard size="small" style={{ marginBottom: 16 }}>
-                    <Segmented
-                        block
-                        value={activeSection}
-                        onChange={(value) => setActiveSection(String(value))}
-                        options={[
-                            { label: 'Overview', value: 'overview' },
+                    {/* Styled to match the app's top-nav segmented pills
+                        (workspace-primary-nav / workspace-primary-segment in
+                        components/layout/layout.css) rather than antd's
+                        default Segmented look. */}
+                    <div className="workspace-primary-nav" style={{ width: '100%', marginBottom: 16 }}>
+                        {[
+                            { label: 'Overview', value: 'overview', icon: <FileTextOutlined /> },
                             {
-                                label: `Attendance (${attendanceCount}/${memberCount})`,
+                                label: 'Attendance',
                                 value: 'smes',
+                                icon: <TeamOutlined />,
                             },
-                            { label: 'Topics', value: 'topics' },
-                            ...(hasFood ? [{ label: 'Catering', value: 'catering' }] : []),
-                        ]}
-                        style={{ marginBottom: 16 }}
-                    />
+                            { label: 'Topics', value: 'topics', icon: <TagsOutlined /> },
+                            ...(hasFood
+                                ? [{ label: 'Catering', value: 'catering', icon: <CoffeeOutlined /> }]
+                                : []),
+                        ].map((section) => (
+                            <button
+                                type="button"
+                                key={section.value}
+                                className={`workspace-primary-segment ${
+                                    activeSection === section.value ? 'workspace-primary-segment-active' : ''
+                                }`}
+                                onClick={() => setActiveSection(section.value)}
+                                style={{ flex: 1 }}
+                            >
+                                <span className="workspace-segment-icon">{section.icon}</span>
+                                <span>{section.label}</span>
+                            </button>
+                        ))}
+                    </div>
                     {activeSection === 'overview' ? (
                         <Descriptions bordered column={1} size="middle">
                             <Descriptions.Item label="Date">
@@ -1178,10 +1164,7 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                         <>
                             <Space direction="vertical" size={10} style={{ width: '100%' }}>
                                 {isGroup ? (
-                                    <Space
-                                        wrap
-                                        style={{ width: '100%', justifyContent: 'space-between' }}
-                                    >
+                                    <div style={{ display: 'flex', gap: 8, width: '100%' }}>
                                         <Search
                                             allowClear
                                             prefix={<SearchOutlined />}
@@ -1189,20 +1172,65 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                                             onChange={(event) =>
                                                 setParticipantQuery(event.target.value)
                                             }
-                                            style={{ maxWidth: 320 }}
+                                            style={{ flex: '1 1 200px', minWidth: 0 }}
                                         />
-                                        <Select
-                                            value={confirmationFilter}
-                                            onChange={setConfirmationFilter}
-                                            style={{ width: 180 }}
-                                            options={[
-                                                { label: 'All confirmations', value: 'all' },
-                                                { label: 'Confirmed', value: 'confirmed' },
-                                                { label: 'Pending', value: 'pending' },
-                                                { label: 'Declined', value: 'declined' },
-                                            ]}
-                                        />
-                                    </Space>
+
+                                        {CONFIRMATION_FILTER_OPTIONS.map((option) => {
+                                            const active = confirmationFilter === option.value
+
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={option.value}
+                                                    onClick={() => setConfirmationFilter(option.value)}
+                                                    style={{
+                                                        flex: '1 1 0',
+                                                        minWidth: 0,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 6,
+                                                        padding: '0 10px',
+                                                        height: 32,
+                                                        borderRadius: 8,
+                                                        border: `1px solid ${
+                                                            active ? option.color : '#e6e8ec'
+                                                        }`,
+                                                        background: active ? option.bg : '#fff',
+                                                        cursor: 'pointer',
+                                                    }}
+                                                >
+                                                    <span
+                                                        style={{
+                                                            flex: '0 0 auto',
+                                                            display: 'inline-flex',
+                                                            fontSize: 13,
+                                                            color: option.color,
+                                                        }}
+                                                    >
+                                                        {option.icon}
+                                                    </span>
+                                                    <Text
+                                                        strong
+                                                        style={{
+                                                            fontSize: 12,
+                                                            color: active ? option.color : undefined,
+                                                            whiteSpace: 'nowrap',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                        }}
+                                                    >
+                                                        {option.label}
+                                                    </Text>
+                                                    <Text
+                                                        type="secondary"
+                                                        style={{ fontSize: 12, marginLeft: 'auto' }}
+                                                    >
+                                                        {confirmationCounts[option.value]}
+                                                    </Text>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
                                 ) : null}
 
                                 <Table

@@ -12,6 +12,7 @@ const statusLabel: Record<string, string> = {
   planned: "Planned",
   "in-progress": "In progress",
   blocked: "At risk",
+  "awaiting-meeting": "Completed - meeting pending",
   released: "Completed",
 };
 const roleLabel: Record<string, string> = {
@@ -66,6 +67,8 @@ const inRange = (
 };
 
 const firstAvailableDate = (record: FeatureGovernanceRecord) => {
+  if (record.status === "released" && record.completedAt)
+    return record.completedAt;
   if (record.dueDate) return record.dueDate;
   const updated = record.updatedAt?.toDate?.();
   const created = record.createdAt?.toDate?.();
@@ -75,6 +78,29 @@ const firstAvailableDate = (record: FeatureGovernanceRecord) => {
     ? dayjs(created).format("YYYY-MM-DD")
     : undefined;
 };
+
+// Directly reported challenges have no meeting or due date, so fall back to
+// when they were raised or resolved so they still land in the right period.
+export const meetingInPeriod = (
+  meeting: GovernanceMeeting,
+  isInRange: (value?: string | null) => boolean
+) => {
+  const dated = meeting.meetingDate || meeting.dueDate;
+  if (dated) return isInRange(dated);
+  const created =
+    meeting.createdAt?.toDate?.() || meeting.updatedAt?.toDate?.();
+  return !!created && isInRange(dayjs(created).format("YYYY-MM-DD"));
+};
+
+// A challenge belongs to a period when its meeting does, or when it was
+// resolved inside the period (older challenges closed out this week).
+export const challengeInPeriod = (
+  meeting: GovernanceMeeting,
+  challenge: GovernanceChallenge,
+  isInRange: (value?: string | null) => boolean
+) =>
+  meetingInPeriod(meeting, isInRange) ||
+  (!!challenge.resolvedAt && isInRange(challenge.resolvedAt));
 
 const clean = (value: unknown, fallback = "Not recorded") =>
   String(value || "")
@@ -106,6 +132,9 @@ const normalizeChallenges = (
         id: item.id || `legacy-${index}`,
         text: item.text.trim(),
         status: item.status === "resolved" ? "resolved" : "open",
+        resolvedAt: item.resolvedAt,
+        resolvedBy: item.resolvedBy,
+        resolution: item.resolution,
       }));
   return String(value || "")
     .split("\n")
@@ -118,8 +147,10 @@ const normalizeChallenges = (
     }));
 };
 
-const roleList = (roles: string[] = []) => {
-  const labels = Array.from(new Set(roles.map(normalizeRole).filter(Boolean)));
+const roleList = (roles: string[] = [], allDepartments = false) => {
+  const labels = Array.from(
+    new Set(roles.map(normalizeRole).filter(Boolean))
+  ).filter((label) => !(allDepartments && label === "Heads Of Departments"));
   return labels.length ? labels.join(", ") : "Not specified";
 };
 
@@ -214,35 +245,45 @@ export async function generateFeatureGovernancePptx(
     inRange(firstAvailableDate(record), range)
   );
   const reportMeetings = allMeetings.filter((meeting) =>
-    inRange(meeting.meetingDate || meeting.dueDate, range)
+    meetingInPeriod(meeting, (value) => inRange(value, range))
   );
   const held = reportMeetings
     .filter((meeting) => meeting.status === "held")
+    .sort((a, b) => (a.meetingDate || "").localeCompare(b.meetingDate || ""));
+  const notHeld = reportMeetings
+    .filter((meeting) => meeting.status === "not-held")
     .sort((a, b) => (a.meetingDate || "").localeCompare(b.meetingDate || ""));
   const completed = reportRecords.filter(
     (record) => record.status === "released"
   );
   const pipeline = records.filter((record) => record.status !== "released");
-  const challengeRows = reportMeetings.flatMap((meeting) =>
-    normalizeChallenges(meeting.challenges).map((challenge) => ({
-      challenge: challenge.text,
-      meeting: meeting.title,
-      owner: meeting.withName,
-      due: meeting.dueDate,
-    }))
+  const inReportRange = (value?: string | null) => inRange(value, range);
+  const challengeRows = allMeetings.flatMap((meeting) =>
+    normalizeChallenges(meeting.challenges)
+      .filter((challenge) =>
+        challengeInPeriod(meeting, challenge, inReportRange)
+      )
+      .map((challenge) => ({
+        challenge: challenge.text,
+        meeting: meeting.title,
+        owner: meeting.withName,
+        due: meeting.dueDate,
+        resolved: challenge.status === "resolved",
+        resolution: challenge.resolution,
+        resolvedAt: challenge.resolvedAt,
+      }))
   );
 
   const scope = (record: FeatureGovernanceRecord) => {
+    const unique = (values: string[]) => Array.from(new Set(values)).join(", ");
     const departments = record.audience.allDepartments
       ? "All departments"
-      : record.audience.departmentIds
-          .map((id) => names.departments[id] || id)
-          .join(", ");
+      : unique(
+          record.audience.departmentIds.map((id) => names.departments[id] || id)
+        );
     const centres = record.audience.allBranches
       ? "All centres"
-      : record.audience.branchIds
-          .map((id) => names.branches[id] || id)
-          .join(", ");
+      : unique(record.audience.branchIds.map((id) => names.branches[id] || id));
     return (
       [departments, centres].filter(Boolean).join(" | ") || "Organisation-wide"
     );
@@ -778,6 +819,18 @@ export async function generateFeatureGovernancePptx(
             : "No completed meetings were recorded for the period."
         ),
       ],
+      ...(notHeld.length
+        ? [
+            [
+              bodyCell("Meetings not held"),
+              bodyCell(String(notHeld.length), {
+                bold: true,
+                color: colors.pink,
+              }),
+              bodyCell("Reasons are recorded in the meeting register."),
+            ],
+          ]
+        : []),
       [
         bodyCell("Completed delivery"),
         bodyCell(String(completed.length), {
@@ -868,6 +921,44 @@ export async function generateFeatureGovernancePptx(
     addFooter(slide, slideNumber++);
   });
 
+  chunk(notHeld, 4).forEach((items, pageIndex) => {
+    if (!items.length) return;
+    const slide = pptx.addSlide();
+    addChrome(
+      slide,
+      "MEETING REGISTER",
+      `${notHeld.length} meeting${notHeld.length === 1 ? "" : "s"} not held${
+        notHeld.length > 4 ? ` | Page ${pageIndex + 1}` : ""
+      }`
+    );
+    addTable(
+      slide,
+      [
+        [
+          headerCell("Date"),
+          headerCell("Meeting"),
+          headerCell("With"),
+          headerCell("Reason recorded"),
+        ],
+        ...items.map((meeting) => [
+          bodyCell(
+            meeting.meetingDate
+              ? dayjs(meeting.meetingDate).format("DD MMM YYYY")
+              : "No date",
+            { bold: true }
+          ),
+          bodyCell(trim(meeting.title, 68)),
+          bodyCell(trim(meeting.withName, 40)),
+          bodyCell(trim(meeting.notHeldReason, 180, "No reason recorded")),
+        ]),
+      ],
+      1.48,
+      [1.25, 2.75, 1.75, 5.9],
+      [0.48, ...items.map(() => 1.08)]
+    );
+    addFooter(slide, slideNumber++);
+  });
+
   addSectionDivider(
     "COMPLETED DELIVERY",
     "Delivered system and program-specific improvements"
@@ -895,16 +986,29 @@ export async function generateFeatureGovernancePptx(
             headerCell("Purpose"),
             headerCell("Audience"),
             headerCell("Scope"),
+            headerCell("Completed at"),
           ],
           ...items.map((record) => [
             bodyCell(trim(record.title, 64), { bold: true }),
             bodyCell(trim(record.description, 170)),
-            bodyCell(trim(roleList(record.audience.roles), 74)),
+            bodyCell(
+              trim(
+                roleList(record.audience.roles, record.audience.allDepartments),
+                74
+              )
+            ),
             bodyCell(`${trim(scope(record), 86)}\n${programScope(record)}`),
+            bodyCell(
+              record.completedAt || record.dueDate
+                ? dayjs(record.completedAt || record.dueDate).format(
+                    "DD MMM YYYY"
+                  )
+                : "Not recorded"
+            ),
           ]),
         ],
         1.48,
-        [2.35, 4.55, 2.25, 2.5],
+        [2.2, 3.75, 2.0, 2.3, 1.4],
         [0.48, ...items.map(() => 1.38)]
       );
     addFooter(slide, slideNumber++);
@@ -955,10 +1059,10 @@ export async function generateFeatureGovernancePptx(
                 : "Not scheduled"
             ),
             bodyCell(
-              `${trim(roleList(record.audience.roles), 64)}\n${trim(
-                scope(record),
+              `${trim(
+                roleList(record.audience.roles, record.audience.allDepartments),
                 64
-              )}\n${programScope(record)}`
+              )}\n${trim(scope(record), 64)}\n${programScope(record)}`
             ),
           ]),
         ],
@@ -994,20 +1098,38 @@ export async function generateFeatureGovernancePptx(
           [
             headerCell("Challenge"),
             headerCell("Raised in"),
-            headerCell("Owner"),
-            headerCell("Due"),
+            headerCell("Status"),
+            headerCell("Resolution"),
           ],
           ...items.map((item) => [
-            bodyCell(trim(item.challenge, 165), { bold: true }),
-            bodyCell(trim(item.meeting, 78)),
-            bodyCell(trim(item.owner, 42)),
+            bodyCell(trim(item.challenge, 120), { bold: true }),
             bodyCell(
-              item.due ? dayjs(item.due).format("DD MMM YYYY") : "Not set"
+              `${trim(item.meeting, 60)}
+${trim(item.owner, 36, "")}`.trim()
+            ),
+            bodyCell(
+              item.resolved
+                ? `Resolved${
+                    item.resolvedAt
+                      ? `
+${dayjs(item.resolvedAt).format("DD MMM YYYY")}`
+                      : ""
+                  }`
+                : "In progress",
+              {
+                bold: true,
+                color: item.resolved ? colors.primary : colors.orange,
+              }
+            ),
+            bodyCell(
+              item.resolved
+                ? trim(item.resolution, 190, "No resolution note recorded")
+                : "Not yet resolved"
             ),
           ]),
         ],
         1.48,
-        [5.2, 3.0, 1.9, 1.55],
+        [3.7, 2.3, 1.45, 4.2],
         [0.48, ...items.map(() => 1.08)]
       );
     addFooter(slide, slideNumber++);

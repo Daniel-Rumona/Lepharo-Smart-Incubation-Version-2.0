@@ -9,7 +9,6 @@ import {
   Breadcrumb,
   Row,
   Col,
-  Statistic,
   DatePicker,
   Select,
   Modal,
@@ -42,12 +41,19 @@ import { format, isAfter, isBefore, addDays } from 'date-fns'
 import type { ColumnsType } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 
 const { RangePicker } = DatePicker
 const { Option } = Select
 const { TextArea } = Input
 const { Title } = Typography
+
+// Portal-created inquiries default a follow-up's assignee to whoever submitted them, i.e. the
+// SME's own account, and store that id as the "name". Only a stored real name counts as staff.
+const UNASSIGNED = '__unassigned'
+const looksLikeId = (value?: string) => !value || /^[A-Za-z0-9]{20,}$/.test(value.trim())
 
 const CenterCoordinatorFollowUps: React.FC = () => {
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
@@ -69,6 +75,7 @@ const CenterCoordinatorFollowUps: React.FC = () => {
     'all' | 'Low' | 'Medium' | 'High' | 'Urgent'
   >('all')
   const [assignedToFilter, setAssignedToFilter] = useState<string>('all')
+  const [branchStaff, setBranchStaff] = useState<{ id: string; name: string; email: string }[]>([])
   const [dateRange, setDateRange] = useState<any>([])
 
   // Modal states
@@ -125,6 +132,65 @@ const CenterCoordinatorFollowUps: React.FC = () => {
     }
   }, [user?.assignedBranch, loadFollowUps])
 
+  // Users can only read their own profile, so names come from the follow-up itself.
+  const staffNameFor = (followUp: Pick<FollowUp, 'assignedTo' | 'assignedToName'>) => {
+    if (user?.uid && followUp.assignedTo === user.uid) return user.name || user.email || ''
+    const stored = String(followUp.assignedToName || '').trim()
+    return !looksLikeId(stored) && stored !== followUp.assignedTo ? stored : ''
+  }
+
+  // Project admins and receptionists of this branch, so a follow-up can go to any of them.
+  useEffect(() => {
+    if (!user?.assignedBranch) return
+    let cancelled = false
+
+    getDocs(
+      query(
+        collection(db, 'users'),
+        where('assignedBranch', '==', user.assignedBranch),
+        where('role', 'in', ['projectadmin', 'receptionist'])
+      )
+    )
+      .then(snap => {
+        if (cancelled) return
+        setBranchStaff(
+          snap.docs.map(item => {
+            const data = item.data() as any
+            return {
+              id: item.id,
+              name: String(data.name || data.fullName || data.displayName || data.email || '').trim(),
+              email: String(data.email || '').trim()
+            }
+          })
+        )
+      })
+      .catch(error => console.warn('Could not load branch staff', error))
+
+    return () => {
+      cancelled = true
+    }
+  }, [user?.assignedBranch])
+
+  const staffOptions = React.useMemo(() => {
+    const byId = new Map<string, { label: string; email: string }>()
+    followUps.forEach(followUp => {
+      const name = staffNameFor(followUp)
+      if (name && followUp.assignedTo) {
+        byId.set(followUp.assignedTo, { label: name, email: followUp.assignedToEmail || '' })
+      }
+    })
+    branchStaff.forEach(person => {
+      if (person.name) byId.set(person.id, { label: person.name, email: person.email })
+    })
+    if (user?.uid) byId.set(user.uid, { label: user.name || user.email || 'Me', email: user.email || '' })
+    return Array.from(byId, ([value, info]) => ({ value, label: info.label, email: info.email })).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followUps, branchStaff, user?.uid, user?.name, user?.email])
+
+  const assigneeLabelById = (id: string) => staffOptions.find(option => option.value === id)?.label || 'Unassigned'
+
   // Apply filters
   useEffect(() => {
     let filtered = [...followUps]
@@ -142,7 +208,9 @@ const CenterCoordinatorFollowUps: React.FC = () => {
     }
 
     // Assigned to filter
-    if (assignedToFilter !== 'all') {
+    if (assignedToFilter === UNASSIGNED) {
+      filtered = filtered.filter(followUp => !staffNameFor(followUp))
+    } else if (assignedToFilter !== 'all') {
       filtered = filtered.filter(
         followUp => followUp.assignedTo === assignedToFilter
       )
@@ -160,7 +228,7 @@ const CenterCoordinatorFollowUps: React.FC = () => {
     }
 
     setFilteredFollowUps(filtered)
-  }, [followUps, statusFilter, priorityFilter, assignedToFilter, dateRange])
+  }, [followUps, user?.uid, statusFilter, priorityFilter, assignedToFilter, dateRange])
 
   const handleCompleteFollowUp = async (followUpId: string) => {
     try {
@@ -192,7 +260,7 @@ const CenterCoordinatorFollowUps: React.FC = () => {
       priority: followUp.priority,
       scheduledDate: dayjs(followUp.scheduledDate),
       followUpType: followUp.followUpType,
-      assignedTo: followUp.assignedTo
+      assignedTo: staffNameFor(followUp) ? followUp.assignedTo : undefined
     })
     setIsModalVisible(true)
   }
@@ -214,7 +282,8 @@ const CenterCoordinatorFollowUps: React.FC = () => {
         priority: values.priority,
         notes: values.notes,
         assignedTo: values.assignedTo,
-        assignedToName: values.assignedTo // This should be resolved to actual name
+        assignedToName: assigneeLabelById(values.assignedTo),
+        assignedToEmail: staffOptions.find(option => option.value === values.assignedTo)?.email || ''
       })
 
       // Refresh data
@@ -268,14 +337,9 @@ const CenterCoordinatorFollowUps: React.FC = () => {
     }
   }
 
-  const getUniqueAssignedTo = () => {
-    const assignedToSet = new Set(followUps.map(fu => fu.assignedTo))
-    return Array.from(assignedToSet).sort()
-  }
-
   const columns: ColumnsType<FollowUp> = [
     {
-      title: 'Customer',
+      title: 'SME',
       key: 'customer',
       render: (_, record) => (
         <div>
@@ -308,10 +372,10 @@ const CenterCoordinatorFollowUps: React.FC = () => {
       title: 'Assigned To',
       dataIndex: 'assignedToName',
       key: 'assignedToName',
-      render: (name: string) => (
+      render: (_: string, record) => (
         <Space>
           <UserOutlined />
-          {name}
+          {staffNameFor(record) || <span style={{ opacity: 0.55 }}>Unassigned</span>}
         </Space>
       ),
       width: 150
@@ -452,122 +516,123 @@ const CenterCoordinatorFollowUps: React.FC = () => {
     )
   }
 
+  const metricProps = (filter: 'all' | 'Pending' | 'Overdue' | 'Completed') => {
+    const active = statusFilter === filter
+    return {
+      clickable: true,
+      onClick: () => setStatusFilter(active ? 'all' : filter),
+      wrapperStyle: active
+        ? { border: '1px solid #1677ff', boxShadow: '0 0 0 2px rgba(22,119,255,0.18)' }
+        : undefined
+    }
+  }
+
+  const filterBar = (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        width: '100%',
+        overflowX: 'auto',
+        paddingBottom: 2
+      }}
+    >
+      <Select
+        value={statusFilter}
+        onChange={setStatusFilter}
+        style={{ minWidth: 150, flex: '1 1 150px' }}
+        options={[
+          { value: 'all', label: 'All statuses' },
+          { value: 'Pending', label: 'Pending' },
+          { value: 'Overdue', label: 'Overdue' },
+          { value: 'Completed', label: 'Completed' },
+          { value: 'Cancelled', label: 'Cancelled' }
+        ]}
+      />
+      <Select
+        value={priorityFilter}
+        onChange={setPriorityFilter}
+        style={{ minWidth: 150, flex: '1 1 150px' }}
+        options={[
+          { value: 'all', label: 'All priorities' },
+          { value: 'Urgent', label: 'Urgent' },
+          { value: 'High', label: 'High' },
+          { value: 'Medium', label: 'Medium' },
+          { value: 'Low', label: 'Low' }
+        ]}
+      />
+      <Select
+        value={assignedToFilter}
+        onChange={setAssignedToFilter}
+        style={{ minWidth: 170, flex: '1 1 170px' }}
+        options={[
+          { value: 'all', label: 'All assignees' },
+          { value: UNASSIGNED, label: 'Unassigned' },
+          ...staffOptions
+        ]}
+      />
+      <RangePicker
+        value={dateRange}
+        onChange={setDateRange}
+        style={{ minWidth: 250, flex: '1.3 1 250px' }}
+        placeholder={['Start date', 'End date']}
+      />
+    </div>
+  )
+
   return (
     <div style={{ padding: '24px', minHeight: '100vh' }}>
-      <Alert
-        message='Follow-up Management Notice'
-        description='Monitor and manage follow-ups for your branch. As a center coordinator, you can view and manage follow-ups that are not assigned to receptionists. Receptionist-assigned follow-ups are managed separately by the receptionist team.'
-        type='info'
-        showIcon
-        style={{ marginBottom: 24 }}
-      />
-
-      {/* Statistics Cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col xs={12} sm={6}>
-          <MotionCard>
-            <Statistic
-              title='Total Follow-ups'
-              value={stats.total}
-              prefix={<ClockCircleOutlined />}
-            />
-          </MotionCard>
+      {/* Statistics */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={12} xl={6}>
+          <MotionCard.Metric
+            {...metricProps('all')}
+            loading={loading}
+            icon={<ClockCircleOutlined style={{ color: '#1677ff' }} />}
+            iconBg='rgba(22,119,255,0.12)'
+            title='Total Follow-ups'
+            value={stats.total}
+            subtitle='Click to show all'
+          />
         </Col>
-        <Col xs={12} sm={6}>
-          <MotionCard>
-            <Statistic
-              title='Pending'
-              value={stats.pending}
-              valueStyle={{ color: '#fa8c16' }}
-              prefix={<ClockCircleOutlined />}
-            />
-          </MotionCard>
+        <Col xs={24} sm={12} xl={6}>
+          <MotionCard.Metric
+            {...metricProps('Pending')}
+            loading={loading}
+            icon={<ClockCircleOutlined style={{ color: '#fa8c16' }} />}
+            iconBg='rgba(250,140,22,0.14)'
+            title='Pending'
+            value={stats.pending}
+            subtitle='Waiting to be actioned'
+          />
         </Col>
-        <Col xs={12} sm={6}>
-          <MotionCard>
-            <Statistic
-              title='Overdue'
-              value={stats.overdue}
-              valueStyle={{ color: '#ff4d4f' }}
-              prefix={<ExclamationCircleOutlined />}
-            />
-          </MotionCard>
+        <Col xs={24} sm={12} xl={6}>
+          <MotionCard.Metric
+            {...metricProps('Overdue')}
+            loading={loading}
+            icon={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
+            iconBg='rgba(255,77,79,0.12)'
+            title='Overdue'
+            value={stats.overdue}
+            subtitle='Past their scheduled date'
+          />
         </Col>
-        <Col xs={12} sm={6}>
-          <MotionCard>
-            <Statistic
-              title='Completed'
-              value={stats.completed}
-              valueStyle={{ color: '#52c41a' }}
-              prefix={<CheckCircleOutlined />}
-            />
-          </MotionCard>
+        <Col xs={24} sm={12} xl={6}>
+          <MotionCard.Metric
+            {...metricProps('Completed')}
+            loading={loading}
+            icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+            iconBg='rgba(82,196,26,0.12)'
+            title='Completed'
+            value={stats.completed}
+            subtitle='Done and closed'
+          />
         </Col>
       </Row>
 
-      {/* Filters */}
-      <MotionCard style={{ marginBottom: '16px' }}>
-        <Row gutter={[16, 16]} align='middle'>
-          <Col xs={24} sm={6}>
-            <div>Status:</div>
-            <Select
-              value={statusFilter}
-              onChange={setStatusFilter}
-              style={{ width: '100%' }}
-              placeholder='Filter by status'
-            >
-              <Option value='all'>All Status</Option>
-              <Option value='Pending'>Pending</Option>
-              <Option value='Overdue'>Overdue</Option>
-              <Option value='Completed'>Completed</Option>
-              <Option value='Cancelled'>Cancelled</Option>
-            </Select>
-          </Col>
-          <Col xs={24} sm={6}>
-            <div>Priority:</div>
-            <Select
-              value={priorityFilter}
-              onChange={setPriorityFilter}
-              style={{ width: '100%' }}
-              placeholder='Filter by priority'
-            >
-              <Option value='all'>All Priorities</Option>
-              <Option value='Urgent'>Urgent</Option>
-              <Option value='High'>High</Option>
-              <Option value='Medium'>Medium</Option>
-              <Option value='Low'>Low</Option>
-            </Select>
-          </Col>
-          <Col xs={24} sm={6}>
-            <div>Assigned To:</div>
-            <Select
-              value={assignedToFilter}
-              onChange={setAssignedToFilter}
-              style={{ width: '100%' }}
-              placeholder='Filter by assignee'
-            >
-              <Option value='all'>All Assignees</Option>
-              {getUniqueAssignedTo().map(assignedTo => (
-                <Option key={assignedTo} value={assignedTo}>
-                  {assignedTo}
-                </Option>
-              ))}
-            </Select>
-          </Col>
-          <Col xs={24} sm={6}>
-            <div>Date Range:</div>
-            <RangePicker
-              value={dateRange}
-              onChange={setDateRange}
-              style={{ width: '100%' }}
-              placeholder={['Start Date', 'End Date']}
-            />
-          </Col>
-        </Row>
-      </MotionCard>
-
       {/* Follow-ups Table */}
-      <MotionCard>
+      <MotionCard filterBar={filterBar}>
         <Table
           columns={columns}
           dataSource={filteredFollowUps}
@@ -575,10 +640,9 @@ const CenterCoordinatorFollowUps: React.FC = () => {
           rowKey='id'
           pagination={{
             pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) =>
-              `${range[0]}-${range[1]} of ${total} follow-ups`
+            position: ['bottomCenter'],
+            showSizeChanger: false,
+            showQuickJumper: false
           }}
           scroll={{ x: 1200 }}
         />
@@ -644,13 +708,7 @@ const CenterCoordinatorFollowUps: React.FC = () => {
                 name='assignedTo'
                 rules={[{ required: true, message: 'Please select assignee' }]}
               >
-                <Select placeholder='Select assignee'>
-                  {getUniqueAssignedTo().map(assignedTo => (
-                    <Option key={assignedTo} value={assignedTo}>
-                      {assignedTo}
-                    </Option>
-                  ))}
-                </Select>
+                <Select placeholder='Select assignee' options={staffOptions} />
               </Form.Item>
             </Col>
           </Row>
@@ -662,9 +720,11 @@ const CenterCoordinatorFollowUps: React.FC = () => {
             />
           </Form.Item>
 
-          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
-            <Space>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Button
+                block
+                size='large'
                 onClick={() => {
                   setIsModalVisible(false)
                   setEditingFollowUp(null)
@@ -673,10 +733,10 @@ const CenterCoordinatorFollowUps: React.FC = () => {
               >
                 Cancel
               </Button>
-              <Button type='primary' htmlType='submit'>
+              <Button block size='large' type='primary' htmlType='submit'>
                 Update Follow-up
               </Button>
-            </Space>
+            </div>
           </Form.Item>
         </Form>
       </Modal>

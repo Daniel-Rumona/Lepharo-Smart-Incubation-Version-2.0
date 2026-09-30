@@ -9,7 +9,7 @@ type BuildParams = {
   programId: string
   departmentId?: string | null
   departmentName: string
-  period: { month: number; year: number; spanMonths?: 1 | 2 | 3 } // align with the rest
+  period: { month: number; year: number; spanMonths?: number } // align with the rest; 1-12
   scopeLabel?: string
   meta?: Partial<MonthlyReportData["meta"]>
 }
@@ -55,8 +55,8 @@ const inRangeInclusive = (d: dayjs.Dayjs, start: dayjs.Dayjs, end: dayjs.Dayjs) 
   (d.isAfter(start, "day") || d.isSame(start, "day")) &&
   (d.isBefore(end, "day") || d.isSame(end, "day"))
 
-function periodRange(period: { month: number; year: number; spanMonths?: 1 | 2 | 3 }) {
-  const span = Math.max(1, Math.min(3, Number(period.spanMonths ?? 1))) as 1 | 2 | 3
+function periodRange(period: { month: number; year: number; spanMonths?: number }) {
+  const span = Math.max(1, Math.min(12, Number(period.spanMonths ?? 1)))
   const start = dayjs(`${period.year}-${String(period.month).padStart(2, "0")}-01`).startOf("month")
   const end = start.add(span - 1, "month").endOf("month")
   return { start, end, span }

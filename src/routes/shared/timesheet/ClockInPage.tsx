@@ -25,7 +25,9 @@ import {
     HourglassOutlined,
     ReloadOutlined,
     BankOutlined,
-    DownloadOutlined
+    DownloadOutlined,
+    UserOutlined,
+    TeamOutlined
 } from '@ant-design/icons'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
@@ -52,44 +54,28 @@ import {
     resolveCenterLocationForUser
 } from '@/services/attendanceCenters'
 import dayjs, { Dayjs } from 'dayjs'
+import quarterOfYear from 'dayjs/plugin/quarterOfYear'
+import WeeklyTimelineCard from './WeeklyTimelineCard'
+import {
+    LeaveRequestEntry,
+    TimesheetEntry,
+    calculateWorkedMinutes,
+    dateKey,
+    diffMinutesFromTime,
+    formatMinutes,
+    getEntryBreakMinutes,
+    getEntryWorkedMinutes,
+    parseClockTimeToMinutes,
+    parseHoursStringToMinutes
+} from './timesheetUtils'
+import AttendanceHeatmapCard from './AttendanceHeatmapCard'
+import AttendanceDensityCard from './AttendanceDensityCard'
 import './clock-in.css'
+import '@/styles/nav-segmented.css'
+
+dayjs.extend(quarterOfYear)
 
 const { Text } = Typography
-
-interface TimesheetEntry {
-    branchId?: string
-    scheduledHours?: BranchDayHours
-    id?: string
-    date: string
-    userId: string
-    checkIn?: string
-    checkOut?: string
-    status: 'checked_in' | 'checked_out' | 'on_break'
-    location?: string
-    locationLabel?: string
-    latitude?: number
-    longitude?: number
-    locationAccuracy?: number
-    locationVerified?: boolean
-    locationQuality?: 'high' | 'medium' | 'low' | 'unavailable'
-    detectedLocationLabel?: string
-    centerMatched?: boolean
-    autoClockedOut?: boolean
-    autoClockedOutAt?: any
-    autoClockOutReason?: string
-    auditFlag?: string
-    locationCaptureFailed?: boolean
-    locationFailureReason?: string
-    hoursWorked?: string
-    lateBy?: string
-    overtime?: string
-    overtimeReason?: string
-    overtimeRequestedAt?: string
-    overtimeLocationVerified?: boolean
-    overtimeApprovalStatus?: 'pending' | 'approved' | 'rejected'
-    overtimeDecisionByName?: string
-    overtimeDecisionNote?: string
-}
 
 type PendingOvertimeCheckout = {
     existingEntryId: string
@@ -108,53 +94,12 @@ type LocationState = {
     timestamp: number | null
 }
 
-type DatePreset = 'this_week' | 'this_month' | 'custom'
-
 const LOCATION_TIMEOUT_MS = 18000
-
-const parseClockTimeToMinutes = (value?: string) => {
-    if (!value || value === '-') return null
-
-    const cleaned = value.trim()
-    const match = cleaned.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i)
-    if (!match) return null
-
-    let hour = Number(match[1])
-    const minute = Number(match[2])
-    const meridian = match[3]?.toUpperCase()
-
-    if (!Number.isInteger(hour) || !Number.isInteger(minute) || minute < 0 || minute > 59) {
-        return null
-    }
-
-    if (meridian) {
-        if (hour < 1 || hour > 12) return null
-        if (meridian === 'PM' && hour < 12) hour += 12
-        if (meridian === 'AM' && hour === 12) hour = 0
-    } else if (hour < 0 || hour > 23) {
-        return null
-    }
-
-    return hour * 60 + minute
-}
+const MAX_DATE_RANGE_DAYS = 92 // ~3 months, keeps the work history heatmap/query bounded
 
 const getCurrentClockTime = () => {
     const now = new Date()
     return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-}
-
-const calculateWorkedMinutes = (checkIn?: string, checkOut?: string) => {
-    const checkInMinutes = parseClockTimeToMinutes(checkIn)
-    const checkOutMinutes = parseClockTimeToMinutes(checkOut)
-
-    if (checkInMinutes === null || checkOutMinutes === null) return 0
-
-    let totalMinutes = checkOutMinutes - checkInMinutes
-
-    // Supports a shift that ends after midnight without turning it into zero.
-    if (totalMinutes < 0) totalMinutes += 24 * 60
-
-    return Math.max(0, totalMinutes)
 }
 
 const getLateBy = (checkIn: string, shift: BranchDayHours) => {
@@ -176,6 +121,17 @@ const calculateOvertime = (checkIn: string, checkOut: string, shift: BranchDayHo
     const asTime = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
     const minutes = overtimeMinutes(asTime(start), asTime(end), shift)
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
+// Closes any break left open (e.g. clocking out while on a break) so it always has an end time.
+const closeOpenBreaks = (breaks: { start: string; end?: string }[] | undefined, now: string) => {
+    const next = [...(breaks || [])]
+    const openIndex = next.length - 1
+    if (openIndex >= 0 && !next[openIndex].end) {
+        next[openIndex] = { ...next[openIndex], end: now }
+    }
+    const breakMinutes = next.reduce((sum, b) => sum + calculateWorkedMinutes(b.start, b.end), 0)
+    return { breaks: next, breakMinutes }
 }
 
 const formatLocationLabel = (data: any, latitude: number, longitude: number) => {
@@ -201,50 +157,6 @@ const formatLocationLabel = (data: any, latitude: number, longitude: number) => 
     }
 
     return 'Location captured'
-}
-
-const parseHoursStringToMinutes = (value?: string) => {
-    if (!value) return 0
-    const match = /(\d+)h\s+(\d+)m/.exec(value)
-    if (!match) return 0
-    return Number(match[1]) * 60 + Number(match[2])
-}
-
-const formatMinutes = (totalMinutes: number) => {
-    const safe = Math.max(0, totalMinutes)
-    const h = Math.floor(safe / 60)
-    const m = safe % 60
-    return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`
-}
-
-const diffMinutesFromTime = (from?: string, toDate: Date = new Date()) => {
-    const startMinutes = parseClockTimeToMinutes(from)
-    if (startMinutes === null) return 0
-
-    const currentMinutes = toDate.getHours() * 60 + toDate.getMinutes()
-    let difference = currentMinutes - startMinutes
-
-    if (difference < 0) difference += 24 * 60
-
-    return Math.max(0, difference)
-}
-
-const getEntryWorkedMinutes = (row: TimesheetEntry, now = new Date()) => {
-    const savedMinutes = parseHoursStringToMinutes(row.hoursWorked)
-    if (savedMinutes > 0) return savedMinutes
-
-    if (
-        (row.status === 'checked_in' || row.status === 'on_break') &&
-        row.checkIn
-    ) {
-        return diffMinutesFromTime(row.checkIn, now)
-    }
-
-    if (row.checkIn && row.checkOut && row.checkOut !== '-') {
-        return calculateWorkedMinutes(row.checkIn, row.checkOut)
-    }
-
-    return 0
 }
 
 const getCurrentWorkWeekRange = (): [Dayjs, Dayjs] => {
@@ -275,13 +187,6 @@ const getWorkWeekDates = () => {
     })
 }
 
-const dateKey = (date: Date) => {
-    const y = date.getFullYear()
-    const m = String(date.getMonth() + 1).padStart(2, '0')
-    const d = String(date.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
-}
-
 const dayShort = (date: Date) =>
     date.toLocaleDateString([], { weekday: 'short' })
 
@@ -296,7 +201,6 @@ const ClockinPage = () => {
         'my_timesheet'
     )
 
-    const [datePreset, setDatePreset] = useState<DatePreset>('this_week')
     const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>(() =>
         getCurrentWorkWeekRange()
     )
@@ -314,6 +218,7 @@ const ClockinPage = () => {
         'checked_out'
     )
     const [weeklyTimesheet, setWeeklyTimesheet] = useState<TimesheetEntry[]>([])
+    const [leaveRequests, setLeaveRequests] = useState<LeaveRequestEntry[]>([])
     const [loading, setLoading] = useState(true)
     const [nowTick, setNowTick] = useState(Date.now())
 
@@ -577,18 +482,6 @@ const ClockinPage = () => {
         void detectLocation(true)
     }
 
-    const applyDatePreset = (preset: DatePreset) => {
-        setDatePreset(preset)
-
-        if (preset === 'this_week') {
-            setDateRange(getCurrentWorkWeekRange())
-        }
-
-        if (preset === 'this_month') {
-            setDateRange([dayjs().startOf('month'), dayjs().endOf('month')])
-        }
-    }
-
     useEffect(() => {
         if (identityLoading || !actor?.uid) return
 
@@ -608,6 +501,19 @@ const ClockinPage = () => {
             const todayEntry = entries.find(e => e.date === today)
             setCurrentStatus(todayEntry?.status || 'checked_out')
             setLoading(false)
+        })
+
+        return () => unsub()
+    }, [identityLoading, actor?.uid])
+
+    useEffect(() => {
+        if (identityLoading || !actor?.uid) return
+
+        const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', actor.uid))
+        const unsub = onSnapshot(leaveQuery, snapshot => {
+            setLeaveRequests(
+                snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })) as LeaveRequestEntry[]
+            )
         })
 
         return () => unsub()
@@ -716,6 +622,13 @@ const ClockinPage = () => {
             return 'My monthly time'
         }
 
+        if (
+            filteredStartDate === dayjs().startOf('quarter').format('YYYY-MM-DD') &&
+            filteredEndDate === dayjs().endOf('quarter').format('YYYY-MM-DD')
+        ) {
+            return 'My quarterly time'
+        }
+
         return `My time (${filteredStartDate} to ${filteredEndDate})`
     }, [filteredStartDate, filteredEndDate])
 
@@ -760,6 +673,11 @@ const ClockinPage = () => {
         [weeklyTimesheet, todayKey]
     )
     const todayHours = todayEntry?.scheduledHours || getDayHours(branchSchedule.hours, new Date(nowTick))
+    const pastClosingTimeToday =
+        !todayEntry &&
+        !todayHours.closed &&
+        (parseClockTimeToMinutes(getCurrentClockTime()) ?? 0) >=
+            (parseClockTimeToMinutes(todayHours.closes) ?? Infinity)
 
     const todayMinutesWorked = useMemo(() => {
         if (!todayEntry) return 0
@@ -785,6 +703,20 @@ const ClockinPage = () => {
         return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
     }, [todayEntry, nowTick])
 
+    const activeBreakStart = currentStatus === 'on_break'
+        ? todayEntry?.breaks?.[todayEntry.breaks.length - 1]?.start
+        : undefined
+
+    const currentBreakElapsed = useMemo(() => {
+        if (!activeBreakStart) return null
+        return formatMinutes(diffMinutesFromTime(activeBreakStart, new Date(nowTick)))
+    }, [activeBreakStart, nowTick])
+
+    const todayBreakMinutes = useMemo(
+        () => (todayEntry ? getEntryBreakMinutes(todayEntry, new Date(nowTick)) : 0),
+        [todayEntry, nowTick]
+    )
+
     const filteredDates = useMemo(() => {
         const start = dayjs(filteredStartDate)
         const end = dayjs(filteredEndDate)
@@ -805,6 +737,9 @@ const ClockinPage = () => {
 
     const weekDates = useMemo(() => getWorkWeekDates(), [])
     const weekKeys = useMemo(() => businessDates.map(d => dateKey(d)), [businessDates])
+    const isWeekRange = filteredDates.length === 7
+    const isLargeRange = filteredDates.length > 7
+    const isSingleMonthRange = dayjs(filteredStartDate).format('YYYY-MM') === dayjs(filteredEndDate).format('YYYY-MM')
 
     const weekRows = useMemo(
         () => weeklyTimesheet.filter(row => weekKeys.includes(row.date)),
@@ -836,6 +771,15 @@ const ClockinPage = () => {
     }, [todayMinutesWorked, todayLateMinutes, todayOvertimeMinutes])
 
 
+    // Only today's still-active entry needs a live "now" (its hoursWorked isn't
+    // saved yet); every other day already has hoursWorked persisted. Depending on
+    // nowTick unconditionally rebuilt this options object every second and made
+    // Highcharts redraw the whole chart, even when browsing a past date range.
+    const hasLiveTodayInChartView =
+        weekKeys.includes(todayKey) &&
+        !!todayEntry &&
+        todayEntry.status !== 'checked_out'
+
     const timelineChartOptions: Highcharts.Options = useMemo(() => {
         const categories = businessDates.map(d =>
             dayjs(d).format(businessDates.length > 10 ? 'DD MMM' : 'ddd')
@@ -854,7 +798,7 @@ const ClockinPage = () => {
             const row = filteredMyTimesheet.find(r => r.date === key)
             if (!row) return 0
 
-            return minutesToHours(getEntryWorkedMinutes(row, new Date(nowTick)))
+            return minutesToHours(getEntryWorkedMinutes(row, new Date()))
         })
 
         const overtimeData = businessDates.map(d => {
@@ -951,7 +895,7 @@ const ClockinPage = () => {
                 }
             ]
         }
-    }, [businessDates, filteredMyTimesheet, nowTick])
+    }, [businessDates, filteredMyTimesheet, hasLiveTodayInChartView ? nowTick : null])
 
     const isLocationStillPending =
         locationState.status === 'idle' || locationState.status === 'detecting'
@@ -988,6 +932,19 @@ const ClockinPage = () => {
                 !canClockIn
             ) {
                 message.error('Valid GPS coordinates are required before clocking in.')
+                return
+            }
+
+            const todaysShift = getDayHours(branchSchedule.hours, new Date())
+            const nowMinutes = parseClockTimeToMinutes(getCurrentClockTime())
+            const closesMinutes = parseClockTimeToMinutes(todaysShift.closes)
+            if (
+                !todaysShift.closed &&
+                nowMinutes !== null &&
+                closesMinutes !== null &&
+                nowMinutes >= closesMinutes
+            ) {
+                message.error(`Today's working hours ended at ${todaysShift.closes}. You can clock in again tomorrow.`)
                 return
             }
         }
@@ -1086,17 +1043,38 @@ const ClockinPage = () => {
                     return
                 }
 
+                const closed = closeOpenBreaks(existingEntry.breaks, now)
                 await updateDoc(doc(db, 'timesheets', existingEntry.id!), {
                     status: 'checked_out',
                     checkOut: now,
                     hoursWorked: calculateWorkedHours(existingEntry.checkIn || now, now),
                     lateBy: existingEntry.lateBy || getLateBy(existingEntry.checkIn || now, shift),
                     overtime: overtimeStr,
+                    breaks: closed.breaks,
+                    breakMinutes: closed.breakMinutes,
+                    updatedAt: Timestamp.now()
+                })
+            } else if (action === 'break_start') {
+                const breaks = [...(existingEntry.breaks || []), { start: now }]
+                await updateDoc(doc(db, 'timesheets', existingEntry.id!), {
+                    status: updatedStatus,
+                    breaks,
                     updatedAt: Timestamp.now()
                 })
             } else {
+                const breaks = [...(existingEntry.breaks || [])]
+                const openIndex = breaks.length - 1
+                if (openIndex >= 0 && !breaks[openIndex].end) {
+                    breaks[openIndex] = { ...breaks[openIndex], end: now }
+                }
+                const breakMinutes = breaks.reduce(
+                    (sum, b) => sum + calculateWorkedMinutes(b.start, b.end),
+                    0
+                )
                 await updateDoc(doc(db, 'timesheets', existingEntry.id!), {
                     status: updatedStatus,
+                    breaks,
+                    breakMinutes,
                     updatedAt: Timestamp.now()
                 })
             }
@@ -1141,9 +1119,14 @@ const ClockinPage = () => {
             const auditFlags: string[] = []
             if (centerLocation && !matchedAtCheckout) auditFlags.push('OVERTIME_OUTSIDE_CENTER')
 
+            const entryBeingClosed = weeklyTimesheet.find(e => e.id === pendingOvertimeCheckout.existingEntryId)
+            const closed = closeOpenBreaks(entryBeingClosed?.breaks, pendingOvertimeCheckout.now)
+
             await updateDoc(doc(db, 'timesheets', pendingOvertimeCheckout.existingEntryId), {
                 status: 'checked_out',
                 checkOut: pendingOvertimeCheckout.now,
+                breaks: closed.breaks,
+                breakMinutes: closed.breakMinutes,
                 hoursWorked: calculateWorkedHours(pendingOvertimeCheckout.checkIn, pendingOvertimeCheckout.now),
                 lateBy: pendingOvertimeCheckout.lateBy,
                 overtime: pendingOvertimeCheckout.overtimeStr,
@@ -1216,6 +1199,7 @@ const ClockinPage = () => {
                             )}
 
                             <Segmented
+                                className='nav-pill-segmented'
                                 value={activeView}
                                 onChange={value =>
                                     setActiveView(
@@ -1225,11 +1209,13 @@ const ClockinPage = () => {
                                 options={[
                                     {
                                         label: 'My Timesheet',
-                                        value: 'my_timesheet'
+                                        value: 'my_timesheet',
+                                        icon: <UserOutlined />
                                     },
                                     {
                                         label: 'Team Analytics',
-                                        value: 'team_analytics'
+                                        value: 'team_analytics',
+                                        icon: <TeamOutlined />
                                     }
                                 ]}
                             />
@@ -1249,15 +1235,17 @@ const ClockinPage = () => {
                 />
             ) : (
                 <>
-                    <Alert
-                        style={{ marginBottom: 16 }}
-                        type={branchSchedule.error ? 'error' : 'info'}
-                        showIcon
-                        message={branchSchedule.error || `${branchSchedule.branchName || 'Branch'} hours today: ${todayHours.closed ? 'Closed' : `${todayHours.opens}–${todayHours.closes}`}`}
-                        description={branchSchedule.error ? 'Attendance changes are paused until the schedule loads.' :
-                            `${branchSchedule.configured ? 'Using your assigned branch operating hours.' : 'No custom branch hours set; using Mon–Fri 07:00–15:00.'} ${todayHours.closed ? 'Work recorded on closed days is submitted for overtime approval.' : 'Overtime after closing still requires approval.'}`}
-                        action={branchSchedule.error ? <Button onClick={branchSchedule.retry}>Retry</Button> : undefined}
-                    />
+                    {branchSchedule.branchId && (
+                        <Alert
+                            style={{ marginBottom: 16 }}
+                            type={branchSchedule.error ? 'error' : 'info'}
+                            showIcon
+                            message={branchSchedule.error || `${branchSchedule.branchName || 'Branch'} hours today: ${todayHours.closed ? 'Closed' : `${todayHours.opens}–${todayHours.closes}`}`}
+                            description={branchSchedule.error ? 'Attendance changes are paused until the schedule loads.' :
+                                `${branchSchedule.configured ? 'Using your assigned branch operating hours.' : 'No custom branch hours set; using Mon–Fri 07:00–15:00.'} ${todayHours.closed ? 'Work recorded on closed days is submitted for overtime approval.' : 'Overtime after closing still requires approval.'}`}
+                            action={branchSchedule.error ? <Button onClick={branchSchedule.retry}>Retry</Button> : undefined}
+                        />
+                    )}
                     <Row gutter={[16, 16]} className='timesheet-metrics'>
                         <Col xs={24} sm={12} xl={6}>
                             <MotionCard.Metric
@@ -1344,87 +1332,93 @@ const ClockinPage = () => {
                                     </Text>
                                 </div>
 
-                                <div
-                                    className={`location-check location-check--${locationState.status}`}
-                                    style={{
-                                        marginTop: 4,
-                                        padding: '9px 10px',
-                                        gap: 10,
-                                        alignItems: 'center'
-                                    }}
-                                >
-                                    <EnvironmentOutlined className='location-check__icon' />
-
-                                    <div
-                                        className='location-check__copy'
-                                        style={{ minWidth: 0, flex: 1 }}
-                                    >
-                                        <Space size={6} wrap>
-                                            <Text strong style={{ fontSize: 12 }}>
-                                                {locationState.status === 'ready'
-                                                    ? 'Location confirmed'
-                                                    : locationState.status === 'detecting'
-                                                        ? 'Confirming location…'
-                                                        : 'Location required'}
-                                            </Text>
-
-                                            {centerLocation && locationState.status === 'ready' ? (
-                                                <Tag
-                                                    color={isAtConfiguredCenter ? 'green' : 'orange'}
-                                                    style={{ marginInlineEnd: 0 }}
-                                                >
-                                                    {isAtConfiguredCenter ? 'At Center' : 'Outside Center'}
-                                                </Tag>
-                                            ) : null}
-
-                                            {locationState.status === 'ready' &&
-                                                typeof locationState.accuracy === 'number' &&
-                                                locationState.accuracy > 150 ? (
-                                                <Tag color='gold' style={{ marginInlineEnd: 0 }}>
-                                                    GPS ±{Math.round(locationState.accuracy)}m
-                                                </Tag>
-                                            ) : null}
-                                        </Space>
-
-                                        <Text
-                                            type='secondary'
-                                            ellipsis={{ tooltip: displayLocationLabel }}
+                                {(isWorking || !pastClosingTimeToday) && (
+                                    <>
+                                        <div
+                                            className={`location-check location-check--${locationState.status}`}
                                             style={{
-                                                display: 'block',
-                                                fontSize: 11,
-                                                marginTop: 1
+                                                marginTop: 4,
+                                                padding: '9px 10px',
+                                                gap: 10,
+                                                alignItems: 'center'
                                             }}
                                         >
-                                            {displayLocationLabel}
-                                        </Text>
-                                    </div>
+                                            <EnvironmentOutlined className='location-check__icon' />
 
-                                    <Button
-                                        size='small'
-                                        shape='circle'
-                                        aria-label={locationNeedsAttention ? 'Request location' : 'Refresh location'}
-                                        icon={<ReloadOutlined spin={locationState.status === 'detecting'} />}
-                                        loading={locationState.status === 'detecting'}
-                                        onClick={requestBrowserLocation}
-                                    />
-                                </div>
+                                            <div
+                                                className='location-check__copy'
+                                                style={{ minWidth: 0, flex: 1 }}
+                                            >
+                                                <Space size={6} wrap>
+                                                    <Text strong style={{ fontSize: 12 }}>
+                                                        {locationState.status === 'ready'
+                                                            ? 'Location confirmed'
+                                                            : locationState.status === 'detecting'
+                                                                ? 'Confirming location…'
+                                                                : 'Location required'}
+                                                    </Text>
 
-                                {locationNeedsAttention && (
-                                    <Alert
-                                        style={{ marginTop: 8 }}
-                                        type='warning'
-                                        showIcon
-                                        message={
-                                            locationState.status === 'denied'
-                                                ? 'Allow location to clock in'
-                                                : 'We could not confirm your location'
-                                        }
-                                        description={
-                                            locationState.status === 'denied'
-                                                ? 'Allow Location in your browser, then request it again.'
-                                                : 'Turn on device location, move near a window, and retry.'
-                                        }
-                                    />
+                                                    {centerLocation && locationState.status === 'ready' ? (
+                                                        <Tag
+                                                            color={isAtConfiguredCenter ? 'green' : 'orange'}
+                                                            style={{ marginInlineEnd: 0 }}
+                                                        >
+                                                            {isAtConfiguredCenter ? 'At Center' : 'Outside Center'}
+                                                        </Tag>
+                                                    ) : null}
+
+                                                    {locationState.status === 'ready' &&
+                                                        typeof locationState.accuracy === 'number' &&
+                                                        locationState.accuracy > 150 ? (
+                                                        <Tag color='gold' style={{ marginInlineEnd: 0 }}>
+                                                            GPS ±{Math.round(locationState.accuracy)}m
+                                                        </Tag>
+                                                    ) : null}
+                                                </Space>
+
+                                                {!locationNeedsAttention && (
+                                                    <Text
+                                                        type='secondary'
+                                                        ellipsis={{ tooltip: displayLocationLabel }}
+                                                        style={{
+                                                            display: 'block',
+                                                            fontSize: 11,
+                                                            marginTop: 1
+                                                        }}
+                                                    >
+                                                        {displayLocationLabel}
+                                                    </Text>
+                                                )}
+                                            </div>
+
+                                            <Button
+                                                size='small'
+                                                shape='circle'
+                                                aria-label={locationNeedsAttention ? 'Request location' : 'Refresh location'}
+                                                icon={<ReloadOutlined spin={locationState.status === 'detecting'} />}
+                                                loading={locationState.status === 'detecting'}
+                                                onClick={requestBrowserLocation}
+                                            />
+                                        </div>
+
+                                        {locationNeedsAttention && (
+                                            <Alert
+                                                style={{ marginTop: 8 }}
+                                                type='warning'
+                                                showIcon
+                                                message={
+                                                    locationState.status === 'denied'
+                                                        ? 'Allow location to clock in'
+                                                        : 'We could not confirm your location'
+                                                }
+                                                description={
+                                                    locationState.status === 'denied'
+                                                        ? 'Allow Location in your browser, then request it again.'
+                                                        : 'Turn on device location, move near a window, and retry.'
+                                                }
+                                            />
+                                        )}
+                                    </>
                                 )}
 
                                 <div
@@ -1441,7 +1435,7 @@ const ClockinPage = () => {
                                             minHeight: 156,
                                             margin: '0 auto'
                                         }}
-                                        disabled={!isWorking && !canClockIn}
+                                        disabled={!isWorking && (!canClockIn || pastClosingTimeToday)}
                                         onClick={() =>
                                             handleClockAction(isWorking ? 'check_out' : 'check_in')
                                         }
@@ -1454,32 +1448,68 @@ const ClockinPage = () => {
                                             {isWorking ? 'Clock out' : 'Clock in'}
                                         </span>
                                         <span className='clock-orb__hint'>
-                                            {!isWorking && !canClockIn
-                                                ? 'Location required'
-                                                : 'Tap to confirm'}
+                                            {!isWorking && pastClosingTimeToday
+                                                ? `Ended at ${todayHours.closes}`
+                                                : !isWorking && !canClockIn
+                                                    ? 'Location required'
+                                                    : 'Tap to confirm'}
                                         </span>
                                     </button>
 
-                                    <Button
-                                        block
-                                        icon={<CoffeeOutlined />}
-                                        disabled={currentStatus === 'checked_out'}
-                                        onClick={() =>
-                                            handleClockAction(
-                                                currentStatus === 'on_break'
-                                                    ? 'break_end'
-                                                    : 'break_start'
-                                            )
-                                        }
-                                    >
-                                        {currentStatus === 'on_break'
-                                            ? 'End break'
-                                            : 'Start break'}
-                                    </Button>
+                                    {pastClosingTimeToday ? (
+                                        <div className='clock-day-ended'>
+                                            <ClockCircleOutlined />
+                                            <span>
+                                                Today&rsquo;s window closed at {todayHours.closes}. Clock in opens again tomorrow.
+                                            </span>
+                                        </div>
+                                    ) : isWorking ? (
+                                        <div
+                                            className={`clock-break ${currentStatus === 'on_break' ? 'clock-break--active' : ''}`}
+                                        >
+                                            <div className='clock-break__info'>
+                                                <span className='clock-break__icon'>
+                                                    <CoffeeOutlined />
+                                                </span>
+                                                <div className='clock-break__copy'>
+                                                    <Text strong style={{ fontSize: 13 }}>
+                                                        {currentStatus === 'on_break'
+                                                            ? `On break${currentBreakElapsed ? ` • ${currentBreakElapsed}` : ''}`
+                                                            : 'Taking a break?'}
+                                                    </Text>
+                                                    <Text type='secondary' style={{ fontSize: 11, display: 'block' }}>
+                                                        {currentStatus === 'on_break'
+                                                            ? `Started at ${activeBreakStart}`
+                                                            : todayBreakMinutes > 0
+                                                                ? `${formatMinutes(todayBreakMinutes)} on break today`
+                                                                : 'Pause your session anytime'}
+                                                    </Text>
+                                                </div>
+                                            </div>
+                                            <Button
+                                                shape='round'
+                                                type={currentStatus === 'on_break' ? 'primary' : 'default'}
+                                                danger={currentStatus === 'on_break'}
+                                                icon={currentStatus === 'on_break' ? <PlayCircleOutlined /> : <CoffeeOutlined />}
+                                                onClick={() =>
+                                                    handleClockAction(
+                                                        currentStatus === 'on_break'
+                                                            ? 'break_end'
+                                                            : 'break_start'
+                                                    )
+                                                }
+                                            >
+                                                {currentStatus === 'on_break'
+                                                    ? 'End break'
+                                                    : 'Start break'}
+                                            </Button>
+                                        </div>
+                                    ) : null}
                                 </div>
 
                                 {(todayEntry?.lateBy && todayEntry.lateBy !== '0m') ||
                                     todayEntry?.autoClockedOut ||
+                                    (currentStatus === 'checked_out' && todayBreakMinutes > 0) ||
                                     todayEntry?.overtimeApprovalStatus ? (
                                     <Space
                                         size={[4, 4]}
@@ -1492,6 +1522,11 @@ const ClockinPage = () => {
                                                     Late {todayEntry.lateBy}
                                                 </Tag>
                                             )}
+                                        {currentStatus === 'checked_out' && todayBreakMinutes > 0 && (
+                                            <Tag color='blue'>
+                                                Break {formatMinutes(todayBreakMinutes)}
+                                            </Tag>
+                                        )}
                                         {todayEntry?.autoClockedOut && (
                                             <Tag color='orange'>Auto clocked out</Tag>
                                         )}
@@ -1536,28 +1571,23 @@ const ClockinPage = () => {
                                                 wrap
                                                 className='timesheet-chart-card__controls'
                                             >
-                                                <Segmented
-                                                    value={datePreset}
-                                                    onChange={value =>
-                                                        applyDatePreset(value as DatePreset)
-                                                    }
-                                                    options={[
-                                                        { label: 'This week', value: 'this_week' },
-                                                        { label: 'This month', value: 'this_month' },
-                                                        { label: 'Custom', value: 'custom' }
+                                                <DatePicker.RangePicker
+                                                    value={dateRange}
+                                                    allowClear={false}
+                                                    presets={[
+                                                        { label: 'This week', value: getCurrentWorkWeekRange() },
+                                                        { label: 'This month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
+                                                        { label: 'This quarter', value: [dayjs().startOf('quarter'), dayjs().endOf('quarter')] }
                                                     ]}
+                                                    disabledDate={(current, info) => {
+                                                        if (!current || !info?.from) return false
+                                                        return Math.abs(current.diff(info.from, 'day')) > MAX_DATE_RANGE_DAYS
+                                                    }}
+                                                    onChange={value => {
+                                                        if (!value?.[0] || !value?.[1]) return
+                                                        setDateRange([value[0], value[1]])
+                                                    }}
                                                 />
-
-                                                {datePreset === 'custom' ? (
-                                                    <DatePicker.RangePicker
-                                                        value={dateRange}
-                                                        allowClear={false}
-                                                        onChange={value => {
-                                                            if (!value?.[0] || !value?.[1]) return
-                                                            setDateRange([value[0], value[1]])
-                                                        }}
-                                                    />
-                                                ) : null}
 
                                                 <Button
                                                     shape='round'
@@ -1571,7 +1601,37 @@ const ClockinPage = () => {
                                     </Row>
                                 }
                             >
-                                <HighchartsReact highcharts={Highcharts} options={timelineChartOptions} />
+                                {isWeekRange ? (
+                                    <WeeklyTimelineCard
+                                        days={businessDates}
+                                        entries={filteredMyTimesheet}
+                                        shiftHours={branchSchedule.hours}
+                                        now={new Date(nowTick)}
+                                        todayKey={todayKey}
+                                    />
+                                ) : isLargeRange && isSingleMonthRange ? (
+                                    <AttendanceHeatmapCard
+                                        startDate={filteredStartDate}
+                                        endDate={filteredEndDate}
+                                        entries={filteredMyTimesheet}
+                                        leaveRequests={leaveRequests}
+                                        shiftHours={branchSchedule.hours}
+                                        todayKey={todayKey}
+                                        now={new Date(nowTick)}
+                                    />
+                                ) : isLargeRange ? (
+                                    <AttendanceDensityCard
+                                        startDate={filteredStartDate}
+                                        endDate={filteredEndDate}
+                                        entries={filteredMyTimesheet}
+                                        leaveRequests={leaveRequests}
+                                        shiftHours={branchSchedule.hours}
+                                        todayKey={todayKey}
+                                        now={new Date(nowTick)}
+                                    />
+                                ) : (
+                                    <HighchartsReact highcharts={Highcharts} options={timelineChartOptions} />
+                                )}
                             </MotionCard>
                         </Col>
                     </Row>

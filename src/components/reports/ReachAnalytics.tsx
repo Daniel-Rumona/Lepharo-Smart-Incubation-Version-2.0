@@ -232,6 +232,8 @@ const getReachSmeKey = (item: ReachItem): string => {
 interface PieDatum {
     name: string
     y: number
+    /** Interventions delivered / unique SMEs, for this bucket. */
+    avgInterventions?: number
 }
 
 interface DepartmentActionRow {
@@ -523,6 +525,29 @@ const countBy = <T,>(
         .sort((a, b) => b.y - a.y || a.name.localeCompare(b.name))
 }
 
+/**
+ * Adds an "interventions delivered per SME, on average" figure to each bucket:
+ * total intervention rows in that bucket (not deduplicated) over the unique-SME
+ * count already in `smeCounts`.
+ */
+const withInterventionAverage = <T,>(
+    smeCounts: PieDatum[],
+    allRows: readonly T[],
+    getter: (row: T) => unknown
+): PieDatum[] => {
+    const totalsByBucket = new Map(
+        countBy(allRows, getter).map(entry => [entry.name, entry.y])
+    )
+
+    return smeCounts.map(entry => {
+        const total = totalsByBucket.get(entry.name) || 0
+        return {
+            ...entry,
+            avgInterventions: entry.y > 0 ? Math.round((total / entry.y) * 10) / 10 : 0
+        }
+    })
+}
+
 const hasPieData = (data: PieDatum[]): boolean =>
     data.some(item => item.y > 0)
 
@@ -560,6 +585,7 @@ const PIE_DATA_LABELS: Highcharts.DataLabelsOptions = {
     formatter: function () {
         const point = this.point as Highcharts.Point & {
             name?: string
+            avgInterventions?: number
         }
 
         const name = escapeDataLabelHtml(
@@ -569,7 +595,12 @@ const PIE_DATA_LABELS: Highcharts.DataLabelsOptions = {
 
         if (value <= 0) return null
 
-        return `<span style="color:#111827;font-size:12px;font-weight:700;white-space:nowrap">${name}: ${value}</span>`
+        const avg = point.avgInterventions
+        const avgSuffix = avg != null
+            ? ` <span style="font-weight:500;opacity:.75">· ${avg} avg</span>`
+            : ''
+
+        return `<span style="color:#111827;font-size:12px;font-weight:700;white-space:nowrap">${name}: ${value}${avgSuffix}</span>`
     },
     style: {
         color: '#111827',
@@ -597,7 +628,21 @@ const simplePieOptions = (
     credits: { enabled: false },
     exporting: { enabled: false },
     tooltip: {
-        pointFormat: '<b>{point.y}</b> ({point.percentage:.1f}%)'
+        pointFormat:
+            '<b>{point.y}</b> ({point.percentage:.1f}%)<br/>' +
+            '{#if point.avgInterventions}{point.avgInterventions} interventions delivered per SME on average{/if}'
+    },
+    legend: {
+        enabled: true,
+        layout: 'horizontal',
+        align: 'center',
+        verticalAlign: 'bottom',
+        // Off, Highcharts widens every item to the longest label and drops
+        // each onto its own row; on, it also left-aligns a short legend.
+        alignColumns: false,
+        itemDistance: 16,
+        itemMarginBottom: 4,
+        maxHeight: 110
     },
     plotOptions: {
         pie: {
@@ -1624,25 +1669,41 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
         }
     }, [reachRows])
 
-    /** ROM-equivalent demographic datasets. */
+    /** ROM-equivalent demographic datasets, plus interventions delivered per SME on average. */
     const genderCounts = useMemo(
-        () => countBy<ReachItem>(uniqueSmeRows, item => item.gender),
-        [uniqueSmeRows]
+        () => withInterventionAverage(
+            countBy<ReachItem>(uniqueSmeRows, item => item.gender),
+            demographicReachRows,
+            item => item.gender
+        ),
+        [uniqueSmeRows, demographicReachRows]
     )
 
     const beeCounts = useMemo(
-        () => countBy<ReachItem>(uniqueSmeRows, item => item.beeLevel),
-        [uniqueSmeRows]
+        () => withInterventionAverage(
+            countBy<ReachItem>(uniqueSmeRows, item => item.beeLevel),
+            demographicReachRows,
+            item => item.beeLevel
+        ),
+        [uniqueSmeRows, demographicReachRows]
     )
 
     const wardCounts = useMemo(
-        () => countBy<ReachItem>(uniqueSmeRows, item => item.ward),
-        [uniqueSmeRows]
+        () => withInterventionAverage(
+            countBy<ReachItem>(uniqueSmeRows, item => item.ward),
+            demographicReachRows,
+            item => item.ward
+        ),
+        [uniqueSmeRows, demographicReachRows]
     )
 
     const sectorCounts = useMemo(
-        () => countBy<ReachItem>(uniqueSmeRows, item => item.sector),
-        [uniqueSmeRows]
+        () => withInterventionAverage(
+            countBy<ReachItem>(uniqueSmeRows, item => item.sector),
+            demographicReachRows,
+            item => item.sector
+        ),
+        [uniqueSmeRows, demographicReachRows]
     )
 
     const ageDistribution = useMemo(() => {

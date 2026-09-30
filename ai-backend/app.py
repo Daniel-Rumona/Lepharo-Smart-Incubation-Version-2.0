@@ -33,6 +33,7 @@ from firestore_tools import (
     get_compliance_document,
     find_required_document,
     update_compliance_document_status,
+    save_chat_turn,
     _parse_date_like,
 )
 from page_registry import get_page_context
@@ -49,6 +50,9 @@ from ai_feedback import (
     build_feedback_prompt_block,
     record_feedback,
 )
+from academy_coach import CoachRequest, CoachResponse, CoachUnavailable, coach_reply
+from lph_gateway import LphGateway
+from whatsapp_staff import GeminiStaffReasoner
 from whatsapp import (
     GeminiWhatsAppReasoner,
     WhatsAppChatRequest,
@@ -1243,7 +1247,12 @@ If the content is a table/KPI, write concise commentary based only on its values
 
 @app.post("/api/chat", response_model=WhatsAppChatResponse)
 def channel_chat(payload: WhatsAppChatRequest, request: Request):
-    """Interpret a trusted router's WhatsApp message; never execute business actions."""
+    """Interpret a trusted router's WhatsApp message.
+
+    SME appointment changes are returned as actions for the router to execute. Staff requests are
+    handled here as a two-phase agent: every read and write goes through the Firebase gateway, and
+    writes only run after the same person confirms a proposal.
+    """
     configured_secret = os.getenv("WHATSAPP_ROUTER_SECRET", "").strip()
     supplied_secret = request.headers.get("x-whatsapp-router-secret", "").strip()
     if not configured_secret:
@@ -1256,11 +1265,15 @@ def channel_chat(payload: WhatsAppChatRequest, request: Request):
         return _whatsapp_error("SERVICE_NOT_CONFIGURED", "I couldn't process that message right now.", 503)
 
     try:
-        reasoner = GeminiWhatsAppReasoner(
-            client=genai.Client(api_key=api_key),
-            model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
+        client = genai.Client(api_key=api_key)
+        model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        return interpret_whatsapp_message(
+            payload,
+            whatsapp_conversations,
+            GeminiWhatsAppReasoner(client=client, model=model),
+            gateway=LphGateway(),
+            staff_reasoner=GeminiStaffReasoner(client=client, model=model),
         )
-        return interpret_whatsapp_message(payload, whatsapp_conversations, reasoner)
     except Exception as error:
         print(
             "WhatsApp message interpretation failed:",
@@ -1269,6 +1282,37 @@ def channel_chat(payload: WhatsAppChatRequest, request: Request):
             flush=True,
         )
         return _whatsapp_error("PROCESSING_ERROR", "I couldn't process that message right now.", 500)
+
+
+@app.post("/api/academy/coach", response_model=CoachResponse)
+def academy_coach(payload: CoachRequest, request: Request):
+    """Learning-coach reply for the Training Academy.
+
+    Called only by the Firebase `academyCoach` function, which has already checked sign-in,
+    enrollment ownership and session limits and is the one that saves the conversation.
+    """
+    configured_secret = os.getenv("ACADEMY_COACH_SECRET", "").strip()
+    supplied_secret = request.headers.get("x-academy-coach-secret", "").strip()
+    if not configured_secret:
+        raise HTTPException(status_code=503, detail="The coach is not configured.")
+    if not supplied_secret or not hmac.compare_digest(supplied_secret, configured_secret):
+        raise HTTPException(status_code=401, detail="Unauthorized.")
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The coach is not configured.")
+    try:
+        reply = coach_reply(
+            genai.Client(api_key=api_key),
+            os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
+            payload,
+        )
+    except CoachUnavailable as error:
+        raise HTTPException(status_code=502, detail="The coach could not respond.") from error
+    except Exception as error:
+        print("Academy coach failed:", type(error).__name__, str(error), flush=True)
+        raise HTTPException(status_code=502, detail="The coach is unavailable.") from error
+    return CoachResponse(reply=reply)
 
 
 @app.post("/chat")
@@ -1620,6 +1664,16 @@ def chat(payload: ChatRequest, request: Request):
     safe_answer = _redact_internal_identifiers(raw_answer, fetched_data)
     safe_chart = _redact_chart(_sanitize_chart(raw_chart), fetched_data)
     safe_guide = _sanitize_guide(raw_guide, frontend_page_context.get("availableGuides"))
+
+    save_chat_turn(
+        session_id=session_id,
+        uid=user.uid or "",
+        date_key=now_sast.strftime("%Y-%m-%d"),
+        route=payload.route,
+        user_text=question,
+        assistant_text=safe_answer,
+        chart=safe_chart,
+    )
 
     return {
         "sessionId": session_id,

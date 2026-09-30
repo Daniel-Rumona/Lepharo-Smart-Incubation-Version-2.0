@@ -6,6 +6,7 @@ import {
     documentId
 } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { getDepartmentDescendants, DepartmentCapabilityRecord } from './departmentCapabilities'
 
 export type AttendanceScopedEmployee = {
     id: string
@@ -108,6 +109,21 @@ async function getDepartmentIsMain(departmentId?: string): Promise<boolean> {
     return !!dept?.isMain
 }
 
+// A department "has children" when other departments point back at it via
+// parentDepartmentId — a real tree, separate from the flat isMain flag.
+async function fetchDepartmentDescendantIds(departmentId: string): Promise<string[]> {
+    const snap = await getDocs(collection(db, 'departments'))
+    const tree: DepartmentCapabilityRecord[] = snap.docs.map(docSnap => {
+        const data = docSnap.data() as any
+        return {
+            id: docSnap.id,
+            parentDepartmentId: data.parentDepartmentId || data.parentDeptId || undefined
+        }
+    })
+
+    return getDepartmentDescendants(departmentId, tree).map(dept => dept.id)
+}
+
 async function fetchUsers() {
     const snap = await getDocs(
         query(collection(db, 'users'))
@@ -173,8 +189,10 @@ export async function resolveAttendanceVisibleEmployees(
     }
 
     // OPERATIONS:
-    // - if department is main => everyone in company except control accounts
-    // - if not main => coordinators + employees of same department
+    // - if department is main (isMain flag) => everyone in company except control accounts
+    // - else if department has children (via parentDepartmentId) => coordinators + employees
+    //   of this department plus every descendant department
+    // - else => coordinators + employees of same department only
     if (role === 'operations') {
         const isMain = await getDepartmentIsMain(departmentId)
 
@@ -183,9 +201,14 @@ export async function resolveAttendanceVisibleEmployees(
             return applyVisibilityPostFilter(dedupeEmployees(rows), currentUser)
         }
 
-        const deptUsers = departmentId
-            ? await fetchUsersAndDepartment(departmentId)
+        const scopeDepartmentIds = departmentId
+            ? [departmentId, ...(await fetchDepartmentDescendantIds(departmentId))]
             : []
+
+        const deptUserLists = await Promise.all(
+            scopeDepartmentIds.map(id => fetchUsersAndDepartment(id))
+        )
+        const deptUsers = deptUserLists.flat()
 
         const scoped = deptUsers.filter(u => {
             const userRole = normalizeRole(u.role)

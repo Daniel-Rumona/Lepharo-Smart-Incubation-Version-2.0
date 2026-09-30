@@ -23,9 +23,10 @@ type BuildParams = {
   /**
    * Anchor month/year for the report.
    * spanMonths=1 => that month only.
-   * spanMonths=3 => that month + next 2 months (quarterly-style range).
+   * spanMonths=3 => that month + next 2 months (quarterly-style range), and so on
+   * up to a full year.
    */
-  period: { month: number; year: number; spanMonths?: 1 | 2 | 3 } // month: 1-12
+  period: { month: number; year: number; spanMonths?: number } // month: 1-12, spanMonths: 1-12
   scopeLabel?: string
   meta?: Partial<MonthlyReportData["meta"]>
 }
@@ -91,10 +92,10 @@ function chunk<T>(arr: T[], size: number) {
 
 /**
  * Range = start of anchor month -> end of (anchor month + spanMonths - 1)
- * spanMonths is capped to 1..3 for now.
+ * spanMonths is capped to 1..12 (a full year).
  */
-function periodRange(period: { month: number; year: number; spanMonths?: 1 | 2 | 3 }) {
-  const span = Math.max(1, Math.min(3, Number(period.spanMonths ?? 1))) as 1 | 2 | 3
+function periodRange(period: { month: number; year: number; spanMonths?: number }) {
+  const span = Math.max(1, Math.min(12, Number(period.spanMonths ?? 1)))
   const start = dayjs(`${period.year}-${String(period.month).padStart(2, "0")}-01`).startOf("month")
   const end = start.add(span - 1, "month").endOf("month")
   return { start, end, span }

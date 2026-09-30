@@ -28,7 +28,8 @@ import {
     HomeOutlined,
     FieldTimeOutlined,
     CloseCircleOutlined,
-    BarChartOutlined
+    BarChartOutlined,
+    CalendarOutlined
 } from '@ant-design/icons'
 import {
     collection,
@@ -46,6 +47,8 @@ import {
 } from 'firebase/firestore'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
+import HighchartsMore from 'highcharts/highcharts-more'
+import SolidGauge from 'highcharts/modules/solid-gauge'
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -61,13 +64,26 @@ import {
     isCenterConfigured,
     resolveCenterLocationForUser
 } from '@/services/attendanceCenters'
+import TeamAttendanceGrid, { TeamMember } from './TeamAttendanceGrid'
+import { LeaveRequestEntry, isLeaveCoveringDate } from '@/routes/shared/timesheet/timesheetUtils'
 import dayjs, { Dayjs } from 'dayjs'
+import quarterOfYear from 'dayjs/plugin/quarterOfYear'
 import { LoadingOverlay } from '../shared/LoadingOverlay'
 import {
     guideTarget,
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
+
+// Same pattern (and the same TS-vs-runtime type gap) already used for the
+// gauge/donut charts in IncubateesInsights.tsx — the modules are callable at
+// runtime even though their .d.ts doesn't declare it.
+// @ts-expect-error — module augments Highcharts, not typed as callable
+if (typeof HighchartsMore === 'function') HighchartsMore(Highcharts)
+// @ts-expect-error — module augments Highcharts, not typed as callable
+if (typeof SolidGauge === 'function') SolidGauge(Highcharts)
+
+dayjs.extend(quarterOfYear)
 
 const { Text } = Typography
 
@@ -149,6 +165,14 @@ const parseTimeToDate = (timeStr?: string) => {
     return d
 }
 
+const getCurrentWorkWeekRange = (): [Dayjs, Dayjs] => {
+    const today = dayjs()
+    const weekday = today.day()
+    const daysFromMonday = weekday === 0 ? -6 : 1 - weekday
+    const monday = today.add(daysFromMonday, 'day').startOf('day')
+    return [monday, monday.add(6, 'day').endOf('day')]
+}
+
 const diffAsHoursMinutes = (from?: string, to?: string) => {
     const a = parseTimeToDate(from)
     const b = to ? parseTimeToDate(to) : new Date()
@@ -198,9 +222,6 @@ const getAttendanceLocationText = (
         'Outside Center'
     )
 }
-
-const peopleLabel = (count: number) =>
-    `${count} ${count === 1 ? 'person' : 'people'}`
 
 const hasPositiveDuration = (value?: string) => {
     const text = String(value || '').trim().toLowerCase()
@@ -715,10 +736,13 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
 
     const [departmentFilter, setDepartmentFilter] = useState<string>('all')
     const [departmentIsMain, setDepartmentIsMain] = useState(false)
+    const [hasChildDepartments, setHasChildDepartments] = useState(false)
     const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
         dayjs(startDate || dayjs().subtract(days - 1, 'day')),
         dayjs(endDate || dayjs())
     ])
+
+    const [leaveRequests, setLeaveRequests] = useState<LeaveRequestEntry[]>([])
 
     const [centerLocation, setCenterLocation] = useState<CenterLocation | null>(null)
     const [centerModalOpen, setCenterModalOpen] = useState(false)
@@ -737,14 +761,17 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
     const [attendanceSearch, setAttendanceSearch] = useState('')
     const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('all')
     const [attendanceLocationFilter, setAttendanceLocationFilter] = useState('all')
-    const [selectedAttendanceRow, setSelectedAttendanceRow] = useState<any | null>(null)
     const [trendsOpen, setTrendsOpen] = useState(false)
     const [attentionOpen, setAttentionOpen] = useState(false)
 
     const normalizedRole = String(user?.role || '').trim().toLowerCase()
     const isProjectAdmin = normalizedRole === 'projectadmin'
     const isOperations = normalizedRole === 'operations'
-    const isMainOperations = isOperations && departmentIsMain
+    // A department counts as "main" for this view either via the flat isMain
+    // flag, or by actually having other departments pointing back at it
+    // through parentDepartmentId — the two are tracked separately elsewhere
+    // in the app and aren't the same thing.
+    const isMainOperations = isOperations && (departmentIsMain || hasChildDepartments)
     const canSwitchDepartment = isProjectAdmin || isMainOperations
 
     const userBranchId = useMemo(() => getUserBranchId(user), [user])
@@ -782,6 +809,19 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
         ])
     }, [startDate, endDate, days])
 
+    // Fetched once, filtered client-side per employee — mirrors the fetch-all
+    // pattern departments already use elsewhere, and avoids Firestore's 30-item
+    // cap on an `in` query across a whole team's employee ids.
+    useEffect(() => {
+        const leaveQuery = query(collection(db, 'leaveRequests'), where('status', '==', 'approved'))
+        const unsub = onSnapshot(leaveQuery, snapshot => {
+            setLeaveRequests(
+                snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })) as LeaveRequestEntry[]
+            )
+        })
+        return () => unsub()
+    }, [])
+
     useEffect(() => {
         let active = true
 
@@ -812,6 +852,30 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
         void resolveDepartmentScope()
         return () => { active = false }
     }, [isOperations, user?.departmentId, user?.isMain, user?.departmentIsMain])
+
+    useEffect(() => {
+        let active = true
+
+        const resolveChildDepartments = async () => {
+            if (!isOperations || !user?.departmentId) {
+                if (active) setHasChildDepartments(false)
+                return
+            }
+
+            try {
+                const childSnap = await getDocs(
+                    query(collection(db, 'departments'), where('parentDepartmentId', '==', user.departmentId))
+                )
+                if (active) setHasChildDepartments(!childSnap.empty)
+            } catch (error) {
+                console.error('[EmployeeAttendanceAnalytics] child department lookup failed', error)
+                if (active) setHasChildDepartments(false)
+            }
+        }
+
+        void resolveChildDepartments()
+        return () => { active = false }
+    }, [isOperations, user?.departmentId])
 
     useEffect(() => {
         setDepartmentFilter(canSwitchDepartment ? 'all' : (isOperations ? user?.departmentId || 'all' : 'all'))
@@ -940,6 +1004,26 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
             enforcedDepartment === 'all' || getEmployeeDepartmentId(emp) === enforcedDepartment
         )
     }, [scopeFilteredEmployees, canSwitchDepartment, departmentFilter, isOperations, user?.departmentId])
+
+    const teamMembers = useMemo<TeamMember[]>(() => {
+        const needle = attendanceSearch.trim().toLowerCase()
+
+        return filteredEmployees
+            .filter(emp => {
+                if (!needle) return true
+                const haystack = [emp.name, emp.email, getEmployeeDepartmentName(emp), emp.position]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase()
+                return haystack.includes(needle)
+            })
+            .map(emp => ({
+                key: String(emp.authUid || emp.uid || emp.id),
+                name: emp.name || emp.email || 'Unnamed',
+                department: getEmployeeDepartmentName(emp),
+                position: emp.position
+            }))
+    }, [filteredEmployees, attendanceSearch])
 
     const employeeMap = useMemo(
         () => getEmployeeMap(scopeFilteredEmployees),
@@ -1439,114 +1523,186 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
         setAttendanceLocationFilter('all')
     }
 
-    const chartOptions: Highcharts.Options = useMemo(() => {
-        const singlePerson = attendanceSummary.uniquePeople === 1
-
-        if (singlePerson) {
-            return {
-                chart: {
-                    type: 'spline',
-                    height: compact ? 300 : 360
-                },
-                title: {
-                    text: trendPersonName
-                        ? `Hours Worked — ${trendPersonName}`
-                        : 'Hours Worked'
-                },
-                credits: { enabled: false },
-                xAxis: {
-                    categories: filteredSeries.map(d => d.label)
-                },
-                yAxis: {
-                    min: 0,
-                    title: { text: 'Hours worked' }
-                },
-                legend: {
-                    enabled: false
-                },
-                tooltip: {
-                    shared: false,
-                    valueSuffix: 'h'
-                },
-                plotOptions: {
-                    spline: {
-                        dataLabels: {
-                            enabled: true,
-                            format: '{y}h'
-                        }
-                    }
-                },
-                series: [
-                    {
-                        type: 'spline',
-                        name: 'Hours worked',
-                        data: filteredSeries.map(d => d.hours)
-                    }
-                ]
+    const hoursWorkedChartOptions: Highcharts.Options = useMemo(() => ({
+        chart: { type: 'areaspline', height: compact ? 240 : 280 },
+        title: {
+            text: attendanceSummary.uniquePeople === 1 && trendPersonName
+                ? `Hours worked — ${trendPersonName}`
+                : 'Hours worked'
+        },
+        credits: { enabled: false },
+        xAxis: { categories: filteredSeries.map(d => d.label) },
+        yAxis: { min: 0, title: { text: undefined } },
+        legend: { enabled: false },
+        tooltip: { valueSuffix: 'h' },
+        plotOptions: {
+            areaspline: {
+                fillOpacity: 0.15,
+                marker: { enabled: false },
+                dataLabels: { enabled: true, format: '{y}h' }
             }
-        }
+        },
+        series: [
+            {
+                type: 'areaspline',
+                name: 'Hours worked',
+                color: '#1677ff',
+                data: filteredSeries.map(d => d.hours)
+            }
+        ]
+    }), [filteredSeries, compact, attendanceSummary.uniquePeople, trendPersonName])
+
+    // Attendance rate = checked-in headcount each day over the team size in
+    // scope — a team's expected headcount, not each person's own shift, since
+    // this view spans many people at once.
+    const periodAttendanceRate = useMemo(() => {
+        if (!filteredSeries.length || !teamMembers.length) return 0
+        const totalPossible = filteredSeries.length * teamMembers.length
+        const totalPresent = filteredSeries.reduce((sum, d) => sum + d.checkedIns, 0)
+        return totalPossible ? Math.round((totalPresent / totalPossible) * 100) : 0
+    }, [filteredSeries, teamMembers.length])
+
+    const avgHoursPerPresentDay = useMemo(() => {
+        const totalHours = filteredSeries.reduce((sum, d) => sum + d.hours, 0)
+        const totalPresentDays = filteredSeries.reduce((sum, d) => sum + d.checkedIns, 0)
+        return totalPresentDays ? totalHours / totalPresentDays : 0
+    }, [filteredSeries])
+
+    const lateArrivalsCount = useMemo(
+        () => filteredAttendanceRows.filter(row => hasPositiveDuration(row.lateBy)).length,
+        [filteredAttendanceRows]
+    )
+
+    const onsiteRemoteStats = useMemo(() => {
+        const withCheckIn = filteredAttendanceRows.filter(row => row.checkIn)
+        const total = withCheckIn.length
+        const onsite = withCheckIn.filter(row => (row as any).centerMatched).length
+        const remote = total - onsite
 
         return {
-            chart: {
-                type: 'column',
-                height: compact ? 300 : 360
-            },
-            title: { text: undefined },
-            credits: { enabled: false },
-            xAxis: {
-                categories: filteredSeries.map(d => d.label)
-            },
-            yAxis: [
-                {
-                    title: { text: 'Employees' },
-                    allowDecimals: false
-                },
-                {
-                    title: { text: 'Hours' },
-                    opposite: true,
-                    min: 0
-                }
-            ],
-            legend: {
-                enabled: true
-            },
-            tooltip: {
-                shared: true
-            },
-            plotOptions: {
-                column: {
-                    borderRadius: 6,
-                    dataLabels: {
-                        enabled: true
-                    }
-                },
-                spline: {
-                    dataLabels: {
-                        enabled: true,
-                        format: '{y}h'
-                    }
-                }
-            },
-            series: [
-                {
-                    type: 'column',
-                    name: 'Checked-in employees',
-                    data: filteredSeries.map(d => d.checkedIns)
-                },
-                {
-                    type: 'spline',
-                    name: 'Recorded hours',
-                    yAxis: 1,
-                    data: filteredSeries.map(d => d.hours)
-                }
-            ]
+            onsite,
+            remote,
+            onsitePct: total ? Math.round((onsite / total) * 100) : 0,
+            remotePct: total ? Math.round((remote / total) * 100) : 0
         }
-    }, [
-        filteredSeries,
-        compact,
-        attendanceSummary.uniquePeople,
-        trendPersonName
-    ])
+    }, [filteredAttendanceRows])
+
+    // Gauge configs don't structurally satisfy Highcharts.Options in this
+    // version's types (pane/stops typings are incomplete) — cast at the
+    // boundary rather than losing type-checking on the rest of the file.
+    const attendanceRateGaugeOptions = useMemo(() => ({
+        chart: { type: 'solidgauge', height: 190 },
+        title: { text: undefined },
+        credits: { enabled: false },
+        exporting: { enabled: false },
+        pane: {
+            center: ['50%', '75%'],
+            size: '150%',
+            startAngle: -90,
+            endAngle: 90,
+            background: [{
+                backgroundColor: 'rgba(150,150,150,.15)',
+                innerRadius: '65%',
+                outerRadius: '100%',
+                shape: 'arc',
+                borderWidth: 0
+            }]
+        },
+        tooltip: { enabled: false },
+        yAxis: {
+            min: 0,
+            max: 100,
+            stops: [
+                [0.3, '#ff4d4f'],
+                [0.7, '#faad14'],
+                [1, '#52c41a']
+            ],
+            lineWidth: 0,
+            tickWidth: 0,
+            minorTickInterval: null,
+            tickAmount: 0,
+            labels: { enabled: false }
+        },
+        plotOptions: {
+            solidgauge: {
+                dataLabels: {
+                    enabled: true,
+                    format: '<span style="font-size:26px;font-weight:700">{y}%</span>',
+                    borderWidth: 0,
+                    y: -10
+                }
+            }
+        },
+        series: [
+            {
+                type: 'solidgauge',
+                name: 'Attendance rate',
+                data: [periodAttendanceRate]
+            }
+        ]
+    } as unknown as Highcharts.Options), [periodAttendanceRate])
+
+    const onsiteRemoteDonutOptions: Highcharts.Options = useMemo(() => ({
+        chart: { type: 'pie', height: 190 },
+        title: { text: undefined },
+        credits: { enabled: false },
+        tooltip: {
+            formatter: function (this: any) {
+                const y = this.y ?? 0
+                const pct = Math.round(this.point?.percentage ?? 0)
+                return `<b>${y}</b> clock-in${y === 1 ? '' : 's'} (${pct}%)`
+            }
+        },
+        plotOptions: {
+            pie: {
+                innerSize: '65%',
+                borderWidth: 0,
+                dataLabels: {
+                    enabled: true,
+                    distance: 14,
+                    format: '{point.name}: {point.percentage:.0f}%'
+                }
+            }
+        },
+        series: [
+            {
+                type: 'pie',
+                name: 'Clock-ins',
+                // Explicit per-point colour (rather than colorByPoint) so
+                // Onsite stays blue and Remote stays teal even when one of
+                // them is filtered out below for having no clock-ins.
+                data: [
+                    { name: 'Onsite', y: onsiteRemoteStats.onsite, color: '#1677ff' },
+                    { name: 'Remote', y: onsiteRemoteStats.remote, color: '#13c2c2' }
+                ].filter(point => point.y > 0)
+            } as Highcharts.SeriesPieOptions
+        ]
+    }), [onsiteRemoteStats])
+
+    // Person-days on approved leave within the selected range, for the
+    // currently filtered team — weekends excluded, matching the rest of
+    // this feature's business-day convention.
+    const leaveDaysInPeriod = useMemo(() => {
+        const employeeIds = new Set(teamMembers.map(m => m.key))
+        if (!employeeIds.size || !leaveRequests.length) return 0
+
+        const [start, end] = dateRange
+        const totalDays = end.diff(start, 'day') + 1
+        let count = 0
+
+        for (let i = 0; i < totalDays; i++) {
+            const day = start.add(i, 'day')
+            const weekday = day.day()
+            if (weekday === 0 || weekday === 6) continue
+            const dateStr = day.format('YYYY-MM-DD')
+
+            leaveRequests.forEach(leave => {
+                if (employeeIds.has(leave.employeeId) && isLeaveCoveringDate(leave, dateStr)) count++
+            })
+        }
+
+        return count
+    }, [dateRange, leaveRequests, teamMembers])
 
     const exportRows = useMemo(() => {
         return filteredAttendanceRows.map(row => ({
@@ -1742,189 +1898,6 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
         )
     }
 
-    const rangeLoginColumns = [
-        {
-            title: 'Employee',
-            key: 'employeeName',
-            width: 190,
-            render: (_: any, row: any) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{row.employeeName}</Text>
-                    {row.position ? (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            {row.position}
-                        </Text>
-                    ) : null}
-                </Space>
-            )
-        },
-        {
-            title: 'Department',
-            dataIndex: 'department',
-            key: 'department',
-            width: 150
-        },
-        {
-            title: 'Date',
-            dataIndex: 'date',
-            key: 'date',
-            width: 120,
-            render: (value: string) => dayjs(value).format('DD MMM YYYY')
-        },
-        {
-            title: 'Time',
-            key: 'time',
-            width: 145,
-            render: (_: any, row: any) => (
-                <Text>
-                    {row.checkIn || '—'} → {row.checkOut || '—'}
-                </Text>
-            )
-        },
-        {
-            title: 'Hours',
-            key: 'hoursWorked',
-            width: 100,
-            render: (_: any, row: any) => {
-                const hours =
-                    row.hoursWorked && row.hoursWorked !== '0h 0m'
-                        ? row.hoursWorked
-                        : row.checkIn
-                            ? diffAsHoursMinutes(
-                                row.checkIn,
-                                row.checkOut && row.checkOut !== '-'
-                                    ? row.checkOut
-                                    : undefined
-                            )
-                            : '0h 0m'
-
-                return <Text strong>{hours}</Text>
-            }
-        },
-        {
-            title: 'Attendance',
-            key: 'attendance',
-            width: 210,
-            render: (_: any, row: any) => {
-                const state = attendanceState(row)
-                const tags: React.ReactNode[] = []
-
-                if (state.late) {
-                    tags.push(
-                        <Tag key="late" color="gold">
-                            Late {row.lateBy}
-                        </Tag>
-                    )
-                }
-
-                if (state.missingCheckout) {
-                    tags.push(
-                        <Tag key="missing-checkout" color="red">
-                            Missing checkout
-                        </Tag>
-                    )
-                }
-
-                if (state.autoClockedOut) {
-                    tags.push(
-                        <Tag key="auto-clockout" color="orange">
-                            Auto clock-out
-                        </Tag>
-                    )
-                }
-
-                if (state.overtime) {
-                    tags.push(
-                        <Tag key="overtime" color="purple">
-                            {hasPositiveDuration(row.overtime)
-                                ? `Overtime ${row.overtime}`
-                                : 'Overtime'}
-                        </Tag>
-                    )
-                }
-
-                if (state.needsReview) {
-                    tags.push(
-                        <Tag key="review" color="red">
-                            Needs review
-                        </Tag>
-                    )
-                }
-
-                if (
-                    row.date === dayjs().format('YYYY-MM-DD') &&
-                    row.status === 'on_break'
-                ) {
-                    tags.push(
-                        <Tag key="break" color="blue">
-                            On break
-                        </Tag>
-                    )
-                } else if (
-                    row.date === dayjs().format('YYYY-MM-DD') &&
-                    row.status === 'checked_in' &&
-                    (!row.checkOut || row.checkOut === '-')
-                ) {
-                    tags.push(
-                        <Tag key="current" color="blue">
-                            Still clocked in
-                        </Tag>
-                    )
-                }
-
-                if (!tags.length) {
-                    tags.push(
-                        <Tag key="on-time" color="green">
-                            On time
-                        </Tag>
-                    )
-                }
-
-                return <Space size={[4, 4]} wrap>{tags}</Space>
-            }
-        },
-        {
-            title: 'Location',
-            key: 'location',
-            width: 210,
-            render: (_: any, row: any) => {
-                const atCenter = row.centerStatus === 'at_center'
-                const locationText = getAttendanceLocationText(row, centerLocation)
-
-                return (
-                    <Space direction="vertical" size={2}>
-                        <Tag color={atCenter ? 'green' : 'orange'}>
-                            {atCenter ? 'At Center' : 'Outside Center'}
-                        </Tag>
-                        {locationText &&
-                            locationText !== 'At Center' &&
-                            locationText !== 'Outside Center' ? (
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                {locationText}
-                            </Text>
-                        ) : null}
-                    </Space>
-                )
-            }
-        },
-        {
-            title: '',
-            key: 'details',
-            width: 90,
-            fixed: 'right' as const,
-            render: (_: any, row: any) => (
-                <Button
-                    data-guide="attendance-details-action"
-                    type="link"
-                    size="small"
-                    onClick={() => setSelectedAttendanceRow(row)}
-                >
-                    Details
-                </Button>
-            )
-        }
-    ]
-
     const pendingOvertimeColumns = [
         {
             title: 'Employee',
@@ -2008,159 +1981,107 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
     ]
 
     const tableFilterBar = (
-        <Space
-            data-guide="attendance-filter-bar"
-            direction="vertical"
-            size={12}
-            style={{ width: '100%' }}
-        >
-            <Row gutter={[12, 12]} align="middle" justify="space-between">
-                <Col xs={24} lg={15}>
-                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                        <Text strong>Attendance Records</Text>
+        <Row gutter={[8, 8]} align="middle" data-guide="attendance-filter-bar">
+            <Col xs={24} sm={12} flex="1 1 260px">
+                <DatePicker.RangePicker
+                    aria-label="Attendance reporting range"
+                    value={dateRange}
+                    allowClear={false}
+                    style={{ width: '100%' }}
+                    presets={[
+                        { label: 'This week', value: getCurrentWorkWeekRange() },
+                        { label: 'This month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
+                        { label: 'This quarter', value: [dayjs().startOf('quarter'), dayjs().endOf('quarter')] }
+                    ]}
+                    onChange={value => {
+                        if (!value?.[0] || !value?.[1]) return
+                        setDateRange([value[0], value[1]])
+                    }}
+                />
+            </Col>
 
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            Who attended, when they worked, and whether the clock-in matched the configured center.
-                        </Text>
+            <Col xs={24} sm={12} flex="1 1 200px">
+                <Input
+                    allowClear
+                    value={attendanceSearch}
+                    onChange={event => setAttendanceSearch(event.target.value)}
+                    placeholder="Search employee"
+                />
+            </Col>
 
-                        <Space size={[6, 6]} wrap>
-                            <Tag>{peopleLabel(attendanceSummary.uniquePeople)}</Tag>
-                            <Tag>{attendanceSummary.totalClockIns} clock-in{attendanceSummary.totalClockIns === 1 ? '' : 's'}</Tag>
-                            <Tag color="green">
-                                {attendanceSummary.centerClockIns} at center
-                            </Tag>
-                            <Tag color={attendanceSummary.outsideClockIns ? 'orange' : 'default'}>
-                                {attendanceSummary.outsideClockIns} outside
-                            </Tag>
-                            <Tag color={attendanceSummary.centerRate >= 80 ? 'green' : 'blue'}>
-                                {attendanceSummary.centerRate}% center rate
-                            </Tag>
-                            {notCheckedInToday.length ? (
-                                <Tag color="gold">
-                                    {notCheckedInToday.length} no clock-in today
-                                </Tag>
-                            ) : null}
-                        </Space>
-
-                        {isCenterConfigured(centerLocation) ? (
-                            <Space size={6} wrap>
-                                <Tag color="green">Center configured</Tag>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {centerLocation?.centerName} • {centerLocation?.locationLabel}
-                                </Text>
-                            </Space>
-                        ) : (
-                            <Text type="warning" style={{ fontSize: 12 }}>
-                                No center configured for this assigned branch. Clock-ins cannot be matched to the center until it is configured.
-                            </Text>
-                        )}
-                    </Space>
+            {canSwitchDepartment ? (
+                <Col xs={12} sm={8} flex="1 1 180px">
+                    <Select
+                        aria-label="Department"
+                        value={departmentFilter}
+                        onChange={setDepartmentFilter}
+                        style={{ width: '100%' }}
+                        options={[
+                            { value: 'all', label: 'All departments' },
+                            ...availableDepartments
+                        ]}
+                    />
                 </Col>
+            ) : null}
 
-                <Col xs={24} lg={9}>
-                    <Space
-                        wrap
-                        style={{
-                            width: '100%',
-                            justifyContent: 'flex-end'
-                        }}
+            <Col xs={12} sm={8} flex="1 1 180px">
+                <Select
+                    aria-label="Attendance status"
+                    value={attendanceStatusFilter}
+                    onChange={setAttendanceStatusFilter}
+                    style={{ width: '100%' }}
+                    options={[
+                        { value: 'all', label: 'All statuses' },
+                        { value: 'currently_in', label: 'Currently in' },
+                        { value: 'on_time', label: 'On time' },
+                        { value: 'late', label: 'Late' },
+                        { value: 'missing_checkout', label: 'Missing checkout' },
+                        { value: 'auto_clocked_out', label: 'Auto clock-out' },
+                        { value: 'overtime', label: 'Overtime' },
+                        { value: 'needs_review', label: 'Needs review' }
+                    ]}
+                />
+            </Col>
+
+            <Col xs={12} sm={8} flex="1 1 180px">
+                <Select
+                    aria-label="Center location status"
+                    value={attendanceLocationFilter}
+                    onChange={setAttendanceLocationFilter}
+                    style={{ width: '100%' }}
+                    options={[
+                        { value: 'all', label: 'All locations' },
+                        { value: 'at_center', label: 'At center' },
+                        { value: 'outside', label: 'Outside center' }
+                    ]}
+                />
+            </Col>
+
+            <Col flex="none" style={{ marginLeft: 'auto' }}>
+                <Space wrap>
+                    <Button
+                        data-guide="attendance-trends-action"
+                        icon={<BarChartOutlined />}
+                        onClick={() => setTrendsOpen(true)}
                     >
+                        Analytics
+                    </Button>
+
+                    {isProjectAdmin ? (
                         <Button
-                            data-guide="attendance-trends-action"
-                            icon={<BarChartOutlined />}
-                            onClick={() => setTrendsOpen(true)}
+                            data-guide="center-settings-action"
+                            type="primary"
+                            icon={<EnvironmentOutlined />}
+                            onClick={openCenterModal}
                         >
-                            View Trends
+                            {isCenterConfigured(centerLocation)
+                                ? 'Center Settings'
+                                : 'Set Center'}
                         </Button>
-
-                        {isProjectAdmin ? (
-                            <Button
-                                data-guide="center-settings-action"
-                                type="primary"
-                                icon={<EnvironmentOutlined />}
-                                onClick={openCenterModal}
-                            >
-                                {isCenterConfigured(centerLocation)
-                                    ? 'Center Settings'
-                                    : 'Set Center'}
-                            </Button>
-                        ) : null}
-                    </Space>
-                </Col>
-            </Row>
-
-            <Row gutter={[8, 8]}>
-                <Col xs={24} md={12} xl={6}>
-                    <DatePicker.RangePicker
-                        aria-label="Attendance reporting range"
-                        value={dateRange}
-                        allowClear={false}
-                        style={{ width: '100%' }}
-                        onChange={value => {
-                            if (!value?.[0] || !value?.[1]) return
-                            setDateRange([value[0], value[1]])
-                        }}
-                    />
-                </Col>
-
-                <Col xs={24} md={12} xl={6}>
-                    <Input
-                        allowClear
-                        value={attendanceSearch}
-                        onChange={event => setAttendanceSearch(event.target.value)}
-                        placeholder="Search employee"
-                    />
-                </Col>
-
-                {canSwitchDepartment ? (
-                    <Col xs={24} md={8} xl={4}>
-                        <Select
-                            aria-label="Department"
-                            value={departmentFilter}
-                            onChange={setDepartmentFilter}
-                            style={{ width: '100%' }}
-                            options={[
-                                { value: 'all', label: 'All departments' },
-                                ...availableDepartments
-                            ]}
-                        />
-                    </Col>
-                ) : null}
-
-                <Col xs={24} md={8} xl={canSwitchDepartment ? 4 : 6}>
-                    <Select
-                        aria-label="Attendance status"
-                        value={attendanceStatusFilter}
-                        onChange={setAttendanceStatusFilter}
-                        style={{ width: '100%' }}
-                        options={[
-                            { value: 'all', label: 'All statuses' },
-                            { value: 'currently_in', label: 'Currently in' },
-                            { value: 'on_time', label: 'On time' },
-                            { value: 'late', label: 'Late' },
-                            { value: 'missing_checkout', label: 'Missing checkout' },
-                            { value: 'auto_clocked_out', label: 'Auto clock-out' },
-                            { value: 'overtime', label: 'Overtime' },
-                            { value: 'needs_review', label: 'Needs review' }
-                        ]}
-                    />
-                </Col>
-
-                <Col xs={24} md={8} xl={canSwitchDepartment ? 4 : 6}>
-                    <Select
-                        aria-label="Center location status"
-                        value={attendanceLocationFilter}
-                        onChange={setAttendanceLocationFilter}
-                        style={{ width: '100%' }}
-                        options={[
-                            { value: 'all', label: 'All locations' },
-                            { value: 'at_center', label: 'At center' },
-                            { value: 'outside', label: 'Outside center' }
-                        ]}
-                    />
-                </Col>
-            </Row>
-        </Space>
+                    ) : null}
+                </Space>
+            </Col>
+        </Row>
     )
 
     const isInitialLoading =
@@ -2255,20 +2176,13 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
                             />
                         ) : (
                             <div data-guide="attendance-records-table">
-                                <Table
-                                    rowKey={row => row.id || `${row.userId}_${row.date}_${row.checkIn}`}
-                                    size="middle"
-                                    columns={rangeLoginColumns as any}
-                                    dataSource={filteredAttendanceRows}
-                                    pagination={{
-                                        pageSize: 8,
-                                        showSizeChanger: false,
-                                        position: ['bottomCenter']
-                                    }}
-                                    locale={{
-                                        emptyText: 'No attendance records found for the selected range.'
-                                    }}
-                                    scroll={{ x: 1250 }}
+                                <TeamAttendanceGrid
+                                    employees={teamMembers}
+                                    rows={filteredAttendanceRows as any}
+                                    leaveRequests={leaveRequests}
+                                    startDate={dateRange[0].format('YYYY-MM-DD')}
+                                    endDate={dateRange[1].format('YYYY-MM-DD')}
+                                    now={new Date()}
                                 />
                             </div>
                         )}
@@ -2276,7 +2190,7 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
                 </Col>
             </Row>
 
-            {pendingOvertimeRows.length ? (
+            {isProjectAdmin && pendingOvertimeRows.length ? (
                 <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
                     <Col span={24}>
                         <div data-guide="pending-overtime-section">
@@ -2317,25 +2231,14 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
             <Modal
                 className="guide-attendance-trends-modal"
                 open={trendsOpen}
-                title={attendanceSummary.uniquePeople === 1 && trendPersonName ? `Work Trend — ${trendPersonName}` : 'Attendance Trends'}
+                title={attendanceSummary.uniquePeople === 1 && trendPersonName ? `Analytics — ${trendPersonName}` : 'Analytics'}
                 onCancel={() => setTrendsOpen(false)}
-                footer={
-                    <Button onClick={() => setTrendsOpen(false)}>
-                        Close
-                    </Button>
-                }
+                footer={null}
                 centered
                 width={920}
                 destroyOnClose={false}
             >
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                    <Space size={[6, 6]} wrap>
-                        <Tag>{effectiveStartDate} → {effectiveEndDate}</Tag>
-                        <Tag>{peopleLabel(attendanceSummary.uniquePeople)}</Tag>
-                        <Tag>{attendanceSummary.totalClockIns} clock-in{attendanceSummary.totalClockIns === 1 ? '' : 's'}</Tag>
-                        <Tag color="green">{attendanceSummary.centerRate}% center rate</Tag>
-                    </Space>
-
                     {loadingHistory ? (
                         <Skeleton
                             active
@@ -2343,9 +2246,56 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
                             paragraph={{ rows: 8, width: '100%' }}
                         />
                     ) : filteredSeries.length ? (
-                        <div data-guide="attendance-trends-chart">
-                            <HighchartsReact highcharts={Highcharts} options={chartOptions} />
-                        </div>
+                        <>
+                            <Row gutter={[12, 12]} data-guide="attendance-trends-chart">
+                                <Col xs={24} md={8}>
+                                    <MotionCard styles={{ body: { padding: 12 } }}>
+                                        <Text strong style={{ fontSize: 12, display: 'block', textAlign: 'center' }}>Attendance rate</Text>
+                                        <HighchartsReact highcharts={Highcharts} options={attendanceRateGaugeOptions} />
+                                    </MotionCard>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                    <MotionCard styles={{ body: { padding: 12 } }}>
+                                        <Text strong style={{ fontSize: 12, display: 'block', textAlign: 'center' }}>Onsite vs remote</Text>
+                                        <HighchartsReact highcharts={Highcharts} options={onsiteRemoteDonutOptions} />
+                                    </MotionCard>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                        <MotionCard.Metric
+                                            icon={<FieldTimeOutlined />}
+                                            iconBg="rgba(22,119,255,.12)"
+                                            title="Avg hours / day"
+                                            value={`${avgHoursPerPresentDay.toFixed(1)}h`}
+                                        />
+                                        <MotionCard.Metric
+                                            icon={<ExclamationCircleOutlined />}
+                                            iconBg="rgba(255,77,79,.12)"
+                                            title="Late arrivals"
+                                            value={lateArrivalsCount}
+                                        />
+                                        <MotionCard.Metric
+                                            icon={<CalendarOutlined />}
+                                            iconBg="rgba(250,173,20,.12)"
+                                            title="Leave days"
+                                            value={leaveDaysInPeriod}
+                                        />
+                                        {isProjectAdmin ? (
+                                            <MotionCard.Metric
+                                                icon={<HomeOutlined />}
+                                                iconBg="rgba(114,46,209,.12)"
+                                                title="Center rate"
+                                                value={`${attendanceSummary.centerRate}%`}
+                                            />
+                                        ) : null}
+                                    </Space>
+                                </Col>
+                            </Row>
+
+                            <MotionCard styles={{ body: { padding: 12 } }} data-guide="attendance-rate-chart">
+                                <HighchartsReact highcharts={Highcharts} options={hoursWorkedChartOptions} />
+                            </MotionCard>
+                        </>
                     ) : (
                         <Empty description="No clock-in records found for the selected filters." />
                     )}
@@ -2357,11 +2307,7 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
                 open={attentionOpen}
                 title={`Today's Attention (${metrics.needsAttention})`}
                 onCancel={() => setAttentionOpen(false)}
-                footer={
-                    <Button onClick={() => setAttentionOpen(false)}>
-                        Close
-                    </Button>
-                }
+                footer={null}
                 centered
                 width={760}
             >
@@ -2448,183 +2394,6 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
             </Modal>
 
             <Modal
-                className="guide-attendance-details-modal"
-                open={!!selectedAttendanceRow}
-                title="Attendance Details"
-                onCancel={() => setSelectedAttendanceRow(null)}
-                footer={
-                    <Button onClick={() => setSelectedAttendanceRow(null)}>
-                        Close
-                    </Button>
-                }
-                centered
-                width={620}
-            >
-                {selectedAttendanceRow ? (
-                    <Space direction="vertical" size={14} style={{ width: '100%' }}>
-                        <div>
-                            <Text strong style={{ fontSize: 16 }}>
-                                {selectedAttendanceRow.employeeName}
-                            </Text>
-                            <br />
-                            <Text type="secondary">
-                                {selectedAttendanceRow.department}
-                                {selectedAttendanceRow.position
-                                    ? ` • ${selectedAttendanceRow.position}`
-                                    : ''}
-                            </Text>
-                        </div>
-
-                        <Row gutter={[12, 12]}>
-                            <Col xs={12}>
-                                <Text type="secondary">Date</Text>
-                                <div>
-                                    <Text strong>
-                                        {dayjs(selectedAttendanceRow.date).format('DD MMM YYYY')}
-                                    </Text>
-                                </div>
-                            </Col>
-                            <Col xs={12}>
-                                <Text type="secondary">Hours</Text>
-                                <div>
-                                    <Text strong>
-                                        {selectedAttendanceRow.hoursWorked &&
-                                            selectedAttendanceRow.hoursWorked !== '0h 0m'
-                                            ? selectedAttendanceRow.hoursWorked
-                                            : selectedAttendanceRow.checkIn
-                                                ? diffAsHoursMinutes(
-                                                    selectedAttendanceRow.checkIn,
-                                                    selectedAttendanceRow.checkOut &&
-                                                        selectedAttendanceRow.checkOut !== '-'
-                                                        ? selectedAttendanceRow.checkOut
-                                                        : undefined
-                                                )
-                                                : '0h 0m'}
-                                    </Text>
-                                </div>
-                            </Col>
-                            <Col xs={12}>
-                                <Text type="secondary">Check In</Text>
-                                <div><Text strong>{selectedAttendanceRow.checkIn || '—'}</Text></div>
-                            </Col>
-                            <Col xs={12}>
-                                <Text type="secondary">Check Out</Text>
-                                <div><Text strong>{selectedAttendanceRow.checkOut || '—'}</Text></div>
-                            </Col>
-                        </Row>
-
-                        <div data-guide="attendance-detail-location">
-                            <Text type="secondary">Location</Text>
-                            <div style={{ marginTop: 4 }}>
-                                <Space size={[6, 6]} wrap>
-                                    <Tag
-                                        color={
-                                            selectedAttendanceRow.centerStatus === 'at_center'
-                                                ? 'green'
-                                                : 'orange'
-                                        }
-                                    >
-                                        {selectedAttendanceRow.centerStatus === 'at_center'
-                                            ? 'At Center'
-                                            : 'Outside Center'}
-                                    </Tag>
-                                    {getAttendanceLocationText(
-                                        selectedAttendanceRow,
-                                        centerLocation
-                                    ) !== 'At Center' &&
-                                        getAttendanceLocationText(
-                                            selectedAttendanceRow,
-                                            centerLocation
-                                        ) !== 'Outside Center' ? (
-                                        <Text>
-                                            {getAttendanceLocationText(
-                                                selectedAttendanceRow,
-                                                centerLocation
-                                            )}
-                                        </Text>
-                                    ) : null}
-                                </Space>
-                            </div>
-                        </div>
-
-                        {typeof selectedAttendanceRow.locationAccuracy === 'number' ? (
-                            <div>
-                                <Text type="secondary">Device location accuracy</Text>
-                                <div>
-                                    <Tag>
-                                        ±{Math.round(selectedAttendanceRow.locationAccuracy)}m
-                                    </Tag>
-                                </div>
-                            </div>
-                        ) : null}
-
-                        <div data-guide="attendance-detail-flags">
-                            <Text type="secondary">Attendance flags</Text>
-                            <div style={{ marginTop: 4 }}>
-                                <Space size={[6, 6]} wrap>
-                                    {hasPositiveDuration(selectedAttendanceRow.lateBy) ? (
-                                        <Tag color="gold">
-                                            Late {selectedAttendanceRow.lateBy}
-                                        </Tag>
-                                    ) : null}
-                                    {isMissingCheckout(selectedAttendanceRow) ? (
-                                        <Tag color="red">Missing checkout</Tag>
-                                    ) : null}
-                                    {selectedAttendanceRow.autoClockedOut ? (
-                                        <Tag color="orange">Auto clock-out</Tag>
-                                    ) : null}
-                                    {hasPositiveDuration(selectedAttendanceRow.overtime) ||
-                                        selectedAttendanceRow.overtimeApprovalStatus ? (
-                                        <Tag color="purple">
-                                            {selectedAttendanceRow.overtime || 'Overtime'}
-                                        </Tag>
-                                    ) : null}
-                                    {selectedAttendanceRow.auditFlag ? (
-                                        <Tag color="red">Needs review</Tag>
-                                    ) : null}
-                                    {!hasPositiveDuration(selectedAttendanceRow.lateBy) &&
-                                        !isMissingCheckout(selectedAttendanceRow) &&
-                                        !selectedAttendanceRow.autoClockedOut &&
-                                        !hasPositiveDuration(selectedAttendanceRow.overtime) &&
-                                        !selectedAttendanceRow.overtimeApprovalStatus &&
-                                        !selectedAttendanceRow.auditFlag ? (
-                                        <Tag color="green">No issues recorded</Tag>
-                                    ) : null}
-                                </Space>
-                            </div>
-                        </div>
-
-                        {selectedAttendanceRow.autoClockOutReason ? (
-                            <Alert
-                                type="warning"
-                                showIcon
-                                message="Auto clock-out reason"
-                                description={selectedAttendanceRow.autoClockOutReason}
-                            />
-                        ) : null}
-
-                        {selectedAttendanceRow.overtimeReason ? (
-                            <Alert
-                                type="info"
-                                showIcon
-                                message="Overtime reason"
-                                description={selectedAttendanceRow.overtimeReason}
-                            />
-                        ) : null}
-
-                        {selectedAttendanceRow.auditFlag ? (
-                            <Alert
-                                type="warning"
-                                showIcon
-                                message="Audit note"
-                                description={selectedAttendanceRow.auditFlag}
-                            />
-                        ) : null}
-                    </Space>
-                ) : null}
-            </Modal>
-
-            <Modal
                 className="guide-overtime-reject-modal"
                 open={!!rejectingRow}
                 title="Reject overtime request"
@@ -2673,6 +2442,7 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
                 confirmLoading={savingCenter}
                 destroyOnClose={false}
                 width={680}
+                centered
             >
                 <Form
                     form={centerForm}

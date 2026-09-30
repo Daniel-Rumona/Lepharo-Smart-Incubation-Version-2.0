@@ -1,0 +1,67 @@
+/* Segmented switcher styled like the top nav pill (.workspace-primary-nav). Add className="nav-pill-segmented". */
+.nav-pill-segmented.ant-segmented {
+    padding: 3px;
+    border-radius: 12px;
+    background: #f2f4f7;
+}
+
+.nav-pill-segmented .ant-segmented-group {
+    gap: 2px;
+}
+
+.nav-pill-segmented .ant-segmented-item {
+    border-radius: 9px;
+    background: transparent;
+}
+
+.nav-pill-segmented .ant-segmented-item-label {
+    min-height: 34px;
+    line-height: 34px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #4f5968;
+    white-space: nowrap;
+}
+
+.nav-pill-segmented .ant-segmented-item-icon {
+    font-size: 14px;
+}
+
+.nav-pill-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) .ant-segmented-item-label,
+.nav-pill-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+    color: var(--app-accent);
+}
+
+.nav-pill-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+    background: rgba(255, 255, 255, 0.65);
+}
+
+.nav-pill-segmented .ant-segmented-item-selected,
+.nav-pill-segmented .ant-segmented-thumb {
+    border-radius: 9px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(20, 37, 63, 0.12);
+}
+
+html[data-theme="dark"] .nav-pill-segmented.ant-segmented {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .nav-pill-segmented .ant-segmented-item-label {
+    color: var(--app-text-muted);
+}
+
+html[data-theme="dark"] .nav-pill-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .nav-pill-segmented .ant-segmented-item-selected,
+html[data-theme="dark"] .nav-pill-segmented .ant-segmented-thumb {
+    background: var(--app-accent-active-bg);
+    box-shadow: none;
+}
+
+html[data-theme="dark"] .nav-pill-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+    color: var(--app-accent-contrast);
+}

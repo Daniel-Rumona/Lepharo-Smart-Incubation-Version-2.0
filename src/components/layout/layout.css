@@ -289,6 +289,7 @@
 .workspace-more-heading {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 12px;
 }
 
@@ -308,6 +309,8 @@
 .workspace-more-heading>span:last-child {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    text-align: center;
     gap: 2px;
 }
 

@@ -29,6 +29,7 @@ import {
   DashboardHeaderCard,
   MotionCard
 } from '@/components/dashboards/metrics/Header'
+import { channelLabel, resolveInquiryChannel } from '@/utils/inquirySource'
 
 const { Search } = Input
 
@@ -216,7 +217,7 @@ const ContactsList: React.FC = () => {
       title: 'Source',
       dataIndex: 'source',
       key: 'source',
-      render: (source: string) => <Tag color='blue'>{source}</Tag>,
+      render: (source: string) => <Tag color='blue'>{channelLabel(resolveInquiryChannel(source))}</Tag>,
       width: 100
     },
     {

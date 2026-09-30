@@ -25,7 +25,16 @@ import {
     getDoc,
     doc
 } from 'firebase/firestore'
-import { ExpandOutlined, DownloadOutlined, FileTextOutlined, BarChartOutlined } from '@ant-design/icons'
+import {
+    ExpandOutlined,
+    DownloadOutlined,
+    FileTextOutlined,
+    BarChartOutlined,
+    TeamOutlined,
+    SolutionOutlined,
+    WarningOutlined,
+    PlayCircleOutlined
+} from '@ant-design/icons'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 
 // charts
@@ -35,7 +44,8 @@ import ProvinceMapDashboard from './ProvinceMap'
 import IncubateesInsights from './IncubateesInsights'
 import FacilitatorsTab from './FacilitatorsTab'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
+import '@/styles/nav-segmented.css'
 import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { assignedInterventionService } from '@/services/assignedInterventionService'
 import { filterReportRecords } from '@/utils/reportVisibility'
@@ -43,9 +53,12 @@ import { filterReportRecords } from '@/utils/reportVisibility'
 // DOCX export + Programme Summary builder
 import { exportMonthlyDepartmentReportDocx } from '@/utils/monthlyReportDocx'
 import { buildConsolidatedMeProgramReport } from '@/utils/buildProgramSummaryReportWithCharts'
+import type { MonthlyReportData } from '@/utils/monthlyReportDocx'
 import { buildExecutiveQuarterlyReportData } from '@/utils/buildExecutiveQuarterlyReport'
 import { fillDocxTemplateAndDownload } from '@/utils/docxTemplateFill'
 import SMERiskRegisterPage from './SMERiskRegister'
+import MonitoringReportPlayer from './MonitoringReportPlayer'
+import { useColorMode } from '@/contexts/ThemeContext'
 
 const { Text } = Typography
 const { RangePicker } = DatePicker
@@ -62,6 +75,21 @@ const getFiscalYtdRange = (base = dayjs()): [Dayjs, Dayjs] => {
         ? base.startOf('year').month(3).startOf('month')
         : base.subtract(1, 'year').startOf('year').month(3).startOf('month')
     return [start, base.endOf('day')]
+}
+
+// Report exports used to be capped at a quarter (3 months); the underlying builders
+// support any span, so this only bounds the export to a sensible upper limit (2 years).
+const EXPORT_MAX_SPAN_MONTHS = 24
+
+const exportSpanLabel = (spanMonths: number): string => {
+    switch (spanMonths) {
+        case 1: return 'Monthly'
+        case 3: return 'Quarterly'
+        case 6: return 'Half-Yearly'
+        case 12: return 'Annual'
+        case 24: return 'Biennial'
+        default: return 'Custom-Range'
+    }
 }
 
 
@@ -89,6 +117,7 @@ const CARD_STYLE: React.CSSProperties = {
 
 const MonitoringReports: React.FC = () => {
     const { user } = useFullIdentity() as any
+    const { isDark } = useColorMode()
 
     // use the hook properly
     const { programId, activeProgramId, isAllPrograms } = useActiveProgramId()
@@ -109,6 +138,9 @@ const MonitoringReports: React.FC = () => {
     const [selectedBranch, setSelectedBranch] = useState<'all' | string>('all')
     const [isMultiBranch, setIsMultiBranch] = useState(false)
     const [reportChooserOpen, setReportChooserOpen] = useState(false)
+    const [playerOpen, setPlayerOpen] = useState(false)
+    const [playerData, setPlayerData] = useState<MonthlyReportData | null>(null)
+    const [playerLoading, setPlayerLoading] = useState(false)
 
     const [view, setView] = useState<'Interventions' | 'Incubatees' | 'Facilitators' | 'Risk'>(
         'Interventions'
@@ -288,46 +320,72 @@ const MonitoringReports: React.FC = () => {
     const effectiveDepartmentIdForConsultants =
         selectedDepartmentId === 'all' ? undefined : selectedDepartmentId
 
+    // Shared by the DOCX export and the Play story: validates the selected range,
+    // builds the consolidated programme report, and returns everything the caller needs.
+    // Returns null when it has already shown the user why it couldn't proceed.
+    // The DOCX export still names one specific program on its cover page, so it keeps
+    // requiring one. The Play story can tell a combined story across every program, so
+    // it opts in with allowAllPrograms.
+    const buildProgrammeSummaryReportData = async (
+        opts: { allowAllPrograms?: boolean } = {}
+    ): Promise<{
+        reportData: MonthlyReportData
+        spanMonths: number
+        start: Dayjs
+        end: Dayjs
+    } | null> => {
+        const { allowAllPrograms = false } = opts
+
+        if (isAllPrograms && !allowAllPrograms) {
+            message.error('Select a specific program first.')
+            return null
+        }
+        if (!isAllPrograms && !activeProgramId) {
+            message.error('Select a specific program first.')
+            return null
+        }
+
+        if (!isMainDept) {
+            message.error('Only main departments can build a programme summary.')
+            return null
+        }
+
+        const start = range[0].startOf('day')
+        const end = range[1].endOf('day')
+
+        const isStartAtMonthBoundary = start.isSame(start.startOf('month'), 'day')
+        const isEndAtMonthBoundary = end.isSame(end.endOf('month'), 'day')
+        const spanMonths = end.startOf('month').diff(start.startOf('month'), 'month') + 1
+        const isValidSpan = spanMonths >= 1 && spanMonths <= EXPORT_MAX_SPAN_MONTHS
+
+        if (!isStartAtMonthBoundary || !isEndAtMonthBoundary || !isValidSpan) {
+            message.warning(`Select a FULL range of 1–${EXPORT_MAX_SPAN_MONTHS} months (month boundaries).`)
+            return null
+        }
+
+        const reportData = await buildConsolidatedMeProgramReport({
+            programId: isAllPrograms ? undefined : activeProgramId,
+            reportTitleDepartmentName: 'M&E (Consolidated)',
+            period: {
+                month: start.month() + 1,
+                year: start.year(),
+                spanMonths
+            },
+            meta: {
+                preparedBy: (user as any)?.name || (user as any)?.email || '—'
+            }
+        })
+
+        return { reportData, spanMonths, start, end }
+    }
+
     const handleExportProgrammeSummary = async () => {
         try {
-            // must be specific program, not all
-            if (isAllPrograms || !activeProgramId) {
-                message.error('Select a specific program first.')
-                return
-            }
-
-            if (!isMainDept) {
-                message.error('Only main departments can export a programme summary.')
-                return
-            }
-
-            const start = range[0].startOf('day')
-            const end = range[1].endOf('day')
-
-            const isStartAtMonthBoundary = start.isSame(start.startOf('month'), 'day')
-            const isEndAtMonthBoundary = end.isSame(end.endOf('month'), 'day')
-            const spanMonths = end.startOf('month').diff(start.startOf('month'), 'month') + 1
-            const isValidSpan = spanMonths >= 1 && spanMonths <= 3
-
-            if (!isStartAtMonthBoundary || !isEndAtMonthBoundary || !isValidSpan) {
-                message.warning('Select a FULL range of 1–3 months (month boundaries).')
-                return
-            }
-
             setExporting(true)
 
-            const reportData = await buildConsolidatedMeProgramReport({
-                programId: activeProgramId,
-                reportTitleDepartmentName: 'M&E (Consolidated)',
-                period: {
-                    month: start.month() + 1,
-                    year: start.year(),
-                    spanMonths: spanMonths as 1 | 2 | 3
-                },
-                meta: {
-                    preparedBy: (user as any)?.name || (user as any)?.email || '—'
-                }
-            })
+            const built = await buildProgrammeSummaryReportData()
+            if (!built) return
+            const { reportData, spanMonths, start, end } = built
 
             const fileLabel =
                 spanMonths === 1
@@ -335,7 +393,7 @@ const MonitoringReports: React.FC = () => {
                     : `${start.format('MMM-YYYY')}_to_${end.format('MMM-YYYY')}`
 
             await exportMonthlyDepartmentReportDocx(reportData, {
-                filenameBase: `M&E-Programme-Consolidated-${fileLabel}-${spanMonths === 3 ? 'Quarterly' : 'Monthly'}-Report`
+                filenameBase: `M&E-Programme-Consolidated-${fileLabel}-${exportSpanLabel(spanMonths)}-Report`
             })
 
             message.success('Programme summary exported.')
@@ -344,6 +402,23 @@ const MonitoringReports: React.FC = () => {
             message.error('Failed to export programme summary.')
         } finally {
             setExporting(false)
+        }
+    }
+
+    const handlePlayProgrammeSummary = async () => {
+        try {
+            setPlayerLoading(true)
+
+            const built = await buildProgrammeSummaryReportData({ allowAllPrograms: true })
+            if (!built) return
+
+            setPlayerData(built.reportData)
+            setPlayerOpen(true)
+        } catch (err) {
+            console.error(err)
+            message.error('Failed to build the programme story.')
+        } finally {
+            setPlayerLoading(false)
         }
     }
 
@@ -365,10 +440,10 @@ const MonitoringReports: React.FC = () => {
             const isStartAtMonthBoundary = start.isSame(start.startOf('month'), 'day')
             const isEndAtMonthBoundary = end.isSame(end.endOf('month'), 'day')
             const spanMonths = end.startOf('month').diff(start.startOf('month'), 'month') + 1
-            const isValidSpan = spanMonths >= 1 && spanMonths <= 3
+            const isValidSpan = spanMonths >= 1 && spanMonths <= EXPORT_MAX_SPAN_MONTHS
 
             if (!isStartAtMonthBoundary || !isEndAtMonthBoundary || !isValidSpan) {
-                message.warning('Select a FULL range of 1-3 months (month boundaries).')
+                message.warning(`Select a FULL range of 1–${EXPORT_MAX_SPAN_MONTHS} months (month boundaries).`)
                 return
             }
 
@@ -379,7 +454,7 @@ const MonitoringReports: React.FC = () => {
                 period: {
                     month: start.month() + 1,
                     year: start.year(),
-                    spanMonths: spanMonths as 1 | 2 | 3
+                    spanMonths
                 },
                 preparedBy: (user as any)?.name || (user as any)?.email || 'Lepharo / ROM Department'
             })
@@ -410,77 +485,74 @@ const MonitoringReports: React.FC = () => {
                 <LoadingOverlay tip='Loading Departmental Analytics' />
             )}
             <>
-                <MotionCard
-                    filterBarProps={{
-                        padding: 8,
-                        marginBottom: 0,
-                        background: '#f8fafc',
-                        style: { overflow: 'hidden' }
-                    }}
-                    filterBar={
-                        <Space
-                            size={12}
-                            align='center'
-                            wrap={false}
-                            style={{
-                                width: '100%',
-                                justifyContent: 'space-between',
-                                gap: 16,
-                                overflowX: 'auto',
-                                overflowY: 'hidden',
-                                padding: '0 4px',
-                                flexWrap: 'nowrap'
-                            }}
-                        >
-                            <Space size={6} align='center' style={{ flex: '1 1 260px', minWidth: 210 }}>
-                                <Text type='secondary' style={{ fontSize: 12 }}>Department</Text>
+                <DashboardFilterBar>
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            width: '100%',
+                            minWidth: 0,
+                            overflowX: 'auto'
+                        }}
+                    >
+                        <div style={{ flex: '1 1 0', minWidth: 180 }}>
+                            <Select
+                                size='large'
+                                value={selectedDepartmentId}
+                                onChange={value => setSelectedDepartmentId(value)}
+                                options={departmentOptions}
+                                style={{ width: '100%' }}
+                                disabled={view === 'Incubatees'}
+                            />
+                        </div>
+                        {isMultiBranch && (
+                            <div style={{ flex: '0.8 1 0', minWidth: 150 }}>
                                 <Select
-                                    size='small'
-                                    value={selectedDepartmentId}
-                                    onChange={value => setSelectedDepartmentId(value)}
-                                    options={departmentOptions}
-                                    style={{ flex: 1, minWidth: 140 }}
-                                    disabled={view === 'Incubatees'}
+                                    size='large'
+                                    value={selectedBranch}
+                                    onChange={value => setSelectedBranch(value)}
+                                    options={branchOptions}
+                                    style={{ width: '100%' }}
                                 />
-                            </Space>
-                            {isMultiBranch && (
-                                <Space size={6} align='center' style={{ flex: '1 1 190px', minWidth: 160 }}>
-                                    <Text type='secondary' style={{ fontSize: 12 }}>Branch</Text>
-                                    <Select
-                                        size='small'
-                                        value={selectedBranch}
-                                        onChange={value => setSelectedBranch(value)}
-                                        options={branchOptions}
-                                        style={{ flex: 1, minWidth: 110 }}
-                                    />
-                                </Space>
-                            )}
-                            <Space size={6} align='center' style={{ flex: '1 1 330px', minWidth: 285 }}>
-                                <Text type='secondary' style={{ fontSize: 12 }}>Period</Text>
-                                <RangePicker
-                                    size='small'
-                                    value={range}
-                                    onChange={v => v && setRange(v as [Dayjs, Dayjs])}
-                                    presets={[
-                                        { label: 'This Month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
-                                        { label: 'This Quarter', value: getFiscalQuarterRange() },
-                                        { label: 'YTD', value: getFiscalYtdRange() }
-                                    ]}
-                                    style={{ flex: 1, minWidth: 240 }}
-                                    allowClear={false}
-                                />
-                            </Space>
+                            </div>
+                        )}
+                        <div style={{ flex: '1.3 1 0', minWidth: 260 }}>
+                            <RangePicker
+                                size='large'
+                                value={range}
+                                onChange={v => v && setRange(v as [Dayjs, Dayjs])}
+                                presets={[
+                                    { label: 'This Month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
+                                    { label: 'This Quarter', value: getFiscalQuarterRange() },
+                                    { label: 'YTD', value: getFiscalYtdRange() },
+                                    { label: 'Last 12 Months', value: [dayjs().subtract(11, 'month').startOf('month'), dayjs().endOf('month')] },
+                                    { label: 'This Year', value: [dayjs().startOf('year'), dayjs().endOf('year')] }
+                                ]}
+                                style={{ width: '100%' }}
+                                allowClear={false}
+                            />
+                        </div>
 
-                            <Space size={8} align='center' style={{ flex: '0 0 auto' }}>
-                                <Segmented
-                                    size='small'
-                                    value={view}
-                                    onChange={v => setView(v as any)}
-                                    options={['Interventions', 'Incubatees', 'Facilitators', 'Risk']}
-                                />
-                                {isMainDept && (
+                        <div style={{ flex: '0 0 auto' }}>
+                            <Segmented
+                                className='nav-pill-segmented'
+                                value={view}
+                                onChange={v => setView(v as any)}
+                                options={[
+                                    { value: 'Interventions', label: 'Interventions', icon: <BarChartOutlined /> },
+                                    { value: 'Incubatees', label: 'Incubatees', icon: <TeamOutlined /> },
+                                    { value: 'Facilitators', label: 'Facilitators', icon: <SolutionOutlined /> },
+                                    { value: 'Risk', label: 'Risk', icon: <WarningOutlined /> }
+                                ]}
+                            />
+                        </div>
+                        {isMainDept && (
+                            <div style={{ flex: '0 0 auto' }}>
+                                <Space.Compact>
                                     <Button
-                                        size='small'
+                                        size='large'
+                                        shape='round'
                                         type='primary'
                                         icon={<FileTextOutlined />}
                                         loading={exporting}
@@ -489,11 +561,20 @@ const MonitoringReports: React.FC = () => {
                                     >
                                         Reports
                                     </Button>
-                                )}
-                            </Space>
-                        </Space>
-                    }
-                />
+                                    <Button
+                                        size='large'
+                                        shape='round'
+                                        icon={<PlayCircleOutlined />}
+                                        loading={playerLoading}
+                                        onClick={() => void handlePlayProgrammeSummary()}
+                                    >
+                                        Play
+                                    </Button>
+                                </Space.Compact>
+                            </div>
+                        )}
+                    </div>
+                </DashboardFilterBar>
 
                 {view === 'Interventions' && (
                     <div style={{ marginTop: 16 }}>
@@ -697,6 +778,14 @@ const MonitoringReports: React.FC = () => {
                         </Col>
                     </Row>
                 </Modal>
+
+                <MonitoringReportPlayer
+                    dark={isDark}
+                    open={playerOpen}
+                    onClose={() => setPlayerOpen(false)}
+                    data={playerData}
+                    rangeLabel={`${range[0].format('D MMM YYYY')} – ${range[1].format('D MMM YYYY')}`}
+                />
             </>
         </div>
     )

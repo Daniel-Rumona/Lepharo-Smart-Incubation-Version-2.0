@@ -407,30 +407,8 @@ html[data-theme="dark"] .driver-popover.lph-guide-popover .driver-popover-arrow-
     border-bottom-color: rgba(31, 36, 45, 0.98) !important;
 }
 
-/* Calendar chrome (styles/calender.css). The FullCalendar variables above cover
-   the grid itself; these are the toolbar and lane surfaces it paints directly. */
-html[data-theme="dark"] .smart-calendar-segmented {
-    background: rgba(255, 255, 255, 0.05) !important;
-}
-
-html[data-theme="dark"] .smart-calendar-shell .fc .fc-button {
-    background: var(--app-surface-raised) !important;
-    border-color: var(--app-border) !important;
-    color: var(--app-text) !important;
-}
-
-html[data-theme="dark"] .smart-calendar-shell .fc .fc-button:hover {
-    background: rgba(255, 255, 255, 0.09) !important;
-}
-
-html[data-theme="dark"] .smart-calendar-shell .fc .fc-timegrid-slot-lane {
-    background: var(--app-surface) !important;
-}
-
-html[data-theme="dark"] .smart-pill-gold {
-    background: var(--app-wash-warning) !important;
-    color: #ffc95c !important;
-}
+/* Calendar chrome (styles/calender.css) is built entirely on the --app-*
+   tokens above, so it needs no dark-mode overrides of its own. */
 
 html[data-theme="dark"] .notice-card--important .notice-card__pin {
     background: var(--app-wash-warning) !important;

@@ -99,6 +99,7 @@ type SourceType = 'applications' | 'interventions' | 'metrics'
 type FieldType = 'string' | 'number' | 'date' | 'enum'
 type Unit = 'count' | 'ZAR' | 'percent'
 type TargetPeriodType = 'monthly' | 'quarterly'
+type KpiKind = 'numeric' | 'qualitative'
 type SharedKpiMode = 'allocated' | 'collaborative'
 type CountMode = 'records' | 'distinct'
 
@@ -209,6 +210,10 @@ interface KPI {
 
     trackingMode?: 'computed' | 'manual' | null
     reminderCadence?: TargetPeriodType | null
+
+    kpiKind?: KpiKind
+    deliverable?: string | null
+    measurementIndicator?: string | null
 }
 
 interface KpiTargetDoc {
@@ -726,6 +731,10 @@ const KPIManager: React.FC = () => {
     const leadDepartmentId = Form.useWatch('leadDepartmentId', { form, preserve: true }) as string | undefined
     const appliesToAllPrograms = Form.useWatch('appliesToAllPrograms', form) as boolean | undefined
     const kpiLabel = Form.useWatch('kpiLabel', form) as string | undefined
+    const kpiKind = (Form.useWatch('kpiKind', form) as KpiKind | undefined) || 'numeric'
+    const deliverable = Form.useWatch('deliverable', form) as string | undefined
+    const measurementIndicator = Form.useWatch('measurementIndicator', form) as string | undefined
+    const qualitativeFrequency = (Form.useWatch('qualitativeFrequency', form) as TargetPeriodType | undefined) || 'monthly'
     const selectedSourceType = Form.useWatch('sourceType', form) as SourceType | undefined
     const selectedUnit = Form.useWatch('unit', form) as Unit | undefined
     const selectedDisplayKpiType = Form.useWatch('displayKpiType', form) as DisplayKpiType | undefined
@@ -2064,6 +2073,10 @@ const KPIManager: React.FC = () => {
                 kpiLabel: kpi.kpiLabel,
                 unit: kpi.unit,
                 description: kpi.description || '',
+                kpiKind: kpi.kpiKind || 'numeric',
+                deliverable: kpi.deliverable || '',
+                measurementIndicator: kpi.measurementIndicator || '',
+                qualitativeFrequency: kpi.reminderCadence || 'monthly',
                 sourceType: kpi.sourceType,
                 countMode: kpi.countMode || 'records',
                 displayKpiType,
@@ -2098,6 +2111,10 @@ const KPIManager: React.FC = () => {
                 kpiLabel: '',
                 unit: 'count',
                 description: '',
+                kpiKind: 'numeric',
+                deliverable: '',
+                measurementIndicator: '',
+                qualitativeFrequency: 'monthly',
                 sourceType: undefined,
                 displayKpiType: undefined,
                 countMode: 'records',
@@ -2123,14 +2140,36 @@ const KPIManager: React.FC = () => {
     const handleSubmit = async (values: any) => {
         setSaving(true)
         try {
-            validateConfig(values)
+            const isQualitative = values.kpiKind === 'qualitative'
+            if (isQualitative) {
+                if (!values.deliverable) throw new Error('Please describe the deliverable')
+                if (!values.measurementIndicator) throw new Error('Please describe how this is measured')
+                if (!values.appliesToAllPrograms && !activeProgramId) {
+                    throw new Error('Please select an active program first or mark this KPI as All Programs')
+                }
+                if (
+                    canControlContributors &&
+                    !values.belongsToMe &&
+                    (!Array.isArray(values.contributorDepartmentIds) || values.contributorDepartmentIds.length === 0)
+                ) {
+                    throw new Error('Please select the contributing departments')
+                }
+                if (!values.belongsToMe && (!values.leadDepartmentId || !values.contributorDepartmentIds?.includes(values.leadDepartmentId))) {
+                    throw new Error('Choose a lead department from the contributing departments')
+                }
+                if (!values.belongsToMe && values.sharedKpiMode === 'collaborative') {
+                    throw new Error('Collaborative outcomes track required interventions per department, which a qualitative deliverable does not have - use Allocated contribution instead')
+                }
+            } else {
+                validateConfig(values)
+            }
 
             const st = values.sourceType as SourceType
             const displayType = values.displayKpiType as DisplayKpiType
             const calc: CalculationType = st === 'metrics' && displayType === 'total_number'
                 ? 'sum'
                 : mapDisplayTypeToCalculationType(displayType)
-            const cfg = SOURCE_CONFIGS[st]
+            const cfg = st ? SOURCE_CONFIGS[st] : undefined
 
             const resolvedBelongsToMe = canControlContributors ? !!values.belongsToMe : true
 
@@ -2167,7 +2206,7 @@ const KPIManager: React.FC = () => {
                     }
                 })
 
-            const payload: any = {
+            const sharedOwnershipFields = {
                 programId: values.appliesToAllPrograms ? null : (activeProgramId || null),
                 appliesToAllPrograms: !!values.appliesToAllPrograms,
                 belongsToMe: resolvedBelongsToMe,
@@ -2176,38 +2215,66 @@ const KPIManager: React.FC = () => {
                 leadDepartmentName: resolvedBelongsToMe ? (user?.departmentName || null) : (values.leadDepartmentName || values.department || null),
                 department: values.department,
                 kpiLabel: values.kpiLabel,
-                unit: values.unit,
                 description: editingKPI?.description || '',
-                sourceType: st,
-                sourceCollection: cfg.collection,
-                countMode: calc === 'count' ? (values.countMode || 'records') : null,
-                dateField: 'createdAt',
-                displayKpiType: displayType,
-                calculationType: calc,
-                filters: displayType === 'percentage' ? [] : (Array.isArray(values.filters) ? values.filters : []),
-                field: displayType === 'total_amount' || displayType === 'average' || (st === 'metrics' && displayType === 'total_number') ? values.field : null,
-                numerator: displayType === 'percentage'
-                    ? {
-                        calculationType: values.numeratorMode,
-                        field: values.numeratorMode === 'count_records' ? null : values.numeratorField,
-                        filters: Array.isArray(values.numeratorFilters) ? values.numeratorFilters : []
-                    }
-                    : null,
-                denominator: displayType === 'percentage'
-                    ? {
-                        calculationType: values.denominatorMode,
-                        field: values.denominatorMode === 'count_records' ? null : values.denominatorField,
-                        filters: Array.isArray(values.denominatorFilters) ? values.denominatorFilters : []
-                    }
-                    : null,
                 contributorDepartmentIds,
                 contributorDepartmentNames,
                 sharedContributors,
-                interventionIds: st === 'interventions' && Array.isArray(values.interventionIds) ? values.interventionIds : [],
                 createdAt: editingKPI?.createdAt ?? new Date(),
                 updatedAt: new Date(),
                 active: true
             }
+
+            const payload: any = isQualitative
+                ? {
+                    ...sharedOwnershipFields,
+                    unit: 'count',
+                    kpiKind: 'qualitative',
+                    deliverable: values.deliverable,
+                    measurementIndicator: values.measurementIndicator,
+                    sourceType: null,
+                    sourceCollection: null,
+                    countMode: null,
+                    dateField: null,
+                    displayKpiType: null,
+                    calculationType: 'count',
+                    filters: [],
+                    field: null,
+                    numerator: null,
+                    denominator: null,
+                    interventionIds: [],
+                    trackingMode: 'manual',
+                    reminderCadence: values.qualitativeFrequency === 'quarterly' ? 'quarterly' : 'monthly'
+                }
+                : {
+                    ...sharedOwnershipFields,
+                    unit: values.unit,
+                    kpiKind: 'numeric',
+                    deliverable: null,
+                    measurementIndicator: null,
+                    sourceType: st,
+                    sourceCollection: cfg?.collection,
+                    countMode: calc === 'count' ? (values.countMode || 'records') : null,
+                    dateField: 'createdAt',
+                    displayKpiType: displayType,
+                    calculationType: calc,
+                    filters: displayType === 'percentage' ? [] : (Array.isArray(values.filters) ? values.filters : []),
+                    field: displayType === 'total_amount' || displayType === 'average' || (st === 'metrics' && displayType === 'total_number') ? values.field : null,
+                    numerator: displayType === 'percentage'
+                        ? {
+                            calculationType: values.numeratorMode,
+                            field: values.numeratorMode === 'count_records' ? null : values.numeratorField,
+                            filters: Array.isArray(values.numeratorFilters) ? values.numeratorFilters : []
+                        }
+                        : null,
+                    denominator: displayType === 'percentage'
+                        ? {
+                            calculationType: values.denominatorMode,
+                            field: values.denominatorMode === 'count_records' ? null : values.denominatorField,
+                            filters: Array.isArray(values.denominatorFilters) ? values.denominatorFilters : []
+                        }
+                        : null,
+                    interventionIds: st === 'interventions' && Array.isArray(values.interventionIds) ? values.interventionIds : []
+                }
 
             let kpiId = editingKPI?.id
             let auditKpi: KPI
@@ -2265,7 +2332,9 @@ const KPIManager: React.FC = () => {
                     : basicStage === 'scope'
                         ? ['appliesToAllPrograms']
                         : ['department', 'kpiLabel', 'unit', 'appliesToAllPrograms'],
-            1: selectedSourceType === 'interventions' ? ['sourceType', 'interventionIds'] : ['sourceType'],
+            1: kpiKind === 'qualitative'
+                ? ['deliverable', 'measurementIndicator', 'qualitativeFrequency']
+                : selectedSourceType === 'interventions' ? ['sourceType', 'interventionIds'] : ['sourceType'],
             2: [],
             3: selectedDisplayKpiType === 'total_number'
                 ? resolvedSourceType === 'metrics'
@@ -2275,7 +2344,7 @@ const KPIManager: React.FC = () => {
             4: ['periodType', 'periodKey', 'target'],
             5: []
         }
-    }, [basicStage, selectedSourceType, resolvedSourceType, canControlContributors, belongsToMe, selectedDisplayKpiType])
+    }, [basicStage, kpiKind, selectedSourceType, resolvedSourceType, canControlContributors, belongsToMe, selectedDisplayKpiType])
 
     const validateStep = async (s: number) => {
         if (s === 0 && basicStage === 'scope' && !scopeSelected) {
@@ -2303,6 +2372,14 @@ const KPIManager: React.FC = () => {
             }
             if (step === 0 && basicStage === 'scope') {
                 setBasicStage('identity')
+                return
+            }
+            // Qualitative KPIs have nothing to configure in the source/
+            // conditions/calculation steps - the deliverable step (1) goes
+            // straight to review.
+            if (step === 1 && kpiKind === 'qualitative') {
+                setReturnToReview(false)
+                setStep(5)
                 return
             }
             if (returnToReview) {
@@ -2358,6 +2435,10 @@ const KPIManager: React.FC = () => {
             form.resetFields()
             resetWizard()
             setAddKpiFlowVisible(true)
+            return
+        }
+        if (step === 5 && kpiKind === 'qualitative') {
+            setStep(1)
             return
         }
         setReturnToReview(false)
@@ -2446,14 +2527,29 @@ const KPIManager: React.FC = () => {
             ? selectedPeriodKey.format(selectedPeriodType === 'quarterly' ? '[Q]Q YYYY' : 'MMMM YYYY')
             : '-'
 
+        const ownershipSection = {
+            step: 0,
+            title: 'Ownership, scope & identity',
+            icon: <ProjectOutlined style={{ color: '#1677ff' }} />,
+            background: 'rgba(22,119,255,.12)',
+            summary: `${kpiLabel || 'Untitled KPI'} • ${kpiKind === 'qualitative' ? 'Deliverable' : getUnitLabel(selectedUnit)} • ${scopeLabel} • ${ownershipSummary}`
+        }
+
+        if (kpiKind === 'qualitative') {
+            return [
+                ownershipSection,
+                {
+                    step: 1,
+                    title: 'Deliverable',
+                    icon: <CheckCircleOutlined style={{ color: '#13a8a8' }} />,
+                    background: 'rgba(19,168,168,.12)',
+                    summary: `${deliverable || 'Not set'} • ${qualitativeFrequency === 'quarterly' ? 'Quarterly' : 'Monthly'}`
+                }
+            ]
+        }
+
         return [
-            {
-                step: 0,
-                title: 'Ownership, scope & identity',
-                icon: <ProjectOutlined style={{ color: '#1677ff' }} />,
-                background: 'rgba(22,119,255,.12)',
-                summary: `${kpiLabel || 'Untitled KPI'} • ${getUnitLabel(selectedUnit)} • ${scopeLabel} • ${ownershipSummary}`
-            },
+            ownershipSection,
             {
                 step: 1,
                 title: 'What is measured',
@@ -2486,7 +2582,7 @@ const KPIManager: React.FC = () => {
             }
         ]
     }, [
-        kpiLabel, selectedUnit, appliesToAllPrograms, belongsToMe, sharedKpiMode, selectedDepartment,
+        kpiLabel, kpiKind, deliverable, qualitativeFrequency, selectedUnit, appliesToAllPrograms, belongsToMe, sharedKpiMode, selectedDepartment,
         resolvedSourceType, selectedInterventionIds, filters, selectedDisplayKpiType, selectedCountMode,
         selectedField, numeratorMode, denominatorMode, selectedNumeratorField, selectedDenominatorField,
         selectedPeriodType, selectedPeriodKey, selectedTarget
@@ -2920,23 +3016,31 @@ const KPIManager: React.FC = () => {
                                             {[
                                                 ...(isMainDept ? [{ label: 'Department', value: compactDepartmentLabel(selectedKpi.department), tooltip: selectedKpi.department, icon: <ApartmentOutlined />, color: '#722ed1', background: 'rgba(114,46,209,.10)' }] : []),
                                                 { label: 'Ownership', value: selectedKpi.belongsToMe !== false ? 'Owned by you' : 'Shared KPI', icon: <TeamOutlined />, color: '#13a8a8', background: 'rgba(19,168,168,.10)' },
-                                                { label: 'Source', value: prettySourceLabel(selectedKpi.sourceType), icon: <DatabaseOutlined />, color: '#1677ff', background: 'rgba(22,119,255,.10)' },
-                                                { label: 'Calculation', value: getKpiTypeLabel(selectedKpi), icon: <BarChartOutlined />, color: '#1677ff', background: 'rgba(22,119,255,.10)' },
-                                                { label: 'Unit', value: getUnitLabel(selectedKpi.unit), icon: <LineChartOutlined />, color: selectedKpi.unit === 'percent' ? '#722ed1' : selectedKpi.unit === 'ZAR' ? '#52c41a' : '#1677ff', background: selectedKpi.unit === 'percent' ? 'rgba(114,46,209,.10)' : selectedKpi.unit === 'ZAR' ? 'rgba(82,196,26,.10)' : 'rgba(22,119,255,.10)' },
-                                                { label: 'Committed target', value: selectedKpi.latestTarget ?? 'Not set', icon: <AimOutlined />, color: '#fa8c16', background: 'rgba(250,140,22,.10)' },
-                                                { label: 'Target period', value: selectedKpi.latestTargetPeriodKey || 'Not set', icon: <CalendarOutlined />, color: '#fa8c16', background: 'rgba(250,140,22,.10)' },
-                                                { label: 'Conditions', value: selectedKpi.filters?.length ? `${selectedKpi.filters.length} condition${selectedKpi.filters.length === 1 ? '' : 's'}` : 'All matching records', icon: <FilterOutlined />, color: '#d48806', background: 'rgba(250,173,20,.12)', tooltip: prettyFilters(selectedKpi.filters || [], selectedKpi.sourceType) }
+                                                ...(selectedKpi.kpiKind === 'qualitative'
+                                                    ? [
+                                                        { label: 'Deliverable', value: selectedKpi.deliverable || 'Not set', tooltip: selectedKpi.deliverable, icon: <CheckCircleOutlined />, color: '#13a8a8', background: 'rgba(19,168,168,.10)' },
+                                                        { label: 'Measured by', value: selectedKpi.measurementIndicator || 'Not set', tooltip: selectedKpi.measurementIndicator, icon: <AimOutlined />, color: '#13a8a8', background: 'rgba(19,168,168,.10)' },
+                                                        { label: 'Frequency', value: selectedKpi.reminderCadence === 'quarterly' ? 'Quarterly' : 'Monthly', icon: <CalendarOutlined />, color: '#fa8c16', background: 'rgba(250,140,22,.10)' }
+                                                    ]
+                                                    : [
+                                                        { label: 'Source', value: prettySourceLabel(selectedKpi.sourceType), icon: <DatabaseOutlined />, color: '#1677ff', background: 'rgba(22,119,255,.10)' },
+                                                        { label: 'Calculation', value: getKpiTypeLabel(selectedKpi), icon: <BarChartOutlined />, color: '#1677ff', background: 'rgba(22,119,255,.10)' },
+                                                        { label: 'Unit', value: getUnitLabel(selectedKpi.unit), icon: <LineChartOutlined />, color: selectedKpi.unit === 'percent' ? '#722ed1' : selectedKpi.unit === 'ZAR' ? '#52c41a' : '#1677ff', background: selectedKpi.unit === 'percent' ? 'rgba(114,46,209,.10)' : selectedKpi.unit === 'ZAR' ? 'rgba(82,196,26,.10)' : 'rgba(22,119,255,.10)' },
+                                                        { label: 'Committed target', value: selectedKpi.latestTarget ?? 'Not set', icon: <AimOutlined />, color: '#fa8c16', background: 'rgba(250,140,22,.10)' },
+                                                        { label: 'Target period', value: selectedKpi.latestTargetPeriodKey || 'Not set', icon: <CalendarOutlined />, color: '#fa8c16', background: 'rgba(250,140,22,.10)' },
+                                                        { label: 'Conditions', value: selectedKpi.filters?.length ? `${selectedKpi.filters.length} condition${selectedKpi.filters.length === 1 ? '' : 's'}` : 'All matching records', icon: <FilterOutlined />, color: '#d48806', background: 'rgba(250,173,20,.12)', tooltip: prettyFilters(selectedKpi.filters || [], selectedKpi.sourceType) }
+                                                    ])
                                             ].map(item => (
                                                 <Col xs={24} sm={12} xl={8} key={item.label}>
                                                     <Tooltip title={item.tooltip}>
                                                         <Card size='small' style={{ height: '100%', borderRadius: 10, background: token.colorFillAlter }} bodyStyle={{ padding: '10px 12px' }}>
-                                                            <Space size={9} align='center'>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', minWidth: 0 }}>
                                                                 <MotionCard.IconChip size={30} bg={item.background} icon={React.cloneElement(item.icon, { style: { color: item.color } })} />
-                                                                <div>
+                                                                <div style={{ minWidth: 0, flex: 1 }}>
                                                                     <Text type='secondary' style={{ display: 'block', fontSize: 11, lineHeight: 1.2 }}>{item.label}</Text>
                                                                     <Text strong ellipsis={{ tooltip: String(item.value) }} style={{ display: 'block', fontSize: 13, marginTop: 2 }}>{item.value}</Text>
                                                                 </div>
-                                                            </Space>
+                                                            </div>
                                                         </Card>
                                                     </Tooltip>
                                                 </Col>
@@ -3037,13 +3141,19 @@ const KPIManager: React.FC = () => {
                                 What would you like to update?
                             </Text>
                             <Row gutter={[12, 12]}>
-                                {[
-                                    { step: 0, title: 'Ownership, scope & identity', detail: 'Ownership, program scope, title, and unit.', icon: <ProjectOutlined style={{ color: '#1677ff' }} />, background: 'rgba(22,119,255,.12)' },
-                                    { step: 1, title: 'What is measured', detail: 'Source and interventions.', icon: <FilterOutlined style={{ color: '#52c41a' }} />, background: 'rgba(82,196,26,.12)' },
-                                    { step: 2, title: 'Conditions', detail: 'Narrow this KPI to a subset of records.', icon: <FilterOutlined style={{ color: '#13c2c2' }} />, background: 'rgba(19,194,194,.12)' },
-                                    { step: 3, title: 'Calculation', detail: 'Counting, value, or percentage setup.', icon: <BarChartOutlined style={{ color: '#722ed1' }} />, background: 'rgba(114,46,209,.12)' },
-                                    { step: 4, title: 'Manage targets', detail: 'Plan future targets or revise a committed one.', icon: <CalendarOutlined style={{ color: '#fa8c16' }} />, background: 'rgba(250,140,22,.12)' }
-                                ].map(option => {
+                                {(editingKPI?.kpiKind === 'qualitative'
+                                    ? [
+                                        { step: 0, title: 'Ownership, scope & identity', detail: 'Ownership, program scope, title, and unit.', icon: <ProjectOutlined style={{ color: '#1677ff' }} />, background: 'rgba(22,119,255,.12)' },
+                                        { step: 1, title: 'Deliverable', detail: 'What must be done, and how it is measured.', icon: <CheckCircleOutlined style={{ color: '#13a8a8' }} />, background: 'rgba(19,168,168,.12)' }
+                                    ]
+                                    : [
+                                        { step: 0, title: 'Ownership, scope & identity', detail: 'Ownership, program scope, title, and unit.', icon: <ProjectOutlined style={{ color: '#1677ff' }} />, background: 'rgba(22,119,255,.12)' },
+                                        { step: 1, title: 'What is measured', detail: 'Source and interventions.', icon: <FilterOutlined style={{ color: '#52c41a' }} />, background: 'rgba(82,196,26,.12)' },
+                                        { step: 2, title: 'Conditions', detail: 'Narrow this KPI to a subset of records.', icon: <FilterOutlined style={{ color: '#13c2c2' }} />, background: 'rgba(19,194,194,.12)' },
+                                        { step: 3, title: 'Calculation', detail: 'Counting, value, or percentage setup.', icon: <BarChartOutlined style={{ color: '#722ed1' }} />, background: 'rgba(114,46,209,.12)' },
+                                        { step: 4, title: 'Manage targets', detail: 'Plan future targets or revise a committed one.', icon: <CalendarOutlined style={{ color: '#fa8c16' }} />, background: 'rgba(250,140,22,.12)' }
+                                    ]
+                                ).map(option => {
                                     const choiceKey = `edit-step-${option.step}`
                                     const hovered = hoveredChoice === choiceKey
                                     return (
@@ -3281,6 +3391,61 @@ const KPIManager: React.FC = () => {
                                     )}
 
                                     {basicStage === 'identity' && String(kpiLabel || '').trim().length >= 1 && (
+                                        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }} style={{ marginBottom: 20 }}>
+                                            <Text type='secondary' style={{ display: 'block', textAlign: 'center', fontSize: 14, fontWeight: 600 }}>
+                                                How will this be measured?
+                                            </Text>
+                                            <Row gutter={[12, 12]} style={{ marginTop: 8 }}>
+                                                {[
+                                                    { value: 'numeric' as KpiKind, title: 'A number', detail: 'Count, amount, or percentage against a target.', icon: <NumberOutlined style={{ color: '#1677ff', fontSize: 20 }} />, background: 'rgba(22,119,255,.12)' },
+                                                    { value: 'qualitative' as KpiKind, title: 'A deliverable', detail: 'Done / not done each period - no numeric target.', icon: <CheckCircleOutlined style={{ color: '#13a8a8', fontSize: 20 }} />, background: 'rgba(19,168,168,.12)' }
+                                                ].map(option => {
+                                                    const selected = kpiKind === option.value
+                                                    const choiceKey = `kpi-kind-${option.value}`
+                                                    const hovered = hoveredChoice === choiceKey
+                                                    const choose = () => {
+                                                        form.setFieldsValue(
+                                                            option.value === 'qualitative'
+                                                                ? { kpiKind: 'qualitative', sourceType: undefined, displayKpiType: undefined, field: null, filters: [] }
+                                                                : { kpiKind: 'numeric' }
+                                                        )
+                                                    }
+                                                    return (
+                                                        <Col xs={24} sm={12} key={option.value}>
+                                                            <Card
+                                                                hoverable role='button' tabIndex={0}
+                                                                onClick={choose}
+                                                                onKeyDown={event => {
+                                                                    if (event.key !== 'Enter' && event.key !== ' ') return
+                                                                    event.preventDefault()
+                                                                    choose()
+                                                                }}
+                                                                onMouseEnter={() => setHoveredChoice(choiceKey)}
+                                                                onMouseLeave={() => setHoveredChoice(null)}
+                                                                style={{
+                                                                    cursor: 'pointer',
+                                                                    border: `2px solid ${selected ? token.colorPrimary : hovered ? token.colorPrimaryBorderHover : token.colorBorder}`,
+                                                                    background: selected ? token.colorPrimaryBg : hovered ? token.colorFillAlter : token.colorBgContainer,
+                                                                    boxShadow: selected || hovered ? token.boxShadowSecondary : token.boxShadowTertiary,
+                                                                    transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease'
+                                                                }}
+                                                            >
+                                                                <Space align='start' size={12}>
+                                                                    <MotionCard.IconChip size={40} bg={option.background} icon={option.icon} />
+                                                                    <div>
+                                                                        <Text strong style={{ display: 'block' }}>{option.title}</Text>
+                                                                        <Text type='secondary'>{option.detail}</Text>
+                                                                    </div>
+                                                                </Space>
+                                                            </Card>
+                                                        </Col>
+                                                    )
+                                                })}
+                                            </Row>
+                                        </motion.div>
+                                    )}
+
+                                    {basicStage === 'identity' && kpiKind === 'numeric' && String(kpiLabel || '').trim().length >= 1 && (
                                         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
                                             <Text type='secondary' style={{ display: 'block', textAlign: 'center', fontSize: 14, fontWeight: 600 }}>
                                                 Choose the reporting unit
@@ -3375,6 +3540,7 @@ const KPIManager: React.FC = () => {
                             </StepPanel>
 
                             <StepPanel visible={step === 1}>
+                            {kpiKind === 'numeric' && (<>
                                 <Form.Item name='sourceType' hidden rules={[{ required: true, message: 'Choose what you are measuring' }]}><Input /></Form.Item>
                                 <div style={{ width: '100%' }}>
                                     <Text type='secondary' style={{ display: 'block', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
@@ -3519,7 +3685,75 @@ const KPIManager: React.FC = () => {
                                         </Form.Item>
                                     )
                                 )}
+                            </>)}
 
+                            {kpiKind === 'qualitative' && (
+                                <div style={{ width: '100%' }}>
+                                    <Text type='secondary' style={{ display: 'block', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1.2, fontSize: 12 }}>
+                                        Step 2 of 6
+                                    </Text>
+                                    <Text strong style={{ display: 'block', textAlign: 'center', fontSize: 24, margin: '8px 0 24px', minHeight: 32 }}>
+                                        <KpiTypingPrompt text='What is the deliverable?' />
+                                    </Text>
+                                    <div style={{ maxWidth: 640, margin: '0 auto' }}>
+                                        <Form.Item
+                                            name='deliverable'
+                                            label='Deliverable'
+                                            rules={[{ required: true, message: 'Describe what must be done' }]}
+                                            extra='What has to be done each period, e.g. "Maintain a detailed Group A database with full business information and compliance status."'
+                                        >
+                                            <Input.TextArea autoFocus rows={3} placeholder='Describe the deliverable' />
+                                        </Form.Item>
+                                        <Form.Item
+                                            name='measurementIndicator'
+                                            label='Measurement indicator'
+                                            rules={[{ required: true, message: 'Describe how this is verified' }]}
+                                            extra='How you can tell it was done, e.g. "Updated database with complete MSME profiles and compliance tracking."'
+                                        >
+                                            <Input.TextArea rows={2} placeholder='Describe how success is verified' />
+                                        </Form.Item>
+                                        <Form.Item name='qualitativeFrequency' hidden rules={[{ required: true }]}><Input /></Form.Item>
+                                        <Text strong style={{ display: 'block', marginBottom: 8 }}>Frequency</Text>
+                                        <div style={{ marginBottom: 12 }}>
+                                            <Row gutter={[12, 12]}>
+                                                {[
+                                                    { value: 'monthly' as TargetPeriodType, title: 'Monthly', detail: 'Check this off every month.' },
+                                                    { value: 'quarterly' as TargetPeriodType, title: 'Quarterly', detail: 'Check this off every quarter.' }
+                                                ].map(option => {
+                                                    const selected = qualitativeFrequency === option.value
+                                                    const choiceKey = `qual-freq-${option.value}`
+                                                    const hovered = hoveredChoice === choiceKey
+                                                    const choose = () => form.setFieldsValue({ qualitativeFrequency: option.value })
+                                                    return (
+                                                        <Col xs={24} sm={12} key={option.value}>
+                                                            <Card
+                                                                hoverable role='button' tabIndex={0}
+                                                                onClick={choose}
+                                                                onKeyDown={event => {
+                                                                    if (event.key !== 'Enter' && event.key !== ' ') return
+                                                                    event.preventDefault()
+                                                                    choose()
+                                                                }}
+                                                                onMouseEnter={() => setHoveredChoice(choiceKey)}
+                                                                onMouseLeave={() => setHoveredChoice(null)}
+                                                                size='small'
+                                                                style={{
+                                                                    cursor: 'pointer',
+                                                                    border: `2px solid ${selected ? token.colorPrimary : hovered ? token.colorPrimaryBorderHover : token.colorBorder}`,
+                                                                    background: selected ? token.colorPrimaryBg : hovered ? token.colorFillAlter : token.colorBgContainer
+                                                                }}
+                                                            >
+                                                                <Text strong style={{ display: 'block' }}>{option.title}</Text>
+                                                                <Text type='secondary' style={{ fontSize: 12 }}>{option.detail}</Text>
+                                                            </Card>
+                                                        </Col>
+                                                    )
+                                                })}
+                                            </Row>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             </StepPanel>
 
                             <StepPanel visible={step === 2}>
@@ -4324,7 +4558,7 @@ const KPIManager: React.FC = () => {
                 onClose={() => setAddKpiFlowVisible(false)}
                 departments={departments}
                 defaultDepartmentId={user?.departmentId}
-                isMonitoring={isMonitoringDept}
+                isMonitoring={isMonitoringDept || isMainDept}
                 onManualConfigure={() => {
                     setAddKpiFlowVisible(false)
                     openModal()

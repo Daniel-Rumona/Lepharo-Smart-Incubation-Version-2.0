@@ -1,4 +1,5 @@
 export * from "./emailFunctions";
+export * from "./inquiryReferral";
 export {
   listAuthUsers,
   updateUserEmailCascade,
@@ -26,6 +27,7 @@ export * from "./kpiReminders";
 export * from "./revenueMetricsSync";
 export * from "./workflowQueryReminders";
 export * from "./movValidationReminders";
+export * from "./governanceMeetingReminders";
 export { onInquiryCreatedNotifyStaff } from "./emailInquiries";
 export * from "./pushNotifications";
 

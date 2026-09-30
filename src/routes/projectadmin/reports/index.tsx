@@ -23,6 +23,7 @@ import {
     ExpandOutlined,
     FileProtectOutlined,
     GlobalOutlined,
+    LineChartOutlined,
     TeamOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
@@ -40,9 +41,10 @@ import {
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
-import { MotionCard } from "@/components/dashboards/metrics/Header";
+import { DashboardFilterBar, MotionCard } from "@/components/dashboards/metrics/Header";
 import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
 import ReachAnalytics from "@/components/reports/ReachAnalytics";
+import ProjectAdminPerformance from "@/components/dashboards/projectadmin/ProjectAdminPerformance";
 import DeferredLegacyReportPanels from "./DeferredLegacyReportPanels";
 import { getCanonicalInterventionStatus } from "@/routes/operations/reports/monitoring/interventionStatus";
 import { rollupReportAssignments } from "@/utils/reportGroupAssignments";
@@ -60,6 +62,7 @@ import {
     type PageGuideRegistration,
 } from "@/components/guide-me";
 import isBetween from "dayjs/plugin/isBetween";
+import "@/styles/nav-segmented.css";
 
 dayjs.extend(isBetween);
 
@@ -224,7 +227,7 @@ type AssignedIntervention = {
     departmentName?: string;
 };
 
-type ViewMode = "interventions" | "applications" | "compliance" | "reach";
+type ViewMode = "interventions" | "applications" | "compliance" | "reach" | "performance";
 
 const INTERVENTION_STATUS_META = {
     assigned: { label: "Assigned", color: REPORT_CHART_COLORS.primary },
@@ -1843,91 +1846,80 @@ const ProjectAdminReports: React.FC = () => {
                 <title>Project Reports & Analytics</title>
             </Helmet>
 
-            <MotionCard
-                data-guide="project-report-filters"
-                filterBarProps={{
-                    padding: 12,
-                    marginBottom: 0,
-                    background: "#f8fafc",
-                    borderColor: "#e5edf8"
+            <DashboardFilterBar>  <div
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    width: "100%",
+                    minWidth: 0,
+                    overflowX: "auto",
                 }}
-                filterBar={
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                            width: "100%",
-                            minWidth: 0,
-                            overflowX: "auto",
-                        }}
-                    >
-                        {viewMode === "applications" ? (
-                            <div style={{ flex: "0.9 1 0", minWidth: 210 }}>
-                                <Select
-                                    size="small"
-                                    value={applicantScope}
-                                    onChange={setApplicantScope}
-                                    style={{ width: "100%" }}
-                                    options={[
-                                        { value: "all", label: "All Applicants" },
-                                        { value: "incubatees", label: "Incubatees (Accepted)" },
-                                    ]}
-                                />
-                            </div>
-                        ) : (
-                            <div style={{ flex: "0.9 1 0", minWidth: 210 }}>
-                                <Select
-                                    size="small"
-                                    value={selectedDepartment}
-                                    onChange={setSelectedDepartment}
-                                    style={{ width: "100%" }}
-                                    options={[
-                                        { value: "all", label: "All Departments" },
-                                        ...deptNames.slice().sort().map((name) => ({ value: name, label: name }))
-                                    ]}
-                                />
-                            </div>
-                        )}
-                        <div style={{ flex: "1.25 1 0", minWidth: 330 }}>
-                            <RangePicker
-                                size="small"
-                                allowClear={false}
-                                value={dateRange}
-                                presets={[
-                                    { label: "This Month", value: [dayjs().startOf("month"), dayjs().endOf("month")] },
-                                    { label: "This Quarter", value: fiscalQuarterRange() },
-                                    { label: "YTD", value: fiscalYtdRange() }
-                                ]}
-                                style={{ width: "100%" }}
-                                onChange={(vals) => {
-                                    if (!vals || !vals[0] || !vals[1]) {
-                                        setDateRange(DEFAULT_RANGE);
-                                        return;
-                                    }
-                                    setDateRange([vals[0], vals[1]]);
-                                }}
-                            />
-                        </div>
-                        <div style={{ flex: "1.8 1 0", minWidth: 560 }}>
-                            <Segmented<ViewMode>
-                                data-guide="project-report-segments"
-                                block
-                                size="small"
-                                value={viewMode}
-                                onChange={(v) => setViewMode(v as ViewMode)}
-                                options={[
-                                    { label: "Interventions", value: "interventions", icon: <BarChartOutlined /> },
-                                    { label: "Applicants", value: "applications", icon: <TeamOutlined /> },
-                                    { label: "Compliance", value: "compliance", icon: <FileProtectOutlined /> },
-                                    { label: "Reach", value: "reach", icon: <GlobalOutlined /> },
-                                ]}
-                            />
-                        </div>
+            >
+                {viewMode === "performance" ? null : viewMode === "applications" ? (
+                    <div style={{ flex: "1 1 0", minWidth: 170 }}>
+                        <Select
+                            size="large"
+                            value={applicantScope}
+                            onChange={setApplicantScope}
+                            style={{ width: "100%" }}
+                            options={[
+                                { value: "all", label: "All Applicants" },
+                                { value: "incubatees", label: "Incubatees (Accepted)" },
+                            ]}
+                        />
                     </div>
-                }
-                style={{ marginBottom: 12, padding: 0 }}
-            />
+                ) : (
+                    <div style={{ flex: "1 1 0", minWidth: 170 }}>
+                        <Select
+                            size="large"
+                            value={selectedDepartment}
+                            onChange={setSelectedDepartment}
+                            style={{ width: "100%" }}
+                            options={[
+                                { value: "all", label: "All Departments" },
+                                ...deptNames.slice().sort().map((name) => ({ value: name, label: name }))
+                            ]}
+                        />
+                    </div>
+                )}
+                <div style={{ flex: "1.4 1 0", minWidth: 280 }}>
+                    <RangePicker
+                        size="large"
+                        allowClear={false}
+                        value={dateRange}
+                        presets={[
+                            { label: "This Month", value: [dayjs().startOf("month"), dayjs().endOf("month")] },
+                            { label: "This Quarter", value: fiscalQuarterRange() },
+                            { label: "Year To Date", value: fiscalYtdRange() }
+                        ]}
+                        style={{ width: "100%" }}
+                        onChange={(vals) => {
+                            if (!vals || !vals[0] || !vals[1]) {
+                                setDateRange(DEFAULT_RANGE);
+                                return;
+                            }
+                            setDateRange([vals[0], vals[1]]);
+                        }}
+                    />
+                </div>
+                <div style={{ flex: "0 0 auto" }}>
+                    <Segmented<ViewMode>
+                        data-guide="project-report-segments"
+                        className="nav-pill-segmented"
+                        value={viewMode}
+                        onChange={(v) => setViewMode(v as ViewMode)}
+                        options={[
+                            { label: "Interventions", value: "interventions", icon: <BarChartOutlined /> },
+                            { label: "Applicants", value: "applications", icon: <TeamOutlined /> },
+                            { label: "Compliance", value: "compliance", icon: <FileProtectOutlined /> },
+                            { label: "Reach", value: "reach", icon: <GlobalOutlined /> },
+                            { label: "Performance", value: "performance", icon: <LineChartOutlined /> },
+                        ]}
+                    />
+                </div>
+            </div>
+            </DashboardFilterBar>
 
             {topError && (
                 <Alert
@@ -1939,7 +1931,9 @@ const ProjectAdminReports: React.FC = () => {
                 />
             )}
 
-            {loading ? (
+            {viewMode === "performance" ? (
+                <ProjectAdminPerformance programId={activeProgramId} dateRange={dateRange} />
+            ) : loading ? (
                 <LoadingOverlay tip="Loading Analytics" />
             ) : viewMode === "interventions" ? (
                 <>

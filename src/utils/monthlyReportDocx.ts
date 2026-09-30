@@ -128,6 +128,26 @@ export type MonthlyReportData = {
 
     beneficiaryStats?: BeneficiaryStats
 
+    /**
+     * Consolidated MOV packs (one per department per month) touching this period.
+     * "submitted" is every pack an HOD has submitted; "validated" is the subset
+     * M&E has signed off on (approvals include a validation/me_validation/me_signature step).
+     */
+    movStats?: {
+        /** MOV packs (one per department per month). */
+        submitted: number
+        validated: number
+        /** Individual MOVs (interventions) bundled across those packs. */
+        items: number
+        itemsValidated: number
+    }
+
+    /** Delivery totals by department, for a per-department summary rather than a raw row list. */
+    interventionsByDepartment?: Array<{ department: string; count: number }>
+
+    /** Present only when a report spans every program at once (report-player only, currently). */
+    programsBreakdown?: Array<{ programId: string; programName: string; count: number }>
+
     servicesCatalogue?: Array<{ name: string; description: string }>
 
     interventionsThisMonth?: InterventionRow[]
@@ -257,16 +277,23 @@ export async function exportMonthlyDepartmentReportDocx(
                             spacer()
                         ]),
 
+                    ...(data.movStats
+                        ? [...buildMovStatsBlock(data.movStats), spacer()]
+                        : []),
+
+                    heading('6. Services & Interventions Delivered', 1),
+                    ...(data.interventionsByDepartment?.length
+                        ? [...buildDepartmentBreakdownTable(data.interventionsByDepartment), spacer()]
+                        : []),
                     ...(data.servicesCatalogue?.length
                         ? [
-                            heading('6. Services & Interventions Delivered', 1),
-                            heading('6.1 Service Catalogue', 2),
+                            heading('6.2 Service Catalogue', 2),
                             ...buildServicesCatalogueTable(data.servicesCatalogue),
                             spacer()
                         ]
-                        : [heading('6. Services & Interventions Delivered', 1)]),
+                        : []),
 
-                    heading('6.2 Monthly Intervention Tracker', 2),
+                    heading('6.3 Monthly Intervention Tracker', 2),
                     ...(data.interventionsThisMonth?.length
                         ? buildInterventionsTable(data.interventionsThisMonth)
                         : [para('No interventions recorded for this reporting period.')]),
@@ -274,7 +301,7 @@ export async function exportMonthlyDepartmentReportDocx(
 
                     ...(data.engagementsWithoutMOV?.length
                         ? [
-                            heading('6.3 Engagements Without MOV', 2),
+                            heading('6.4 Engagements Without MOV', 2),
                             ...buildInterventionsTable(data.engagementsWithoutMOV)
                         ]
                         : []),
@@ -685,6 +712,44 @@ function buildKeyValueTable(
     ]
   }
 
+
+function buildMovStatsBlock(stats: NonNullable<MonthlyReportData['movStats']>) {
+    const packRate = stats.submitted > 0 ? Math.round((stats.validated / stats.submitted) * 100) : 0
+    const itemRate = stats.items > 0 ? Math.round((stats.itemsValidated / stats.items) * 100) : 0
+    return [
+        heading('5.2 MOV Submission & Validation', 2),
+        ...buildKeyValueTable([
+            { label: 'MOV packs submitted', value: val(stats.submitted) },
+            { label: 'MOV packs validated', value: val(stats.validated) },
+            { label: 'Pack validation rate', value: `${packRate}%` },
+            { label: 'Individual MOVs submitted', value: val(stats.items) },
+            { label: 'Individual MOVs validated', value: val(stats.itemsValidated) },
+            { label: 'MOV validation rate', value: `${itemRate}%` }
+        ])
+    ]
+}
+
+function buildDepartmentBreakdownTable(rows: NonNullable<MonthlyReportData['interventionsByDepartment']>) {
+    const total = rows.reduce((sum, r) => sum + r.count, 0)
+    return [
+        heading('6.1 Delivery by Department', 2),
+        new DTable({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+                new DRow({ children: [headerCell('Department'), headerCell('Interventions')] }),
+                ...rows.map(
+                    r =>
+                        new DRow({
+                            children: [cell(r.department), cell(val(r.count))]
+                        })
+                ),
+                new DRow({
+                    children: [cell('Total', { bold: true }), cell(val(total), { bold: true })]
+                })
+            ]
+        })
+    ]
+}
 
 function buildBeneficiaryBlock(stats: BeneficiaryStats) {
     const quick = [

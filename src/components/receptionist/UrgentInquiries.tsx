@@ -11,6 +11,10 @@ import { Inquiry, PRIORITY_COLORS } from '@/types/inquiry'
 import { formatDistanceToNow } from 'date-fns'
 import { MotionCard } from '../dashboards/metrics/Header'
 import InquiryDetail from './InquiryDetail'
+import {
+  channelLabel,
+  resolveInquiryChannel
+} from '@/utils/inquirySource'
 
 interface UrgentInquiriesProps {
     urgentInquiries: Inquiry[]
@@ -149,7 +153,7 @@ const UrgentInquiries: React.FC<UrgentInquiriesProps> = ({
                                             </span>
                                             <span style={{ color: '#8c8c8c', fontSize: 12 }}>
                                                 {formatDistanceToNow(inquiry.submittedAt, { addSuffix: true })}
-                                                {' • '}{inquiry.source}
+                                                {' • '}{channelLabel(resolveInquiryChannel(inquiry.source))}
                                                 {inquiry.contactInfo.email
                                                     ? ` • ${inquiry.contactInfo.email}`
                                                     : inquiry.contactInfo.phone

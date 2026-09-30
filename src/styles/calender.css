@@ -1,6 +1,16 @@
+/* The app shell only ever gives its Content region a *minimum* height
+   (min-height: 100vh on the Layout above it), never a hard, definite one —
+   so nothing here can reliably inherit "the available height" through a
+   height:100%/flex:1 chain; that was tried and it collapsed the calendar
+   into a tiny box instead (percentage heights fail silently onto "auto"
+   when an ancestor's own height is indefinite). Everything below is sized
+   by its own content instead. The one exception is the day panel matching
+   the calendar grid's height, which is a *sibling* relationship (align-items:
+   stretch in .smart-calendar-body) and doesn't depend on any ancestor. */
 .smart-calendar-workspace {
-  min-height: 100vh;
-  padding: 24px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .smart-workspace-tabs {
@@ -16,19 +26,24 @@
   font-weight: 700;
 }
 
+.smart-calendar-page {
+  display: flex;
+  flex-direction: column;
+}
+
 .smart-calendar-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   border-radius: 28px !important;
-  border: 1px solid #e9eef5 !important;
-  background:
-    radial-gradient(circle at top right, rgba(219, 234, 254, 0.45), transparent 28%),
-    radial-gradient(circle at top left, rgba(243, 232, 255, 0.45), transparent 24%),
-    #ffffff !important;
+  border: 1px solid var(--app-border) !important;
+  background: var(--app-surface) !important;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08) !important;
   overflow: hidden;
 }
 
 .smart-calendar-topbar {
-  margin-bottom: 18px;
+  margin-bottom: 10px;
 }
 
 .smart-calendar-title-wrap {
@@ -44,10 +59,10 @@
   display: grid;
   place-items: center;
   font-size: 22px;
-  color: #2563eb;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  border: 1px solid #bfdbfe;
-  box-shadow: 0 12px 24px rgba(59, 130, 246, 0.15);
+  color: var(--app-accent);
+  background: var(--app-accent-soft);
+  border: 1px solid var(--app-accent-border);
+  box-shadow: 0 12px 24px var(--app-accent-glow);
 }
 
 .smart-calendar-actions {
@@ -58,39 +73,49 @@
   flex-wrap: wrap;
 }
 
-.smart-pill {
-  border-radius: 999px !important;
-  padding: 6px 12px !important;
-  font-weight: 700;
-  border: none !important;
-  margin-inline-end: 0 !important;
+/* ---------------------------------------------------------------------------
+   Month / year navigator
+   ------------------------------------------------------------------------- */
+
+.smart-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
-.smart-pill-purple {
-  background: #f3e8ff !important;
-  color: #7e22ce !important;
+.smart-calendar-month-select .ant-select-selector,
+.smart-calendar-year-select .ant-select-selector {
+  font-weight: 800 !important;
+  font-size: 15px !important;
+  color: var(--app-text) !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 
-.smart-pill-blue {
-  background: #dbeafe !important;
-  color: #1d4ed8 !important;
+.smart-calendar-month-select .ant-select-selection-item,
+.smart-calendar-year-select .ant-select-selection-item {
+  line-height: 30px !important;
 }
 
-.smart-pill-slate {
-  background: #f1f5f9 !important;
-  color: #334155 !important;
+.smart-calendar-month-select {
+  min-width: 120px;
 }
 
-.smart-pill-gold {
-  background: #fff7e6 !important;
-  color: #ad6800 !important;
+.smart-calendar-year-select {
+  min-width: 76px;
 }
 
-.smart-calendar-segmented {
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0;
-  padding: 4px;
-  border-radius: 14px !important;
+.smart-calendar-month-arrows {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.smart-calendar-month-arrows .ant-btn {
+  width: 28px;
+  height: 28px;
 }
 
 .smart-calendar-loading,
@@ -98,115 +123,136 @@
   padding: 56px 0;
 }
 
-.smart-calendar-shell {
-  border-radius: 24px;
-  padding: 16px;
-  background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
-  border: 1px solid #edf2f7;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+/* ---------------------------------------------------------------------------
+   Calendar + day panel layout
+   ------------------------------------------------------------------------- */
+
+/* Row: the calendar grid grows to fill the remaining width beside the fixed-
+   width day panel; align-items: stretch (the default, named for clarity)
+   is what makes the day panel match the grid's natural, content-driven
+   height — a sibling relationship, not an inherited one. */
+.smart-calendar-body {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
 }
 
+.smart-calendar-shell {
+  flex: 1;
+  min-width: 0;
+  border-radius: 24px;
+  padding: 16px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* FullCalendar is given height="auto" as a prop (see index.tsx) so it sizes
+   itself to its own rows rather than needing a definite parent height —
+   height:100% here would silently fail the same way the page-level chain
+   did, and FullCalendar falls back to a small internal scroller instead of
+   growing, which is the extra "second" scrollbar this was producing. */
 .smart-calendar-shell .fc {
-  --fc-border-color: #edf2f7;
-  --fc-page-bg-color: #ffffff;
-  --fc-neutral-bg-color: #f8fafc;
-  --fc-today-bg-color: #f8fbff;
+  --fc-border-color: transparent;
+  --fc-page-bg-color: var(--app-surface);
+  --fc-neutral-bg-color: var(--app-surface-sunken);
+  --fc-today-bg-color: transparent;
   --fc-now-indicator-color: #ef4444;
   font-family: inherit;
 }
 
-.smart-calendar-shell .fc .fc-toolbar {
-  margin-bottom: 18px;
-  padding: 8px 4px;
-}
-
-.smart-calendar-shell .fc .fc-toolbar-title {
-  font-size: 1.35rem;
-  font-weight: 800;
-  color: #0f172a;
-  letter-spacing: -0.03em;
-}
-
-.smart-calendar-shell .fc .fc-button {
-  background: #ffffff;
-  border: 1px solid #dbe4ee;
-  color: #0f172a;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
-  padding: 0.45rem 0.8rem;
-  font-weight: 700;
-}
-
-.smart-calendar-shell .fc .fc-button:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.smart-calendar-shell .fc .fc-button-primary:not(:disabled).fc-button-active,
-.smart-calendar-shell .fc .fc-button-primary:not(:disabled):active {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
-}
-
-.smart-calendar-shell .fc .fc-day-today {
-  background: #fbfdff !important;
-}
-
 .smart-calendar-shell .fc .fc-scrollgrid {
-  border-radius: 18px;
-  overflow: hidden;
+  border: none !important;
 }
 
-.smart-calendar-shell .fc .fc-col-header-cell {
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+.smart-calendar-shell .fc .fc-scrollgrid td,
+.smart-calendar-shell .fc .fc-scrollgrid th {
+  border: none !important;
 }
 
 .smart-calendar-shell .fc .fc-col-header-cell-cushion {
-  padding: 13px 6px;
-  color: #334155;
+  padding: 10px 6px;
+  color: var(--app-text-muted);
   font-weight: 800;
   text-transform: uppercase;
   font-size: 11px;
   letter-spacing: 0.08em;
 }
 
-.smart-calendar-shell .fc .fc-timegrid-axis-cushion,
-.smart-calendar-shell .fc .fc-timegrid-slot-label-cushion {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
+/* Each day is its own rounded card with a gap around it (a "bento" grid)
+   rather than a bordered spreadsheet grid. The <td> itself stays transparent
+   and unpadded-looking; the frame FullCalendar renders inside it carries the
+   card surface. */
+.smart-calendar-shell .fc .fc-daygrid-day {
+  background: transparent;
+  padding: 3px;
 }
 
-.smart-calendar-shell .fc .fc-timegrid-slot {
-  height: 4.1rem;
-}
-
-.smart-calendar-shell .fc .fc-timegrid-slot-lane {
-  background: #ffffff;
-}
-
-.smart-calendar-shell .fc .fc-timegrid-slot-minor {
-  border-top-style: dashed;
-  border-top-color: #f1f5f9;
-}
-
-.smart-calendar-shell .fc .fc-timegrid-event-harness {
-  margin-inline: 4px;
-}
-
-.smart-calendar-shell .fc .fc-event {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.smart-calendar-shell .fc .fc-timegrid-event .smart-event-card {
+.smart-calendar-shell .fc .fc-daygrid-day-frame {
   height: 100%;
-  min-height: 100%;
-  box-sizing: border-box;
+  min-height: 92px;
   display: flex;
   flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 16px;
+  background: var(--app-surface-raised);
+  border: 1px solid var(--app-border);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.smart-calendar-shell .fc .fc-daygrid-day-top {
+  justify-content: flex-start;
+}
+
+.smart-calendar-shell .fc .fc-daygrid-day-number {
+  padding: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.smart-calendar-shell .fc .fc-day-other .fc-daygrid-day-number {
+  color: var(--app-text-subtle);
+}
+
+.smart-calendar-shell .fc .fc-day-other .fc-daygrid-day-frame {
+  background: var(--app-surface-sunken);
+}
+
+/* Today: solid accent-filled card. */
+.smart-calendar-shell .fc .fc-day-today .fc-daygrid-day-frame {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+}
+
+.smart-calendar-shell .fc .fc-day-today .fc-daygrid-day-number {
+  color: var(--app-accent-contrast);
+}
+
+.smart-calendar-shell .fc .fc-day-today .smart-month-pill {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.smart-calendar-shell .fc .fc-day-today .smart-month-pill__title {
+  color: var(--app-accent-contrast);
+}
+
+/* Selected (non-today): dashed accent outline. */
+.smart-calendar-shell .fc .smart-calendar-selected-day:not(.fc-day-today) .fc-daygrid-day-frame {
+  border: 1.5px dashed var(--app-accent);
+  background: var(--app-accent-wash);
+}
+
+.smart-calendar-shell .fc .fc-daygrid-day-events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.smart-calendar-shell .fc .fc-daygrid-event-harness {
+  margin: 0 !important;
 }
 
 .smart-calendar-shell .fc .fc-daygrid-event {
@@ -215,116 +261,270 @@
   border: none !important;
 }
 
-.smart-event-card {
+.smart-calendar-shell .fc .fc-daygrid-more-link {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--app-text-muted);
+  padding: 2px 6px;
+}
+
+.smart-calendar-shell .fc .fc-daygrid-more-link:hover {
+  color: var(--app-accent);
+}
+
+.smart-calendar-shell .fc .fc-popover {
+  background: var(--app-surface-raised);
+  border: 1px solid var(--app-border);
   border-radius: 14px;
-  padding: 8px 10px;
-  min-height: 56px;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
-  border: 1px solid transparent;
+  box-shadow: var(--app-shadow);
+}
+
+.smart-calendar-shell .fc .fc-popover-header {
+  background: var(--app-surface-sunken);
+  color: var(--app-text);
+}
+
+/* Month-cell event pill: a colour dot + truncated title, compact enough for
+   three or four to stack inside a card. */
+.smart-month-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-text);
+  background: var(--app-surface-sunken);
   overflow: hidden;
 }
 
-.smart-event-card.event {
-  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
-  border-color: #d8b4fe;
-  color: #581c87;
+.smart-month-pill__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
 }
 
-.smart-event-card.appointment {
-  background: linear-gradient(180deg, #f8fbff 0%, #dbeafe 100%);
-  border-color: #93c5fd;
-  color: #1e3a8a;
+.smart-month-pill__dot.event {
+  background: #a855f7;
 }
 
-.smart-event-card__top {
+.smart-month-pill__dot.appointment {
+  background: #3b82f6;
+}
+
+.smart-month-pill__dot.task {
+  background: #f59e0b;
+}
+
+.smart-month-pill__title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------------------
+   Day panel ("Scheduled")
+   ------------------------------------------------------------------------- */
+
+.smart-calendar-day-panel {
+  flex: 0 0 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: 24px;
+  padding: 16px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.smart-calendar-day-panel__header {
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.smart-calendar-day-panel__headline {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 5px;
 }
 
-.smart-event-card__badge {
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 3px 8px;
-  border-radius: 999px;
-  line-height: 1;
+.smart-calendar-day-panel__title {
+  font-size: 16px !important;
 }
 
-.smart-event-card__badge.event {
-  background: rgba(168, 85, 247, 0.14);
-  color: #7e22ce;
+.smart-calendar-day-panel__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.smart-event-card__badge.appointment {
-  background: rgba(37, 99, 235, 0.12);
-  color: #1d4ed8;
+.smart-calendar-day-panel__nav .ant-btn {
+  border: 1px solid var(--app-border) !important;
+  color: var(--app-text-muted) !important;
 }
 
-.smart-event-card__time {
-  font-size: 10px;
-  font-weight: 800;
-  opacity: 0.85;
-  white-space: nowrap;
+.smart-calendar-day-panel__nav .ant-btn:hover {
+  border-color: var(--app-accent-border-strong) !important;
+  color: var(--app-accent) !important;
 }
 
-.smart-event-card__title {
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.25;
-  margin-bottom: 2px;
+.smart-calendar-day-panel__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.smart-event-card__subtitle {
-  font-size: 11px;
-  line-height: 1.2;
-  opacity: 0.82;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* Each hour is a divider — the time label plus a rule running the rest of
+   the row's width — with that hour's cards stacked full-width beneath it. */
+.smart-agenda-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* Keep short, consecutive slots readable: tag, title, SME, then time. */
-.smart-calendar-shell .fc .fc-timegrid-event .smart-event-card--compact {
-  flex-direction: row;
+.smart-agenda-group__divider {
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px;
 }
 
-.smart-calendar-shell .fc .fc-timegrid-event .smart-event-card--compact .smart-event-card__top {
-  display: contents;
+.smart-agenda-group__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--app-border);
 }
 
-.smart-calendar-shell .fc .fc-timegrid-event .smart-event-card--compact .smart-event-card__badge {
-  order: 1;
+.smart-agenda-group__time {
   flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--app-text-muted);
 }
 
-.smart-calendar-shell .fc .fc-timegrid-event .smart-event-card--compact .smart-event-card__title {
-  order: 2;
-  margin: 0;
-  min-width: 0;
-  flex: 0 1 auto;
+.smart-agenda-group__items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.smart-agenda-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-raised);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.smart-agenda-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--app-shadow);
+  border-color: var(--app-border-strong);
+}
+
+/* A coloured top edge, not a left rail, per the reference design. */
+.smart-agenda-card__accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+
+.smart-agenda-card__accent.event {
+  background: #a855f7;
+}
+
+.smart-agenda-card__accent.appointment {
+  background: #3b82f6;
+}
+
+.smart-agenda-card__accent.task {
+  background: #f59e0b;
+}
+
+.smart-agenda-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--app-text);
+}
+
+.smart-agenda-card__subtitle {
+  font-size: 12px;
+  color: var(--app-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.smart-calendar-shell .fc .fc-timegrid-event .smart-event-card--compact .smart-event-card__subtitle {
-  order: 3;
-  min-width: 0;
-  flex: 0 1 34%;
+.smart-agenda-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-text-subtle);
 }
 
-.smart-calendar-shell .fc .fc-timegrid-event .smart-event-card--compact .smart-event-card__time {
-  order: 4;
-  margin-left: auto;
+.smart-agenda-card__avatars {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.smart-agenda-card__avatar-stack {
+  display: flex;
+  align-items: center;
   flex: 0 0 auto;
 }
+
+.smart-agenda-card__avatar-stack .ant-avatar {
+  font-size: 10px;
+  font-weight: 700;
+  border: 2px solid var(--app-surface-raised);
+  margin-inline-start: -6px;
+}
+
+.smart-agenda-card__avatar-stack .ant-avatar:first-child {
+  margin-inline-start: 0;
+}
+
+.smart-agenda-card__avatar-more {
+  background: var(--app-surface-sunken) !important;
+  color: var(--app-text-muted) !important;
+}
+
+.smart-agenda-card__avatar-names {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------------------
+   Details modal
+   ------------------------------------------------------------------------- */
 
 .smart-calendar-modal-head {
   display: flex;
@@ -342,6 +542,10 @@
   background: #dbeafe !important;
   color: #1d4ed8 !important;
 }
+
+/* ---------------------------------------------------------------------------
+   Notice board
+   ------------------------------------------------------------------------- */
 
 .notice-board {
   width: 100%;
@@ -426,13 +630,17 @@
   padding-top: 4px;
 }
 
+/* ---------------------------------------------------------------------------
+   Responsive
+   ------------------------------------------------------------------------- */
+
 @media (max-width: 992px) {
   .smart-calendar-actions {
     justify-content: flex-start;
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .smart-calendar-workspace {
     padding: 14px;
   }
@@ -467,10 +675,6 @@
     width: 100%;
   }
 
-  .smart-calendar-actions > .smart-pill {
-    display: none;
-  }
-
   .smart-calendar-actions > div {
     grid-column: 1 / -1;
     width: 100%;
@@ -481,144 +685,12 @@
     width: 100%;
   }
 
-  .smart-calendar-segmented {
-    grid-column: 1 / -1;
-    width: 100%;
-  }
-
-  .smart-calendar-segmented .ant-segmented-group {
-    width: 100%;
-  }
-
-  .smart-calendar-segmented .ant-segmented-item {
-    flex: 1;
-  }
-
-  .smart-calendar-shell {
-    padding: 10px;
-    border-radius: 18px;
-  }
-
-  .smart-calendar-shell .fc .fc-toolbar {
+  .smart-calendar-body {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .smart-calendar-shell .fc .fc-toolbar-title {
-    font-size: 1.1rem;
-  }
-
-  .smart-event-card {
-    padding: 6px 8px;
-    min-height: 48px;
-  }
-
-  .smart-event-card__title {
-    font-size: 11px;
-  }
-
-  .smart-event-card__subtitle {
-    font-size: 10px;
-  }
-
-  .notice-board__toolbar .ant-btn {
-    width: 100%;
-  }
-
-  .notice-card .ant-card-body {
-    padding: 16px;
-  }
-
-  .notice-card__pin {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-  }
-
-  .notice-card__footer {
-    align-items: flex-start;
-  }
-
-  .notice-card__footer .ant-space {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .smart-calendar-shell .fc .fc-daygrid-day-number {
-    font-size: 12px;
-  }
-
-  .smart-calendar-shell .fc .fc-daygrid-event {
-    margin-inline: 1px;
-  }
-
-  .smart-calendar-shell .fc-daygrid-event .smart-event-card {
     min-height: 0;
-    padding: 4px 6px;
-    border-radius: 7px;
-    box-shadow: none;
+    overflow-y: auto;
   }
 
-  .smart-calendar-shell .fc-daygrid-event .smart-event-card__top,
-  .smart-calendar-shell .fc-daygrid-event .smart-event-card__subtitle {
-    display: none;
-  }
-
-  .smart-calendar-shell .fc-daygrid-event .smart-event-card__title {
-    margin: 0;
-    font-size: 10px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-}
-
-
-.smart-calendar-page {
-  min-height: calc(100vh - 120px);
-  display: flex;
-  flex-direction: column;
-}
-
-.smart-calendar-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  border-radius: 28px !important;
-  border: 1px solid #e9eef5 !important;
-  background:
-    radial-gradient(circle at top right, rgba(219, 234, 254, 0.45), transparent 28%),
-    radial-gradient(circle at top left, rgba(243, 232, 255, 0.45), transparent 24%),
-    #ffffff !important;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08) !important;
-  overflow: hidden;
-}
-
-.smart-calendar-shell {
-  flex: 1;
-  min-height: 0;
-  border-radius: 24px;
-  padding: 16px;
-  overflow: hidden;
-  background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
-  border: 1px solid #edf2f7;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-.smart-calendar-shell .fc {
-  height: 100%;
-}
-
-.smart-calendar-shell .fc .fc-view-harness {
-  min-height: calc(100vh - 320px) !important;
-}
-
-.smart-calendar-shell .fc .fc-scrollgrid {
-  height: 100% !important;
-}
-
-@media (max-width: 767px) {
   .smart-calendar-shell {
     flex: none;
     min-height: 0;
@@ -647,7 +719,50 @@
     overscroll-behavior: contain;
   }
 
-  .smart-calendar-shell .fc .fc-timegrid-slot {
-    height: 2.4rem;
+  .smart-calendar-shell .fc .fc-daygrid-day-frame {
+    min-height: 64px;
+    padding: 6px;
+    border-radius: 12px;
+  }
+
+  .smart-calendar-shell .fc .fc-daygrid-day-number {
+    font-size: 12px;
+  }
+
+  .smart-month-pill__title {
+    display: none;
+  }
+
+  .smart-month-pill {
+    justify-content: center;
+    padding: 2px;
+  }
+
+  .smart-calendar-day-panel {
+    flex: none;
+    max-height: 360px;
+  }
+
+  .notice-board__toolbar .ant-btn {
+    width: 100%;
+  }
+
+  .notice-card .ant-card-body {
+    padding: 16px;
+  }
+
+  .notice-card__pin {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .notice-card__footer {
+    align-items: flex-start;
+  }
+
+  .notice-card__footer .ant-space {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

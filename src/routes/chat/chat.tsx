@@ -13,13 +13,14 @@ import {
     Spin,
     Typography
 } from 'antd'
-import { ArrowLeftOutlined, AudioOutlined, OpenAIOutlined, SendOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, AudioOutlined, FormOutlined, HistoryOutlined, OpenAIOutlined, SendOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { ChartSpecRenderer } from '@/components/ai/ChartSpecRenderer'
 import { ConversationMode } from '@/routes/chat/ConversationMode'
+import { ChatHistoryModal } from '@/routes/chat/ChatHistoryModal'
 import {
     MAX_MESSAGE_LENGTH,
     useChatSession
@@ -286,10 +287,11 @@ const TypingIndicator = () => (
 
 const Chat: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
-    const { messages, isTyping, error, startMessage } = useChatSession()
+    const { messages, isTyping, error, startMessage, startNewChat, isResuming, refreshHistory } = useChatSession()
     const state = { messages, isTyping, error }
     const [input, setInput] = useState('')
     const [conversationMode, setConversationMode] = useState(false)
+    const [historyOpen, setHistoryOpen] = useState(false)
     const navigate = useNavigate()
     const screens = useBreakpoint()
     const isMobile = !screens.md
@@ -408,7 +410,7 @@ const Chat: React.FC = () => {
         </div>
     )
 
-    if (identityLoading) {
+    if (identityLoading || isResuming) {
         return (
             <div className='chat-loading'>
                 <Spin size='large' />
@@ -563,7 +565,7 @@ const Chat: React.FC = () => {
         .chat-mobile-header {
           flex: 0 0 auto;
           display: grid;
-          grid-template-columns: 34px 1fr 34px;
+          grid-template-columns: 34px 1fr auto;
           align-items: center;
           gap: 10px;
           height: 52px;
@@ -571,9 +573,41 @@ const Chat: React.FC = () => {
           border-bottom: 1px solid var(--app-border);
           background: var(--app-surface);
         }
-        .chat-mobile-header-spacer {
-          width: 34px;
+        .chat-mobile-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .chat-desktop-toolbar {
+          flex: 0 0 auto;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 52px;
+          padding: 0 clamp(18px, 4vw, 40px);
+        }
+        .chat-toolbar-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
           height: 34px;
+          padding: 0 14px;
+          border: 1px solid var(--app-border);
+          border-radius: 17px;
+          color: var(--app-text);
+          background: var(--app-surface);
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;
+        }
+        .chat-toolbar-button:hover,
+        .chat-toolbar-button:focus-visible {
+          border-color: var(--app-accent);
+          color: var(--app-accent);
+          background: var(--app-accent-soft);
+          box-shadow: 0 8px 20px color-mix(in srgb, var(--app-accent) 15%, transparent);
+          outline: none;
         }
         .chat-back-button {
           display: grid;
@@ -866,7 +900,7 @@ const Chat: React.FC = () => {
       `}</style>
 
             <section className='chat-shell' aria-label='Smart Incubation assistant'>
-                {isMobile && (
+                {isMobile ? (
                     <header className='chat-mobile-header'>
                         <button
                             type='button'
@@ -877,8 +911,44 @@ const Chat: React.FC = () => {
                             <ArrowLeftOutlined />
                         </button>
                         <span className='chat-mobile-header-title'>QxAgent</span>
-                        <span className='chat-mobile-header-spacer' aria-hidden='true' />
+                        <div className='chat-mobile-header-actions'>
+                            <button
+                                type='button'
+                                className='chat-back-button'
+                                aria-label='Conversation history'
+                                onClick={() => { setHistoryOpen(true); void refreshHistory() }}
+                            >
+                                <HistoryOutlined />
+                            </button>
+                            <button
+                                type='button'
+                                className='chat-back-button'
+                                aria-label='Start a new chat'
+                                onClick={startNewChat}
+                            >
+                                <FormOutlined />
+                            </button>
+                        </div>
                     </header>
+                ) : (
+                    <div className='chat-desktop-toolbar'>
+                        <button
+                            type='button'
+                            className='chat-toolbar-button'
+                            onClick={() => { setHistoryOpen(true); void refreshHistory() }}
+                        >
+                            <HistoryOutlined />
+                            <span>History</span>
+                        </button>
+                        <button
+                            type='button'
+                            className='chat-toolbar-button'
+                            onClick={startNewChat}
+                        >
+                            <FormOutlined />
+                            <span>New chat</span>
+                        </button>
+                    </div>
                 )}
                 <nav className='chat-marker-rail' aria-label='Conversation messages'>
                     {state.messages.filter(item => item.sender === 'user').map(item => {
@@ -994,6 +1064,8 @@ const Chat: React.FC = () => {
                     <ConversationMode onClose={() => setConversationMode(false)} />
                 )}
             </section>
+
+            <ChatHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
         </div>
     )
 }

@@ -1,0 +1,4010 @@
+{
+  "kpiDefinitions": [
+    {
+      "id": "0BqpFXrGgYvywbkUgQK1",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "Financial Compliance",
+        "kpiLabel": "Turnover Generated",
+        "unit": "ZAR",
+        "sourceType": "metrics",
+        "calculationType": "sum",
+        "countMode": null,
+        "field": "monthlyRevenue",
+        "active": true,
+        "createdAt": {
+          "_seconds": 1775035928,
+          "_nanoseconds": 695000000
+        },
+        "contributorDepartmentIds": [],
+        "interventionIds": [],
+        "dateField": "createdAt",
+        "description": "",
+        "displayKpiType": "total_amount",
+        "contributorDepartmentNames": [],
+        "filters": [],
+        "sourceCollection": "participantMonthlyMetrics",
+        "denominator": null,
+        "numerator": null,
+        "updatedAt": {
+          "_seconds": 1775810615,
+          "_nanoseconds": 435000000
+        }
+      }
+    },
+    {
+      "id": "0C2mSJeW637tmITrLm21",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "CSD Compliance Support",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "5aKyuyt8s0wDgH2H0P7r",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "IWADWm3x3pMxvZbeH9af",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "Wellness Services",
+        "kpiLabel": "Educational Workshop",
+        "unit": "count",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [
+          "0No2jFiVHpqUAujDdXJn"
+        ],
+        "contributorDepartmentNames": [
+          "Wellness Services"
+        ],
+        "interventionIds": [
+          "BazcVzSeiSOWej7c1Qld"
+        ],
+        "createdAt": {
+          "_seconds": 1781860089,
+          "_nanoseconds": 455000000
+        },
+        "updatedAt": {
+          "_seconds": 1781860089,
+          "_nanoseconds": 455000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "74pCFRJqHIkkGax7ADFc",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Graduation Assessment",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "834WZ8DIqER9IUOh9eoa",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Graduation Process Management",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "85QHMK0cOQ1fHdLgB3gT",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "Financial Compliance",
+        "kpiLabel": "Pitch  Elevator Ready",
+        "unit": "count",
+        "description": "",
+        "sourceType": "metrics",
+        "sourceCollection": "participantMonthlyMetrics",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "interventionIds": [],
+        "createdAt": {
+          "_seconds": 1775811336,
+          "_nanoseconds": 44000000
+        },
+        "updatedAt": {
+          "_seconds": 1775811336,
+          "_nanoseconds": 44000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "8r1d2rUy72l3b6bon6un",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Reporting",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "DKK6Rcjo8rqElbdFiObG",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Database Accuracy",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "EnG8G5bXHIU0JxPm4oGx",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Group A Database Management",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "GjG9ADqOmeUk73eI8raP",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+        "leadDepartmentName": "Financial Compliance",
+        "department": "Financial Compliance",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "unit": "count",
+        "description": "",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "filters": [],
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "computed",
+        "reminderCadence": null,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true,
+        "calculationType": "sum",
+        "field": "jobsCreated",
+        "sourceType": "metrics",
+        "countMode": null,
+        "sourceCollection": "participantMonthlyMetrics",
+        "updatedAt": {
+          "_seconds": 1790163327,
+          "_nanoseconds": 338000000
+        }
+      }
+    },
+    {
+      "id": "JZN82PV7PXA97pWmhTZY",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "BBBEE Compliance Support",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "NKOe0li6qVK3JIGv7sva",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "Financial Compliance",
+        "kpiLabel": "Funding Linkage Facilitated",
+        "unit": "count",
+        "sourceType": "interventions",
+        "calculationType": "count",
+        "countMode": "distinct",
+        "field": null,
+        "contributorDepartmentIds": [
+          "Gyx2pYnOPZZ2DlGPRkZd"
+        ],
+        "contributorDepartmentNames": [
+          "Financial Compliance"
+        ],
+        "interventionIds": [
+          "fsWVqCGS4ysEe3VLDVuJ"
+        ],
+        "active": true,
+        "createdAt": {
+          "_seconds": 1775035929,
+          "_nanoseconds": 24000000
+        },
+        "dateField": "createdAt",
+        "description": "",
+        "displayKpiType": "total_number",
+        "filters": [],
+        "sourceCollection": "interventions",
+        "denominator": null,
+        "numerator": null,
+        "updatedAt": {
+          "_seconds": 1775810141,
+          "_nanoseconds": 965000000
+        }
+      }
+    },
+    {
+      "id": "PLkHlLwO1hamnb2VktqO",
+      "data": {
+        "companyCode": "LPH",
+        "programId": null,
+        "appliesToAllPrograms": true,
+        "belongsToMe": true,
+        "department": "Wellness Services",
+        "kpiLabel": "Educational Workshop",
+        "unit": "count",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [
+          "0No2jFiVHpqUAujDdXJn"
+        ],
+        "contributorDepartmentNames": [
+          "Wellness Services"
+        ],
+        "interventionIds": [
+          "BazcVzSeiSOWej7c1Qld"
+        ],
+        "createdAt": {
+          "_seconds": 1780352470,
+          "_nanoseconds": 471000000
+        },
+        "updatedAt": {
+          "_seconds": 1780352470,
+          "_nanoseconds": 471000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "QZVdWmoJjeBC4JHVTmfH",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "3oeQlX2YjpPlZ3yeAB2m",
+        "leadDepartmentName": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "unit": "count",
+        "description": "",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "filters": [],
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "computed",
+        "reminderCadence": null,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true,
+        "calculationType": "sum",
+        "field": "jobsCreated",
+        "sourceType": "metrics",
+        "countMode": null,
+        "sourceCollection": "participantMonthlyMetrics",
+        "updatedAt": {
+          "_seconds": 1790163328,
+          "_nanoseconds": 388000000
+        }
+      }
+    },
+    {
+      "id": "TNFZN7HtTD0xv2CTkBXW",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "Financial Compliance",
+        "kpiLabel": "SMME Funding Readiness",
+        "unit": "count",
+        "description": "",
+        "sourceType": "metrics",
+        "sourceCollection": "participantMonthlyMetrics",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "interventionIds": [],
+        "createdAt": {
+          "_seconds": 1775810257,
+          "_nanoseconds": 564000000
+        },
+        "updatedAt": {
+          "_seconds": 1775810257,
+          "_nanoseconds": 564000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "TTjleeDPAISo4PcDAOed",
+      "data": {
+        "department": "Legal Advisory Services",
+        "kpiLabel": "Legal Advisory Services Delivered",
+        "unit": "count",
+        "description": "Legal Advisory Services Delivered",
+        "interventionIds": [
+          "2rzrrqFV7YnlS9yswk7x",
+          "8plZb0CPdR3U11PAcBZN",
+          "Iod2YQ13G1xQxHsKWQDI"
+        ],
+        "createdAt": {
+          "_seconds": 1753360816,
+          "_nanoseconds": 659000000
+        },
+        "active": true,
+        "companyCode": "LPH"
+      }
+    },
+    {
+      "id": "U2WKS7uIBud3mvpukY5U",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "SBAT Assessment forms",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "WlhdDlhfylxzzIjvkt1g",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "IWADWm3x3pMxvZbeH9af",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "kpiLabel": "COID Registration",
+        "unit": "count",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [
+          "3oeQlX2YjpPlZ3yeAB2m"
+        ],
+        "contributorDepartmentNames": [
+          "HSE (Health, Safety & Environment) and Labour Compliance"
+        ],
+        "interventionIds": [
+          "Wivve10R4WhFDyuzzpwY"
+        ],
+        "createdAt": {
+          "_seconds": 1778836672,
+          "_nanoseconds": 300000000
+        },
+        "updatedAt": {
+          "_seconds": 1778836672,
+          "_nanoseconds": 300000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "XsrK7RsPcwE2GJ01svHG",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "3oeQlX2YjpPlZ3yeAB2m",
+        "leadDepartmentName": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "unit": "count",
+        "description": "",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "filters": [],
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "computed",
+        "reminderCadence": null,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true,
+        "calculationType": "sum",
+        "field": "jobsSustained",
+        "sourceType": "metrics",
+        "countMode": null,
+        "sourceCollection": "participantMonthlyMetrics",
+        "updatedAt": {
+          "_seconds": 1790163328,
+          "_nanoseconds": 940000000
+        }
+      }
+    },
+    {
+      "id": "Xu32aGdyMWz9c9tjSASH",
+      "data": {
+        "department": "Financial Compliance",
+        "kpiLabel": "Developmental Plan",
+        "unit": "count",
+        "createdAt": {
+          "_seconds": 1765444083,
+          "_nanoseconds": 132000000
+        },
+        "active": true,
+        "interventionIds": [
+          "1MVqJOrM1uKdM7dDLXKX"
+        ],
+        "description": "Developmental Plan"
+      }
+    },
+    {
+      "id": "ag0fTTFbgGXWBhhTcM6i",
+      "data": {
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Number of SMMEs Onboarded",
+        "unit": "count",
+        "description": "Number of SMMEs Onboarded",
+        "interventionIds": [
+          "ryOyA4gdvX1G6rirfHpZ"
+        ],
+        "active": true,
+        "companyCode": "LPH",
+        "createdAt": {
+          "type": "firestore/timestamp/1.0",
+          "seconds": 1753360813,
+          "nanoseconds": 181000000
+        },
+        "appliesToAllPrograms": true
+      }
+    },
+    {
+      "id": "cNA0LxlcTSuEoRz8AADR",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "unit": "count",
+        "sourceType": "interventions",
+        "calculationType": "count",
+        "countMode": "distinct",
+        "field": null,
+        "contributorDepartmentIds": [
+          "3oeQlX2YjpPlZ3yeAB2m"
+        ],
+        "contributorDepartmentNames": [
+          "HSE (Health, Safety & Environment) and Labour Compliance"
+        ],
+        "interventionIds": [
+          "6a1wd1R4N510EdXLO9fM",
+          "Wivve10R4WhFDyuzzpwY",
+          "oznaqklCRe3ZKhzja4Gr"
+        ],
+        "active": true,
+        "createdAt": {
+          "_seconds": 1775035928,
+          "_nanoseconds": 46000000
+        },
+        "dateField": "createdAt",
+        "description": "",
+        "displayKpiType": "total_number",
+        "filters": [],
+        "sourceCollection": "interventions",
+        "denominator": null,
+        "numerator": null,
+        "kpiLabel": "COID _ Good Standing",
+        "updatedAt": {
+          "_seconds": 1778843424,
+          "_nanoseconds": 857000000
+        }
+      }
+    },
+    {
+      "id": "ccqtfnMRVp2gYFuPVaKp",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "IWADWm3x3pMxvZbeH9af",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "kpiLabel": "HSE & Labour Workshop",
+        "unit": "count",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [
+          "3oeQlX2YjpPlZ3yeAB2m"
+        ],
+        "contributorDepartmentNames": [
+          "HSE (Health, Safety & Environment) and Labour Compliance"
+        ],
+        "interventionIds": [
+          "YfA7AY1oRVrPVldexezl"
+        ],
+        "createdAt": {
+          "_seconds": 1778838295,
+          "_nanoseconds": 594000000
+        },
+        "updatedAt": {
+          "_seconds": 1778838295,
+          "_nanoseconds": 594000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "ezRjpxqA0EQpDaUBKhsb",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "IWADWm3x3pMxvZbeH9af",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "kpiLabel": "Jobs Collected",
+        "unit": "count",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [
+          "3oeQlX2YjpPlZ3yeAB2m"
+        ],
+        "contributorDepartmentNames": [
+          "HSE (Health, Safety & Environment) and Labour Compliance"
+        ],
+        "interventionIds": [
+          "drLgllQSmELylDTgOpgK"
+        ],
+        "createdAt": {
+          "_seconds": 1778836526,
+          "_nanoseconds": 685000000
+        },
+        "updatedAt": {
+          "_seconds": 1778836526,
+          "_nanoseconds": 685000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "fUPZaYtwOo4gFcQG82Au",
+      "data": {
+        "department": "Training Academy - NVC (New Venture Creation)",
+        "kpiLabel": "NVC Training Completions & Certifications",
+        "unit": "count",
+        "description": "NVC Training Completions & Certifications",
+        "interventionIds": [
+          "CyVqHJB87fMLTZQHOheZ",
+          "TOqh2NbQoCHO1Wti4ooE",
+          "fKNez4wqxw9ThIr5aJTR",
+          "u7xyxpyGbojLmwqXuYs0"
+        ],
+        "createdAt": {
+          "_seconds": 1753360817,
+          "_nanoseconds": 341000000
+        },
+        "active": true,
+        "companyCode": "LPH"
+      }
+    },
+    {
+      "id": "iviZIFDUwERLH4Etfm8P",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+        "leadDepartmentName": "Financial Compliance",
+        "department": "Financial Compliance",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "unit": "count",
+        "description": "",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "filters": [],
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "computed",
+        "reminderCadence": null,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true,
+        "calculationType": "sum",
+        "field": "jobsSustained",
+        "sourceType": "metrics",
+        "countMode": null,
+        "sourceCollection": "participantMonthlyMetrics",
+        "updatedAt": {
+          "_seconds": 1790163330,
+          "_nanoseconds": 24000000
+        }
+      }
+    },
+    {
+      "id": "jAPF5o6dAWBhPFj5VX0M",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "kpiLabel": "HSE Files Completed",
+        "unit": "count",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [
+          "3oeQlX2YjpPlZ3yeAB2m"
+        ],
+        "contributorDepartmentNames": [
+          "HSE (Health, Safety & Environment) and Labour Compliance"
+        ],
+        "interventionIds": [
+          "07ktbh6Rx9qC6QponE68"
+        ],
+        "createdAt": {
+          "_seconds": 1775031497,
+          "_nanoseconds": 702000000
+        },
+        "active": true,
+        "dateField": "createdAt",
+        "countMode": "records",
+        "updatedAt": {
+          "_seconds": 1778843462,
+          "_nanoseconds": 165000000
+        }
+      }
+    },
+    {
+      "id": "jhGglReLTZAHZpv9l4sJ",
+      "data": {
+        "department": "PDS (Personal Development Services)",
+        "kpiLabel": "Psychometric Assessments Completed",
+        "unit": "count",
+        "description": "Psychometric Assessments Completed",
+        "interventionIds": [
+          "GK09A87o4jF286YwMA9u"
+        ],
+        "createdAt": {
+          "_seconds": 1753360815,
+          "_nanoseconds": 988000000
+        },
+        "active": true,
+        "companyCode": "LPH",
+        "calculationType": "count",
+        "contributorDepartmentIds": [
+          "qamq9NybpLo5s0pCRoym"
+        ],
+        "belongsToMe": true,
+        "field": null,
+        "sourceType": "interventions",
+        "appliesToAllPrograms": false,
+        "dateField": "completedAt",
+        "contributorDepartmentNames": [
+          "PDS (Personal Development Services)"
+        ],
+        "countMode": "distinct",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "updatedAt": {
+          "_seconds": 1775035929,
+          "_nanoseconds": 517000000
+        }
+      }
+    },
+    {
+      "id": "kKLeXCHkNrpvaNfCzLMm",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "Gyx2pYnOPZZ2DlGPRkZd",
+        "leadDepartmentName": "Financial Compliance",
+        "department": "Financial Compliance",
+        "kpiLabel": "Turnover increased by 5%",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "quarterly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "kSakRCssHTobLCZBwDtQ",
+      "data": {
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Developmental Plan Completion",
+        "unit": "percent",
+        "description": "Developmental Plan Completion",
+        "active": true,
+        "companyCode": "LPH",
+        "createdAt": {
+          "type": "firestore/timestamp/1.0",
+          "seconds": 1753360814,
+          "nanoseconds": 686000000
+        },
+        "appliesToAllPrograms": true,
+        "calculationType": "ratio",
+        "interventionIds": [
+          "XP2wEWtr5vZuMiXjXyi7",
+          "ryOyA4gdvX1G6rirfHpZ"
+        ],
+        "dateField": "createdAt",
+        "displayKpiType": "percentage",
+        "contributorDepartmentNames": [
+          "ROM (Recruitment, Onboarding and Maintenance)"
+        ],
+        "filters": [],
+        "sourceCollection": "interventions",
+        "denominator": {
+          "calculationType": "count_records",
+          "field": null,
+          "filters": []
+        },
+        "numerator": {
+          "calculationType": "count_records",
+          "field": null,
+          "filters": []
+        },
+        "contributorDepartmentIds": [
+          "aSk06vIfzh4PFDvRxdpm"
+        ],
+        "belongsToMe": true,
+        "field": null,
+        "sourceType": "interventions",
+        "countMode": null,
+        "programId": null,
+        "updatedAt": {
+          "_seconds": 1788720705,
+          "_nanoseconds": 439000000
+        }
+      }
+    },
+    {
+      "id": "lHcMgn43ZZrsPNvIBP3W",
+      "data": {
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Compliance Group Progression",
+        "unit": "percent",
+        "description": "Compliance Group Progression",
+        "interventionIds": [
+          "I2wlcNH8yx1LX5dLLLHT",
+          "XP2wEWtr5vZuMiXjXyi7"
+        ],
+        "active": true,
+        "companyCode": "LPH",
+        "createdAt": {
+          "type": "firestore/timestamp/1.0",
+          "seconds": 1753360814,
+          "nanoseconds": 50000000
+        },
+        "appliesToAllPrograms": true
+      }
+    },
+    {
+      "id": "lHlcDdOKQ8ED6ySAXhUq",
+      "data": {
+        "companyCode": "LPH",
+        "belongsToMe": true,
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "unit": "count",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [
+          "3oeQlX2YjpPlZ3yeAB2m"
+        ],
+        "contributorDepartmentNames": [
+          "HSE (Health, Safety & Environment) and Labour Compliance"
+        ],
+        "interventionIds": [
+          "GdfwYsURzeyTy4SGZ2ck"
+        ],
+        "createdAt": {
+          "_seconds": 1778837544,
+          "_nanoseconds": 160000000
+        },
+        "active": true,
+        "kpiLabel": "HSE and labour Support",
+        "appliesToAllPrograms": true,
+        "programId": null,
+        "updatedAt": {
+          "_seconds": 1785315847,
+          "_nanoseconds": 450000000
+        }
+      }
+    },
+    {
+      "id": "nTlSCXCuUB7hx50xkrUc",
+      "data": {
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "kpiLabel": "UIF & COID Compliance Training",
+        "unit": "count",
+        "description": "UIF & COID Compliance Training",
+        "interventionIds": [
+          "hPDETF94SOXrDU0MZYP1",
+          "oznaqklCRe3ZKhzja4Gr"
+        ],
+        "createdAt": {
+          "_seconds": 1753360815,
+          "_nanoseconds": 3000000
+        },
+        "active": true,
+        "companyCode": "LPH"
+      }
+    },
+    {
+      "id": "qMPD6miL7HzkuKffrvtu",
+      "data": {
+        "department": "Training Academy - QMS",
+        "kpiLabel": "QMS Certifications Issued",
+        "unit": "count",
+        "description": "QMS Certifications Issued",
+        "interventionIds": [
+          "9hSKiECqvAODX6DclV3Y"
+        ],
+        "createdAt": {
+          "_seconds": 1753360817,
+          "_nanoseconds": 628000000
+        },
+        "active": true,
+        "companyCode": "LPH"
+      }
+    },
+    {
+      "id": "qNg7dTSqkU40kHZ9nrdZ",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Group B Database Management",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "qTZiZAQeqNI8nByIIly7",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "Legal Advisory Services",
+        "kpiLabel": "Legal Complince , Buisness Support and Advisory Services ",
+        "unit": "percent",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "countMode": null,
+        "dateField": "createdAt",
+        "displayKpiType": "percentage",
+        "calculationType": "ratio",
+        "filters": [],
+        "field": null,
+        "numerator": {
+          "calculationType": "count_records",
+          "field": null,
+          "filters": []
+        },
+        "denominator": {
+          "calculationType": "count_records",
+          "field": null,
+          "filters": []
+        },
+        "contributorDepartmentIds": [
+          "9bu8xeGsQu4O1NVV73Du"
+        ],
+        "contributorDepartmentNames": [
+          "Legal Advisory Services"
+        ],
+        "interventionIds": [
+          "2rzrrqFV7YnlS9yswk7x",
+          "Iod2YQ13G1xQxHsKWQDI",
+          "8plZb0CPdR3U11PAcBZN"
+        ],
+        "createdAt": {
+          "_seconds": 1778227848,
+          "_nanoseconds": 979000000
+        },
+        "updatedAt": {
+          "_seconds": 1778227848,
+          "_nanoseconds": 979000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "ruAKXvxHPYRLSfuVxmxn",
+      "data": {
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "sharedKpiMode": null,
+        "leadDepartmentId": "aSk06vIfzh4PFDvRxdpm",
+        "leadDepartmentName": "ROM (Recruitment, Onboarding and Maintenance)",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiLabel": "Compliance Monitoring",
+        "unit": "count",
+        "description": "",
+        "sourceType": "applications",
+        "sourceCollection": "applications",
+        "countMode": "records",
+        "dateField": "createdAt",
+        "displayKpiType": null,
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "sharedContributors": [],
+        "interventionIds": [],
+        "trackingMode": "manual",
+        "reminderCadence": "monthly",
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "rzeHI1TZ68oKBdW8sNvo",
+      "data": {
+        "department": "Market Linkages",
+        "kpiLabel": "Procurement Opportunities Secured",
+        "unit": "count",
+        "description": "Procurement Opportunities Secured",
+        "interventionIds": [
+          "leetwwSqpNuVgAZmiBLN",
+          "ptN5O0tO651EV8sJDwBe"
+        ],
+        "createdAt": {
+          "_seconds": 1753360816,
+          "_nanoseconds": 317000000
+        },
+        "active": true,
+        "companyCode": "LPH"
+      }
+    },
+    {
+      "id": "s1nLz7KNCjI7C7QW8tvV",
+      "data": {
+        "department": "Financial Compliance",
+        "kpiLabel": "Funding Linkages",
+        "unit": "count",
+        "description": "Funding Linkages",
+        "interventionIds": [
+          "fsWVqCGS4ysEe3VLDVuJ"
+        ],
+        "createdAt": {
+          "_seconds": 1753360815,
+          "_nanoseconds": 672000000
+        },
+        "active": true,
+        "companyCode": "LPH"
+      }
+    },
+    {
+      "id": "smibsQwTWbmxoSydHdkj",
+      "data": {
+        "companyCode": "LPH",
+        "department": "Wellness Services",
+        "kpiLabel": "Educational Workshop",
+        "unit": "count",
+        "description": "",
+        "sourceType": "interventions",
+        "sourceCollection": "interventions",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count_records",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "interventionIds": [
+          "BazcVzSeiSOWej7c1Qld"
+        ],
+        "createdAt": {
+          "_seconds": 1774339969,
+          "_nanoseconds": 685000000
+        },
+        "updatedAt": {
+          "_seconds": 1774339969,
+          "_nanoseconds": 685000000
+        },
+        "active": true
+      }
+    },
+    {
+      "id": "vZqxWLnZKtWga45OtgkE",
+      "data": {
+        "companyCode": "LPH",
+        "belongsToMe": true,
+        "department": "Financial Compliance",
+        "kpiLabel": "Bookkeeping and Management Accounts",
+        "unit": "count",
+        "description": "",
+        "sourceType": "metrics",
+        "sourceCollection": "participantMonthlyMetrics",
+        "countMode": "distinct",
+        "dateField": "createdAt",
+        "displayKpiType": "total_number",
+        "calculationType": "count",
+        "filters": [],
+        "field": null,
+        "numerator": null,
+        "denominator": null,
+        "contributorDepartmentIds": [],
+        "contributorDepartmentNames": [],
+        "interventionIds": [],
+        "createdAt": {
+          "_seconds": 1775809785,
+          "_nanoseconds": 70000000
+        },
+        "active": true,
+        "appliesToAllPrograms": false,
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "updatedAt": {
+          "_seconds": 1775810518,
+          "_nanoseconds": 422000000
+        }
+      }
+    },
+    {
+      "id": "wJqqbuJID1colvF3xROK",
+      "data": {
+        "companyCode": "LPH",
+        "programId": "b3qe3WAMAVw3QU64CLIY",
+        "appliesToAllPrograms": false,
+        "belongsToMe": true,
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "unit": "count",
+        "sourceType": "interventions",
+        "calculationType": "count",
+        "field": null,
+        "contributorDepartmentIds": [
+          "3oeQlX2YjpPlZ3yeAB2m"
+        ],
+        "contributorDepartmentNames": [
+          "HSE (Health, Safety & Environment) and Labour Compliance"
+        ],
+        "interventionIds": [
+          "hPDETF94SOXrDU0MZYP1"
+        ],
+        "active": true,
+        "createdAt": {
+          "_seconds": 1775035928,
+          "_nanoseconds": 377000000
+        },
+        "kpiLabel": "UIF Registration",
+        "dateField": "createdAt",
+        "description": "",
+        "displayKpiType": "total_number",
+        "filters": [],
+        "countMode": "records",
+        "sourceCollection": "interventions",
+        "denominator": null,
+        "numerator": null,
+        "updatedAt": {
+          "_seconds": 1778843500,
+          "_nanoseconds": 85000000
+        }
+      }
+    }
+  ],
+  "kpiTargets": [
+    {
+      "id": "3e62Fmvvz47jsjxpWcaI",
+      "data": {
+        "kpiId": "iviZIFDUwERLH4Etfm8P",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "periodStartAt": {
+          "_seconds": 1782856800,
+          "_nanoseconds": 0
+        },
+        "target": 25,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "41IxNFvbN4CXDB04eZIl",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "OxLuqzwQkiKkXLRoraoC",
+        "kpiLabel": "UIF Registration",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 5,
+        "createdAt": {
+          "_seconds": 1778837417,
+          "_nanoseconds": 615000000
+        },
+        "updatedAt": {
+          "_seconds": 1778837417,
+          "_nanoseconds": 615000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "66m0VyN4ttnBG36qdiaj",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "vZqxWLnZKtWga45OtgkE",
+        "kpiLabel": "Bookkeeping and Management Accounts",
+        "department": "Financial Compliance",
+        "periodType": "monthly",
+        "periodKey": "2026-01",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1775809785,
+          "_nanoseconds": 955000000
+        },
+        "createdBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2",
+        "updatedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2",
+        "updatedAt": {
+          "_seconds": 1775810519,
+          "_nanoseconds": 243000000
+        }
+      }
+    },
+    {
+      "id": "7f3SFKxX6oYXwhTr04mF",
+      "data": {
+        "kpiId": "V2BnfViI1cJIIMwohRyE",
+        "kpiLabel": "Health & Safety Files Developed",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "monthly",
+        "periodKey": "2025-07",
+        "target": 50,
+        "effectiveFrom": {
+          "_seconds": 1753363747,
+          "_nanoseconds": 836000000
+        },
+        "createdAt": {
+          "_seconds": 1753363747,
+          "_nanoseconds": 836000000
+        },
+        "createdBy": "o1G8kq9eOObF1IlJs7dROHOjBkN2"
+      }
+    },
+    {
+      "id": "9I612P54qw0spWDYFBbd",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "cNA0LxlcTSuEoRz8AADR",
+        "kpiLabel": "COID _ Good Standing",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "target": 15,
+        "createdAt": {
+          "_seconds": 1778843425,
+          "_nanoseconds": 795000000
+        },
+        "updatedAt": {
+          "_seconds": 1778843425,
+          "_nanoseconds": 795000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "AJkJt0kEeNpJGMGE2PEM",
+      "data": {
+        "kpiId": "kKLeXCHkNrpvaNfCzLMm",
+        "kpiLabel": "Turnover increased by 5%",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "periodStartAt": {
+          "_seconds": 1774994400,
+          "_nanoseconds": 0
+        },
+        "target": 10,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "ARHIB1PWcIhDKA4plR91",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ozj6QZ6Wm3iQOzUIHcQB",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "target": 1,
+        "createdAt": {
+          "_seconds": 1776231992,
+          "_nanoseconds": 674000000
+        },
+        "createdBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+        "kpiLabel": "Commercial law",
+        "updatedBy": "eacBfsZunOXoYsWPr7JKhO9e3oe2",
+        "updatedAt": {
+          "_seconds": 1776556241,
+          "_nanoseconds": 479000000
+        }
+      }
+    },
+    {
+      "id": "C7D4WWmkZgBwHx4oJYgF",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "jAPF5o6dAWBhPFj5VX0M",
+        "kpiLabel": "HSE Files Completed",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "monthly",
+        "periodKey": "2026-03",
+        "createdAt": {
+          "_seconds": 1775031498,
+          "_nanoseconds": 671000000
+        },
+        "createdBy": "pvBLLSeAWjMp1VDceGR2NEFMUfD2",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "target": 15,
+        "updatedAt": {
+          "_seconds": 1778835517,
+          "_nanoseconds": 749000000
+        }
+      }
+    },
+    {
+      "id": "D6sJeE9rz9UTb4fTCt9h",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ZJe361uDTTCUp2aRUX1h",
+        "kpiLabel": "Business Law ( Corporate)",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "target": 1,
+        "createdAt": {
+          "_seconds": 1776232067,
+          "_nanoseconds": 434000000
+        },
+        "updatedAt": {
+          "_seconds": 1776232067,
+          "_nanoseconds": 434000000
+        },
+        "createdBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+        "updatedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "E0wH6pLxdEKy6sBdw5K8",
+      "data": {
+        "kpiId": "iviZIFDUwERLH4Etfm8P",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "periodStartAt": {
+          "_seconds": 1790805600,
+          "_nanoseconds": 0
+        },
+        "target": 20,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "EqoPKWUsjg3aYaFFRCa2",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "Fp1Z1K17ctVonqEbcRzc",
+        "kpiLabel": "Compliance with the Information Regulator",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "target": 1,
+        "createdAt": {
+          "_seconds": 1776231849,
+          "_nanoseconds": 915000000
+        },
+        "updatedAt": {
+          "_seconds": 1776231849,
+          "_nanoseconds": 915000000
+        },
+        "createdBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+        "updatedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "FCwORj0bybDOXyZDZymW",
+      "data": {
+        "createdBy": "5ajjzDBg67OzdAWxqbok8y7K6JH3",
+        "changeReason": "",
+        "createdAt": {
+          "_seconds": 1788722996,
+          "_nanoseconds": 308000000
+        },
+        "periodKey": "2026-Q4",
+        "updatedBy": "5ajjzDBg67OzdAWxqbok8y7K6JH3",
+        "companyCode": "LPH",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "kpiId": "lHcMgn43ZZrsPNvIBP3W",
+        "periodStartAt": {
+          "_seconds": 1790805600,
+          "_nanoseconds": 0
+        },
+        "kpiLabel": "Compliance Group Progression",
+        "periodType": "quarterly",
+        "target": 40,
+        "updatedAt": {
+          "_seconds": 1788723360,
+          "_nanoseconds": 638000000
+        }
+      }
+    },
+    {
+      "id": "Gb4JbgzFXP5Vwp08Cc7N",
+      "data": {
+        "kpiId": "iviZIFDUwERLH4Etfm8P",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "periodStartAt": {
+          "_seconds": 1767218400,
+          "_nanoseconds": 0
+        },
+        "target": 20,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "HwT8CMiZDxBYNyv7cBIJ",
+      "data": {
+        "kpiId": "GjG9ADqOmeUk73eI8raP",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "periodStartAt": {
+          "_seconds": 1782856800,
+          "_nanoseconds": 0
+        },
+        "target": 15,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "IDfc6fICOKg17Dp9Y9wn",
+      "data": {
+        "kpiId": "Xu32aGdyMWz9c9tjSASH",
+        "kpiLabel": "Developmental Plan",
+        "department": "Financial Compliance",
+        "periodType": "monthly",
+        "periodKey": "2025-12",
+        "createdAt": {
+          "_seconds": 1765444087,
+          "_nanoseconds": 721000000
+        },
+        "createdBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2",
+        "effectiveFrom": {
+          "_seconds": 1765444143,
+          "_nanoseconds": 322000000
+        },
+        "target": 0
+      }
+    },
+    {
+      "id": "JC2Yp3LMG9rVTPs353VM",
+      "data": {
+        "kpiId": "V6mkhP92CdgD1dyEY4y7",
+        "kpiLabel": "HSE KPI",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "monthly",
+        "periodKey": "2025-08",
+        "target": 19,
+        "effectiveFrom": {
+          "_seconds": 1756237792,
+          "_nanoseconds": 90000000
+        },
+        "createdAt": {
+          "_seconds": 1756237792,
+          "_nanoseconds": 90000000
+        },
+        "createdBy": "o1G8kq9eOObF1IlJs7dROHOjBkN2"
+      }
+    },
+    {
+      "id": "JFD4O3LsREAoJiNCHB00",
+      "data": {
+        "kpiId": "XsrK7RsPcwE2GJ01svHG",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "periodStartAt": {
+          "_seconds": 1782856800,
+          "_nanoseconds": 0
+        },
+        "target": 25,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "KogJRiXdXIQbv6W8wSxK",
+      "data": {
+        "kpiId": "XsrK7RsPcwE2GJ01svHG",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "periodStartAt": {
+          "_seconds": 1790805600,
+          "_nanoseconds": 0
+        },
+        "target": 20,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "KrOd016Z4xvTtvcJ3rs9",
+      "data": {
+        "kpiId": "GjG9ADqOmeUk73eI8raP",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "periodStartAt": {
+          "_seconds": 1790805600,
+          "_nanoseconds": 0
+        },
+        "target": 15,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "LpqHW1y4qe1xWLrITVH1",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "wJqqbuJID1colvF3xROK",
+        "kpiLabel": "UIF Registration",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "target": 5,
+        "createdAt": {
+          "_seconds": 1778843500,
+          "_nanoseconds": 761000000
+        },
+        "updatedAt": {
+          "_seconds": 1778843500,
+          "_nanoseconds": 761000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "M2SfGV4A3Iu8WLneTflz",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "31w2R6hbyCncweapctT6",
+        "kpiLabel": "Insurance Law",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "target": 1,
+        "createdAt": {
+          "_seconds": 1776232137,
+          "_nanoseconds": 75000000
+        },
+        "updatedAt": {
+          "_seconds": 1776232137,
+          "_nanoseconds": 75000000
+        },
+        "createdBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+        "updatedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "MKNZjByGE1MMwREUhUYM",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "wJqqbuJID1colvF3xROK",
+        "kpiLabel": "UIF Registration",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 5,
+        "createdAt": {
+          "_seconds": 1778835241,
+          "_nanoseconds": 675000000
+        },
+        "updatedAt": {
+          "_seconds": 1778835241,
+          "_nanoseconds": 675000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "MeSZCRAVHyMopoB0vhx2",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "85QHMK0cOQ1fHdLgB3gT",
+        "kpiLabel": "Pitch  Elevator Ready",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1775811337,
+          "_nanoseconds": 855000000
+        },
+        "updatedAt": {
+          "_seconds": 1775811337,
+          "_nanoseconds": 855000000
+        },
+        "createdBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2",
+        "updatedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "MfUmn9iYPlO1G4vwMac8",
+      "data": {
+        "kpiId": "kKLeXCHkNrpvaNfCzLMm",
+        "kpiLabel": "Turnover increased by 5%",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "periodStartAt": {
+          "_seconds": 1782856800,
+          "_nanoseconds": 0
+        },
+        "target": 10,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "OAjEGvgHsJKwNI2U8U7r",
+      "data": {
+        "kpiId": "kKLeXCHkNrpvaNfCzLMm",
+        "kpiLabel": "Turnover increased by 5%",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "periodStartAt": {
+          "_seconds": 1767218400,
+          "_nanoseconds": 0
+        },
+        "target": 5,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "OOMwIMzEXaxVvGGfCS0n",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "smibsQwTWbmxoSydHdkj",
+        "kpiLabel": "Educational Workshop",
+        "department": "Wellness Services",
+        "periodType": "monthly",
+        "periodKey": "2026-03",
+        "target": 50,
+        "updatedAt": {
+          "_seconds": 1774339970,
+          "_nanoseconds": 985000000
+        },
+        "createdBy": "P3dhWg6Wa8SmDGnfpIdd3koZhKl1",
+        "createdAt": {
+          "_seconds": 1774339970,
+          "_nanoseconds": 985000000
+        }
+      }
+    },
+    {
+      "id": "OgdnZembc3DCyYYkfCHo",
+      "data": {
+        "kpiId": "QZVdWmoJjeBC4JHVTmfH",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "periodStartAt": {
+          "_seconds": 1790805600,
+          "_nanoseconds": 0
+        },
+        "target": 15,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "PE2F8IM1pmiGHaMhtdFd",
+      "data": {
+        "kpiId": "kKLeXCHkNrpvaNfCzLMm",
+        "kpiLabel": "Turnover increased by 5%",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "periodStartAt": {
+          "_seconds": 1790805600,
+          "_nanoseconds": 0
+        },
+        "target": 5,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "R4KisrE1I909dt8Tns4b",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "qTZiZAQeqNI8nByIIly7",
+        "kpiLabel": "Legal Complince , Buisness Support and Advisory Services ",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-06",
+        "target": 1,
+        "createdAt": {
+          "_seconds": 1778227850,
+          "_nanoseconds": 394000000
+        },
+        "updatedAt": {
+          "_seconds": 1778227850,
+          "_nanoseconds": 394000000
+        },
+        "createdBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+        "updatedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "ST7zUhO0G3Ug1ojVfO80",
+      "data": {
+        "kpiId": "QZVdWmoJjeBC4JHVTmfH",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "periodStartAt": {
+          "_seconds": 1782856800,
+          "_nanoseconds": 0
+        },
+        "target": 15,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "Wq3bItys28rFRFMdpWe7",
+      "data": {
+        "kpiId": "GjG9ADqOmeUk73eI8raP",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "periodStartAt": {
+          "_seconds": 1767218400,
+          "_nanoseconds": 0
+        },
+        "target": 20,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "YGSvLOnjJK4KWnSfWC5G",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ccqtfnMRVp2gYFuPVaKp",
+        "kpiLabel": "HSE & Labour Workshop",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1778838296,
+          "_nanoseconds": 747000000
+        },
+        "updatedAt": {
+          "_seconds": 1778838296,
+          "_nanoseconds": 747000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "YXpohWdj0KLuIgPVmYfO",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "0BqpFXrGgYvywbkUgQK1",
+        "kpiLabel": "Turnover Generated",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "target": 100000,
+        "createdAt": {
+          "_seconds": 1775810616,
+          "_nanoseconds": 293000000
+        },
+        "updatedAt": {
+          "_seconds": 1775810616,
+          "_nanoseconds": 293000000
+        },
+        "createdBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2",
+        "updatedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "ZqVWSZow5jcgEFFJKjth",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "mClSQ9jhBW554rhfxFY4",
+        "kpiLabel": "Health & Safety Files ",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1778837311,
+          "_nanoseconds": 747000000
+        },
+        "updatedAt": {
+          "_seconds": 1778837311,
+          "_nanoseconds": 747000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "bvS9lNwiPO6g5wHyqIm2",
+      "data": {
+        "kpiId": "GjG9ADqOmeUk73eI8raP",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "periodStartAt": {
+          "_seconds": 1774994400,
+          "_nanoseconds": 0
+        },
+        "target": 20,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "edYPFSgRSsydvlyxNJT7",
+      "data": {
+        "kpiId": "iviZIFDUwERLH4Etfm8P",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "periodStartAt": {
+          "_seconds": 1774994400,
+          "_nanoseconds": 0
+        },
+        "target": 25,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "ejD7Cn4HkByEO9jPsp38",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "PLkHlLwO1hamnb2VktqO",
+        "kpiLabel": "Educational Workshop",
+        "department": "Wellness Services",
+        "periodType": "monthly",
+        "periodKey": "2026-06",
+        "target": 20,
+        "createdAt": {
+          "_seconds": 1780352471,
+          "_nanoseconds": 642000000
+        },
+        "updatedAt": {
+          "_seconds": 1780352471,
+          "_nanoseconds": 642000000
+        },
+        "createdBy": "P3dhWg6Wa8SmDGnfpIdd3koZhKl1",
+        "updatedBy": "P3dhWg6Wa8SmDGnfpIdd3koZhKl1"
+      }
+    },
+    {
+      "id": "fMxLt2JqAiJDxUIJmxsx",
+      "data": {
+        "kpiId": "QZVdWmoJjeBC4JHVTmfH",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "periodStartAt": {
+          "_seconds": 1767218400,
+          "_nanoseconds": 0
+        },
+        "target": 20,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "fei2Rprq9hmuE9J5Hw01",
+      "data": {
+        "kpiId": "XsrK7RsPcwE2GJ01svHG",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "periodStartAt": {
+          "_seconds": 1767218400,
+          "_nanoseconds": 0
+        },
+        "target": 20,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "hUo9SeGS3iPVHCXIqVs6",
+      "data": {
+        "companyCode": "LPH",
+        "updatedBy": "JmS6iTErPZZuGfWShkT2dmXG9yE2",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "kpiLabel": "HSE and labour Support",
+        "periodType": "quarterly",
+        "kpiId": "lHlcDdOKQ8ED6ySAXhUq",
+        "updatedAt": {
+          "_seconds": 1785315848,
+          "_nanoseconds": 154000000
+        },
+        "periodKey": "2026-Q3",
+        "createdBy": "JmS6iTErPZZuGfWShkT2dmXG9yE2",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1785315848,
+          "_nanoseconds": 154000000
+        }
+      }
+    },
+    {
+      "id": "irO5KjVyA1PRbvG8tIa8",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "WlhdDlhfylxzzIjvkt1g",
+        "kpiLabel": "COID Registration",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 15,
+        "createdAt": {
+          "_seconds": 1778836674,
+          "_nanoseconds": 217000000
+        },
+        "updatedAt": {
+          "_seconds": 1778836674,
+          "_nanoseconds": 217000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "lAz9fMFoouM4mTSuNJya",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "cNA0LxlcTSuEoRz8AADR",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "createdAt": {
+          "_seconds": 1778831650,
+          "_nanoseconds": 975000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "changeReason": "New Financial Year",
+        "target": 15,
+        "kpiLabel": "COID _ Good Standing",
+        "updatedAt": {
+          "_seconds": 1778843371,
+          "_nanoseconds": 419000000
+        }
+      }
+    },
+    {
+      "id": "lj85dwZKXhC3d3TOqI15",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "lHlcDdOKQ8ED6ySAXhUq",
+        "kpiLabel": "Number of Interventions",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1778837545,
+          "_nanoseconds": 345000000
+        },
+        "updatedAt": {
+          "_seconds": 1778837545,
+          "_nanoseconds": 345000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "m1w1sFBKSxoA5NnjItUj",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "TNFZN7HtTD0xv2CTkBXW",
+        "kpiLabel": "SMME Funding Readiness",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1775810258,
+          "_nanoseconds": 405000000
+        },
+        "updatedAt": {
+          "_seconds": 1775810258,
+          "_nanoseconds": 405000000
+        },
+        "createdBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2",
+        "updatedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "mE0bwiFH4Jv4JwimuwhM",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "jAPF5o6dAWBhPFj5VX0M",
+        "kpiLabel": "HSE Files Completed",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "target": 15,
+        "createdAt": {
+          "_seconds": 1778843462,
+          "_nanoseconds": 808000000
+        },
+        "updatedAt": {
+          "_seconds": 1778843462,
+          "_nanoseconds": 808000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "nNNYg3w8MzVMXB0CseEB",
+      "data": {
+        "kpiId": "XsrK7RsPcwE2GJ01svHG",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "periodStartAt": {
+          "_seconds": 1774994400,
+          "_nanoseconds": 0
+        },
+        "target": 25,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    },
+    {
+      "id": "oEYKIrujaCs7kY0jPwmX",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ezRjpxqA0EQpDaUBKhsb",
+        "kpiLabel": "Jobs Collected",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 15,
+        "createdAt": {
+          "_seconds": 1778836527,
+          "_nanoseconds": 919000000
+        },
+        "updatedAt": {
+          "_seconds": 1778836527,
+          "_nanoseconds": 919000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "r6wcpGZzG4WZH7AKEoGW",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "pCHB7o46kXS4KS61Q7ko",
+        "kpiLabel": "Labour Law",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "target": 1,
+        "createdAt": {
+          "_seconds": 1776231922,
+          "_nanoseconds": 625000000
+        },
+        "updatedAt": {
+          "_seconds": 1776231922,
+          "_nanoseconds": 625000000
+        },
+        "createdBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3",
+        "updatedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "rcsaQdrYatiKowe3NdCJ",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "5aKyuyt8s0wDgH2H0P7r",
+        "kpiLabel": "Educational Workshop",
+        "department": "Wellness Services",
+        "periodType": "monthly",
+        "periodKey": "2026-06",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1781860090,
+          "_nanoseconds": 768000000
+        },
+        "updatedAt": {
+          "_seconds": 1781860090,
+          "_nanoseconds": 768000000
+        },
+        "createdBy": "P3dhWg6Wa8SmDGnfpIdd3koZhKl1",
+        "updatedBy": "P3dhWg6Wa8SmDGnfpIdd3koZhKl1"
+      }
+    },
+    {
+      "id": "tErpPuZrgOgRt1Mcomdk",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "NKOe0li6qVK3JIGv7sva",
+        "kpiLabel": "Funding Linkage Facilitated",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "target": 30,
+        "createdAt": {
+          "_seconds": 1775810142,
+          "_nanoseconds": 803000000
+        },
+        "updatedAt": {
+          "_seconds": 1775810142,
+          "_nanoseconds": 803000000
+        },
+        "createdBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2",
+        "updatedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "wr9pBMVOWNOYaGi4xFx4",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ARA5HOmHHSAoA7sdTd9u",
+        "kpiLabel": "Test KPI",
+        "department": "Wellness Services",
+        "periodType": "monthly",
+        "periodKey": "2026-03",
+        "target": 70,
+        "updatedAt": {
+          "_seconds": 1774337890,
+          "_nanoseconds": 179000000
+        },
+        "createdBy": "5FhWBi03XJfKDJU0PhqKwm08e502",
+        "createdAt": {
+          "_seconds": 1774337890,
+          "_nanoseconds": 179000000
+        }
+      }
+    },
+    {
+      "id": "x78pB18G97e0cDFDMlmI",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "D55y9Affjm5YcxyRGs6j",
+        "kpiLabel": "Jobs Collected",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "target": 15,
+        "createdAt": {
+          "_seconds": 1778838786,
+          "_nanoseconds": 241000000
+        },
+        "updatedAt": {
+          "_seconds": 1778838786,
+          "_nanoseconds": 241000000
+        },
+        "createdBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1",
+        "updatedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "yZcxh52JorkjLPUPGBIH",
+      "data": {
+        "kpiId": "QZVdWmoJjeBC4JHVTmfH",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "periodStartAt": {
+          "_seconds": 1774994400,
+          "_nanoseconds": 0
+        },
+        "target": 20,
+        "seedSource": "srmcdt-kpi-letters-test-seed",
+        "createdAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "updatedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "createdBy": "kpi-seed-script",
+        "updatedBy": "kpi-seed-script"
+      }
+    }
+  ],
+  "kpiTargetAuditLogs": [
+    {
+      "id": "043tt0Jg2GK52emPJqaB",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "85QHMK0cOQ1fHdLgB3gT",
+        "targetDocId": "MeSZCRAVHyMopoB0vhx2",
+        "kpiLabel": "Pitch  Elevator Ready",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1775811338,
+          "_nanoseconds": 167000000
+        },
+        "changedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "0ZkPnbaMe8EVYFNMLFc6",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "vZqxWLnZKtWga45OtgkE",
+        "targetDocId": "66m0VyN4ttnBG36qdiaj",
+        "kpiLabel": "Bookkeeping and Management Accounts",
+        "department": "Financial Compliance",
+        "periodType": "monthly",
+        "periodKey": "2026-01",
+        "action": "updated",
+        "oldTarget": 30,
+        "newTarget": 30,
+        "changeReason": "Initial target updated from KPI wizard",
+        "changedAt": {
+          "_seconds": 1775810519,
+          "_nanoseconds": 937000000
+        },
+        "changedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "0eNfXnqXmYUyO9Wi16Gm",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ZJe361uDTTCUp2aRUX1h",
+        "targetDocId": "D6sJeE9rz9UTb4fTCt9h",
+        "kpiLabel": "Business Law ( Corporate)",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 1,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1776232067,
+          "_nanoseconds": 768000000
+        },
+        "changedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "1CzDjlBTzX9C8LI9KgxG",
+      "data": {
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "action": "created",
+        "periodKey": "2026-Q4",
+        "oldTarget": null,
+        "periodType": "quarterly",
+        "changeReason": "",
+        "newTarget": 30,
+        "companyCode": "LPH",
+        "kpiLabel": "Compliance Group Progression",
+        "kpiId": "lHcMgn43ZZrsPNvIBP3W",
+        "approvedBy": null,
+        "approvedAt": null,
+        "changedBy": "5ajjzDBg67OzdAWxqbok8y7K6JH3",
+        "revisionId": null,
+        "changedAt": {
+          "_seconds": 1788723022,
+          "_nanoseconds": 403000000
+        },
+        "targetDocId": "FCwORj0bybDOXyZDZymW"
+      }
+    },
+    {
+      "id": "1LSuDtL4sIO3aDIhSQ9R",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "lHlcDdOKQ8ED6ySAXhUq",
+        "targetDocId": "lj85dwZKXhC3d3TOqI15",
+        "kpiLabel": "Number of Interventions",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778837545,
+          "_nanoseconds": 721000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "2CDc189T13U7VMQevX5u",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "mClSQ9jhBW554rhfxFY4",
+        "targetDocId": "ZqVWSZow5jcgEFFJKjth",
+        "kpiLabel": "Health & Safety Files ",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778837312,
+          "_nanoseconds": 100000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "2Tc0gAIbnGk1MENZQ0sQ",
+      "data": {
+        "kpiId": "XsrK7RsPcwE2GJ01svHG",
+        "targetDocId": "KogJRiXdXIQbv6W8wSxK",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "6sSH7m1MTmvhaRVuutL2",
+      "data": {
+        "changeReason": "Initial target created from KPI wizard",
+        "periodType": "quarterly",
+        "kpiId": "lHlcDdOKQ8ED6ySAXhUq",
+        "changedBy": "JmS6iTErPZZuGfWShkT2dmXG9yE2",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "companyCode": "LPH",
+        "targetDocId": "hUo9SeGS3iPVHCXIqVs6",
+        "oldTarget": null,
+        "periodKey": "2026-Q3",
+        "changedAt": {
+          "_seconds": 1785315848,
+          "_nanoseconds": 508000000
+        },
+        "kpiLabel": "HSE and labour Support",
+        "action": "created",
+        "newTarget": 30
+      }
+    },
+    {
+      "id": "8WkwCMukOxVLimrk9HEE",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "cNA0LxlcTSuEoRz8AADR",
+        "targetDocId": "lAz9fMFoouM4mTSuNJya",
+        "kpiLabel": "COID _ GOOD STANDING",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "updated",
+        "oldTarget": 15,
+        "newTarget": 15,
+        "changeReason": "Initial target updated from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778843329,
+          "_nanoseconds": 735000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "9brf31lymyYWFTzCPwQq",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "Fp1Z1K17ctVonqEbcRzc",
+        "targetDocId": "EqoPKWUsjg3aYaFFRCa2",
+        "kpiLabel": "Compliance with the Information Regulator",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 1,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1776231850,
+          "_nanoseconds": 326000000
+        },
+        "changedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "ASBha4jqQLQxV3JKfKZJ",
+      "data": {
+        "kpiId": "XsrK7RsPcwE2GJ01svHG",
+        "targetDocId": "fei2Rprq9hmuE9J5Hw01",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "Bi6UNVMCUGnI87cvbUpk",
+      "data": {
+        "kpiId": "QZVdWmoJjeBC4JHVTmfH",
+        "targetDocId": "yZcxh52JorkjLPUPGBIH",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "FLkE2kXa8EesWmyHPoRe",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ezRjpxqA0EQpDaUBKhsb",
+        "targetDocId": "oEYKIrujaCs7kY0jPwmX",
+        "kpiLabel": "Jobs Collected",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778836528,
+          "_nanoseconds": 238000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "FfqzEq9Q4GRsMI5wsB2l",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "cNA0LxlcTSuEoRz8AADR",
+        "targetDocId": "lAz9fMFoouM4mTSuNJya",
+        "kpiLabel": "COID Compliance Completed",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 10,
+        "changeReason": "",
+        "changedAt": {
+          "_seconds": 1778831651,
+          "_nanoseconds": 311000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "GO5qFmoLcp5AKMB7BFK5",
+      "data": {
+        "kpiId": "QZVdWmoJjeBC4JHVTmfH",
+        "targetDocId": "fMxLt2JqAiJDxUIJmxsx",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "Gt3qY8553aMkYySXHsxF",
+      "data": {
+        "kpiId": "GjG9ADqOmeUk73eI8raP",
+        "targetDocId": "HwT8CMiZDxBYNyv7cBIJ",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "HXvau5UQTSGBR5UcEfT5",
+      "data": {
+        "newTarget": 40,
+        "periodType": "quarterly",
+        "oldTarget": 30,
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "periodKey": "2026-Q4",
+        "kpiLabel": "Compliance Group Progression",
+        "companyCode": "LPH",
+        "kpiId": "lHcMgn43ZZrsPNvIBP3W",
+        "changedAt": {
+          "_seconds": 1788723396,
+          "_nanoseconds": 42000000
+        },
+        "revisionId": null,
+        "changedBy": "5ajjzDBg67OzdAWxqbok8y7K6JH3",
+        "action": "updated",
+        "approvedBy": null,
+        "changeReason": "",
+        "targetDocId": "FCwORj0bybDOXyZDZymW",
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "Ha4DNOrf52WlzhdFk6lG",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "cNA0LxlcTSuEoRz8AADR",
+        "targetDocId": "lAz9fMFoouM4mTSuNJya",
+        "kpiLabel": "COID Compliance Completed",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "updated",
+        "oldTarget": 10,
+        "newTarget": 15,
+        "changeReason": "New Financial Year",
+        "changedAt": {
+          "_seconds": 1778834717,
+          "_nanoseconds": 228000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "IA7WghpzNQGLyvvdx0do",
+      "data": {
+        "kpiId": "iviZIFDUwERLH4Etfm8P",
+        "targetDocId": "3e62Fmvvz47jsjxpWcaI",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 25,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "IAQu5YxcQEOpNNbyHcTk",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "vZqxWLnZKtWga45OtgkE",
+        "targetDocId": "66m0VyN4ttnBG36qdiaj",
+        "kpiLabel": "Bookkeeping and Management Accounts",
+        "department": "Financial Compliance",
+        "periodType": "monthly",
+        "periodKey": "2026-01",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1775809786,
+          "_nanoseconds": 267000000
+        },
+        "changedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "LwBP6ECsgjInEqRMmkl5",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ozj6QZ6Wm3iQOzUIHcQB",
+        "targetDocId": "ARHIB1PWcIhDKA4plR91",
+        "kpiLabel": "commercial law",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 1,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1776231993,
+          "_nanoseconds": 83000000
+        },
+        "changedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "MH7joIvUK1L7P2mAs6PT",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "31w2R6hbyCncweapctT6",
+        "targetDocId": "M2SfGV4A3Iu8WLneTflz",
+        "kpiLabel": "Insurance Law",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 1,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1776232137,
+          "_nanoseconds": 484000000
+        },
+        "changedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "MMLqLbPpCG4WhtEc6rQF",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "wJqqbuJID1colvF3xROK",
+        "targetDocId": "LpqHW1y4qe1xWLrITVH1",
+        "kpiLabel": "UIF Registration",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 5,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778843501,
+          "_nanoseconds": 77000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "MbhqD6ACAUQganvAQrYt",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "pCHB7o46kXS4KS61Q7ko",
+        "targetDocId": "r6wcpGZzG4WZH7AKEoGW",
+        "kpiLabel": "Labour Law",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 1,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1776231922,
+          "_nanoseconds": 960000000
+        },
+        "changedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "Mh5jTAbSmooCqNdeSvei",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "qTZiZAQeqNI8nByIIly7",
+        "targetDocId": "R4KisrE1I909dt8Tns4b",
+        "kpiLabel": "Legal Complince , Buisness Support and Advisory Services ",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-06",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 1,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778227850,
+          "_nanoseconds": 693000000
+        },
+        "changedBy": "qvzDY7YzW0MLWTJHjwZbF2rVHQE3"
+      }
+    },
+    {
+      "id": "MjGFZhsMhBwxdRosMFBc",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "NKOe0li6qVK3JIGv7sva",
+        "targetDocId": "tErpPuZrgOgRt1Mcomdk",
+        "kpiLabel": "Funding Linkage Facilitated",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1775810143,
+          "_nanoseconds": 103000000
+        },
+        "changedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "OLKlfz7xs3uVzQxGCRcN",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ccqtfnMRVp2gYFuPVaKp",
+        "targetDocId": "YGSvLOnjJK4KWnSfWC5G",
+        "kpiLabel": "HSE & Labour Workshop",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778838297,
+          "_nanoseconds": 53000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "ONdUh9u6qyvshH0UmRWd",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "OxLuqzwQkiKkXLRoraoC",
+        "targetDocId": "41IxNFvbN4CXDB04eZIl",
+        "kpiLabel": "UIF Registration",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 5,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778837417,
+          "_nanoseconds": 924000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "PLpxI2I81J4IgB9NLV81",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "jAPF5o6dAWBhPFj5VX0M",
+        "targetDocId": "mE0bwiFH4Jv4JwimuwhM",
+        "kpiLabel": "HSE Files Completed",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778843463,
+          "_nanoseconds": 168000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "PNdLufJFkjc9HLW6SjQk",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "cNA0LxlcTSuEoRz8AADR",
+        "targetDocId": "9I612P54qw0spWDYFBbd",
+        "kpiLabel": "COID _ Good Standing",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778843426,
+          "_nanoseconds": 102000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "XtQ5fUFKsBXHIvkbI02p",
+      "data": {
+        "kpiId": "kKLeXCHkNrpvaNfCzLMm",
+        "targetDocId": "OAjEGvgHsJKwNI2U8U7r",
+        "kpiLabel": "Turnover increased by 5%",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 5,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "a4MVHLTSEJLSLTR4mzqe",
+      "data": {
+        "kpiId": "XsrK7RsPcwE2GJ01svHG",
+        "targetDocId": "nNNYg3w8MzVMXB0CseEB",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 25,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "b5cs2whWEMQcBCQw1B3w",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "0BqpFXrGgYvywbkUgQK1",
+        "targetDocId": "YXpohWdj0KLuIgPVmYfO",
+        "kpiLabel": "Turnover Generated",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 100000,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1775810616,
+          "_nanoseconds": 597000000
+        },
+        "changedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "eOPY2aeNAI9f6PxUhrhe",
+      "data": {
+        "kpiId": "FWAc8qt5FtKdFU9xDbXF",
+        "targetDocId": "YVtuPe01oOvG0oQAUlfN",
+        "kpiLabel": "Fa",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "periodType": "monthly",
+        "periodKey": "2026-10",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 34,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1790165268,
+          "_nanoseconds": 110000000
+        },
+        "changedBy": "5ajjzDBg67OzdAWxqbok8y7K6JH3",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "gbHkr1cdKARjgaRC0xrH",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "D55y9Affjm5YcxyRGs6j",
+        "targetDocId": "x78pB18G97e0cDFDMlmI",
+        "kpiLabel": "Jobs Collected",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778838786,
+          "_nanoseconds": 543000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "iHddQ1wVTxtBBuaMTM1q",
+      "data": {
+        "kpiId": "kKLeXCHkNrpvaNfCzLMm",
+        "targetDocId": "PE2F8IM1pmiGHaMhtdFd",
+        "kpiLabel": "Turnover increased by 5%",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 5,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "jAWICnS3ktMuhG2L5Xuw",
+      "data": {
+        "kpiId": "QZVdWmoJjeBC4JHVTmfH",
+        "targetDocId": "OgdnZembc3DCyYYkfCHo",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "mPsmVV5YW1u8sfbM6ncB",
+      "data": {
+        "kpiId": "kKLeXCHkNrpvaNfCzLMm",
+        "targetDocId": "MfUmn9iYPlO1G4vwMac8",
+        "kpiLabel": "Turnover increased by 5%",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 10,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "nIOrn548PAeLt7kRUh2F",
+      "data": {
+        "kpiId": "GjG9ADqOmeUk73eI8raP",
+        "targetDocId": "KrOd016Z4xvTtvcJ3rs9",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "oCnUHWzIy7TgbbsMPCas",
+      "data": {
+        "kpiId": "GjG9ADqOmeUk73eI8raP",
+        "targetDocId": "Wq3bItys28rFRFMdpWe7",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "ocsnqWc3xCECUSnEBZ7r",
+      "data": {
+        "kpiId": "iviZIFDUwERLH4Etfm8P",
+        "targetDocId": "Gb4JbgzFXP5Vwp08Cc7N",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "qIxX3EkrmZGLZuw7Dlzq",
+      "data": {
+        "kpiId": "GjG9ADqOmeUk73eI8raP",
+        "targetDocId": "bvS9lNwiPO6g5wHyqIm2",
+        "kpiLabel": "Direct Jobs Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "qcpYAfmrgdBjBxxJNbKV",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "PLkHlLwO1hamnb2VktqO",
+        "targetDocId": "ejD7Cn4HkByEO9jPsp38",
+        "kpiLabel": "Educational Workshop",
+        "department": "Wellness Services",
+        "periodType": "monthly",
+        "periodKey": "2026-06",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1780352471,
+          "_nanoseconds": 989000000
+        },
+        "changedBy": "P3dhWg6Wa8SmDGnfpIdd3koZhKl1"
+      }
+    },
+    {
+      "id": "qkhn8X7nXukzVuqlVQsD",
+      "data": {
+        "kpiId": "iviZIFDUwERLH4Etfm8P",
+        "targetDocId": "edYPFSgRSsydvlyxNJT7",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 25,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "t1DdzvkSXFSdgAjGV96r",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "ozj6QZ6Wm3iQOzUIHcQB",
+        "targetDocId": "ARHIB1PWcIhDKA4plR91",
+        "kpiLabel": "Commercial law",
+        "department": "Legal Advisory Services",
+        "periodType": "monthly",
+        "periodKey": "2026-04",
+        "action": "updated",
+        "oldTarget": 1,
+        "newTarget": 1,
+        "changeReason": "Initial target updated from KPI wizard",
+        "changedAt": {
+          "_seconds": 1776556242,
+          "_nanoseconds": 320000000
+        },
+        "changedBy": "eacBfsZunOXoYsWPr7JKhO9e3oe2"
+      }
+    },
+    {
+      "id": "tRrmyujptLGR8zviUKk9",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "5aKyuyt8s0wDgH2H0P7r",
+        "targetDocId": "rcsaQdrYatiKowe3NdCJ",
+        "kpiLabel": "Educational Workshop",
+        "department": "Wellness Services",
+        "periodType": "monthly",
+        "periodKey": "2026-06",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1781860091,
+          "_nanoseconds": 118000000
+        },
+        "changedBy": "P3dhWg6Wa8SmDGnfpIdd3koZhKl1"
+      }
+    },
+    {
+      "id": "uMGwgRZHSWpESYnDCAgn",
+      "data": {
+        "kpiId": "QZVdWmoJjeBC4JHVTmfH",
+        "targetDocId": "ST7zUhO0G3Ug1ojVfO80",
+        "kpiLabel": "Collection of Direct Jobs for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "uZhYlKOLUjWmy5skVTme",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "jAPF5o6dAWBhPFj5VX0M",
+        "targetDocId": "C7D4WWmkZgBwHx4oJYgF",
+        "kpiLabel": "HSE Files Completed",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "monthly",
+        "periodKey": "2026-03",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1775031498,
+          "_nanoseconds": 979000000
+        },
+        "changedBy": "pvBLLSeAWjMp1VDceGR2NEFMUfD2"
+      }
+    },
+    {
+      "id": "wh0PRVmgnHVussFffcIb",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "WlhdDlhfylxzzIjvkt1g",
+        "targetDocId": "irO5KjVyA1PRbvG8tIa8",
+        "kpiLabel": "COID Registration",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 15,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778836674,
+          "_nanoseconds": 542000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "wkY59tfi1XJ7KqNwjiNN",
+      "data": {
+        "kpiId": "iviZIFDUwERLH4Etfm8P",
+        "targetDocId": "E0wH6pLxdEKy6sBdw5K8",
+        "kpiLabel": "Jobs sustained Management accounts",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q4",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 20,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "wxcB0aDQCvGeZiQm9YBA",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "cNA0LxlcTSuEoRz8AADR",
+        "targetDocId": "lAz9fMFoouM4mTSuNJya",
+        "kpiLabel": "COID _ Good Standing",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "updated",
+        "oldTarget": 15,
+        "newTarget": 15,
+        "changeReason": "Initial target updated from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778843371,
+          "_nanoseconds": 732000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "xygLblthQ9rpJaZ0DfTQ",
+      "data": {
+        "kpiId": "kKLeXCHkNrpvaNfCzLMm",
+        "targetDocId": "AJkJt0kEeNpJGMGE2PEM",
+        "kpiLabel": "Turnover increased by 5%",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 10,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "yIpU61plx1r6MTxeNrqL",
+      "data": {
+        "kpiId": "FWAc8qt5FtKdFU9xDbXF",
+        "targetDocId": "YVtuPe01oOvG0oQAUlfN",
+        "kpiLabel": "Fa",
+        "department": "ROM (Recruitment, Onboarding and Maintenance)",
+        "periodType": "monthly",
+        "periodKey": "2026-10",
+        "action": "deleted",
+        "oldTarget": 34,
+        "newTarget": null,
+        "changeReason": "Target removed because KPI was deleted",
+        "changedAt": {
+          "_seconds": 1790165280,
+          "_nanoseconds": 283000000
+        },
+        "changedBy": "5ajjzDBg67OzdAWxqbok8y7K6JH3",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "yYpabIIho1Cdb1wtAAAk",
+      "data": {
+        "kpiId": "XsrK7RsPcwE2GJ01svHG",
+        "targetDocId": "JFD4O3LsREAoJiNCHB00",
+        "kpiLabel": "Collection & confirmation of Jobs Sustained for the MSME",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q3",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 25,
+        "changeReason": "Imported from SEDFA KPI letter (test seed, backdated to calendar year)",
+        "changedAt": {
+          "_seconds": 1790098506,
+          "_nanoseconds": 999000000
+        },
+        "changedBy": "kpi-seed-script",
+        "revisionId": null,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "zXMZdyNWuTFxbdob1IU6",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "TNFZN7HtTD0xv2CTkBXW",
+        "targetDocId": "m1w1sFBKSxoA5NnjItUj",
+        "kpiLabel": "SMME Funding Readiness",
+        "department": "Financial Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q2",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 30,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1775810258,
+          "_nanoseconds": 697000000
+        },
+        "changedBy": "p2qCG6POfCSFExV1fe61tqLP7DJ2"
+      }
+    },
+    {
+      "id": "za52NGnJ0OAnyq1Q5h6F",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "jAPF5o6dAWBhPFj5VX0M",
+        "targetDocId": "C7D4WWmkZgBwHx4oJYgF",
+        "kpiLabel": "HSE Files Completed",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "monthly",
+        "periodKey": "2026-03",
+        "action": "updated",
+        "oldTarget": 30,
+        "newTarget": 15,
+        "changeReason": "Initial target updated from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778835518,
+          "_nanoseconds": 74000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    },
+    {
+      "id": "zkkIwt8MYIntHB6k4Pc9",
+      "data": {
+        "companyCode": "LPH",
+        "kpiId": "wJqqbuJID1colvF3xROK",
+        "targetDocId": "MKNZjByGE1MMwREUhUYM",
+        "kpiLabel": "UIF Registration",
+        "department": "HSE (Health, Safety & Environment) and Labour Compliance",
+        "periodType": "quarterly",
+        "periodKey": "2026-Q1",
+        "action": "created",
+        "oldTarget": null,
+        "newTarget": 5,
+        "changeReason": "Initial target created from KPI wizard",
+        "changedAt": {
+          "_seconds": 1778835241,
+          "_nanoseconds": 995000000
+        },
+        "changedBy": "hjgAxWBDnpfRPNuRhd0Z6xC8dnv1"
+      }
+    }
+  ],
+  "kpiTargetRevisions": [],
+  "kpiReminderNotifications": []
+}

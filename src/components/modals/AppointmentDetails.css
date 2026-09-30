@@ -1,0 +1,5 @@
+/* Every tag in the appointment details modal reads as a pill, matching the
+   "Grouped appointment" tag design — not antd's default square-ish corners. */
+.appointment-details-modal .ant-tag {
+    border-radius: 999px;
+}

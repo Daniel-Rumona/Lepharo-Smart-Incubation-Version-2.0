@@ -1,5 +1,13 @@
 // src/utils/reportChartRenderer.ts
 import Highcharts from "highcharts"
+import HCExporting from "highcharts/modules/exporting"
+
+// chart.getSVG() below comes from the exporting module, which Highcharts does not
+// load by default. It was previously only present as a side effect of some other
+// page (e.g. funder analytics) having already registered it on the shared
+// Highcharts instance first — so this crashed with "chart.getSVG is not a
+// function" whenever this renderer ran before one of those pages did.
+if (typeof HCExporting === "function") HCExporting(Highcharts)
 
 type RenderOpts = { width?: number; height?: number }
 

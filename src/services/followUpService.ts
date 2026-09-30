@@ -32,6 +32,7 @@ export interface FollowUp {
   notes: string
   assignedTo: string
   assignedToName: string
+  assignedToEmail?: string
   createdAt: Date
   completedAt?: Date
   updatedAt: Date
@@ -46,6 +47,7 @@ export interface FollowUpFormData {
   notes?: string
   assignedTo: string
   assignedToName: string
+  assignedToEmail?: string
 }
 
 export interface FollowUpQueryParams {
@@ -88,6 +90,7 @@ export const followUpService = {
         notes: followUpData.notes || '',
         assignedTo: followUpData.assignedTo,
         assignedToName: followUpData.assignedToName,
+        assignedToEmail: followUpData.assignedToEmail || '',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         isActive: true
@@ -326,6 +329,9 @@ export const followUpService = {
       if (updateData.assignedTo) {
         updatePayload.assignedTo = updateData.assignedTo
         updatePayload.assignedToName = updateData.assignedToName
+        if (updateData.assignedToEmail !== undefined) {
+          updatePayload.assignedToEmail = updateData.assignedToEmail
+        }
       }
 
       await updateDoc(followUpRef, updatePayload)

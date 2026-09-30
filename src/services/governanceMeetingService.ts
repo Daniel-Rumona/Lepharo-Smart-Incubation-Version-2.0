@@ -31,6 +31,12 @@ export const governanceMeetingService = {
       updatedAt: serverTimestamp(),
     });
   },
+  async update(id: string, patch: Partial<GovernanceMeeting>) {
+    return updateDoc(doc(db, "governanceMeetings", id), {
+      ...patch,
+      updatedAt: serverTimestamp(),
+    });
+  },
   async updateChallenges(
     id: string,
     challenges: GovernanceMeeting["challenges"]

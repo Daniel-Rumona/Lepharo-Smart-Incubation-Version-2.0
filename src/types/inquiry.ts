@@ -81,6 +81,8 @@ export interface FollowUp {
   nextFollowUpDate?: Date;
   followUpMethod?: FollowUpMethod;
   assignedTo?: string; // User ID
+  assignedToName?: string;
+  assignedToEmail?: string;
   notes?: string;
 }
 
@@ -109,6 +111,10 @@ export interface Inquiry {
   programId?: string | null;
   programName?: string;
   sourceType?: 'Incubatee' | 'Non-Incubatee';
+  /** The incubated SME this inquiry is about, when it is not the person who came in. */
+  participantId?: string | null;
+  /** True when someone attended on the SME's behalf, so the contact is not the SME owner. */
+  isRepresentative?: boolean;
   submittedBy: string; // User ID (may be transferred to receptionist for management)
   originalSubmittedBy?: string; // Original submitter before any ownership transfer
   submittedAt: Date;
@@ -140,6 +146,8 @@ export interface InquiryFormData {
   programId?: string | null;
   programName?: string | null;
   sourceType?: 'Incubatee' | 'Non-Incubatee';
+  participantId?: string | null;
+  isRepresentative?: boolean;
 }
 
 // Flat form data interface for forms (matches Ant Design form structure)

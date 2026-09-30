@@ -25,6 +25,7 @@ import heatmapModule from 'highcharts/modules/heatmap'
 import exportingModule from 'highcharts/modules/exporting'
 import accessibilityModule from 'highcharts/modules/accessibility'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { channelLabel, resolveInquiryChannel } from '@/utils/inquirySource'
 
 const { RangePicker } = DatePicker
 const { Title, Text } = Typography
@@ -98,7 +99,8 @@ const ReceptionistReports: React.FC = () => {
 
       filtered.forEach(i => {
         statusMap.set(i.status, (statusMap.get(i.status) || 0) + 1)
-        sourceMap.set(i.source, (sourceMap.get(i.source) || 0) + 1)
+        const channel = channelLabel(resolveInquiryChannel(i.source))
+        sourceMap.set(channel, (sourceMap.get(channel) || 0) + 1)
         const key = format(new Date(i.submittedAt), 'yyyy-MM-dd')
         dayMap.set(key, (dayMap.get(key) || 0) + 1)
       })

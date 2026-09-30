@@ -1,14 +1,33 @@
 import React, { useMemo, useState } from 'react'
-import { Modal, Button, Space, Typography, DatePicker, Row, Col, Card, Table, Empty, Segmented, Tag, Progress } from 'antd'
-import { FullscreenOutlined, FullscreenExitOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
+import { Modal, Button, Space, Typography, DatePicker, Row, Col, Card, Empty, Tag, Progress, message } from 'antd'
+import {
+    FullscreenOutlined,
+    FullscreenExitOutlined,
+    FileWordOutlined,
+    FilePdfOutlined,
+    CheckCircleOutlined,
+    TeamOutlined,
+    UserOutlined,
+    PercentageOutlined,
+    TableOutlined,
+    PlayCircleOutlined,
+    CalendarOutlined,
+    EnvironmentOutlined
+} from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import isBetween from 'dayjs/plugin/isBetween'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 import SessionReviewStory from './SessionReviewStory'
 import { getCoverageReviewPhotos } from '@/lib/coveragePhotos'
 import CoveragePhotoGallery from '@/components/appointments/CoveragePhotoGallery'
+import {
+    exportAttendanceReportDocx,
+    exportAttendanceReportPdf,
+    type AttendanceReportRow
+} from '@/utils/attendanceReportExport'
 
 dayjs.extend(isBetween)
 
@@ -44,31 +63,9 @@ interface SessionReviewModalProps {
     deliveryMethods: ReviewMethod[]
 }
 
-const rangeOptions = [
-    { label: 'Daily', value: 'day' },
-    { label: 'Weekly', value: 'week' },
-    { label: 'Monthly', value: 'month' },
-    { label: 'Quarterly', value: 'quarter' },
-    { label: 'Custom', value: 'custom' }
-]
-
-const pickerByRange: Record<ReviewRange, 'date' | 'week' | 'month'> = {
-    day: 'date',
-    week: 'week',
-    month: 'month',
-    quarter: 'date'
-}
-
 const getFiscalQuarterStart = (date: Dayjs) => {
     const monthsIntoQuarter = ((date.month() - FISCAL_START_MONTH + 12) % 12) % 3
     return date.startOf('month').subtract(monthsIntoQuarter, 'month')
-}
-
-const getFiscalQuarterInfo = (date: Dayjs) => {
-    const fiscalMonthIndex = (date.month() - FISCAL_START_MONTH + 12) % 12
-    const quarterNumber = Math.floor(fiscalMonthIndex / 3) + 1
-    const fiscalYear = date.month() >= FISCAL_START_MONTH ? date.year() : date.year() - 1
-    return { quarterNumber, fiscalYear }
 }
 
 const getRangeBounds = (date: Dayjs, range: ReviewRange) => {
@@ -100,24 +97,6 @@ const getRangeBounds = (date: Dayjs, range: ReviewRange) => {
     }
 }
 
-const getRangeLabel = (date: Dayjs, range: ReviewRange) => {
-    switch (range) {
-        case 'day':
-            return date.format('MMMM D, YYYY')
-        case 'week': {
-            const start = date.startOf('week')
-            const end = start.endOf('week')
-            return `${start.format('MMM D')} — ${end.format('MMM D, YYYY')}`
-        }
-        case 'month':
-            return date.format('MMMM YYYY')
-        case 'quarter': {
-            const { quarterNumber, fiscalYear } = getFiscalQuarterInfo(date)
-            return `Q${quarterNumber} ${fiscalYear} (${getFiscalQuarterStart(date).format('MMM')} – ${getFiscalQuarterStart(date).add(2, 'month').format('MMM')})`
-        }
-    }
-}
-
 const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
     open,
     onClose,
@@ -134,19 +113,34 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
 }) => {
     const [viewMode, setViewMode] = useState<ViewMode>('data')
     const [isFullscreen, setIsFullscreen] = useState(false)
-    const [customActive, setCustomActive] = useState(false)
-    const [customDates, setCustomDates] = useState<[Dayjs, Dayjs] | null>(null)
+    // The date range is always live and editable — no separate "custom"
+    // toggle. It starts wherever the parent's last-used range/date landed,
+    // and This Week/Month/Quarter live as the RangePicker's own preset
+    // panel (the column to the left of the calendar when it opens).
+    const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>(() => {
+        const bounds = getRangeBounds(reviewDate, reviewRange)
+        return [bounds.start, bounds.end]
+    })
 
-    const activeRange = useMemo(() => {
-        if (customActive && customDates) {
-            return { start: customDates[0].startOf('day'), end: customDates[1].endOf('day') }
+    const rangePresets = useMemo(() => {
+        const now = dayjs()
+        const toPreset = (preset: 'week' | 'month' | 'quarter') => {
+            const bounds = getRangeBounds(now, preset)
+            return [bounds.start, bounds.end] as [Dayjs, Dayjs]
         }
-        return getRangeBounds(reviewDate, reviewRange)
-    }, [customActive, customDates, reviewDate, reviewRange])
+        return [
+            { label: 'This Week', value: toPreset('week') },
+            { label: 'This Month', value: toPreset('month') },
+            { label: 'This Quarter', value: toPreset('quarter') }
+        ]
+    }, [])
 
-    const rangeLabel = customActive && customDates
-        ? `${customDates[0].format('MMM D, YYYY')} — ${customDates[1].format('MMM D, YYYY')}`
-        : getRangeLabel(reviewDate, reviewRange)
+    const activeRange = useMemo(
+        () => ({ start: dateRange[0].startOf('day'), end: dateRange[1].endOf('day') }),
+        [dateRange]
+    )
+
+    const rangeLabel = `${dateRange[0].format('MMM D, YYYY')} — ${dateRange[1].format('MMM D, YYYY')}`
 
     const rows = useMemo(() => {
         return groupedDisplayAppointments.filter(row => {
@@ -231,12 +225,69 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
         }
     }, [rows, deliveryMethods, derivedStatus, getDisplayRowMembers, isMemberCheckedIn])
 
+    // Same fields as the Data-mode Coverage table below, reshaped for the
+    // exported report so both views of this data stay in sync.
+    const coverageRows = useMemo<AttendanceReportRow[]>(() => {
+        return reviewData.rows.map((row: ReviewAppt) => {
+            const methodMeta = deliveryMethods.find(m => m.value === row.deliveryMethod)
+            return {
+                date: row.date,
+                branchName: row.branchName || row.branchId || '',
+                title:
+                    row.sessionTitle ||
+                    (row as any)?.sessionCoverage?.title ||
+                    row.interventionTitle ||
+                    '',
+                invited: getDisplayRowMembers(row).length,
+                attended: getAttendanceCounts(row).checkedIn,
+                delivery: methodMeta?.label || row.deliveryMethod || ''
+            }
+        })
+    }, [reviewData.rows, deliveryMethods, getDisplayRowMembers, getAttendanceCounts])
+
+    const buildReportData = () => ({
+        rangeLabel,
+        sessions: reviewData.sessions,
+        held: reviewData.held,
+        invited: reviewData.invited,
+        attended: reviewData.attended,
+        invitedInstances: reviewData.invitedInstances,
+        attendedInstances: reviewData.attendedInstances,
+        attendanceRate: reviewData.attendanceRate,
+        deliveryCounts: reviewData.deliveryCounts,
+        coveredItems: reviewData.coveredItems,
+        rows: coverageRows,
+        photos: reviewData.photos
+    })
+
+    const [exporting, setExporting] = useState<'docx' | 'pdf' | null>(null)
+
+    const handleExport = async (format: 'docx' | 'pdf') => {
+        setExporting(format)
+        try {
+            const data = buildReportData()
+            if (format === 'docx') {
+                await exportAttendanceReportDocx(data)
+            } else {
+                await exportAttendanceReportPdf(data)
+            }
+        } catch (error) {
+            console.error('Failed to export attendance report:', error)
+            message.error('Failed to export the attendance report. Please try again.')
+        } finally {
+            setExporting(null)
+        }
+    }
+
+    // Skips zero-count topics — a 0-height bar is just clutter.
+    const chartedTopics = reviewData.coveredItems.filter(item => item.count > 0).slice(0, 8)
+
     const topicsChartOptions: Highcharts.Options = {
         chart: { type: 'column', height: 280 },
         title: { text: undefined },
         credits: { enabled: false },
         xAxis: {
-            categories: reviewData.coveredItems.slice(0, 8).map(item => item.topic),
+            categories: chartedTopics.map(item => item.topic),
             labels: { rotation: -25 }
         },
         yAxis: {
@@ -249,7 +300,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
             {
                 type: 'column',
                 name: 'Covered',
-                data: reviewData.coveredItems.slice(0, 8).map(item => item.count)
+                data: chartedTopics.map(item => item.count)
             }
         ]
     }
@@ -270,67 +321,72 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                     paddingRight: 4
                 }
             }}
-            footer={[
-                <Button key='close' type='primary' onClick={onClose}>
-                    Close
-                </Button>
-            ]}
+            footer={null}
             destroyOnClose
         >
             <Space direction='vertical' size={16} style={{ width: '100%' }}>
                 <div data-guide='session-review-controls'>
                     <Space wrap style={{ width: '100%', justifyContent: 'space-between' }} align='center'>
-                        <Text strong style={{ fontSize: 16 }}>
-                            {rangeLabel}
-                        </Text>
-
-                        <Space wrap>
-                            <Segmented
-                                value={viewMode}
-                                options={[
-                                    { label: 'Data', value: 'data' },
-                                    { label: 'Story', value: 'story' }
-                                ]}
-                                onChange={value => setViewMode(value as ViewMode)}
-                            />
-                            <Segmented
-                                value={customActive ? 'custom' : reviewRange}
-                                options={rangeOptions}
+                        <Space wrap align='center' size={10}>
+                            {/* This Week / This Month / This Quarter live as the
+                                picker's own preset panel — the column of options
+                                to the left of the calendar when it opens — rather
+                                than a separate row of buttons. */}
+                            <RangePicker
+                                value={dateRange}
                                 onChange={value => {
-                                    if (value === 'custom') {
-                                        setCustomActive(true)
-                                        if (!customDates) {
-                                            setCustomDates([reviewDate.startOf('month'), reviewDate.endOf('month')])
-                                        }
-                                    } else {
-                                        setCustomActive(false)
-                                        onRangeChange(value as ReviewRange)
+                                    if (value && value[0] && value[1]) {
+                                        setDateRange([value[0], value[1]])
+                                        onDateChange(value[0])
                                     }
                                 }}
+                                presets={rangePresets}
+                                allowClear={false}
                             />
-                            {customActive ? (
-                                <RangePicker
-                                    value={customDates}
-                                    onChange={value => {
-                                        if (value && value[0] && value[1]) {
-                                            setCustomDates([value[0], value[1]])
-                                        }
-                                    }}
-                                    allowClear={false}
-                                />
-                            ) : reviewRange === 'quarter' ? (
-                                <Space.Compact>
-                                    <Button icon={<LeftOutlined />} onClick={() => onDateChange(reviewDate.subtract(3, 'month'))} />
-                                    <Button icon={<RightOutlined />} onClick={() => onDateChange(reviewDate.add(3, 'month'))} />
-                                </Space.Compact>
-                            ) : (
-                                <DatePicker
-                                    picker={pickerByRange[reviewRange]}
-                                    value={reviewDate}
-                                    onChange={value => onDateChange(value || dayjs())}
-                                    allowClear={false}
-                                />
-                            )}
+                        </Space>
+
+                        <Space wrap align='center'>
+                            {/* Styled to match the app's top-nav segmented pills
+                                (workspace-primary-nav / workspace-primary-segment in
+                                components/layout/layout.css) rather than antd's
+                                default Segmented look. */}
+                            <div className='workspace-primary-nav'>
+                                {[
+                                    { value: 'data' as ViewMode, label: 'Data', icon: <TableOutlined /> },
+                                    { value: 'story' as ViewMode, label: 'Story', icon: <PlayCircleOutlined /> }
+                                ].map(option => (
+                                    <button
+                                        type='button'
+                                        key={option.value}
+                                        className={`workspace-primary-segment ${
+                                            viewMode === option.value ? 'workspace-primary-segment-active' : ''
+                                        }`}
+                                        onClick={() => setViewMode(option.value)}
+                                    >
+                                        <span className='workspace-segment-icon'>{option.icon}</span>
+                                        <span>{option.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+
+                            <Space.Compact>
+                                <Button
+                                    icon={<FileWordOutlined />}
+                                    loading={exporting === 'docx'}
+                                    disabled={exporting !== null && exporting !== 'docx'}
+                                    onClick={() => handleExport('docx')}
+                                >
+                                    Word
+                                </Button>
+                                <Button
+                                    icon={<FilePdfOutlined />}
+                                    loading={exporting === 'pdf'}
+                                    disabled={exporting !== null && exporting !== 'pdf'}
+                                    onClick={() => handleExport('pdf')}
+                                >
+                                    PDF
+                                </Button>
+                            </Space.Compact>
                             <Button
                                 icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
                                 onClick={() => setIsFullscreen(v => !v)}
@@ -350,38 +406,36 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                     <>
                         <Row data-guide='session-review-metrics' gutter={[8, 8]}>
                             <Col xs={12} md={6}>
-                                <Card size='small'>
-                                    <Text type='secondary'>Sessions Held</Text>
-                                    <div style={{ fontSize: 22, fontWeight: 700 }}>{reviewData.held}/{reviewData.sessions}</div>
-                                </Card>
+                                <MotionCard.Metric
+                                    title='Sessions Held'
+                                    value={`${reviewData.held}/${reviewData.sessions}`}
+                                    icon={<CheckCircleOutlined style={{ color: '#1677ff' }} />}
+                                    iconBg='rgba(22,119,255,.1)'
+                                />
                             </Col>
                             <Col xs={12} md={6}>
-                                <Card size='small'>
-                                    <Text type='secondary'>Unique SMEs Invited</Text>
-                                    <div style={{ fontSize: 22, fontWeight: 700 }}>{reviewData.invited}</div>
-                                    {reviewData.invitedInstances !== reviewData.invited && (
-                                        <Text type='secondary' style={{ fontSize: 12 }}>
-                                            {reviewData.invitedInstances} invites sent
-                                        </Text>
-                                    )}
-                                </Card>
+                                <MotionCard.Metric
+                                    title='SMEs Invited'
+                                    value={`${reviewData.invited}/${reviewData.invitedInstances}`}
+                                    icon={<TeamOutlined style={{ color: '#722ed1' }} />}
+                                    iconBg='rgba(114,46,209,.1)'
+                                />
                             </Col>
                             <Col xs={12} md={6}>
-                                <Card size='small'>
-                                    <Text type='secondary'>Unique SMEs Attended</Text>
-                                    <div style={{ fontSize: 22, fontWeight: 700 }}>{reviewData.attended}</div>
-                                    {reviewData.attendedInstances !== reviewData.attended && (
-                                        <Text type='secondary' style={{ fontSize: 12 }}>
-                                            {reviewData.attendedInstances} attendances
-                                        </Text>
-                                    )}
-                                </Card>
+                                <MotionCard.Metric
+                                    title='SMEs Attended'
+                                    value={`${reviewData.attended}/${reviewData.attendedInstances}`}
+                                    icon={<UserOutlined style={{ color: '#16a34a' }} />}
+                                    iconBg='rgba(22,163,74,.1)'
+                                />
                             </Col>
                             <Col xs={12} md={6}>
-                                <Card size='small'>
-                                    <Text type='secondary'>Attendance Rate</Text>
-                                    <div style={{ fontSize: 22, fontWeight: 700 }}>{reviewData.attendanceRate}%</div>
-                                </Card>
+                                <MotionCard.Metric
+                                    title='Attendance Rate'
+                                    value={`${reviewData.attendanceRate}%`}
+                                    icon={<PercentageOutlined style={{ color: '#d97706' }} />}
+                                    iconBg='rgba(217,119,6,.1)'
+                                />
                             </Col>
                         </Row>
 
@@ -422,105 +476,72 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
 
                         <div data-guide='session-review-table'>
                             <Card size='small' title='Coverage'>
-                                <Table
-                                    rowKey='id'
-                                    size='small'
-                                    tableLayout='fixed'
-                                    pagination={{
-                                        pageSize: 5,
-                                        showSizeChanger: false,
-                                        position: ['bottomCenter']
-                                    }}
-                                    scroll={{ x: 860 }}
-                                    expandable={{
-                                        expandedRowKeys: reviewData.rows.map(row => row.id),
-                                        showExpandColumn: false,
-                                        expandedRowRender: (row: ReviewAppt) => {
+                                {reviewData.rows.length ? (
+                                    <Space direction='vertical' size={12} style={{ width: '100%' }}>
+                                        {reviewData.rows.map((row: ReviewAppt) => {
                                             const latest = row.sessionCoverage?.latest
                                             const points: string[] = latest?.coveredPoints || []
-                                            return (
-                                                <Space direction='vertical' size={10} style={{ width: '100%' }}>
-                                                    <Text strong>Coverage</Text>
-                                                    <Text>
-                                                        {latest?.held === false
-                                                            ? 'Session not held: ' + (latest.reasonNotHeld || 'No reason recorded.')
-                                                            : latest?.notes || points.join('; ') || 'No coverage summary captured.'}
-                                                    </Text>
-                                                    {latest?.notes && points.length ? (
-                                                        <Space wrap>{points.filter(point => point.trim() !== latest.notes.trim()).map(point => <Tag key={point}>{point}</Tag>)}</Space>
-                                                    ) : null}
-                                                    <CoveragePhotoGallery row={row} />
-                                                </Space>
-                                            )
-                                        }
-                                    }}
-                                    dataSource={reviewData.rows}
-                                    columns={[
-                                        {
-                                            title: 'Date',
-                                            key: 'date',
-                                            width: 110,
-                                            render: (_: any, row: ReviewAppt) => dayjs(row.date).format('YYYY-MM-DD')
-                                        },
-                                        {
-                                            title: 'Branch',
-                                            key: 'branch',
-                                            width: 150,
-                                            ellipsis: true,
-                                            render: (_: any, row: ReviewAppt) => (
-                                                <Text ellipsis={{ tooltip: row.branchName || row.branchId }} style={{ display: 'block', maxWidth: 130 }}>
-                                                    {row.branchName || row.branchId || '—'}
-                                                </Text>
-                                            )
-                                        },
-                                        {
-                                            title: 'Title',
-                                            key: 'title',
-                                            width: 260,
-                                            ellipsis: true,
-                                            render: (_: any, row: ReviewAppt) => (
-                                                <Space direction='vertical' size={0} style={{ width: '100%' }}>
-                                                    <Text
-                                                        strong
-                                                        ellipsis={{ tooltip: row.sessionTitle || (row as any)?.sessionCoverage?.title || row.interventionTitle }}
-                                                        style={{ display: 'block', maxWidth: 240 }}
-                                                    >
-                                                        {row.sessionTitle || (row as any)?.sessionCoverage?.title || row.interventionTitle}
-                                                    </Text>
-                                                    <Text
-                                                        type='secondary'
-                                                        ellipsis={{ tooltip: row.interventionTitle }}
-                                                        style={{ display: 'block', maxWidth: 240, fontSize: 12 }}
-                                                    >
-                                                        {row.interventionTitle}
-                                                    </Text>
-                                                </Space>
-                                            )
-                                        },
-                                        {
-                                            title: 'Invited',
-                                            key: 'invited',
-                                            width: 90,
-                                            render: (_: any, row: ReviewAppt) => getDisplayRowMembers(row).length
-                                        },
-                                        {
-                                            title: 'Attended',
-                                            key: 'attended',
-                                            width: 100,
-                                            render: (_: any, row: ReviewAppt) => getAttendanceCounts(row).checkedIn
-                                        },
-                                        {
-                                            title: 'Delivery',
-                                            key: 'delivery',
-                                            width: 150,
-                                            render: (_: any, row: ReviewAppt) => {
-                                                const meta = deliveryMethods.find(m => m.value === row.deliveryMethod)
-                                                return <Tag>{meta?.label || row.deliveryMethod}</Tag>
-                                            }
-                                        },
+                                            const meta = deliveryMethods.find(m => m.value === row.deliveryMethod)
+                                            const title = row.sessionTitle || row.sessionCoverage?.title || row.interventionTitle
 
-                                    ]}
-                                />
+                                            return (
+                                                <Card
+                                                    key={row.id}
+                                                    size='small'
+                                                    style={{ borderRadius: 12, background: '#fafafa' }}
+                                                >
+                                                    <Space direction='vertical' size={10} style={{ width: '100%' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+                                                            <div style={{ minWidth: 0 }}>
+                                                                <Text strong style={{ fontSize: 14 }}>{title}</Text>
+                                                                {row.interventionTitle && row.interventionTitle !== title ? (
+                                                                    <div>
+                                                                        <Text type='secondary' style={{ fontSize: 12 }}>{row.interventionTitle}</Text>
+                                                                    </div>
+                                                                ) : null}
+                                                            </div>
+                                                            <Space size={6} wrap style={{ flex: '0 0 auto' }}>
+                                                                <Tag icon={<CalendarOutlined />} color='blue'>
+                                                                    {dayjs(row.date).format('YYYY-MM-DD')}
+                                                                </Tag>
+                                                                <Tag>{meta?.label || row.deliveryMethod}</Tag>
+                                                            </Space>
+                                                        </div>
+
+                                                        <Space size={18} wrap>
+                                                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                <EnvironmentOutlined /> {row.branchName || row.branchId || '—'}
+                                                            </Text>
+                                                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                <TeamOutlined /> {getDisplayRowMembers(row).length} invited
+                                                            </Text>
+                                                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                <CheckCircleOutlined /> {getAttendanceCounts(row).checkedIn} attended
+                                                            </Text>
+                                                        </Space>
+
+                                                        <Text style={{ fontSize: 13 }}>
+                                                            {latest?.held === false
+                                                                ? 'Session not held: ' + (latest.reasonNotHeld || 'No reason recorded.')
+                                                                : latest?.notes || points.join('; ') || 'No coverage summary captured.'}
+                                                        </Text>
+                                                        {latest?.notes && points.length ? (
+                                                            <Space wrap>
+                                                                {points
+                                                                    .filter(point => point.trim() !== latest.notes.trim())
+                                                                    .map(point => <Tag key={point}>{point}</Tag>)}
+                                                            </Space>
+                                                        ) : null}
+
+                                                        <CoveragePhotoGallery row={row} />
+                                                    </Space>
+                                                </Card>
+                                            )
+                                        })}
+                                    </Space>
+                                ) : (
+                                    <Empty description='No sessions were recorded in this period.' />
+                                )}
                             </Card>
                         </div>
                     </>

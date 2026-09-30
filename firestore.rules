@@ -46,6 +46,14 @@ service cloud.firestore {
       allow read: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin'];
       allow read: if isHrManager();
+      // Project admins and receptionists can see the project admins and receptionists of
+      // their own branch, so follow-ups can be assigned to them. Queries must filter on
+      // assignedBranch and role for this to apply.
+      allow read: if request.auth != null &&
+        currentUser().role in ['projectadmin', 'receptionist'] &&
+        currentUser().assignedBranch != null &&
+        resource.data.assignedBranch == currentUser().assignedBranch &&
+        resource.data.role in ['projectadmin', 'receptionist'];
       allow update: if isHrManager() &&
         request.resource.data.role == resource.data.role &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -607,6 +615,16 @@ service cloud.firestore {
       allow read: if request.auth != null && (resource.data.learnerId == request.auth.uid || resource.data.owner == request.auth.uid);
       allow write: if false;
     }
+    // Trainings: name/duration/centers/categories set up by Training Academy staff.
+    match /trainings/{trainingId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if academyAuthor();
+    }
+    // Training enrollments carry SME ID/qualification document links, so only
+    // Training Academy staff (not every signed-in user) can read or write them.
+    match /trainingEnrollments/{enrollmentId} {
+      allow read, create, update, delete: if academyAuthor();
+    }
     // A notification is only visible to the users/roles it was addressed to.
     // Updates are restricted to marking it read so a recipient can't rewrite
     // its content or reassign it to someone else.
@@ -631,10 +649,26 @@ service cloud.firestore {
     match /notificationActions/{token} {
       allow read, write: if false;
     }
+    // AI chat history — written only by the ai-backend's admin SDK on every
+    // /chat turn (see save_chat_turn() in ai-backend/firestore_tools.py), so
+    // the full conversation survives for later review/training even though
+    // the app UI only resumes/lists today's sessions. A user may only ever
+    // read their own sessions and messages; no client ever writes here.
+    match /chatSessions/{sessionId} {
+      allow read: if isSuperAdmin() ||
+        (request.auth != null && resource.data.userId == request.auth.uid);
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSuperAdmin() ||
+          (request.auth != null && resource.data.userId == request.auth.uid);
+        allow write: if false;
+      }
+    }
     match /{collectionId}/{document=**} {
       allow read, write: if isSuperAdmin();
       allow read, write: if request.auth != null &&
-        !(collectionId in ['academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions']);
+        !(collectionId in ['academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions']);
     }
   }
 }

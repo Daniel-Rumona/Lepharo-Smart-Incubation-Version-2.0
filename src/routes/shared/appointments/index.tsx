@@ -6115,6 +6115,7 @@ const Appointments: React.FC = () => {
                                         icon={<BarChartOutlined />}
                                         style={{ width: '100%' }}
                                         onClick={() => setMonthReviewOpen(true)}
+                                        disabled={pageLoading}
                                     >
                                         Review
                                     </Button>
@@ -6157,6 +6158,7 @@ const Appointments: React.FC = () => {
                                 data-guide="session-review-action"
                                 icon={<BarChartOutlined />}
                                 onClick={() => setMonthReviewOpen(true)}
+                                disabled={pageLoading}
                                 block
                             >
                                 Review

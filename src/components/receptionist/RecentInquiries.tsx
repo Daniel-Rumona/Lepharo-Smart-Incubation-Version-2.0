@@ -11,6 +11,11 @@ import { Inquiry, PRIORITY_COLORS, STATUS_COLORS } from '@/types/inquiry'
 import { formatDistanceToNow } from 'date-fns'
 import { MotionCard } from '../dashboards/metrics/Header'
 import InquiryDetail from './InquiryDetail'
+import {
+  channelLabel,
+  resolveInquiryAudience,
+  resolveInquiryChannel
+} from '@/utils/inquirySource'
 
 interface RecentInquiriesProps {
     inquiries: Inquiry[]
@@ -139,7 +144,7 @@ const RecentInquiries: React.FC<RecentInquiriesProps> = ({
                                         {inquiry.contactInfo.firstName}{' '}
                                         {inquiry.contactInfo.lastName}
                                     </span>
-                                    {inquiry.source === 'SME' && (
+                                    {resolveInquiryAudience(inquiry as any) === 'Incubatee' && (
                                         <Badge
                                             count={<UserOutlined style={{ color: '#1890ff' }} />}
                                             title='SME Inquiry'
@@ -180,7 +185,7 @@ const RecentInquiries: React.FC<RecentInquiriesProps> = ({
                                         {formatDistanceToNow(inquiry.submittedAt, {
                                             addSuffix: true
                                         })}{' '}
-                                        • {inquiry.source}
+                                        • {channelLabel(resolveInquiryChannel(inquiry.source))}
                                     </div>
                                 </Space>
                             }

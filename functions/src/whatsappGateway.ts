@@ -1,5 +1,7 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { admin, db } from "./firebase";
+import { candidatePhoneValues, clean, normalizePhone, timestampToIso } from "./whatsappCommon";
+import { handleStaffAction, resolveStaffByPhone, STAFF_ACTIONS } from "./whatsappStaff";
 
 type GatewayAction =
   | "resolve_identity"
@@ -10,7 +12,17 @@ type GatewayAction =
   | "appointment_accept"
   | "appointment_decline"
   | "appointment_reschedule_request"
-  | "select_food_items";
+  | "select_food_items"
+  | "staff_overview"
+  | "governance_summary"
+  | "my_appointments"
+  | "search_participants"
+  | "search_assignments"
+  | "propose_action"
+  | "confirm_proposal"
+  | "cancel_proposal"
+  | "agent_state_get"
+  | "agent_state_set";
 
 type GatewayRequest = {
   action?: GatewayAction;
@@ -22,6 +34,12 @@ type GatewayRequest = {
   requestedDateText?: string | null;
   requestedTimeText?: string | null;
   foodItems?: string[];
+  // Staff (WhatsApp agent) fields
+  query?: string;
+  participantId?: string;
+  proposalKind?: string;
+  params?: Record<string, unknown>;
+  history?: Array<{ role?: string; text?: string }>;
 };
 
 type ParticipantIdentity = {
@@ -32,10 +50,11 @@ type ParticipantIdentity = {
   email: string | null;
   programId: string | null;
   uid: string | null;
+  kind?: "sme" | "staff";
+  name?: string;
+  role?: string;
 };
 
-const normalizePhone = (value: unknown) => String(value || "").replace(/[^0-9]/g, "");
-const clean = (value: unknown) => String(value || "").trim();
 
 const json = (res: any, status: number, body: unknown) => {
   res.status(status).json(body);
@@ -47,22 +66,6 @@ const isAuthorized = (req: any) => {
   const expected = gatewaySecret();
   const supplied = clean(req.get("X-WhatsApp-Gateway-Secret"));
   return Boolean(expected && supplied && supplied === expected);
-};
-
-const candidatePhoneValues = (digits: string) => {
-  const values = new Set<string>();
-  if (!digits) return [];
-  values.add(digits);
-  values.add(`+${digits}`);
-
-  if (digits.startsWith("27") && digits.length >= 11) {
-    values.add(`0${digits.slice(2)}`);
-  }
-  if (digits.startsWith("263") && digits.length >= 12) {
-    values.add(`0${digits.slice(3)}`);
-  }
-
-  return Array.from(values);
 };
 
 const participantNameFrom = (data: any) =>
@@ -114,19 +117,11 @@ async function resolveParticipantByPhone(phoneNumber: string): Promise<Participa
     email: clean(data.email) || null,
     programId: clean(data.programId) || null,
     uid: clean(data.uid) || null,
+    kind: "sme",
+    name: participantNameFrom(data),
+    role: "incubatee",
   };
 }
-
-const timestampToIso = (value: any): string | null => {
-  try {
-    if (value?.toDate && typeof value.toDate === "function") return value.toDate().toISOString();
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === "string") return value || null;
-    return null;
-  } catch {
-    return null;
-  }
-};
 
 // A v5 appointment (SME invitation) carries no schedule/delivery/food data of
 // its own; those live on the appointmentSessions document it points to via
@@ -239,7 +234,40 @@ export const lphWhatsAppGateway = onRequest(
     try {
       const identity = await resolveParticipantByPhone(phoneNumber);
       if (!identity) {
-        json(res, 200, { ok: true, matched: false });
+        // Not an SME: this may be a Lepharo staff member with the number on their user profile.
+        const staff = await resolveStaffByPhone(phoneNumber);
+        if (!staff) {
+          json(res, 200, { ok: true, matched: false });
+          return;
+        }
+        if (action === "resolve_identity") {
+          json(res, 200, {
+            ok: true,
+            matched: true,
+            identity: {
+              id: staff.id,
+              participantIds: [],
+              participantName: staff.name,
+              phoneNumber: staff.phoneNumber,
+              email: staff.email,
+              programId: null,
+              uid: staff.uid,
+              kind: "staff",
+              name: staff.name,
+              role: staff.role,
+              roleGroup: staff.roleGroup,
+              departmentId: staff.departmentId,
+              branchId: staff.branchId,
+            },
+          });
+          return;
+        }
+        if (!STAFF_ACTIONS.has(action)) {
+          json(res, 403, { ok: false, error: "action_not_available_for_staff" });
+          return;
+        }
+        const result = await handleStaffAction(action, staff, payload);
+        json(res, result.status, result.body);
         return;
       }
 

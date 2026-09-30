@@ -744,7 +744,7 @@ const ReportingDashboard: React.FC = () => {
 
                 const isValidSpan =
                     spanMonths >= 1 &&
-                    spanMonths <= 3;
+                    spanMonths <= 12;
 
                 if (
                     !isStartAtMonthBoundary ||
@@ -752,7 +752,7 @@ const ReportingDashboard: React.FC = () => {
                     !isValidSpan
                 ) {
                     message.warning(
-                        "Select a FULL range of 1–3 months (month boundaries)."
+                        "Select a FULL range of 1–12 months (month boundaries)."
                     );
                     return;
                 }
@@ -779,11 +779,7 @@ const ReportingDashboard: React.FC = () => {
                                     start.month() +
                                     1,
                                 year: start.year(),
-                                spanMonths:
-                                    spanMonths as
-                                    | 1
-                                    | 2
-                                    | 3,
+                                spanMonths,
                             },
                             scopeLabel: `Program: ${activeProgramId}`,
                             meta: {
@@ -808,14 +804,21 @@ const ReportingDashboard: React.FC = () => {
                             "MMM-YYYY"
                         )}`;
 
+                const spanLabel =
+                    spanMonths === 1
+                        ? "Monthly"
+                        : spanMonths === 3
+                            ? "Quarterly"
+                            : spanMonths === 6
+                                ? "Half-Yearly"
+                                : spanMonths === 12
+                                    ? "Annual"
+                                    : "Custom-Range";
+
                 await exportMonthlyDepartmentReportDocx(
                     reportData,
                     {
-                        filenameBase: `${departmentName}-${fileLabel}-${spanMonths ===
-                            3
-                            ? "Quarterly"
-                            : "Monthly"
-                            }-Report`,
+                        filenameBase: `${departmentName}-${fileLabel}-${spanLabel}-Report`,
                     }
                 );
 

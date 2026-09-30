@@ -172,6 +172,7 @@ export const AddKpiFlowModal: React.FC<AddKpiFlowModalProps> = ({
 
     const aiDraftRef = useRef<KpiCandidateDraft | null>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const chatKickedOffRef = useRef(false)
 
     useEffect(() => {
         if (!open) return
@@ -184,7 +185,31 @@ export const AddKpiFlowModal: React.FC<AddKpiFlowModalProps> = ({
         setChatMessages([])
         setChatInput('')
         aiDraftRef.current = null
+        chatKickedOffRef.current = false
     }, [open, defaultDepartmentId])
+
+    // The assistant's first question should be the first thing the user sees -
+    // sending a throwaway opener behind the scenes reads far more naturally
+    // than a cold reply to whatever the user happens to type first.
+    useEffect(() => {
+        if (phase !== 'chat' || !departmentId || chatMessages.length > 0 || chatKickedOffRef.current) return
+        chatKickedOffRef.current = true
+        ;(async () => {
+            try {
+                setChatSending(true)
+                const result = await sendKpiCandidateChatTurn(
+                    [{ role: 'user', content: "Hi, let's set up this department's KPIs." }],
+                    departmentId
+                )
+                setChatMessages([{ role: 'assistant', content: result.message }])
+            } catch (error: any) {
+                message.error(error?.message || 'The assistant is unavailable right now.')
+                chatKickedOffRef.current = false
+            } finally {
+                setChatSending(false)
+            }
+        })()
+    }, [phase, departmentId, chatMessages.length])
 
     const applyDraft = (draft: KpiCandidateDraft) => {
         setFyLabel(draft.fyLabel || '')
@@ -414,7 +439,11 @@ export const AddKpiFlowModal: React.FC<AddKpiFlowModalProps> = ({
                                 <Button
                                     type='link'
                                     size='small'
-                                    onClick={() => setDepartmentId(undefined)}
+                                    onClick={() => {
+                                        setDepartmentId(undefined)
+                                        setChatMessages([])
+                                        chatKickedOffRef.current = false
+                                    }}
                                     style={{ padding: 0 }}
                                 >
                                     Change
@@ -459,7 +488,7 @@ export const AddKpiFlowModal: React.FC<AddKpiFlowModalProps> = ({
                             </div>
                         ) : (
                             <>
-                                {chatMessages.length === 0 && (
+                                {chatMessages.length === 0 && !chatSending && (
                                     <Text type='secondary'>
                                         Tell the assistant which KPIs this department needs to track, and any targets you already know.
                                     </Text>
