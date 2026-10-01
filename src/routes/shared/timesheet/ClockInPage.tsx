@@ -42,7 +42,7 @@ import {
     where,
     Timestamp
 } from 'firebase/firestore'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useBranchOperatingHours } from '@/hooks/useBranchOperatingHours'
 import { BranchDayHours, LEGACY_SHIFT, getDayHours, plannedMinutes, lateMinutes, overtimeMinutes } from '@/utils/branchOperatingHours'
@@ -1163,7 +1163,11 @@ const ClockinPage = () => {
     }
 
     if (loading || identityLoading || branchSchedule.loading) {
-        return <LoadingOverlay tip='Loading timesheet' />
+        return (
+            <div style={{ padding: 24 }}>
+                <PageSkeleton variant='single' />
+            </div>
+        )
     }
 
     const locationNeedsAttention = ['denied', 'error', 'unsupported'].includes(locationState.status)

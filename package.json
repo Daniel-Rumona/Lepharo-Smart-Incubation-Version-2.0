@@ -9,8 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "sync:intervention-records": "node scripts/sync-intervention-records.mjs"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@ant-design/cssinjs": "^1.17.2",

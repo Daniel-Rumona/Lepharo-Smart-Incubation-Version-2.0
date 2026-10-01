@@ -51,7 +51,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { DashboardHeaderCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 
 dayjs.extend(customParseFormat)
 
@@ -2057,7 +2057,7 @@ const ParticipantOnboardingForm: React.FC = () => {
             </Helmet>
 
             {uploading ? (
-                <LoadingOverlay tip='Saving Participant Details' />
+                <DashboardLoader overlay label='Saving Participant Details' />
             ) : (
                 <>
                     <DashboardHeaderCard

@@ -57,7 +57,7 @@ import { departmentService } from '@/services/departmentService'
 import AdminPasswordResetModal from './AdminPasswordResetModal'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { Helmet } from 'react-helmet'
-import { LoadingOverlay } from '../shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { MotionCard } from '../dashboards/metrics/Header'
 import { OrganogramModal } from './OrganogramModal'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
@@ -1867,7 +1867,7 @@ export const UserManagement: React.FC = () => {
                 <title>User Management</title>
             </Helmet>
             {loading ? (
-                <LoadingOverlay tip='Getting users ready' />
+                <PageSkeleton variant='list' />
             ) : (
                 <>
                     {/* ====== SCOPED METRICS (role-aware) ====== */}

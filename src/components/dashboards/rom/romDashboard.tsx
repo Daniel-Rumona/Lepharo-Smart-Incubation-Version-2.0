@@ -32,7 +32,6 @@ import { MotionCard } from '../metrics/Header'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { Helmet } from 'react-helmet'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { useSMERiskRegisterData } from '@/routes/operations/reports/monitoring/SMERiskRegister/useSMERiskRegisterData'
 import { rollupReportAssignments } from '@/utils/reportGroupAssignments'
 import { useColorMode } from '@/contexts/ThemeContext'
@@ -1138,12 +1137,6 @@ const ROMDashboard: React.FC = () => {
             <Helmet>
                 <title>ROM Dashboard | Smart Incubation</title>
             </Helmet>
-
-            {loading && (
-                <LoadingOverlay
-                    tip={isAllPrograms ? 'Loading all program data...' : 'Loading program data...'}
-                />
-            )}
 
             <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} md={6}>

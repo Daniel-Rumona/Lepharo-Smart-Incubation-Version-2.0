@@ -986,6 +986,8 @@ export function buildRow(args: {
     application: AnyDoc
     diagnosticPlan?: AnyDoc
     assignments: AnyDoc[]
+    /** Interventions an HOD has closed for this SME, even where nothing was ever assigned. */
+    closedInterventionIds?: Set<string>
     sessions: AnyDoc[]
     departmentsById: Record<string, AnyDoc>
     departmentsByName: Record<string, AnyDoc>
@@ -1016,7 +1018,18 @@ export function buildRow(args: {
     let smePendingConfirmationCount = 0
     const responsivenessRiskDepartmentSet = new Set<string>()
 
+    // Support an HOD has closed is no longer expected, and is not a decline: it must not
+    // read as "never serviced" or add to the declined count.
+    const closedInterventionIds = new Set<string>([
+        ...(args.closedInterventionIds ?? []),
+        ...assignments
+            .filter((assignment: AnyDoc) => !!assignment?.supportClosedAt)
+            .map((assignment: AnyDoc) => normalizeText(assignment?.interventionId))
+            .filter(Boolean),
+    ])
+
     eligibleDpInterventions.forEach((iv: AnyDoc) => {
+        if (closedInterventionIds.has(normalizeText(iv?.id))) return
         const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
         const deptConfirmed = isDeptConfirmedForDp(diagnosticPlanDoc, dep.departmentId, dep.departmentName)
         const smmeConfirmed = isSmmeConfirmedForDp(diagnosticPlanDoc, dep.departmentId, dep.departmentName)
@@ -1053,6 +1066,7 @@ export function buildRow(args: {
     })
 
     assignments.forEach((assignment: AnyDoc) => {
+        if (assignment?.supportClosedAt) return
         const dep = getInterventionDepartmentKey(assignment, departmentsById, departmentsByName)
         if (!departmentMatchesScope(dep, scopedDepartment)) return
 

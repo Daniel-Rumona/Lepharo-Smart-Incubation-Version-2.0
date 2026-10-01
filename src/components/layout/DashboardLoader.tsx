@@ -1,4 +1,5 @@
 import React from 'react'
+import { theme } from 'antd'
 
 const STYLES = `
 @keyframes dl-ring {
@@ -34,21 +35,37 @@ const ACCENT_2 = '#5b8def'
  * continuous loader instead of a series of different spinners.
  * Pure CSS on purpose: it renders instantly, before any chunk has arrived.
  */
-export const DashboardLoader: React.FC<{ label?: string; minHeight?: number | string }> = ({
-    label = 'Preparing your dashboard',
-    minHeight = '70vh'
-}) => (
+export const DashboardLoader: React.FC<{
+    label?: string
+    minHeight?: number | string
+    /** Cover the whole viewport and block interaction, for app-level gates. */
+    overlay?: boolean
+}> = ({ label = 'Preparing your dashboard', minHeight = '70vh', overlay = false }) => {
+    const { token } = theme.useToken()
+
+    return (
     <div
         role='status'
         aria-live='polite'
+        aria-busy='true'
         style={{
-            minHeight,
+            minHeight: overlay ? undefined : minHeight,
             width: '100%',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 28
+            gap: 28,
+            color: token.colorText,
+            ...(overlay
+                ? {
+                      position: 'fixed',
+                      inset: 0,
+                      zIndex: 900,
+                      padding: 16,
+                      background: token.colorBgLayout
+                  }
+                : null)
         }}
     >
         <style>{STYLES}</style>
@@ -164,6 +181,7 @@ export const DashboardLoader: React.FC<{ label?: string; minHeight?: number | st
             </div>
         </div>
     </div>
-)
+    )
+}
 
 export default DashboardLoader

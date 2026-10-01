@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
-import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { getCanonicalInterventionStatus } from "./interventionStatus";
 import { fetchInterventionsDepartments } from "@/utils/reportingDepartments";
 import { ArrowLeftOutlined } from "@ant-design/icons";

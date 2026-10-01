@@ -76,7 +76,6 @@ import {
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import {
     PreIncubationContractModal,
     downloadPreIncubationDocxFromArgs
@@ -2990,6 +2989,8 @@ const ComplianceTrackingPage: React.FC = () => {
     }, [editorTemplateOptions, editingRequirement])
 
 
+    const pageLoading = loading || (!!activeProgramId && requirementsLoading)
+
     return (
         <div
             className='compliance-tracking-page'
@@ -3019,11 +3020,9 @@ const ComplianceTrackingPage: React.FC = () => {
                 <title>Compliance Management | Smart Incubation</title>
             </Helmet>
 
-            {loading || (!!activeProgramId && requirementsLoading) ? (
-                <LoadingOverlay tip='Loading compliance data' />
-            ) : (
+            {(
                 <>
-                    {showDepartmentSetupEmptyState ? (
+                    {!pageLoading && showDepartmentSetupEmptyState ? (
                         <MotionCard>
                             <Result
                                 status='info'
@@ -3064,6 +3063,7 @@ const ComplianceTrackingPage: React.FC = () => {
                                         <MotionCard.Metric
                                             icon={React.cloneElement(m.icon as any, { style: { color: m.color } })}
                                             iconBg={metricPalette.isDark ? token.colorFillSecondary : m.bg}
+                                            loading={pageLoading}
                                             title={m.title}
                                             value={m.value}
                                         />
@@ -3072,6 +3072,10 @@ const ComplianceTrackingPage: React.FC = () => {
                             </Row>
 
                             <MotionCard
+                                loading={pageLoading}
+                                skeleton='table'
+                                skeletonRows={7}
+                                skeletonColumns={6}
                                 filterBar={
                                     <Row
                                         data-guide='compliance-filters'

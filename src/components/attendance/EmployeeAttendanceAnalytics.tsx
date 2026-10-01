@@ -68,7 +68,7 @@ import TeamAttendanceGrid, { TeamMember } from './TeamAttendanceGrid'
 import { LeaveRequestEntry, isLeaveCoveringDate } from '@/routes/shared/timesheet/timesheetUtils'
 import dayjs, { Dayjs } from 'dayjs'
 import quarterOfYear from 'dayjs/plugin/quarterOfYear'
-import { LoadingOverlay } from '../shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import {
     guideTarget,
     usePageGuides,
@@ -2089,7 +2089,7 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
         (!hasLoadedHistoryOnce && loadingHistory)
 
     if (isInitialLoading) {
-        return <LoadingOverlay tip="Loading attendance analytics" />
+        return <PageSkeleton variant='analytics' />
     }
 
     if (!filteredEmployees.length) {

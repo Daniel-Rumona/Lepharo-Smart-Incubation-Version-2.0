@@ -30,7 +30,7 @@ import {
     type QueryConstraint
 } from 'firebase/firestore'
 import { db } from '@/firebase'
-import { ShopOutlined, UserOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, ShopOutlined, UserOutlined } from '@ant-design/icons'
 import { AnimatePresence, motion } from 'framer-motion'
 
 const { Text } = Typography
@@ -621,6 +621,54 @@ const DepartmentInterventionsStatus: React.FC<Props> = ({
         [bucketScope, currentOpenRows, inPeriodRows, olderOpenRows]
     )
 
+    /**
+     * Wording for the empty card, based on what the data actually contains
+     * rather than assuming an empty chart means healthy work.
+     */
+    const emptyState = useMemo(() => {
+        const plural = (n: number) => `${n} intervention${n === 1 ? '' : 's'}`
+        const periodText = dateRange
+            ? `between ${dateRange[0].format('DD MMM YYYY')} and ${dateRange[1].format('DD MMM YYYY')}`
+            : ''
+
+        if (rows.length === 0) {
+            return {
+                title: 'No interventions assigned',
+                detail: 'Nothing has been assigned here yet, so there is no work to track.'
+            }
+        }
+
+        if (bucketScope === 'open') {
+            if (inPeriodRows.length === 0) {
+                return {
+                    title: 'Nothing assigned in this period',
+                    detail: `No interventions were assigned ${periodText}, and no earlier work is still open.`
+                }
+            }
+
+            const cancelled = inPeriodRows.filter(isCancelled).length
+            const completed = inPeriodRows.length - currentOpenRows.length - cancelled
+            const parts = [
+                completed ? `${completed} completed` : '',
+                cancelled ? `${cancelled} cancelled` : ''
+            ].filter(Boolean)
+
+            return {
+                title: 'Nothing is stuck',
+                detail: `Of ${plural(inPeriodRows.length)} assigned${dateRange ? ' this period' : ''}, ${
+                    parts.join(' and ') || 'all are closed'
+                }. No earlier work is still open.`
+            }
+        }
+
+        return {
+            title: dateRange ? 'Nothing assigned in this period' : 'No interventions assigned',
+            detail: dateRange
+                ? `No interventions were assigned ${periodText}.`
+                : 'Assigned interventions will show up here.'
+        }
+    }, [rows, inPeriodRows, currentOpenRows, bucketScope, dateRange])
+
     const currentOpenIds = useMemo(
         () => new Set(currentOpenRows.map(row => row.id)),
         [currentOpenRows]
@@ -1175,39 +1223,49 @@ const DepartmentInterventionsStatus: React.FC<Props> = ({
             ) : null}
 
             {loading ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {Array.from({ length: 5 }).map((_, index) => (
+                // Mirrors the loaded card: a horizontal bar chart (label on the
+                // left, bar tapering off to the right) with the summary line below.
+                <div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '8px 0' }}>
+                        {[92, 74, 58, 44, 30, 18].map((pct, index) => (
                             <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                 <Skeleton.Input
                                     active
                                     size="small"
-                                    style={{ width: 120 + (index % 3) * 20 }}
+                                    style={{ width: 110 + (index % 3) * 18, minWidth: 0, height: 14 }}
                                 />
-                                <Skeleton.Input
-                                    active
-                                    size="small"
-                                    style={{
-                                        flex: 1,
-                                        height: 16,
-                                        borderRadius: 999,
-                                        maxWidth: `${90 - index * 12}%`
-                                    }}
-                                />
+                                <div style={{ flex: 1 }}>
+                                    <Skeleton.Input
+                                        active
+                                        size="small"
+                                        block
+                                        style={{
+                                            height: 18,
+                                            minWidth: 0,
+                                            width: `${pct}%`,
+                                            borderRadius: 4
+                                        }}
+                                    />
+                                </div>
                             </div>
                         ))}
                     </div>
-
-                    <Skeleton active title={false} paragraph={{ rows: 3 }} />
+                    <div style={{ height: 12 }} />
+                    <Skeleton.Input active size="small" style={{ width: 260, maxWidth: '80%', height: 14 }} />
                 </div>
             ) : chartRows.length === 0 ? (
                 <Empty
+                    image={<CheckCircleOutlined style={{ fontSize: 40, color: token.colorSuccess }} />}
+                    styles={{ image: { height: 48 } }}
                     description={
-                        bucketScope === 'open'
-                            ? 'No still-open interventions found.'
-                            : dateRange
-                                ? `No interventions assigned between ${dateRange[0].format('DD MMM YYYY')} and ${dateRange[1].format('DD MMM YYYY')}.`
-                                : 'No assigned interventions found.'
+                        <div>
+                            <Text strong style={{ display: 'block' }}>
+                                {emptyState.title}
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {emptyState.detail}
+                            </Text>
+                        </div>
                     }
                 />
             ) : (

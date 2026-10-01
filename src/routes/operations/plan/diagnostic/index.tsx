@@ -39,7 +39,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { roundBtn } from '@/components/shared/StyledButton'
 import { createOrUpdateDiagnosticPlanMovDraft } from '@/services/movService'
@@ -1208,11 +1207,9 @@ const DiagnosticPlanBuilder: React.FC = () => {
                 </div>
             </MotionCard>
 
-            {loading && <LoadingOverlay tip="Loading data..." />}
-
             <Row gutter={[12, 12]} align="top">
                 <Col xs={24} lg={15} xl={16}>
-                    <MotionCard data-guide="dp-builder-sources">
+                    <MotionCard data-guide="dp-builder-sources" loading={loading}>
                         {/*
                           * All panels open by default: seeing every source at once
                           * is the point of dropping the wizard. forceRender keeps

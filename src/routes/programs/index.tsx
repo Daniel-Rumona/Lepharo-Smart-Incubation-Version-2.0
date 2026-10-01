@@ -60,7 +60,7 @@ import { Helmet } from 'react-helmet'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import {
     guideTarget,
     usePageGuides,
@@ -2462,6 +2462,8 @@ const ProgramManager: React.FC = () => {
     // first load should trigger the full-page overlay; later refreshes use the filter
     // bar / table skeletons instead so the whole page doesn't flash.
     const booting = !userResolved || branchesLoading || !initialProgramsLoaded
+    // Only the user/role lookup gates the page; branch and program data show skeletons.
+    const dataLoading = branchesLoading || !initialProgramsLoaded
     const [logoFile, setLogoFile] = useState<File | null>(null)
     const [logoPreview, setLogoPreview] = useState<string | null>(null)
 
@@ -2814,8 +2816,8 @@ const ProgramManager: React.FC = () => {
             </Helmet>
 
             <div style={{ padding: 24, height: '100vh' }}>
-                {booting ? (
-                    <LoadingOverlay tip='Getting your programs ready…' />
+                {!userResolved ? (
+                    <DashboardLoader label='Getting your programs ready' />
                 ) : (
                     <>
                         {viewMode === 'programs' ? (
@@ -2829,6 +2831,7 @@ const ProgramManager: React.FC = () => {
                                             transition={{ duration: 0.4 }}
                                         >
                                             <MotionCard.Metric
+                                                loading={dataLoading}
                                                 title='Total Programs'
                                                 value={formatter(totalPrograms)}
                                                 icon={
@@ -2848,6 +2851,7 @@ const ProgramManager: React.FC = () => {
                                             transition={{ duration: 0.4, delay: 0.1 }}
                                         >
                                             <MotionCard.Metric
+                                                loading={dataLoading}
                                                 title='Active Programs'
                                                 value={
                                                     <span style={{ color: '#52c41a' }}>
@@ -2871,6 +2875,7 @@ const ProgramManager: React.FC = () => {
                                             transition={{ duration: 0.4, delay: 0.2 }}
                                         >
                                             <MotionCard.Metric
+                                                loading={dataLoading}
                                                 title='Total Budget'
                                                 value={
                                                     <span style={{ color: '#1890ff' }}>
@@ -2894,6 +2899,7 @@ const ProgramManager: React.FC = () => {
                                             transition={{ duration: 0.4, delay: 0.3 }}
                                         >
                                             <MotionCard.Metric
+                                                loading={dataLoading}
                                                 title='Total Capacity'
                                                 value={formatter(totalCapacity)}
                                                 icon={
@@ -2913,7 +2919,6 @@ const ProgramManager: React.FC = () => {
                                     transition={{ duration: 0.4 }}
                                 >
                                     <MotionCard
-                                        loading={programsLoading}
                                         filterBarProps={{ marginBottom: 0 }}
                                         filterBar={
                                             <div
@@ -2981,7 +2986,13 @@ const ProgramManager: React.FC = () => {
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ duration: 0.4 }}
                                 >
-                                    <MotionCard style={{ marginTop: 15 }}>
+                                    <MotionCard
+                                        style={{ marginTop: 15 }}
+                                        loading={dataLoading || programsLoading}
+                                        skeleton='table'
+                                        skeletonRows={6}
+                                        skeletonColumns={5}
+                                    >
                                         {isProjectAdmin && scopedPrograms.length === 0 ? (
                                             <Result
                                                 status='500'
@@ -2991,7 +3002,6 @@ const ProgramManager: React.FC = () => {
                                         ) : (
                                             <div data-guide='program-table'>
                                                 <Table
-                                                    loading={programsLoading}
                                                     dataSource={filteredPrograms}
                                                     rowKey='id'
                                                     pagination={{ pageSize: 6, showSizeChanger: false, position: ['bottomCenter'] }}

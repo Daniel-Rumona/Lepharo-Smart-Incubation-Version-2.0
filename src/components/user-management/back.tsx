@@ -57,7 +57,7 @@ import { departmentService } from '@/services/departmentService'
 import AdminPasswordResetModal from './AdminPasswordResetModal'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { Helmet } from 'react-helmet'
-import { LoadingOverlay } from '../shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { MotionCard } from '../dashboards/metrics/Header'
 
 const { Search } = Input
@@ -1844,7 +1844,7 @@ export const UserManagement: React.FC = () => {
                 <title>User Management</title>
             </Helmet>
             {loading ? (
-                <LoadingOverlay tip='Getting users ready' />
+                <DashboardLoader overlay label='Getting users ready' />
             ) : (
                 <>
                     {/* ====== SCOPED METRICS (role-aware) ====== */}

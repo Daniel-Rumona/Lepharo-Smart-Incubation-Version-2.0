@@ -154,15 +154,39 @@ const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
         }
     }, [])
 
+    /** Explains an empty review queue from what the data actually holds. */
+    const emptyState = useMemo(() => {
+        const plural = (n: number) => `${n} MOV${n === 1 ? '' : 's'}`
+
+        if (rows.length === 0) {
+            return {
+                title: 'No MOVs submitted',
+                detail: 'No MOV documents have been recorded for this department yet.'
+            }
+        }
+
+        if (periodRows.length === 0) {
+            return {
+                title: 'No MOVs in this period',
+                detail: `${plural(rows.length)} on record, but none fall in the selected period.`
+            }
+        }
+
+        return {
+            title: 'Nothing to review yet',
+            detail: `${plural(periodRows.length)} submitted this period, but none have been SME-confirmed and reached HOD review.`
+        }
+    }, [rows, periodRows])
+
     /**
      * A single at-a-glance number for "is this department keeping up with MOV
      * validation" - the validated share, penalised once the monthly deadline
-     * has actually been missed rather than merely approaching. An empty queue
-     * scores full marks: nothing outstanding means nothing at risk.
+     * has actually been missed rather than merely approaching. Only meaningful
+     * when something is in the review queue - see emptyState otherwise.
      */
     const health = useMemo(() => {
         if (availableCount === 0) {
-            return { score: 100, label: 'All caught up', color: token.colorSuccess }
+            return { score: 0, label: 'Nothing to review', color: token.colorTextSecondary }
         }
 
         const score = countdown.state === 'overdue'
@@ -185,14 +209,55 @@ const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
             }
         >
             {loading ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <Skeleton.Avatar active shape="circle" size={64} />
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <Skeleton.Input active size="small" style={{ width: 140 }} />
-                        <Skeleton.Input active size="small" style={{ width: '100%', height: 10, borderRadius: 999 }} />
-                        <Skeleton.Input active size="small" style={{ width: 120 }} />
+                // Mirrors the loaded card: health ring + label, the
+                // available/validated row, the progress bar, then View All.
+                <Space direction="vertical" size={14} style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <Skeleton.Avatar active shape="circle" size={64} />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Skeleton.Input active size="small" style={{ width: 90, height: 16, minWidth: 0 }} />
+                            <Skeleton.Input active size="small" style={{ width: 160, height: 12, minWidth: 0 }} />
+                        </div>
                     </div>
-                </div>
+                    <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <Skeleton.Input active size="small" style={{ width: 80, height: 12, minWidth: 0 }} />
+                            <Skeleton.Input active size="small" style={{ width: 120, height: 12, minWidth: 0 }} />
+                        </div>
+                        <Skeleton.Input active block size="small" style={{ height: 8, minWidth: 0, borderRadius: 999 }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <Skeleton.Input active size="small" style={{ width: 70, height: 14, minWidth: 0 }} />
+                    </div>
+                </Space>
+            ) : availableCount === 0 ? (
+                <Space direction="vertical" size={14} style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div
+                            style={{
+                                width: 64,
+                                height: 64,
+                                flexShrink: 0,
+                                display: 'grid',
+                                placeItems: 'center',
+                                borderRadius: '50%',
+                                background: token.colorFillSecondary,
+                                color: token.colorTextSecondary,
+                                fontSize: 26
+                            }}
+                        >
+                            <FileDoneOutlined />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                            <Text strong style={{ display: 'block', fontSize: 14 }}>
+                                {emptyState.title}
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {emptyState.detail}
+                            </Text>
+                        </div>
+                    </div>
+                </Space>
             ) : (
                 <Space direction="vertical" size={14} style={{ width: '100%' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -247,7 +312,7 @@ const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
                         />
                         {availableCount > 0 && validatedCount === availableCount ? (
                             <Text type="success" style={{ fontSize: 11 }}>
-                                <CheckCircleOutlined /> All caught up
+                                <CheckCircleOutlined /> All {availableCount} available MOVs validated
                             </Text>
                         ) : null}
                     </div>

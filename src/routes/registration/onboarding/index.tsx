@@ -54,7 +54,7 @@ import customParseFormat from 'dayjs/plugin/customParseFormat'
 import SHA256 from 'crypto-js/sha256'
 
 import { auth, db, functions, storage } from '@/firebase'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 
 dayjs.extend(customParseFormat)
 
@@ -2008,7 +2008,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                 <Helmet>
                     <title>Application | Smart Incubation Platform</title>
                 </Helmet>
-                <LoadingOverlay tip='Preparing your application...' />
+                <DashboardLoader overlay label='Preparing your application...' />
             </div>
         )
     }
@@ -2020,7 +2020,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                 <Helmet>
                     <title>Application | Smart Incubation Platform</title>
                 </Helmet>
-                <LoadingOverlay tip={submitStage} />
+                <DashboardLoader overlay label={submitStage} />
             </div>
         )
     }

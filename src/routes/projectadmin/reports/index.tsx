@@ -42,7 +42,7 @@ import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { DashboardFilterBar, MotionCard } from "@/components/dashboards/metrics/Header";
-import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import ReachAnalytics from "@/components/reports/ReachAnalytics";
 import ProjectAdminPerformance from "@/components/dashboards/projectadmin/ProjectAdminPerformance";
 import DeferredLegacyReportPanels from "./DeferredLegacyReportPanels";
@@ -1934,7 +1934,7 @@ const ProjectAdminReports: React.FC = () => {
             {viewMode === "performance" ? (
                 <ProjectAdminPerformance programId={activeProgramId} dateRange={dateRange} />
             ) : loading ? (
-                <LoadingOverlay tip="Loading Analytics" />
+                <PageSkeleton variant='analytics' />
             ) : viewMode === "interventions" ? (
                 <>
                     <Row gutter={[16, 16]}>

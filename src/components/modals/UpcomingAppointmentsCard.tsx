@@ -1074,6 +1074,34 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
         return limit === null ? rows : rows.slice(0, limit)
     }, [appointmentsByDate, selectedDate, limit])
 
+    /** Explains an empty day using what is actually booked this week. */
+    const emptyState = React.useMemo(() => {
+        const plural = (n: number) => `${n} appointment${n === 1 ? '' : 's'}`
+
+        if (appointments.length === 0) {
+            return {
+                title: 'No appointments this week',
+                detail: `Nothing is scheduled from today to ${weekDays[4].format('dddd')}.`
+            }
+        }
+
+        const dayLabel = selectedDate.format('dddd, D MMMM')
+        const others = appointments.filter(
+            row => !getAppointmentDate(row)?.isSame(selectedDate, 'day')
+        )
+        const next = others.find(row =>
+            getAppointmentDate(row)?.isAfter(selectedDate, 'day')
+        ) || others[0]
+        const nextDate = next ? getAppointmentDate(next) : null
+
+        return {
+            title: `Nothing booked on ${dayLabel}`,
+            detail: nextDate?.isValid()
+                ? `${plural(others.length)} elsewhere this week - next is ${nextDate.format('dddd, D MMMM')}.`
+                : `${plural(appointments.length)} scheduled elsewhere this week.`
+        }
+    }, [appointments, selectedDate, weekDays])
+
     const openAppointment = (row: UpcomingAppointment) => {
         if (onAppointmentClick) {
             onAppointmentClick(row)
@@ -1290,14 +1318,26 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
                             ))}
                         </div>
 
-                        <Skeleton
-                            active
-                            title={false}
-                            paragraph={{
-                                rows: 4,
-                                width: ['100%', '100%', '100%', '75%']
+                        <div
+                            style={{
+                                borderTop: `1px solid ${token.colorBorderSecondary}`,
+                                paddingTop: 12,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 14
                             }}
-                        />
+                        >
+                            {[0, 1, 2].map(index => (
+                                <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    <Skeleton.Input active size="small" style={{ width: 64, minWidth: 0, height: 14 }} />
+                                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        <Skeleton.Input active size="small" style={{ width: '55%', minWidth: 0, height: 14 }} />
+                                        <Skeleton.Input active size="small" style={{ width: '35%', minWidth: 0, height: 11 }} />
+                                    </div>
+                                    <Skeleton.Button active size="small" shape="round" style={{ width: 72, minWidth: 0 }} />
+                                </div>
+                            ))}
+                        </div>
                     </Space>
                 ) : (
                     <>
@@ -1312,10 +1352,22 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
                         >
                             {selectedAppointments.length === 0 ? (
                                 <Empty
-                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                    description={`No appointments on ${selectedDate.format(
-                                        'dddd, D MMMM'
-                                    )}.`}
+                                    image={
+                                        <CalendarOutlined
+                                            style={{ fontSize: 36, color: token.colorTextTertiary }}
+                                        />
+                                    }
+                                    styles={{ image: { height: 44 } }}
+                                    description={
+                                        <div>
+                                            <Text strong style={{ display: 'block' }}>
+                                                {emptyState.title}
+                                            </Text>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                {emptyState.detail}
+                                            </Text>
+                                        </div>
+                                    }
                                     style={{
                                         marginBlock: 22
                                     }}

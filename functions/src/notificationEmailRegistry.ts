@@ -95,4 +95,52 @@ export const NOTIFICATION_REGISTRY: Record<string, NotificationTypeConfig> = {
       },
     },
   },
+  // Outcome check-backs (outcomeFollowUps.ts): the facilitator, then optionally the SME.
+  outcome_follow_up: {
+    email: {
+      tag: "outcome-follow-up",
+      resolveRecipient: async (after) => {
+        const email = clean(after.recipientEmail).toLowerCase();
+        return email.includes("@") ? { email, name: clean(after.recipientName) || "there" } : null;
+      },
+      template: (after, recipient, actionLinks) => {
+        const title = clean(after.interventionTitle) || "an intervention";
+        const sme = clean(after.participantName) || "the business";
+        const { html, text } = buildNotificationContent(
+          "Check-back due",
+          [
+            `Hello ${recipient.name},`,
+            `It is time to check whether ${sme} has kept up the change from "${title}".`,
+            clean(after.intendedOutcome) ? `What we wanted to see: ${clean(after.intendedOutcome)}` : "",
+            "How is it going? Tap one:",
+          ],
+          "/coordinator/check-backs",
+          actionButtonsHtml(after.actions, actionLinks)
+        );
+        return { subject: `Check-back due: ${title} (${sme})`, html, text };
+      },
+    },
+  },
+  outcome_follow_up_sme: {
+    email: {
+      tag: "outcome-follow-up-sme",
+      resolveRecipient: async (after) => {
+        const recipient = await participant(after);
+        return recipient.email ? { email: recipient.email, name: recipient.name } : null;
+      },
+      template: (after, recipient, actionLinks) => {
+        const title = clean(after.interventionTitle) || "your support";
+        const { html, text } = buildNotificationContent(
+          "A quick question",
+          [
+            `Hello ${recipient.name},`,
+            `Some time ago you completed "${title}". Are you still using what you put in place?`,
+          ],
+          "/incubatee/interventions",
+          actionButtonsHtml(after.actions, actionLinks)
+        );
+        return { subject: `Quick question about ${title}`, html, text };
+      },
+    },
+  },
 };

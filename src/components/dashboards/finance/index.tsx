@@ -32,7 +32,6 @@ import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCa
 import AppointmentsCalendarModal from '@/components/modals/AppointmentsCalender'
 import AppointmentDetailsModal from '@/components/modals/AppointmentDetails'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { fetchAppointments } from '@/services/appointmentService'
 import {
     complianceDocumentKey,
@@ -960,10 +959,6 @@ const FinanceDashboard: React.FC = () => {
 
     return (
         <div style={{ padding: 24, minHeight: '100vh' }}>
-
-            {pageLoading && (
-                <LoadingOverlay tip='Loading program data...' />
-            )}
 
 
             <div style={{ marginBottom: 16 }}>

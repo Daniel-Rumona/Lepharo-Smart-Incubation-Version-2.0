@@ -21,7 +21,7 @@ import dayjs, { Dayjs } from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { ExpandAltOutlined, ReloadOutlined } from "@ant-design/icons";
 import { db } from "@/firebase";
-import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { MotionCard } from "@/components/dashboards/metrics/Header";
 import GrowthScoreCard from "@/components/growth-score/GrowthScoreCard";
 import MilestoneJourney, { MilestoneActivityChart } from "@/components/milestone-journey/MilestoneJourney";
@@ -241,7 +241,7 @@ const IncubateeAnalytics = () => {
       </Helmet>
 
       {loading ? (
-        <LoadingOverlay tip="Loading analytics" />
+        <PageSkeleton variant='analytics' />
       ) : (
         <MotionCard
           filterBar={

@@ -39,6 +39,8 @@ export function useSMERiskRegisterData(programIdProp?: string) {
     const [applications, setApplications] = useState<AnyDoc[]>([])
     const [diagnosticPlans, setDiagnosticPlans] = useState<AnyDoc[]>([])
     const [assignments, setAssignments] = useState<AnyDoc[]>([])
+    // Support an HOD closed, including services that were closed before any assignment existed.
+    const [closures, setClosures] = useState<AnyDoc[]>([])
     const [departments, setDepartments] = useState<AnyDoc[]>([])
     const [sessions, setSessions] = useState<AnyDoc[]>([])
     const [operationalChallenges, setOperationalChallenges] = useState<OperationalChallenge[]>([])
@@ -141,6 +143,7 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                     challengesSnap,
                     reminderEmailsSnap,
                     emailSuppressionsSnap,
+                    closuresSnap,
                 ] = await Promise.all([
                     getDocs(participantsQuery),
                     getDocs(applicationsQuery),
@@ -151,6 +154,12 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                     getDocs(challengesRef),
                     getDocs(reminderEmailsQuery),
                     getDocs(emailSuppressionsRef),
+                    // Optional: the register must still load if this collection is not readable yet.
+                    getDocs(
+                        resolvedProgramId
+                            ? query(collection(db, 'interventionClosures'), where('programId', '==', resolvedProgramId))
+                            : collection(db, 'interventionClosures')
+                    ).catch(() => null),
                 ])
 
                 if (cancelled) return
@@ -159,6 +168,11 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                 setApplications(applicationsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setDiagnosticPlans(diagnosticPlansSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setAssignments(assignmentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
+                setClosures(
+                    (closuresSnap?.docs ?? [])
+                        .map((d) => ({ id: d.id, ...d.data() }) as AnyDoc)
+                        .filter((item) => normalizeLower(item?.status) === 'closed')
+                )
                 setDepartments(departmentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setSessions(sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setOperationalChallenges(
@@ -227,6 +241,15 @@ export function useSMERiskRegisterData(programIdProp?: string) {
             if (pid) diagnosticPlanByParticipantId.set(pid, dp)
         })
 
+        const closedByParticipant = new Map<string, Set<string>>()
+        closures.forEach((closure) => {
+            const pid = normalizeText(closure?.participantId)
+            const ivId = normalizeText(closure?.interventionId)
+            if (!pid || !ivId) return
+            if (!closedByParticipant.has(pid)) closedByParticipant.set(pid, new Set())
+            closedByParticipant.get(pid)!.add(ivId)
+        })
+
         assignments.forEach((item) => {
             const pid = getInterventionParticipantId(item)
             if (!pid) return
@@ -254,6 +277,7 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                     application,
                     diagnosticPlan: dp,
                     assignments: relatedAssignments,
+                    closedInterventionIds: closedByParticipant.get(participantId),
                     sessions,
                     departmentsById,
                     departmentsByName,
@@ -268,6 +292,7 @@ export function useSMERiskRegisterData(programIdProp?: string) {
         applications,
         diagnosticPlans,
         assignments,
+        closures,
         departments,
         sessions,
         scopedDepartment,

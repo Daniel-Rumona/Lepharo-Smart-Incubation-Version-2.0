@@ -94,7 +94,7 @@ import {
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { safeLocal } from "@/utils/safeStorage";
 import { RouteFallback } from "@/components/layout/RouteFallback";
-import { LoadingOverlay } from "../shared/LoadingOverlay";
+import { DashboardLoader } from "./DashboardLoader";
 import { endSession } from "@/utils/sessionTracking";
 import {
     ViewAsBanner,
@@ -351,6 +351,9 @@ export const CustomLayout: React.FC = () => {
     const [pendingSegment, setPendingSegment] = useState<string | null>(null);
     const [moreSection, setMoreSection] = useState<string | null>(null);
     const [morePage, setMorePage] = useState(1);
+    // Which grouped nav pill's dropdown is currently open, so its chevron
+    // can flip to point up instead of just sitting there.
+    const [openNavDropdownRoute, setOpenNavDropdownRoute] = useState<string | null>(null);
 
     const location = useLocation();
 
@@ -1245,6 +1248,12 @@ export const CustomLayout: React.FC = () => {
                         label: "My MOVs",
                         icon: <DatabaseOutlined />,
                     },
+                    {
+                        key: "check-backs",
+                        to: "/coordinator/check-backs",
+                        label: "Check-backs",
+                        icon: <CheckSquareOutlined />,
+                    },
                 ],
             },
             {
@@ -1786,6 +1795,12 @@ export const CustomLayout: React.FC = () => {
                         icon: <BlockOutlined />,
                     },
                     {
+                        key: "check-backs",
+                        label: "Check-backs",
+                        to: "/coordinator/check-backs",
+                        icon: <CheckSquareOutlined />,
+                    },
+                    {
                         key: "movs",
                         to: "/operations/movs",
                         label: "MOV(s)",
@@ -2273,6 +2288,7 @@ export const CustomLayout: React.FC = () => {
 
     const OPERATIONS_INTERVENTION_CHILDREN = [
         "hod-active",
+        "check-backs",
         "appointments",
         "interventions-db",
         "movs",
@@ -2947,7 +2963,7 @@ export const CustomLayout: React.FC = () => {
                     background: "#fff",
                 }}
             >
-                <LoadingOverlay tip="Preparing your workspace..." />
+                <DashboardLoader overlay label="Preparing your workspace" />
             </div>
         );
     }
@@ -3064,7 +3080,13 @@ export const CustomLayout: React.FC = () => {
                             <span className={iconClass}>{destination.icon}</span>
                             <span className={labelClass}>{label}</span>
                             {isGroupDropdown && !isBottom && (
-                                <DownOutlined className="workspace-segment-chevron" />
+                                <DownOutlined
+                                    className={`workspace-segment-chevron ${
+                                        openNavDropdownRoute === destination.route
+                                            ? "workspace-segment-chevron-open"
+                                            : ""
+                                    }`}
+                                />
                             )}
                             {destination.attentionCount > 0 && (
                                 <Badge
@@ -3086,6 +3108,9 @@ export const CustomLayout: React.FC = () => {
                             trigger={["click"]}
                             // A bottom bar has no room below it for a menu.
                             placement={isBottom ? "top" : "bottom"}
+                            onOpenChange={(nextOpen) =>
+                                setOpenNavDropdownRoute(nextOpen ? destination.route : null)
+                            }
                             menu={{
                                 selectable: true,
                                 selectedKeys: activeDestination

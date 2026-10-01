@@ -40,7 +40,7 @@ import {
     DashboardHeaderCard,
     MotionCard
 } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import dayjs, { Dayjs } from 'dayjs'
 import { Helmet } from 'react-helmet'
 
@@ -729,16 +729,7 @@ const FunderDashboard: React.FC = () => {
                 <title>Funder Dashboard | Smart Incubation</title>
             </Helmet>
             {loading ? (
-                <div
-                    style={{
-                        height: 320,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}
-                >
-                    <LoadingOverlay tip='Loading Dashboard' />
-                </div>
+                <PageSkeleton variant='cards' />
             ) : apps.length === 0 ? (
                 <Card style={{ marginTop: 16 }}>
                     <Empty description='No SMEs found for this program.' />

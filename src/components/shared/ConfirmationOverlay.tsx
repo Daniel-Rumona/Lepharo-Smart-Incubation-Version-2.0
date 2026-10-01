@@ -12,7 +12,7 @@ import {
     getDoc
 } from 'firebase/firestore'
 import { db, auth } from '@/firebase'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 
 type AppRow = {
     id: string
@@ -205,7 +205,7 @@ const DPConfirmationOverlay: React.FC<DPConfirmationOverlayProps> = ({
             {children}
 
             {checking && (
-                <LoadingOverlay tip='Checking Developmental Plans status…' />
+                <DashboardLoader overlay label='Checking Developmental Plans status…' />
             )}
 
             {!checking && !allConfirmed && (

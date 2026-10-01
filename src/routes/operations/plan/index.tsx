@@ -44,7 +44,7 @@ import {
     Timestamp,
     onSnapshot
 } from 'firebase/firestore'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -2465,7 +2465,7 @@ const DiagnosticPlanConfirmations: React.FC = () => {
                     minHeight: '100vh'
                 }}
             >
-                <LoadingOverlay tip="Fetching Development Plans" />
+                <PageSkeleton variant='list' />
             </div>
         )
     }

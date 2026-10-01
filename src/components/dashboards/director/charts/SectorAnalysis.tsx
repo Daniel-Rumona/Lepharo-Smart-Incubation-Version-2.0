@@ -16,7 +16,7 @@ import { getAuth } from 'firebase/auth'
 import { db } from '@/firebase'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '../../metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 
 if (typeof drilldown === 'function') drilldown(Highcharts)
 
@@ -400,9 +400,7 @@ const SectorAnalysis: React.FC = () => {
 
     if (!allReady) {
         return (
-            <div style={{ display: 'grid', placeItems: 'center', minHeight: 240 }}>
-                <LoadingOverlay tip='Loading Sector Information' />
-            </div>
+            <PageSkeleton variant='analytics' tiles={0} />
         )
     }
 

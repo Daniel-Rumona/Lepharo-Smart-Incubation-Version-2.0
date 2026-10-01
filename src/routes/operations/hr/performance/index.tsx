@@ -47,7 +47,7 @@ import {
     DashboardHeaderCard,
     MotionCard
 } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 
 const { Text } = Typography
 const { RangePicker } = DatePicker
@@ -927,10 +927,11 @@ const EmployeePerformancePage: React.FC = () => {
     const compactLastStep = COMPACT_DIMENSIONS.length + 1
 
     if (loading) {
-        return
-        <div style={{ minHeight: '100vh' }}>
-            <LoadingOverlay tip='Loading employee performance...' />
-        </div>
+        return (
+            <div style={{ padding: 24, minHeight: '100vh' }}>
+                <PageSkeleton variant='analytics' />
+            </div>
+        )
     }
 
     return (

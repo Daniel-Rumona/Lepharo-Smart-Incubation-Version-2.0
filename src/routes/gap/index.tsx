@@ -15,7 +15,7 @@ import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
 import { chunk } from '@/types/types'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { QA, getQAArray, yes } from './sections'
 
 export { lepharoDepartments } from './sections'
@@ -424,7 +424,7 @@ const GAPAnalysisTable: React.FC = () => {
     return (
         <div style={{ padding: '2px 24px', }}>
             {loading ? (
-                <LoadingOverlay tip='Loading Gap Analysis Documents' />
+                <PageSkeleton variant='list' />
             ) : (
                 <>
 

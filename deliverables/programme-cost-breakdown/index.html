@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Smart Inc Platform – Monthly Programme Cost Breakdown</title>
+<style>
+  @page { size: A4; margin: 20mm 16mm 22mm 16mm;
+    @bottom-left { content: "Smart Inc Platform  |  Monthly Programme Cost Breakdown"; font: 8pt "Segoe UI", Arial, sans-serif; color: #7a8796; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt "Segoe UI", Arial, sans-serif; color: #7a8796; }
+  }
+  @page :first { margin-top: 0; @bottom-left { content: ""; } @bottom-right { content: ""; } }
+  :root { --navy:#12314f; --blue:#1f5f99; --teal:#1c8a8a; --amber:#d98e1f; --ink:#1d2b38; --mute:#657587; --line:#d6dee7; --soft:#f3f6f9; }
+  * { box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body { font-family:"Segoe UI",Calibri,Arial,sans-serif; color:var(--ink); font-size:10pt; line-height:1.5; margin:0; }
+
+  .hero { background:var(--navy); color:#fff; margin:0 -16mm 0; padding:22mm 16mm 12mm; position:relative; }
+  .hero:after { content:""; position:absolute; left:0; right:0; bottom:0; height:5px; background:linear-gradient(90deg,var(--blue),var(--teal),var(--amber)); }
+  .hero .kicker { text-transform:uppercase; letter-spacing:.2em; font-size:8.5pt; color:#9db8d2; }
+  .hero h1 { font-size:26pt; font-weight:600; line-height:1.15; margin:8px 0 6px; }
+  .hero .sub { font-size:10.5pt; color:#c9d8e6; }
+  .hero .meta { margin-top:14px; font-size:8.5pt; color:#9db8d2; }
+
+  .cards { display:flex; gap:10px; margin:18px 0 6px; }
+  .card { flex:1; border:1px solid var(--line); border-top:4px solid var(--blue); border-radius:4px; padding:10px 12px; background:#fff; }
+  .card.c2 { border-top-color:var(--teal); } .card.c3 { border-top-color:var(--amber); }
+  .card.tot { background:var(--navy); border-color:var(--navy); border-top-color:var(--navy); color:#fff; }
+  .card .lab { font-size:8pt; text-transform:uppercase; letter-spacing:.08em; color:var(--mute); }
+  .card.tot .lab { color:#9db8d2; }
+  .card .val { font-size:15pt; font-weight:700; margin-top:2px; }
+  .card .sm { font-size:8pt; color:var(--mute); }
+  .card.tot .sm { color:#c9d8e6; }
+
+  h2 { font-size:13pt; color:var(--navy); margin:22px 0 6px; padding-bottom:4px; border-bottom:2px solid var(--navy); page-break-after:avoid; }
+  h2 .no { display:inline-block; background:var(--navy); color:#fff; border-radius:3px; padding:0 7px; margin-right:8px; font-size:10.5pt; }
+  h3 { font-size:10.5pt; color:var(--blue); margin:14px 0 4px; page-break-after:avoid; }
+  p { margin:6px 0; }
+  .lead { font-size:10.5pt; }
+  .note { font-size:8.5pt; color:var(--mute); }
+
+  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:9pt; page-break-inside:avoid; }
+  th { background:var(--navy); color:#fff; font-weight:600; text-align:left; padding:6px 8px; }
+  td { padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tbody tr:nth-child(even) td { background:var(--soft); }
+  .n { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  tr.grp td { background:#e3eaf2 !important; color:var(--navy); font-weight:700; font-size:8.5pt; text-transform:uppercase; letter-spacing:.05em; }
+  tr.total td { background:var(--navy) !important; color:#fff; font-weight:700; border-bottom:none; }
+  tr.sub td { font-weight:700; background:#e3eaf2 !important; }
+
+  .callout { background:var(--soft); border-left:4px solid var(--teal); padding:9px 14px; margin:10px 0; }
+  .callout.amber { border-left-color:var(--amber); }
+
+  .legend { display:flex; gap:16px; font-size:8.5pt; color:var(--mute); margin:8px 0 4px; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+  .bar-row { margin:9px 0; page-break-inside:avoid; }
+  .bar-label { display:flex; justify-content:space-between; font-weight:600; font-size:9.5pt; margin-bottom:3px; }
+  .bar-label span { color:var(--navy); }
+  .bar { display:flex; height:16px; border-radius:3px; overflow:hidden; background:#e8edf2; }
+  .bar i { display:block; height:100%; }
+  .b1 { background:var(--amber); } .b2 { background:var(--blue); } .b3 { background:var(--teal); }
+  .bar-split { display:flex; font-size:8pt; color:var(--mute); } .bar-split span { display:block; text-align:center; white-space:nowrap; overflow:visible; }
+  .l1 { background:var(--amber); } .l2 { background:var(--blue); } .l3 { background:var(--teal); }
+
+  .cols { display:flex; gap:12px; } .cols > div { flex:1; }
+  .tile { border:1px solid var(--line); border-radius:4px; padding:8px 12px; background:#fff; }
+  .tile b { color:var(--navy); }
+  ul { margin:5px 0 5px 18px; padding:0; } li { margin:3px 0; }
+  .pb { page-break-before:always; }
+</style>
+</head><body>
+
+<div class="hero">
+  <div class="kicker">Commercial Schedule</div>
+  <h1>Monthly Programme<br>Cost Breakdown</h1>
+  <div class="sub">Smart Inc Platform &nbsp;·&nbsp; Kriel ESD, SEDFA and Sibanye Technical Training</div>
+  <div class="meta">Effective 30 September 2026 &nbsp;|&nbsp; Amounts in South African Rand (ZAR) &nbsp;|&nbsp; Monthly charge</div>
+</div>
+
+<div class="cards">
+  <div class="card"><div class="lab">Kriel ESD</div><div class="val">R9,850.63</div><div class="sm">26 SMEs · per month</div></div>
+  <div class="card c2"><div class="lab">SEDFA</div><div class="val">R16,170.48</div><div class="sm">33 SMEs · per month</div></div>
+  <div class="card c3"><div class="lab">Sibanye Technical Training</div><div class="val">R37,450.72</div><div class="sm">61 SMEs · per month</div></div>
+  <div class="card tot"><div class="lab">Combined</div><div class="val">R63,471.83</div><div class="sm">120 SMEs · per month</div></div>
+</div>
+
+<h2><span class="no">1</span>Executive Summary</h2>
+<p class="lead">This schedule sets out the monthly charge for the Smart Inc Platform for three programmes. Kriel ESD and SEDFA are charged an average monthly cost, broken down by the key services that run the Platform. Sibanye Technical Training is charged a monthly fee made up of its standard features, customisation, PWA support, courses and AI coach, with the once-off development cost amortised over three years.</p>
+<table>
+  <thead><tr><th>Programme</th><th class="n">SMEs</th><th>Basis of charge</th><th class="n">Monthly charge</th></tr></thead>
+  <tbody>
+  <tr><td>Kriel ESD</td><td class="n">26</td><td>Average monthly cost of key services</td><td class="n"><b>R9,850.63</b></td></tr>
+  <tr><td>SEDFA</td><td class="n">33</td><td>Average monthly cost of key services, including the external system update</td><td class="n"><b>R16,170.48</b></td></tr>
+  <tr><td>Sibanye Technical Training</td><td class="n">61</td><td>Feature-based monthly fee; development amortised over 36 months</td><td class="n"><b>R37,450.72</b></td></tr>
+  <tr class="total"><td>Total</td><td class="n">120</td><td></td><td class="n">R63,471.83</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="no">2</span>Programme Scope</h2>
+<table>
+  <thead><tr><th>Programme</th><th class="n">SMEs</th><th class="n">Documents</th><th>Scope</th></tr></thead>
+  <tbody>
+  <tr><td><b>Kriel ESD</b></td><td class="n">26</td><td class="n">153</td><td>Enterprise development programme: SME records, compliance documents and agreements, dashboards and reporting.</td></tr>
+  <tr><td><b>SEDFA</b></td><td class="n">33</td><td class="n">101</td><td>Enterprise development programme as above, with integration to an external financial system.</td></tr>
+  <tr><td><b>Sibanye Technical Training</b></td><td class="n">61</td><td class="n">305</td><td>Technical training programme across three regions, averaging five documents per SME, with courses, an AI coach and a training management page.</td></tr>
+  </tbody>
+</table>
+<p class="note">Document counts for Kriel ESD and SEDFA are Platform records as at 30 September 2026. Sibanye Technical Training figures are the programme's planning volumes.</p>
+<h3>Platform features included for every programme</h3>
+<div class="cols">
+  <div class="tile"><b>AI capabilities</b><br>Page-aware assistant, guided navigation and gap-analysis support.<br><br><b>Agentic support</b><br>AI tools that query live programme data.</div>
+  <div class="tile"><b>WhatsApp and email</b><br>WhatsApp integration and email notifications.<br><br><b>Background automation</b><br>Scheduled reminders for MOV, KPI, compliance, tasks and appointments.</div>
+  <div class="tile"><b>Offline and PWA</b><br>Installable app, offline operation, data synchronisation and push notifications.<br><br><b>Document vault</b><br>SME records, compliance documents and agreements.</div>
+</div>
+
+<h2 class="pb"><span class="no">3</span>Kriel ESD</h2>
+<p>Kriel ESD is charged an average of <b>R9,850.63 per month</b>, made up of the key services below.</p>
+<table>
+  <thead><tr><th>Key feature</th><th>Covers</th><th class="n">R per month</th></tr></thead>
+  <tbody><tr><td><b>Gemini API key</b></td><td>AI assistant, gap analysis and guide-me</td><td class="n">R1,450.00</td></tr><tr><td><b>Anthropic (Claude) API key</b></td><td>AI reasoning and agentic support</td><td class="n">R1,650.00</td></tr><tr><td><b>Database and authentication</b></td><td>Firebase Firestore and user login</td><td class="n">R1,880.40</td></tr><tr><td><b>Document storage</b></td><td>Firebase Storage for compliance documents and agreements</td><td class="n">R820.25</td></tr><tr><td><b>Cloud functions and scheduled jobs</b></td><td>Reminders and background automation</td><td class="n">R945.30</td></tr><tr><td><b>Web hosting and AI server</b></td><td>Vercel web hosting and the AI backend server</td><td class="n">R1,100.00</td></tr><tr><td><b>Email</b></td><td>Brevo transactional and reminder emails</td><td class="n">R480.00</td></tr><tr><td><b>WhatsApp messaging</b></td><td>WhatsApp integration and staff agent</td><td class="n">R690.00</td></tr><tr><td><b>Monitoring, backups and domain</b></td><td>Logging, backups, domain and SSL</td><td class="n">R834.68</td></tr><tr class="total"><td>Monthly charge</td><td></td><td class="n">R9,850.63</td></tr></tbody>
+</table>
+
+<h2><span class="no">4</span>SEDFA</h2>
+<p>SEDFA is charged an average of <b>R16,170.48 per month</b>. The charge includes an external system update of <b>R300.00 per SME</b>, which for 33 SMEs is <b>R9,900.00</b> (61.2% of the monthly charge). The Platform reads each SME's financial and revenue data from the external financial system (QuantNow), which supports the Finance page and the revenue-based KPIs used in programme reporting. The update covers third-party access to that system, daily synchronisation and monitoring of the connection, credential management, error handling and reconciliation of SME revenue data.</p>
+<table>
+  <thead><tr><th>Key feature</th><th>Covers</th><th class="n">R per month</th></tr></thead>
+  <tbody><tr><td><b>External financial system update</b></td><td>33 SMEs at R300.00 per SME (QuantNow)</td><td class="n">R9,900.00</td></tr><tr><td><b>Gemini API key</b></td><td>AI assistant, gap analysis and guide-me</td><td class="n">R480.00</td></tr><tr><td><b>Anthropic (Claude) API key</b></td><td>AI reasoning and agentic support</td><td class="n">R520.00</td></tr><tr><td><b>Database and authentication</b></td><td>Firebase Firestore and user login</td><td class="n">R1,100.00</td></tr><tr><td><b>Document storage</b></td><td>Firebase Storage for compliance documents and agreements</td><td class="n">R380.25</td></tr><tr><td><b>Cloud functions and scheduled jobs</b></td><td>Reminders and background automation</td><td class="n">R640.00</td></tr><tr><td><b>Web hosting and AI server</b></td><td>Vercel web hosting and the AI backend server</td><td class="n">R1,100.00</td></tr><tr><td><b>Email</b></td><td>Brevo transactional and reminder emails</td><td class="n">R410.00</td></tr><tr><td><b>WhatsApp messaging</b></td><td>WhatsApp integration and staff agent</td><td class="n">R525.00</td></tr><tr><td><b>Monitoring, backups and domain</b></td><td>Logging, backups, domain and SSL</td><td class="n">R1,115.23</td></tr><tr class="total"><td>Monthly charge</td><td></td><td class="n">R16,170.48</td></tr></tbody>
+</table>
+<p class="note">The external system update moves by R300.00 for each SME added to or removed from SEDFA.</p>
+
+<h2 class="pb"><span class="no">5</span>Sibanye Technical Training</h2>
+<p>The Sibanye Technical Training charge is a single monthly fee of <b>R37,450.72</b> for 61 SMEs across three regions. It covers the standard Platform features, the customisation for the programme, PWA support, the courses and the AI academy coach, together with the Quantilytix System Maintenance. The once-off development cost is amortised over three years and forms part of the monthly fee.</p>
+<table>
+  <thead><tr><th>Key feature</th><th>Covers</th><th class="n">R per month</th></tr></thead>
+  <tbody><tr><td><b>Standard features</b></td><td>Platform, hosting, database, email and WhatsApp messaging, AI services, dashboards and document vault</td><td class="n">R10,266.74</td></tr><tr><td><b>PWA and offline support</b></td><td>Installable app, offline operation, data synchronisation and push notifications</td><td class="n">R1,700.00</td></tr><tr><td><b>Customisation</b></td><td>Sibanye Technical set-up: three regions, enrolment, training page and reporting</td><td class="n">R6,100.00</td></tr><tr><td><b>Courses</b></td><td>Course builder, course player, assessments and course media</td><td class="n">R5,233.98</td></tr><tr><td><b>AI academy coach</b></td><td>Learner coaching and AI extraction of course content</td><td class="n">R5,700.00</td></tr><tr><td><b>Quantilytix System Maintenance</b></td><td>System-level updates, security, monitoring and support</td><td class="n">R6,450.00</td></tr><tr><td><b>Monthly fee: once-off development, amortised over 3 years</b></td><td>Development bundle of R72,000.00 over 36 months</td><td class="n">R2,000.00</td></tr><tr class="total"><td>Monthly fee</td><td></td><td class="n">R37,450.72</td></tr></tbody>
+</table>
+<p class="note">Unit rates: R12,483.57 per region, R613.95 per SME and R122.79 per document (3 regions, 61 SMEs and 305 documents).</p>
+
+<h3>Training capabilities</h3>
+<ul>
+  <li><b>Courses:</b> course builder and course player, including lessons, assessments and learning materials.</li>
+  <li><b>AI academy coach:</b> AI coaching for learners, and AI-assisted extraction of course content from uploaded material.</li>
+  <li><b>Training page:</b> a page to create the training programme, define its regions, enrol SMEs and manage their enrolment status.</li>
+  <li><b>Attendance and reporting:</b> mandatory daily clock-in, timesheets and training dashboards.</li>
+</ul>
+
+<h3>Once-off development, amortised over three years</h3>
+<table>
+  <thead><tr><th>Once-off development bundle</th><th class="n">Term</th><th class="n">Per month</th></tr></thead>
+  <tbody><tr><td>Development and configuration of the Platform for Sibanye Technical Training, including the development and team platforms (source control, build and deployment, test environments, project management and design tooling)</td><td class="n">36 months</td><td class="n">R2,000.00</td></tr>
+  <tr class="total"><td>Bundle: R72,000.00</td><td class="n"></td><td class="n">R2,000.00</td></tr></tbody>
+</table>
+
+<h3>Quantilytix System Maintenance</h3>
+<p>The fee includes <b>R6,450.00 per month</b> for Quantilytix System Maintenance: system-level maintenance of the Quantilytix system on which the Platform runs, covering updates, security patching, monitoring and support. It is shown on its own line so that maintenance of the underlying system is distinguished from the programme's own features.</p>
+
+<h2><span class="no">6</span>Frozen Modules</h2>
+<p>Kriel ESD and SEDFA have recorded almost no intervention activity in the last 90 days (SEDFA none, Kriel one MOV and two active SMEs). Intervention monitoring, reminders and automation for these programmes are frozen and resume in the month in which at least 10 SMEs and 10 MOV records record activity within a 90-day window. SME records, the document vault, hosting and backups remain live, and all data is retained.</p>
+
+<h2><span class="no">7</span>Basis of Charges</h2>
+<ul>
+  <li><b>Kriel ESD and SEDFA:</b> an average monthly cost, built from the key services that run the Platform for the programme. Smaller services are grouped under monitoring, backups and domain.</li>
+  <li><b>Sibanye Technical Training:</b> a monthly fee for the standard features and the programme-specific capabilities. The once-off development cost of R72,000.00 is spread evenly over 36 months.</li>
+  <li><b>SEDFA external system update:</b> charged at R300.00 per SME per month.</li>
+  <li><b>Services:</b> Google Gemini and Anthropic (AI), Google Firebase (database, authentication, storage and functions), Vercel (hosting), Brevo (email) and WhatsApp messaging. Charges are reviewed against actual usage.</li>
+  <li><b>Volumes:</b> Sibanye Technical Training volumes (61 SMEs, three regions, five documents per SME) are planning figures and will be reviewed against actual enrolments once recorded on the Platform.</li>
+  <li><b>Amounts:</b> all amounts are in South African Rand and are stated to the cent.</li>
+</ul>
+
+</body></html>

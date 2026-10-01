@@ -9,7 +9,7 @@ import HRMReportsPage from './hrm'
 import { StakeholderEngagementAnalytics } from './stakeholder'
 import ReportingDashboard from './universal/ReportingDashboard'
 import ROMSegmentedReportsPage from './rom'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 
 const normalize = (str?: string) =>
     (str || '').toLowerCase().replace(/\s+/g, ' ').trim()
@@ -85,7 +85,7 @@ export const ReportSwitcher: React.FC = () => {
     }, [loading, user?.departmentId, user?.departmentName])
 
     if (loading || resolving) {
-        return <LoadingOverlay tip='Preparing reports' />
+        return <DashboardLoader label='Preparing reports' />
     }
 
     if (!user) {

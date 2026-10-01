@@ -121,7 +121,9 @@ export default function TrainingDashboard() {
               return (
                 <Button
                   key={department.id}
-                  className="training-department-filter"
+                  className={`training-department-filter${
+                    department.id === "all" ? " training-department-filter--all" : ""
+                  }`}
                   aria-pressed={active}
                   onClick={() => setSelected(department.id)}
                   style={
@@ -145,7 +147,9 @@ export default function TrainingDashboard() {
                     {department.name}
                   </span>
                   <span className="training-department-filter-action">
-                    {active ? (
+                    {department.id === "all" ? (
+                      active ? <CheckOutlined /> : null
+                    ) : active ? (
                       <>
                         <CheckOutlined /> Selected
                       </>

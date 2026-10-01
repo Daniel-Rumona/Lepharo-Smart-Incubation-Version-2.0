@@ -27,7 +27,7 @@ import {
 } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import { db } from '@/firebase'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 
 if (typeof more === 'function') more(Highcharts)
 if (typeof accessibility === 'function') accessibility(Highcharts)
@@ -824,9 +824,7 @@ const PortfolioCompanies: React.FC = () => {
     // render gates
     if (isLoading) {
         return (
-            <div style={{ display: 'grid', placeItems: 'center', minHeight: 320 }}>
-                <LoadingOverlay tip='Loading beneficiaries & distributions...' />
-            </div>
+            <PageSkeleton variant='analytics' tiles={0} />
         )
     }
 

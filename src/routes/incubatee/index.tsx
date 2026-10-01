@@ -56,7 +56,7 @@ import {
     rejectCompletion as rejectCompletionAction
 } from '@/lib/interventions'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
 import DashboardOverview from '@/components/incubatee/DashboardOverview'
 import Button from '@/components/incubatee/DashboardButton'
@@ -1948,7 +1948,7 @@ export const IncubateeDashboard: React.FC = () => {
         <>
             {loading ? (
                 <div style={{ padding: screens.md ? 24 : 12 }}>
-                    <LoadingOverlay tip='Getting everything ready' />
+                    <PageSkeleton variant='analytics' />
                 </div>
 
             ) : (

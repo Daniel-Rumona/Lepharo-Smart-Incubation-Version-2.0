@@ -12,6 +12,7 @@ import {
   Space,
   Spin,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import {
@@ -161,6 +162,12 @@ export default function CoursesRepository() {
   }
   const recoveryOnly = (course: SavedCourse) =>
     !!course.localRecovery || !course.revision;
+  const formatDuration = (mins: number) => {
+    if (mins <= 60) return `${mins} min`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  };
   const activeCourses = courses.filter(c => !c.deletedAt);
   async function remove(course: SavedCourse, deleted: boolean) {
     await setCourseDeleted(course, deleted);
@@ -403,9 +410,15 @@ export default function CoursesRepository() {
                     <Space wrap>
                       <span><ApartmentOutlined /> {course.modules?.length || 1} modules</span>
                       <span><FileTextOutlined /> {course.items.length} items</span>
-                      <span><ClockCircleOutlined /> {course.items.reduce((sum, item) => sum + item.minutes, 0)} min</span>
+                      <span><ClockCircleOutlined /> {formatDuration(course.items.reduce((sum, item) => sum + item.minutes, 0))}</span>
                     </Space>
-                    {recoveryOnly(course) && <Typography.Text type="warning" style={{ display: "block", marginTop: 6 }}><CloudSyncOutlined /> Local recovery</Typography.Text>}
+                    {recoveryOnly(course) && (
+                      <Tooltip title="This draft's latest changes are only saved on this device — they haven't synced to the server yet. Reopen it here to retry saving.">
+                        <Tag className="course-repository-row-recovery" icon={<CloudSyncOutlined />} color="warning">
+                          Not synced
+                        </Tag>
+                      </Tooltip>
+                    )}
                   </div>
                   <div className="course-repository-row-actions">
                     {course.deletedAt ? (

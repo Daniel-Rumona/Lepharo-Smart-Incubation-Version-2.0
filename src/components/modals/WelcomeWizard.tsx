@@ -66,7 +66,7 @@ import html2canvas from 'html2canvas'
 // App bits
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { PopiaContractModal } from '@/components/modals/Contracts/POPIA'
-import { LoadingOverlay } from '../shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 
 const { Title, Paragraph, Text } = Typography
 const { Dragger } = Upload
@@ -1530,7 +1530,7 @@ const WelcomeWizard: React.FC = () => {
     return (
         <>
             {loading ? (
-                <LoadingOverlay tip='Getting everything ready...' />
+                <DashboardLoader overlay label='Getting everything ready...' />
             ) : (
                 <div
                     style={{

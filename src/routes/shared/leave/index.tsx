@@ -41,7 +41,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 
 const { Text } = Typography
@@ -492,7 +492,7 @@ const EmployeeLeave = () => {
     if (loading || !leaveBalance)
         return (
             <div style={{ minHeight: '100vh' }}>
-                <LoadingOverlay tip='Loading details' />
+                <PageSkeleton variant='list' />
             </div>
         )
 

@@ -70,7 +70,6 @@ import { MetricsGrid } from '@/components/dashboards/metrics/MetricsGrid'
 import { MovDoc, ConsolidatedPack, chunk } from '@/types/mov'
 
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { USE_SENSITIVE_DEPARTMENT_SUMMARY_INSTEAD_OF_POE } from '@/config/evidencePolicy'
 import { Helmet } from 'react-helmet'
 import { workflowQueryService } from '@/services/workflowQueryService'
@@ -2781,7 +2780,7 @@ const MOVApprovalsForm: React.FC = () => {
                 <title>MOV Submission | Smart Incubation</title>
             </Helmet>
 
-            {initialLoading ? <LoadingOverlay tip="Loading MOV submissions..." /> : <>
+            {<>
                 <div data-guide="mov-metrics">
                     <MetricsGrid metrics={activeMetrics.map(metric => ({
                         key: metric.key,
@@ -2790,6 +2789,7 @@ const MOVApprovalsForm: React.FC = () => {
                         icon: metric.icon,
                         iconBg: metric.bg,
                         subtitle: '',
+                        loading: initialLoading,
                         onClick: (metric as any).onClick,
                         wrapperStyle: (metric as any).wrapperStyle
                     }))}
@@ -2841,6 +2841,10 @@ const MOVApprovalsForm: React.FC = () => {
                         </Col>
                     </Row>
                     <MotionCard
+                        loading={initialLoading}
+                        skeleton='table'
+                        skeletonRows={6}
+                        skeletonColumns={6}
                         filterBar={(
                             <Row data-guide="mov-filter-bar" gutter={[16, 16]} align="middle">
                                 {viewKey === 'movs' && <>

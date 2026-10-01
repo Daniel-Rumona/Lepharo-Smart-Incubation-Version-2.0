@@ -30,7 +30,7 @@ type Props = {
     periodLabel?: string
 }
 
-const displayValue = (value: number, loading?: boolean) => loading ? '...' : value
+const displayValue = (value: number, _loading?: boolean) => value
 
 export const buildInterventionDashboardMetrics = (
     metrics: InterventionMetricSummary,
@@ -45,6 +45,7 @@ export const buildInterventionDashboardMetrics = (
     return [
         {
             key: 'required',
+            loading,
             important: true,
             icon: <FileDoneOutlined style={{ fontSize: 20, color: '#1677ff' }} />,
             iconBg: 'transparent',
@@ -54,6 +55,7 @@ export const buildInterventionDashboardMetrics = (
         },
         {
             key: 'assigned',
+            loading,
             important: true,
             icon: <ClockCircleOutlined style={{ fontSize: 20, color: '#d97706' }} />,
             iconBg: 'transparent',
@@ -64,6 +66,7 @@ export const buildInterventionDashboardMetrics = (
         },
         {
             key: 'in-progress',
+            loading,
             icon: <SyncOutlined style={{ fontSize: 20, color: '#722ed1' }} />,
             iconBg: 'transparent',
             title: 'In Progress',
@@ -73,6 +76,7 @@ export const buildInterventionDashboardMetrics = (
         },
         {
             key: 'completed',
+            loading,
             icon: <CheckCircleOutlined style={{ fontSize: 20, color: '#16a34a' }} />,
             iconBg: 'transparent',
             title: 'Completed',

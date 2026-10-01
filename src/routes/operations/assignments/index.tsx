@@ -27,6 +27,7 @@ import {
     List,
     InputNumber,
     Checkbox,
+    Popconfirm,
     theme,
 } from "antd";
 import {
@@ -88,6 +89,14 @@ import {
     toAssignedInterventionView,
 } from "@/services/assignedInterventionService";
 import { resolveAssignmentLifecycle } from "@/services/assignmentLifecycleService";
+import { CloseSupportModal, type CloseSupportTarget } from "@/components/interventions/CloseSupportModal";
+import {
+    closedKey,
+    reopenSupport,
+    subscribeClosures,
+    type SupportClosure,
+} from "@/services/interventionClosureService";
+import { canCloseSupport, closeReasonLabel } from "@/services/interventionClosureRules";
 import { AssignmentStatusesModal } from "./AssignmentStatusesModal";
 import { InterventionDemandModal } from "./InterventionDemandModal";
 import {
@@ -1607,6 +1616,15 @@ export const InterventionsAssignments: React.FC = () => {
     } | null>(null);
     const [reassigningAssignment, setReassigningAssignment] =
         useState<Assignment | null>(null);
+
+    // Support an HOD has closed. Shared rule with the Developmental Plan: no new
+    // cycles are assigned for it, and the row offers Reopen instead.
+    const [closures, setClosures] = useState<Map<string, SupportClosure>>(new Map());
+    const [closeTarget, setCloseTarget] = useState<CloseSupportTarget | null>(null);
+    const mayCloseSupport = canCloseSupport((user as any)?.role);
+    useEffect(() => {
+        return subscribeClosures(db, { programId: activeProgramId || null }, setClosures);
+    }, [activeProgramId]);
     const [selectedGroup, setSelectedGroup] = useState<any | null>(null);
     const groupMembersModalVisible = activeModal === "groupMembers";
     const setGroupMembersModalVisible = makeModalSetter("groupMembers");
@@ -2936,6 +2954,10 @@ export const InterventionsAssignments: React.FC = () => {
 
     const handleQuickAssign = (iv: any) => {
         if (!selectedParticipant) return;
+        if (closures.has(closedKey(String((selectedParticipant as any).id), normalizeId(iv.id)))) {
+            message.warning("Support for this intervention is closed. Reopen it to assign again.");
+            return;
+        }
         setLockedIntervention({ id: normalizeId(iv.id) });
         setLockedParticipantId(String((selectedParticipant as any).id));
         setLockSource("manage");
@@ -3304,6 +3326,7 @@ export const InterventionsAssignments: React.FC = () => {
                         : "coordinator";
 
             const preparedRows: any[] = [];
+            const closedSkipped: string[] = [];
 
             for (const pid of selectedIds) {
                 const participant = participants.find(
@@ -3312,6 +3335,10 @@ export const InterventionsAssignments: React.FC = () => {
                 if (!participant) continue;
 
                 const ivId = String(values.intervention);
+                if (closures.has(closedKey(String(pid), ivId))) {
+                    closedSkipped.push(String((participant as any).beneficiaryName || pid));
+                    continue;
+                }
                 const intervention = (
                     (participant as any).requiredInterventions || []
                 ).find((i: any) => String(i.id) === ivId);
@@ -3485,6 +3512,16 @@ export const InterventionsAssignments: React.FC = () => {
                         interventionTitle: getIvTitle(fullIntervention),
                         subInterventionId: hasSubs ? selectedSubId : null,
                         subInterventionTitle: hasSubs ? selectedSubTitle : null,
+                        // Frozen now, so later edits to the library never change what
+                        // this assignment was meant to achieve. Legacy definitions add nothing.
+                        ...((fullIntervention as any)?.outcomeDef
+                            ? {
+                                outcomeDef: (fullIntervention as any).outcomeDef,
+                                ...((fullIntervention as any).outcomeDef?.deliverable?.name
+                                    ? { deliverableName: (fullIntervention as any).outcomeDef.deliverable.name }
+                                    : {}),
+                            }
+                            : {}),
                         capturedAt: Timestamp.now(),
                     },
                     dueDate: values.dueDate
@@ -3521,8 +3558,17 @@ export const InterventionsAssignments: React.FC = () => {
                 });
             }
 
+            if (closedSkipped.length) {
+                message.warning(
+                    `Skipped ${closedSkipped.length} SME${closedSkipped.length === 1 ? "" : "s"} whose support is closed: ${closedSkipped.slice(0, 3).join(", ")}${closedSkipped.length > 3 ? "…" : ""}`
+                );
+            }
             if (!preparedRows.length) {
-                message.error("No valid assignments were prepared.");
+                message.error(
+                    closedSkipped.length
+                        ? "Support is closed for every selected SME."
+                        : "No valid assignments were prepared."
+                );
                 return;
             }
 
@@ -5107,11 +5153,85 @@ export const InterventionsAssignments: React.FC = () => {
         return cols;
     }, [participantInterventionMap, getParticipantCoverage]);
 
+    const closureFor = (record: any): SupportClosure | undefined =>
+        selectedParticipant
+            ? closures.get(closedKey(String((selectedParticipant as any).id), String(record?.interventionId || "")))
+            : undefined;
+
+    // Closed support offers only Reopen; everything else keeps its actions and gains Close.
+    const renderWithClose = (record: any, normalActions: () => React.ReactNode) => {
+        const closure = closureFor(record);
+        if (closure) {
+            return mayCloseSupport ? (
+                <Popconfirm
+                    title="Reopen this support?"
+                    description="Cancelled assignments return to how they were."
+                    okText="Reopen"
+                    onConfirm={async () => {
+                        try {
+                            await reopenSupport({
+                                db,
+                                closure,
+                                user: {
+                                    uid: String((user as any)?.uid || ""),
+                                    name: String((user as any)?.name || ""),
+                                    role: String((user as any)?.role || ""),
+                                },
+                            });
+                            message.success("Support reopened.");
+                        } catch (error) {
+                            console.error(error);
+                            message.error("Could not reopen support.");
+                        }
+                    }}
+                >
+                    <Button type="link">Reopen</Button>
+                </Popconfirm>
+            ) : (
+                <Text type="secondary">Closed</Text>
+            );
+        }
+        return (
+            <Space size={0} wrap>
+                {normalActions()}
+                {mayCloseSupport && selectedParticipant ? (
+                    <Button
+                        type="link"
+                        danger
+                        onClick={() =>
+                            setCloseTarget({
+                                participantId: String((selectedParticipant as any).id),
+                                participantName: String((selectedParticipant as any).beneficiaryName || ""),
+                                interventionId: String(record.interventionId),
+                                interventionTitle: String(record.interventionTitle || ""),
+                                departmentId: record.departmentId || null,
+                                programId: activeProgramId || null,
+                            })
+                        }
+                    >
+                        Close
+                    </Button>
+                ) : null}
+            </Space>
+        );
+    };
+
     const modalColumns = [
         {
             title: "Intervention Title",
             dataIndex: "interventionTitle",
             key: "interventionTitle",
+            render: (title: string, record: any) => {
+                const deliverable = ivDefsById[String(record?.interventionId || "")]?.outcomeDef?.deliverable?.name;
+                return deliverable ? (
+                    <Space direction="vertical" size={2}>
+                        <span>{title}</span>
+                        <Tag color="blue" style={{ marginInlineEnd: 0 }}>{deliverable}</Tag>
+                    </Space>
+                ) : (
+                    title
+                );
+            },
         },
         {
             title: "Current Assignee",
@@ -5126,6 +5246,14 @@ export const InterventionsAssignments: React.FC = () => {
             title: "Current Status",
             key: "status",
             render: (_: any, record: any) => {
+                const closure = closureFor(record);
+                if (closure) {
+                    return (
+                        <Tag color="gold">
+                            Support closed · {closeReasonLabel(closure.reason)}
+                        </Tag>
+                    );
+                }
                 if (record.isUnassigned) {
                     const blocked = !!record.blockedByPrevCycle;
                     return (
@@ -5148,7 +5276,7 @@ export const InterventionsAssignments: React.FC = () => {
         {
             title: "Action",
             key: "action",
-            render: (_: any, record: any) => {
+            render: (_: any, record: any) => renderWithClose(record, () => {
                 if (record.isUnassigned) {
                     const blocked = !!record.blockedByPrevCycle;
                     if (blocked) {
@@ -5217,7 +5345,7 @@ export const InterventionsAssignments: React.FC = () => {
                         </Button>
                     </Space>
                 );
-            },
+            }),
         },
     ];
 
@@ -6424,6 +6552,17 @@ export const InterventionsAssignments: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
+
+            <CloseSupportModal
+                target={closeTarget}
+                user={{
+                    uid: String((user as any)?.uid || ""),
+                    name: String((user as any)?.name || ""),
+                    role: String((user as any)?.role || ""),
+                }}
+                onClose={() => setCloseTarget(null)}
+                onDone={() => setCloseTarget(null)}
+            />
 
             <Modal
                 className="guide-manage-beneficiary-modal"

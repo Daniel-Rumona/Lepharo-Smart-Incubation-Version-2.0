@@ -1,3 +1,4 @@
+import { CardSkeleton, type CardSkeletonVariant } from './CardSkeleton'
 import React from 'react'
 import { Card, Row, Col, Space, Button, Typography, Tag, Skeleton, theme } from 'antd'
 import type { CardProps, TagProps } from 'antd'
@@ -166,9 +167,7 @@ const MetricBase: React.FC<MetricProps> = ({
             style={style as React.CSSProperties}
         >
             <Space size={10} align="center" style={{ minWidth: 0, flex: '1 1 auto' }}>
-                {loading ? (
-                    <Skeleton.Avatar active shape="circle" size={34} />
-                ) : icon ? (
+                {icon ? (
                     <IconChipBase size={36} radius={999} bg={iconBg} icon={icon} />
                 ) : null}
 
@@ -180,13 +179,34 @@ const MetricBase: React.FC<MetricProps> = ({
                     }}
                 >
                     {loading ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <Skeleton.Input active size="small" style={{ width: 110, height: 14 }} />
-                            <Skeleton.Input active size="small" style={{ width: 42, height: 21 }} />
+                        // Icon and title are known up front, so only the parts
+                        // that depend on data are skeletons - the tile keeps its
+                        // real shape and nothing shifts when the numbers arrive.
+                        <>
+                            <div
+                                style={{
+                                    fontSize: 12,
+                                    color: palette.muted,
+                                    lineHeight: 1.15,
+                                    overflowWrap: 'normal',
+                                    wordBreak: 'normal'
+                                }}
+                            >
+                                {title}
+                            </div>
+                            <Skeleton.Input
+                                active
+                                size="small"
+                                style={{ width: 36, minWidth: 0, height: 20, display: 'block', marginBlock: 2 }}
+                            />
                             {subtitle ? (
-                                <Skeleton.Input active size="small" style={{ width: 128, height: 12 }} />
+                                <Skeleton.Input
+                                    active
+                                    size="small"
+                                    style={{ width: 120, minWidth: 0, height: 11, display: 'block' }}
+                                />
                             ) : null}
-                        </div>
+                        </>
                     ) : (
                         <>
                             <div
@@ -355,6 +375,13 @@ type MotionCardOwnProps = {
     loading?: boolean
     /** Rows passed to the Skeleton's paragraph when `loading` is true. */
     skeletonRows?: number
+    /**
+     * Shape of the skeleton, so it resembles the real body: 'table', 'chart',
+     * 'list', 'stats' or the default 'text'. Pass a node for a bespoke one.
+     */
+    skeleton?: CardSkeletonVariant | React.ReactNode
+    /** Table skeleton only. */
+    skeletonColumns?: number
 }
 
 type MotionCardComponent = React.FC<CardProps & MotionCardOwnProps> & {
@@ -369,6 +396,8 @@ export const MotionCard: MotionCardComponent = ({
     filterBarProps,
     loading = false,
     skeletonRows = 3,
+    skeleton = 'text',
+    skeletonColumns,
     ...rest
 }) => {
     const palette = useMetricPalette()
@@ -391,7 +420,15 @@ export const MotionCard: MotionCardComponent = ({
         >
             <Card {...rest} style={{ ...cardStyle, ...(style || {}) }}>
                 {loading ? (
-                    <Skeleton active title={false} paragraph={{ rows: skeletonRows }} />
+                    typeof skeleton === 'string' ? (
+                        <CardSkeleton
+                            variant={skeleton as CardSkeletonVariant}
+                            rows={skeletonRows}
+                            columns={skeletonColumns}
+                        />
+                    ) : (
+                        skeleton
+                    )
                 ) : (
                     <>
                         {filterBar && (

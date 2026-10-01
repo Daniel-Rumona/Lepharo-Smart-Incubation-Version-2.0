@@ -40,9 +40,18 @@ import {
     Timestamp,
     getDoc,
     writeBatch,
+    deleteField,
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
+import {
+    buildOutcomeDef,
+    OUTCOME_TYPES,
+    OUTCOME_TYPE_LABELS,
+    type OutcomeDef,
+} from "@/services/evidenceModel";
+import { InterventionWizard, type WizardValues } from "./InterventionWizard";
+import { InterventionDetailModal } from "./InterventionDetailModal";
 import {
     DeleteOutlined,
     EditOutlined,
@@ -58,7 +67,7 @@ import {
     type DashboardMetric,
 } from "@/components/dashboards/metrics/MetricsGrid";
 import { Helmet } from "react-helmet";
-import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import {
     guideTarget,
     usePageGuides,
@@ -120,6 +129,9 @@ type InterventionDoc = {
     subInterventionRotationMode?: "rotate" | "repeat";
 
     assignmentMode?: InterventionAssignmentMode;
+
+    /** Optional. Absent on legacy interventions, which keep working unchanged. */
+    outcomeDef?: OutcomeDef | null;
 
     createdAt?: any;
     updatedAt?: any;
@@ -547,6 +559,7 @@ const InterventionsManager: React.FC = () => {
     // Filters
     const [searchText, setSearchText] = useState("");
     const [flagFilter, setFlagFilter] = useState<string>("all");
+    const [detailId, setDetailId] = useState<string | null>(null);
     const [assignmentModeFilter, setAssignmentModeFilter] =
         useState<string>("all");
 
@@ -667,7 +680,9 @@ const InterventionsManager: React.FC = () => {
                 setIsParentDept(false);
             }
         })();
-    }, [userDepartment, user]);
+        // Keyed on the values it reads, not the whole user object, which changes
+        // identity on every profile refresh and would re-run these reads.
+    }, [userDepartment, (user as any)?.departmentId]);
 
     const fetchInterventions = async () => {
         if (managedDeptIds.length === 0) {
@@ -746,6 +761,14 @@ const InterventionsManager: React.FC = () => {
 
             form.setFieldsValue({
                 interventionTitle: record.interventionTitle,
+                deliverableName: record.outcomeDef?.deliverable?.name || "",
+                intendedOutcome: record.outcomeDef?.intendedOutcome || "",
+                outcomeType: record.outcomeDef?.outcomeType,
+                followUpAfterDays: record.outcomeDef?.followUpAfterDays,
+                followUpRequired:
+                    record.outcomeDef?.followUp?.required ??
+                    !!record.outcomeDef?.intendedOutcome,
+                smeCheckIn: !!record.outcomeDef?.followUp?.smeCheckIn,
                 areaOfSupport: effectiveDeptName || userDepartment,
                 compulsory: !!record.compulsory,
                 assignmentMode: preset === "as-needed" ? "ad-hoc" : "recurring",
@@ -980,6 +1003,40 @@ const InterventionsManager: React.FC = () => {
                 return;
             }
 
+            // Classic form (edit) supplies only the two visible fields; keep the
+            // rest of the stored definition. The wizard supplies everything.
+            const previousOutcome = previousDefinition?.outcomeDef || null;
+            const sameWording =
+                !!previousOutcome &&
+                String(values.deliverableName || "").trim() ===
+                (previousOutcome.deliverable?.name || "") &&
+                String(values.intendedOutcome || "").trim() ===
+                (previousOutcome.intendedOutcome || "");
+            const outcomeDef = buildOutcomeDef({
+                deliverableName: values.deliverableName,
+                deliverableDescription:
+                    values.deliverableDescription ??
+                    previousOutcome?.deliverable?.description,
+                deliverableRequired: previousOutcome?.deliverable?.required,
+                intendedOutcome: values.intendedOutcome,
+                outcomeType: Object.hasOwn(values, "outcomeType")
+                    ? values.outcomeType
+                    : previousOutcome?.outcomeType,
+                followUpAfterDays: Object.hasOwn(values, "followUpAfterDays")
+                    ? values.followUpAfterDays
+                    : previousOutcome?.followUpAfterDays,
+                followUpRequired: Object.hasOwn(values, "followUpRequired")
+                    ? values.followUpRequired
+                    : previousOutcome?.followUp?.required,
+                smeCheckIn: Object.hasOwn(values, "smeCheckIn")
+                    ? values.smeCheckIn
+                    : previousOutcome?.followUp?.smeCheckIn,
+                fromSuggestion: !!values.outcomeFromSuggestion,
+            });
+            if (outcomeDef && sameWording && previousOutcome) {
+                outcomeDef.origin = previousOutcome.origin;
+            }
+
             const payload: Omit<InterventionDoc, "id"> = {
                 interventionTitle: nextTitle,
                 areaOfSupport: owningDeptName,
@@ -1018,7 +1075,16 @@ const InterventionsManager: React.FC = () => {
             };
 
             if (editId) {
-                await updateDoc(doc(db, "interventions", editId), payload as any);
+                await updateDoc(doc(db, "interventions", editId), {
+                    ...(payload as any),
+                    // Clearing both fields removes the definition; untouched
+                    // legacy records never gain the key.
+                    ...(outcomeDef
+                        ? { outcomeDef }
+                        : previousDefinition?.outcomeDef
+                            ? { outcomeDef: deleteField() }
+                            : {}),
+                });
                 message.success("Intervention updated!");
 
                 if (!!values.compulsory) {
@@ -1031,6 +1097,7 @@ const InterventionsManager: React.FC = () => {
             } else {
                 const ref = await addDoc(collection(db, "interventions"), {
                     ...(payload as any),
+                    ...(outcomeDef ? { outcomeDef } : {}),
                     createdAt: Timestamp.now(),
                 });
                 message.success("Intervention added!");
@@ -1103,7 +1170,9 @@ const InterventionsManager: React.FC = () => {
                 flagFilter === "all" ||
                 (flagFilter === "compulsory" && !!item.compulsory) ||
                 (flagFilter === "recurring" && !!item.recurring) ||
-                (flagFilter === "subInterventions" && !!item.hasSubInterventions);
+                (flagFilter === "subInterventions" && !!item.hasSubInterventions) ||
+                (flagFilter === "noOutcome" && !item.outcomeDef?.intendedOutcome) ||
+                (flagFilter === "checkBack" && !!item.outcomeDef?.followUp?.required);
 
             const frequency =
                 item.frequency === "as-needed" ||
@@ -1154,6 +1223,33 @@ const InterventionsManager: React.FC = () => {
             ]
             : []),
         {
+            title: "Deliverable",
+            key: "deliverable",
+            responsive: ["md"],
+            render: (_: any, r: InterventionDoc) =>
+                r.outcomeDef?.deliverable?.name ? (
+                    <Tag color="blue">{r.outcomeDef.deliverable.name}</Tag>
+                ) : (
+                    <Text type="secondary">Not set</Text>
+                ),
+        },
+        {
+            title: "Check-back",
+            key: "checkBack",
+            responsive: ["lg"],
+            render: (_: any, r: InterventionDoc) => {
+                const followUp = r.outcomeDef?.followUp;
+                if (!r.outcomeDef?.intendedOutcome) return <Text type="secondary">Not set</Text>;
+                if (!followUp?.required) return <Text type="secondary">None</Text>;
+                return (
+                    <Tag style={{ borderRadius: 999 }}>
+                        {r.outcomeDef?.followUpAfterDays || 60} days
+                        {followUp.smeCheckIn ? " · + SME" : ""}
+                    </Tag>
+                );
+            },
+        },
+        {
             title: "Flags",
             key: "flags",
             render: (_: any, r: InterventionDoc) => {
@@ -1196,7 +1292,7 @@ const InterventionsManager: React.FC = () => {
             title: "Actions",
             key: "actions",
             render: (_: any, record: InterventionDoc) => (
-                <Space>
+                <Space onClick={(event) => event.stopPropagation()}>
                     <Button
                         data-guide="edit-intervention-action"
                         shape="round"
@@ -1232,6 +1328,14 @@ const InterventionsManager: React.FC = () => {
         () => interventions.filter((i) => i.recurring).length,
         [interventions]
     );
+    const outcomeDefinedCount = useMemo(
+        () => interventions.filter((i) => !!i.outcomeDef?.intendedOutcome).length,
+        [interventions]
+    );
+    const checkBackCount = useMemo(
+        () => interventions.filter((i) => !!i.outcomeDef?.followUp?.required).length,
+        [interventions]
+    );
     const summaryMetrics = useMemo<DashboardMetric[]>(
         () => [
             {
@@ -1250,8 +1354,22 @@ const InterventionsManager: React.FC = () => {
                 iconBg: "rgba(114,46,209,.12)",
                 important: true,
             },
+            {
+                key: "outcome-defined",
+                title: "Outcome defined",
+                value: `${outcomeDefinedCount} of ${totalInterventions}`,
+                icon: <FileDoneOutlined style={{ color: "#13a8a8" }} />,
+                iconBg: "rgba(19,168,168,.12)",
+            },
+            {
+                key: "check-back-on",
+                title: "With check-back",
+                value: checkBackCount,
+                icon: <ReloadOutlined style={{ color: "#d46b08" }} />,
+                iconBg: "rgba(212,107,8,.12)",
+            },
         ],
-        [recurringCount, totalInterventions]
+        [checkBackCount, outcomeDefinedCount, recurringCount, totalInterventions]
     );
     return (
         <div style={{ minHeight: "100vh", padding: 24 }}>
@@ -1265,7 +1383,7 @@ const InterventionsManager: React.FC = () => {
 
             {loading ? (
                 <div style={{ minHeight: "100vh" }}>
-                    <LoadingOverlay tip="Loading interventions" />
+                    <PageSkeleton variant='list' />
                 </div>
             ) : (
                 <>
@@ -1299,6 +1417,8 @@ const InterventionsManager: React.FC = () => {
                                                 value: "subInterventions",
                                                 label: "With sub-interventions",
                                             },
+                                            { value: "noOutcome", label: "No outcome defined" },
+                                            { value: "checkBack", label: "With check-back" },
                                         ]}
                                     />
                                 </Col>
@@ -1342,6 +1462,10 @@ const InterventionsManager: React.FC = () => {
                                 columns={columns as any}
                                 dataSource={filteredInterventions}
                                 rowKey="id"
+                                onRow={(record: InterventionDoc) => ({
+                                    onClick: () => setDetailId(record.id),
+                                    style: { cursor: "pointer" },
+                                })}
                                 pagination={{
                                     pageSize: 8,
                                     position: ["bottomCenter"],
@@ -1351,10 +1475,24 @@ const InterventionsManager: React.FC = () => {
                         </div>
                     </MotionCard>
 
+                    <InterventionDetailModal
+                        record={(interventions.find((i) => i.id === detailId) as any) || null}
+                        departmentLabel={
+                            managedDeptNameMap[
+                            String(interventions.find((i) => i.id === detailId)?.departmentId || "")
+                            ]
+                        }
+                        onClose={() => setDetailId(null)}
+                        onEdit={(record) => {
+                            setDetailId(null);
+                            openModal(record as unknown as InterventionDoc);
+                        }}
+                    />
+
                     <Modal
                         className="guide-intervention-modal"
                         centered
-                        title={editId ? "Edit Intervention" : "Add Intervention"}
+                        title={editId ? "Edit Intervention" : "New Intervention"}
                         open={modalOpen}
                         onCancel={() => {
                             setModalOpen(false);
@@ -1363,12 +1501,30 @@ const InterventionsManager: React.FC = () => {
                             form.resetFields();
                         }}
                         onOk={() => form.submit()}
+                        footer={editId ? undefined : null}
                         okText={editId ? "Update" : "Add"}
                         okButtonProps={{ className: "guide-intervention-submit" }}
                         confirmLoading={loading}
                         destroyOnClose
                         width={780}
                     >
+                        {!editId && (
+                            <InterventionWizard
+                                departmentId={effectiveDeptId}
+                                departmentName={effectiveDeptName || userDepartment}
+                                existingTitles={interventions
+                                    .filter((item) => item.departmentId === effectiveDeptId)
+                                    .map((item) => item.interventionTitle)}
+                                saving={loading}
+                                onSubmit={(values: WizardValues) => onFinish(values)}
+                                onCancel={() => {
+                                    setModalOpen(false);
+                                    setEditId(null);
+                                    setPrevCompulsory(false);
+                                }}
+                            />
+                        )}
+                        {editId && (
                         <Form
                             layout="vertical"
                             form={form}
@@ -1399,6 +1555,81 @@ const InterventionsManager: React.FC = () => {
                                     <Input />
                                 </Form.Item>
                             </div>
+
+                            <Row gutter={[16, 8]}>
+                                <Col xs={24} md={10}>
+                                    <Form.Item
+                                        label="Deliverable"
+                                        name="deliverableName"
+                                        extra="What the business ends up with, e.g. a plan, policy or report. Leave empty if nothing is produced."
+                                    >
+                                        <Input placeholder="Name of the deliverable" />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={14}>
+                                    <Form.Item
+                                        label="What should be different afterwards?"
+                                        name="intendedOutcome"
+                                    >
+                                        <Input.TextArea
+                                            rows={2}
+                                            placeholder="Describe the change in the business once this is done"
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={14}>
+                                    <Form.Item label="Kind of change" name="outcomeType">
+                                        <Select
+                                            allowClear
+                                            placeholder="What sort of change is this?"
+                                            options={OUTCOME_TYPES.map((t) => ({
+                                                value: t,
+                                                label: OUTCOME_TYPE_LABELS[t],
+                                            }))}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={10}>
+                                    <Form.Item
+                                        label="Check back after"
+                                        name="followUpAfterDays"
+                                        extra="When someone confirms the change actually happened."
+                                    >
+                                        <InputNumber
+                                            min={7}
+                                            max={365}
+                                            addonAfter="days"
+                                            style={{ width: "100%" }}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                    <Form.Item
+                                        label="Check back later"
+                                        name="followUpRequired"
+                                        valuePropName="checked"
+                                        extra="The facilitator confirms the change is still in place."
+                                    >
+                                        <Switch />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                    <Form.Item noStyle shouldUpdate={(p, c) => p.followUpRequired !== c.followUpRequired}>
+                                        {({ getFieldValue }) =>
+                                            getFieldValue("followUpRequired") ? (
+                                                <Form.Item
+                                                    label="Also ask the SME"
+                                                    name="smeCheckIn"
+                                                    valuePropName="checked"
+                                                    extra="The SME answers one quick question."
+                                                >
+                                                    <Switch />
+                                                </Form.Item>
+                                            ) : null
+                                        }
+                                    </Form.Item>
+                                </Col>
+                            </Row>
 
                             <Row gutter={[16, 8]}>
                                 <Col xs={24} sm={10}>
@@ -1783,6 +2014,7 @@ const InterventionsManager: React.FC = () => {
                                 }}
                             </Form.Item>
                         </Form>
+                        )}
                     </Modal>
                 </>
             )}

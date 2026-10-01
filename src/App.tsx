@@ -129,6 +129,7 @@ const AdminConsole = lazy(() => import("./routes/admin/backend/console"));
 const AdminEmailMonitor = lazy(() => import("./routes/admin/email"));
 const AdminLeaveManagement = lazy(() => import("./routes/operations/hr/leave"));
 const AllocatedInterventions = lazy(() => import("@/routes/shared/allocated"));
+const CheckBacks = lazy(() => import("@/routes/shared/check-backs"));
 const Allocations = lazy(() => import("./routes/resources/allocations/allocations"));
 const ApplicantInquiriesPage = lazy(() => import("./routes/applicant/inquiries"));
 const ApplicantInquirySubmission = lazy(() => import("./routes/applicant/submit-inquiry"));
@@ -530,6 +531,7 @@ const App = () => {
                                                                 }
                                                             />
                                                             <Route path="movs" element={<CoordinatorMOVs />} />
+                                                            <Route path="check-backs" element={<CheckBacks />} />
                                                             <Route path="allocated">
                                                                 <Route
                                                                     index

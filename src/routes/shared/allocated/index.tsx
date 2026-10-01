@@ -81,9 +81,10 @@ import dayjs, { Dayjs } from 'dayjs'
 import { Helmet } from 'react-helmet'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import EvidenceManagerPanel from '@/components/evidence/EvidenceManagerPanel'
 import { USE_SENSITIVE_DEPARTMENT_SUMMARY_INSTEAD_OF_POE } from '@/config/evidencePolicy'
+import { DEFAULT_EVIDENCE_MODEL, resolveDeliverableName } from '@/services/evidenceModel'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import {
     guideTarget,
@@ -1537,6 +1538,17 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             .filter(row => row && !eligible.has(row.id))
     }, [completionContext, completionMovAssignments, progressRecord])
 
+    // "Cash Flow Forecast" rather than "POE" when the intervention names its deliverable.
+    const completionDeliverable = useMemo(
+        () =>
+            resolveDeliverableName(
+                (progressRecord?.members?.[0] || progressRecord) as any,
+                null,
+                { ...DEFAULT_EVIDENCE_MODEL, deliverable: 'named' }
+            ),
+        [progressRecord]
+    )
+
     const completionMovUploadedCount = completionMovAssignments.filter(assignment =>
         Boolean(completionMovFilesByAssignment[assignment.id])
     ).length
@@ -2956,27 +2968,16 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             }))
 
         const missingMovs = selectedMovFiles.filter(item => !item.file)
-        const hasAnyPoe = Boolean(
-            completionCurrentPoes.length ||
-            selectedExistingPoes.length ||
-            poeFiles.length
-        )
 
-        // Answer on the step that needs fixing, the way the progress step does.
-        // A toast in the corner is easy to miss when the modal has just jumped
-        // the person to a different step.
-        if (!hasAnyPoe) {
-            setCompletionStepError('Add or select at least one POE before completing the intervention.')
-            setProgressModalStep(2)
-            return
-        }
+        // The MOV is the compulsory proof of delivery; a POE is optional. Answer on
+        // the step that needs fixing, the way the progress step does.
         if (missingMovs.length) {
             setCompletionStepError(
                 progressRecord.isGroupedDisplay
                     ? `${missingMovs.length} SME${missingMovs.length === 1 ? '' : 's'} who received the intervention still ${missingMovs.length === 1 ? 'needs' : 'need'} an MOV.`
                     : 'Add the completed MOV before finishing the intervention.'
             )
-            setProgressModalStep(3)
+            setProgressModalStep(2)
             return
         }
         if ([...poeFiles, ...selectedMovFiles.map(item => item.file as File)].some(file =>
@@ -3100,7 +3101,8 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                 // Only SMEs who received the intervention get an MOV raised.
                 movAssignmentIds: completionMovAssignments.map(row => row.id),
                 manualMovs: uploadedManualMovs,
-                poeEvidence
+                poeEvidence,
+                poeOptional: true
             })
 
             message.success(COMPLETION_SUCCESS_MESSAGE)
@@ -4685,7 +4687,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             </Helmet>
 
             {showInitialLoading ? (
-                <LoadingOverlay tip="Loading interventions" />
+                <PageSkeleton variant='list' />
             ) :
                 (
                     <>
@@ -5115,7 +5117,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                 ? `Continue with ${selectedProgressPoeUrls.length} selected POE${selectedProgressPoeUrls.length === 1 ? '' : 's'}`
                                                 : 'Continue without these files'}
                                         </Button>
-                                    ) : progressModalStep === 2 ? (
+                                    ) : (
                                         <div style={{ display: 'flex', gap: 10, width: '100%' }}>
                                             {completionProgressEvidence.length ? (
                                                 <Button
@@ -5126,31 +5128,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                     Back
                                                 </Button>
                                             ) : null}
-                                            <Button
-                                                block
-                                                type="primary"
-                                                size="large"
-                                                loading={savingEvidence}
-                                                onClick={() => {
-                                                    if (!completionCurrentPoes.length && !selectedProgressPoeUrls.length && !completionPoeFiles.length) {
-                                                        message.warning('Keep an existing POE, select an earlier file, or add at least one POE.')
-                                                        return
-                                                    }
-                                                    setProgressModalStep(3)
-                                                }}
-                                            >
-                                                Continue to MOV
-                                            </Button>
-                                        </div>
-                                    ) : (
-                                        <div style={{ display: 'flex', gap: 10, width: '100%' }}>
-                                            <Button
-                                                size="large"
-                                                onClick={() => setProgressModalStep(2)}
-                                                disabled={savingEvidence}
-                                            >
-                                                Back
-                                            </Button>
                                             <Button
                                                 block
                                                 type="primary"
@@ -5190,7 +5167,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                 }}
                                 destroyOnClose
                                 centered
-                                width={isMobile ? 'calc(100vw - 20px)' : 680}
+                                width={isMobile ? 'calc(100vw - 20px)' : progressModalStep === 2 ? 940 : 680}
                             >
 
                                 {progressModalStep === 0 ? (
@@ -5731,229 +5708,37 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
 
                                             {progressModalStep === 2 ? (
                                                 <>
-                                                    <div style={{ textAlign: 'center', paddingInline: 12 }}>
-                                                        <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.6 }}>
-                                                            <TypedText
-                                                                play={`poe-${completionChatTurn}`}
-                                                                text={completionCurrentPoes.length
-                                                                    ? `These are the current POEs for this intervention. Review them, then add anything that is missing before we move to the individual MOV${progressRecord?.isGroupedDisplay ? 's' : ''}.`
-                                                                    : selectedProgressPoeUrls.length
-                                                                        ? `Good. ${selectedProgressPoeUrls.length} file${selectedProgressPoeUrls.length === 1 ? ' is' : 's are'} selected from your progress updates as POE. Add anything else that proves the work was delivered.`
-                                                                        : 'Add the shared Proof of Execution for this intervention before moving to the MOV.'}
-                                                            />
-                                                        </Text>
-                                                    </div>
-
-                                                    {completionCurrentPoes.length ? (
-                                                        <Card
-                                                            size="small"
-                                                            title={
-                                                                <Space size={8}>
-                                                                    <FileProtectOutlined />
-                                                                    <Text strong>Current POEs</Text>
-                                                                    <Tag style={{ marginInlineEnd: 0 }}>{completionCurrentPoes.length}</Tag>
-                                                                </Space>
-                                                            }
-                                                            styles={{ body: { padding: 8 } }}
-                                                            style={{ borderRadius: 12 }}
-                                                        >
-                                                            <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                                                                {completionCurrentPoes.map(resource => {
-                                                                    const name = resource.originalName || resource.label || 'POE'
-                                                                    return (
-                                                                        <div
-                                                                            key={resource.link}
-                                                                            style={{
-                                                                                display: 'flex',
-                                                                                alignItems: 'center',
-                                                                                gap: 9,
-                                                                                minWidth: 0,
-                                                                                padding: '6px 8px',
-                                                                                borderRadius: 9,
-                                                                                background: isDark ? 'rgba(255,255,255,0.035)' : '#fafafa'
-                                                                            }}
-                                                                        >
-                                                                            <span style={{ fontSize: 20, color: '#8c8c8c', flex: '0 0 auto' }}>
-                                                                                {getProgressFileIcon(name, resource.type)}
-                                                                            </span>
-                                                                            <Text
-                                                                                ellipsis={{ tooltip: name }}
-                                                                                style={{ flex: 1, minWidth: 0 }}
-                                                                            >
-                                                                                {name}
-                                                                            </Text>
-                                                                            <Button
-                                                                                type="text"
-                                                                                size="small"
-                                                                                icon={<EyeOutlined />}
-                                                                                onClick={() => window.open(resource.link, '_blank')}
-                                                                            >
-                                                                                View
-                                                                            </Button>
-                                                                        </div>
-                                                                    )
-                                                                })}
-                                                            </Space>
-                                                        </Card>
-                                                    ) : null}
-
-                                                    {selectedProgressPoeUrls.length ? (
-                                                        <div>
-                                                            <Text type="secondary" style={{ display: 'block', fontSize: 11, marginBottom: 6 }}>
-                                                                Selected from progress updates
-                                                            </Text>
-                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                                                {completionProgressEvidence
-                                                                    .filter(resource => selectedProgressPoeUrls.includes(resource.link))
-                                                                    .map(resource => (
-                                                                        <Tag
-                                                                            key={resource.link}
-                                                                            color="blue"
-                                                                            closable
-                                                                            onClose={event => {
-                                                                                event.preventDefault()
-                                                                                setSelectedProgressPoeUrls(current => current.filter(link => link !== resource.link))
-                                                                            }}
-                                                                            style={{
-                                                                                display: 'inline-flex',
-                                                                                alignItems: 'center',
-                                                                                gap: 5,
-                                                                                padding: '4px 8px',
-                                                                                borderRadius: 8,
-                                                                                marginInlineEnd: 0
-                                                                            }}
-                                                                        >
-                                                                            {getProgressFileIcon(resource.name, resource.type)}
-                                                                            <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                                {resource.name}
-                                                                            </span>
-                                                                        </Tag>
-                                                                    ))}
-                                                            </div>
-                                                        </div>
-                                                    ) : null}
-
-                                                    <Upload
-                                                        multiple
-                                                        showUploadList={false}
-                                                        beforeUpload={() => false}
-                                                        fileList={completionPoeFiles}
-                                                        onChange={({ fileList }) => setCompletionPoeFiles(fileList.slice(0, 10))}
-                                                        accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
-                                                    >
-                                                        <Button
-                                                            block
-                                                            size="large"
-                                                            icon={<UploadOutlined />}
-                                                            style={{ height: 44, borderRadius: 12 }}
-                                                        >
-                                                            Add another POE
-                                                        </Button>
-                                                    </Upload>
-
-                                                    {completionPoePreviews.length ? (
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                                            {completionPoePreviews.map(preview => (
-                                                                <div
-                                                                    key={preview.uid}
-                                                                    style={{
-                                                                        position: 'relative',
-                                                                        width: 112,
-                                                                        minHeight: 72,
-                                                                        borderRadius: 10,
-                                                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#e8ecf3'}`,
-                                                                        background: isDark ? 'rgba(255,255,255,0.035)' : '#fafbfc',
-                                                                        padding: 8,
-                                                                        display: 'flex',
-                                                                        flexDirection: 'column',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        gap: 4
-                                                                    }}
-                                                                >
-                                                                    {preview.url ? (
-                                                                        <img
-                                                                            src={preview.url}
-                                                                            alt={preview.name}
-                                                                            style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6 }}
-                                                                        />
-                                                                    ) : (
-                                                                        <span style={{ fontSize: 24, color: '#8c8c8c' }}>
-                                                                            {getProgressFileIcon(preview.name, preview.type)}
-                                                                        </span>
-                                                                    )}
-                                                                    <Text
-                                                                        type="secondary"
-                                                                        ellipsis={{ tooltip: preview.name }}
-                                                                        style={{ fontSize: 10, width: '100%', textAlign: 'center' }}
+                                                    <Row gutter={[16, 16]}>
+                                                        <Col xs={24} md={12}>
+                                                            <Card
+                                                                size="small"
+                                                                style={{ borderRadius: 12, height: '100%' }}
+                                                                styles={{ body: { padding: 12 } }}
+                                                                title={
+                                                                    <Space size={8} wrap>
+                                                                        <FileProtectOutlined />
+                                                                        <Text strong>MOV</Text>
+                                                                        <Tag color="red" style={{ marginInlineEnd: 0 }}>Required</Tag>
+                                                                    </Space>
+                                                                }
+                                                                extra={
+                                                                    <Tag
+                                                                        color={completionMovUploadedCount === completionMovAssignments.length ? 'green' : 'gold'}
+                                                                        style={{ marginInlineEnd: 0 }}
                                                                     >
-                                                                        {preview.name}
-                                                                    </Text>
-                                                                    <Button
-                                                                        type="text"
-                                                                        size="small"
-                                                                        icon={<CloseOutlined style={{ fontSize: 9, color: '#fff' }} />}
-                                                                        onClick={() => setCompletionPoeFiles(files =>
-                                                                            files.filter(file => String(file?.uid || '') !== preview.uid)
-                                                                        )}
-                                                                        style={{
-                                                                            position: 'absolute',
-                                                                            top: 3,
-                                                                            right: 3,
-                                                                            width: 17,
-                                                                            height: 17,
-                                                                            minWidth: 17,
-                                                                            padding: 0,
-                                                                            borderRadius: 9,
-                                                                            background: 'rgba(0,0,0,0.58)'
-                                                                        }}
-                                                                    />
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    ) : null}
-                                                </>
-                                            ) : null}
-
-                                            {progressModalStep === 3 ? (
-                                                <>
-                                                    <div style={{ textAlign: 'center', paddingInline: 12 }}>
-                                                        <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.6 }}>
-                                                            <TypedText
-                                                                play={`mov-${completionChatTurn}`}
-                                                                text={progressRecord?.isGroupedDisplay
-                                                                    ? `POE is ready. Now upload the signed MOV for each SME who received this intervention. The POE stays shared; each SME gets their own MOV.`
-                                                                    : 'POE is ready. Last thing: upload the signed MOV for this SME, then the intervention can be finalised.'}
-                                                            />
-                                                        </Text>
-                                                    </div>
-
-                                                    <Card
-                                                        size="small"
-                                                        styles={{ body: { padding: 10 } }}
-                                                        style={{ borderRadius: 12 }}
-                                                    >
-                                                        <Space size={8} wrap>
-                                                            <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-                                                                {completionCurrentPoes.length + selectedProgressPoeUrls.length + completionPoeFiles.length} shared POE
-                                                                {completionCurrentPoes.length + selectedProgressPoeUrls.length + completionPoeFiles.length === 1 ? '' : 's'}
-                                                            </Tag>
-                                                            <Tag
-                                                                color={completionMovUploadedCount === completionMovAssignments.length ? 'green' : 'gold'}
-                                                                style={{ marginInlineEnd: 0 }}
+                                                                        {completionMovUploadedCount}/{completionMovAssignments.length} ready
+                                                                    </Tag>
+                                                                }
                                                             >
-                                                                MOVs {completionMovUploadedCount}/{completionMovAssignments.length}
-                                                            </Tag>
-                                                            {completionMovExcludedAssignments.length ? (
-                                                                <Tag style={{ marginInlineEnd: 0 }}>
-                                                                    {completionMovExcludedAssignments.length} no MOV required
-                                                                </Tag>
-                                                            ) : null}
-                                                        </Space>
-                                                    </Card>
-
+                                                                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                        Proof the service was delivered.{' '}
+                                                                        {progressRecord?.isGroupedDisplay
+                                                                            ? 'Upload the signed MOV for each SME who received it.'
+                                                                            : 'Upload the signed MOV for this SME.'}
+                                                                    </Text>
                                                     {completionMovExcludedAssignments.length ? (
-                                                        <Alert
+                                                                        <Alert
                                                             type="info"
                                                             showIcon
                                                             message={`${completionMovExcludedAssignments.length} SME${completionMovExcludedAssignments.length === 1 ? '' : 's'} did not receive this intervention, so no MOV is required for ${completionMovExcludedAssignments.length === 1 ? 'that SME' : 'them'}.`}
@@ -6098,6 +5883,205 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                             message="No SME currently requires an MOV for this delivery."
                                                         />
                                                     )}
+
+                                                                </Space>
+                                                            </Card>
+                                                        </Col>
+                                                        <Col xs={24} md={12}>
+                                                            <Card
+                                                                size="small"
+                                                                style={{ borderRadius: 12, height: '100%' }}
+                                                                styles={{ body: { padding: 12 } }}
+                                                                title={
+                                                                    <Space size={8} wrap>
+                                                                        <FileProtectOutlined />
+                                                                        <Text strong>
+                                                                            {completionDeliverable.isConfigured
+                                                                                ? completionDeliverable.name
+                                                                                : 'Proof of Execution (POE)'}
+                                                                        </Text>
+                                                                        <Tag style={{ marginInlineEnd: 0 }}>Optional</Tag>
+                                                                    </Space>
+                                                                }
+                                                            >
+                                                                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                        {completionDeliverable.isConfigured
+                                                                            ? 'What was produced from this intervention. You can add it now or leave it out.'
+                                                                            : 'Anything produced from this intervention. You can add it now or leave it out.'}
+                                                                    </Text>
+                                                    {completionCurrentPoes.length ? (
+                                                        <Card
+                                                            size="small"
+                                                            title={
+                                                                <Space size={8}>
+                                                                    <FileProtectOutlined />
+                                                                    <Text strong>Current POEs</Text>
+                                                                    <Tag style={{ marginInlineEnd: 0 }}>{completionCurrentPoes.length}</Tag>
+                                                                </Space>
+                                                            }
+                                                            styles={{ body: { padding: 8 } }}
+                                                            style={{ borderRadius: 12 }}
+                                                        >
+                                                            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                                                {completionCurrentPoes.map(resource => {
+                                                                    const name = resource.originalName || resource.label || 'POE'
+                                                                    return (
+                                                                        <div
+                                                                            key={resource.link}
+                                                                            style={{
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                gap: 9,
+                                                                                minWidth: 0,
+                                                                                padding: '6px 8px',
+                                                                                borderRadius: 9,
+                                                                                background: isDark ? 'rgba(255,255,255,0.035)' : '#fafafa'
+                                                                            }}
+                                                                        >
+                                                                            <span style={{ fontSize: 20, color: '#8c8c8c', flex: '0 0 auto' }}>
+                                                                                {getProgressFileIcon(name, resource.type)}
+                                                                            </span>
+                                                                            <Text
+                                                                                ellipsis={{ tooltip: name }}
+                                                                                style={{ flex: 1, minWidth: 0 }}
+                                                                            >
+                                                                                {name}
+                                                                            </Text>
+                                                                            <Button
+                                                                                type="text"
+                                                                                size="small"
+                                                                                icon={<EyeOutlined />}
+                                                                                onClick={() => window.open(resource.link, '_blank')}
+                                                                            >
+                                                                                View
+                                                                            </Button>
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </Space>
+                                                        </Card>
+                                                    ) : null}
+
+                                                    {selectedProgressPoeUrls.length ? (
+                                                        <div>
+                                                            <Text type="secondary" style={{ display: 'block', fontSize: 11, marginBottom: 6 }}>
+                                                                Selected from progress updates
+                                                            </Text>
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                                                {completionProgressEvidence
+                                                                    .filter(resource => selectedProgressPoeUrls.includes(resource.link))
+                                                                    .map(resource => (
+                                                                        <Tag
+                                                                            key={resource.link}
+                                                                            color="blue"
+                                                                            closable
+                                                                            onClose={event => {
+                                                                                event.preventDefault()
+                                                                                setSelectedProgressPoeUrls(current => current.filter(link => link !== resource.link))
+                                                                            }}
+                                                                            style={{
+                                                                                display: 'inline-flex',
+                                                                                alignItems: 'center',
+                                                                                gap: 5,
+                                                                                padding: '4px 8px',
+                                                                                borderRadius: 8,
+                                                                                marginInlineEnd: 0
+                                                                            }}
+                                                                        >
+                                                                            {getProgressFileIcon(resource.name, resource.type)}
+                                                                            <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                                {resource.name}
+                                                                            </span>
+                                                                        </Tag>
+                                                                    ))}
+                                                            </div>
+                                                        </div>
+                                                    ) : null}
+
+                                                    <Upload
+                                                        multiple
+                                                        showUploadList={false}
+                                                        beforeUpload={() => false}
+                                                        fileList={completionPoeFiles}
+                                                        onChange={({ fileList }) => setCompletionPoeFiles(fileList.slice(0, 10))}
+                                                        accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+                                                    >
+                                                        <Button
+                                                            block
+                                                            size="large"
+                                                            icon={<UploadOutlined />}
+                                                            style={{ height: 44, borderRadius: 12 }}
+                                                        >
+                                                            {completionCurrentPoes.length || selectedProgressPoeUrls.length || completionPoeFiles.length ? 'Add another' : 'Add'} {completionDeliverable.isConfigured ? completionDeliverable.name : 'POE'}
+                                                        </Button>
+                                                    </Upload>
+
+                                                    {completionPoePreviews.length ? (
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                                            {completionPoePreviews.map(preview => (
+                                                                <div
+                                                                    key={preview.uid}
+                                                                    style={{
+                                                                        position: 'relative',
+                                                                        width: 112,
+                                                                        minHeight: 72,
+                                                                        borderRadius: 10,
+                                                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#e8ecf3'}`,
+                                                                        background: isDark ? 'rgba(255,255,255,0.035)' : '#fafbfc',
+                                                                        padding: 8,
+                                                                        display: 'flex',
+                                                                        flexDirection: 'column',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center',
+                                                                        gap: 4
+                                                                    }}
+                                                                >
+                                                                    {preview.url ? (
+                                                                        <img
+                                                                            src={preview.url}
+                                                                            alt={preview.name}
+                                                                            style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6 }}
+                                                                        />
+                                                                    ) : (
+                                                                        <span style={{ fontSize: 24, color: '#8c8c8c' }}>
+                                                                            {getProgressFileIcon(preview.name, preview.type)}
+                                                                        </span>
+                                                                    )}
+                                                                    <Text
+                                                                        type="secondary"
+                                                                        ellipsis={{ tooltip: preview.name }}
+                                                                        style={{ fontSize: 10, width: '100%', textAlign: 'center' }}
+                                                                    >
+                                                                        {preview.name}
+                                                                    </Text>
+                                                                    <Button
+                                                                        type="text"
+                                                                        size="small"
+                                                                        icon={<CloseOutlined style={{ fontSize: 9, color: '#fff' }} />}
+                                                                        onClick={() => setCompletionPoeFiles(files =>
+                                                                            files.filter(file => String(file?.uid || '') !== preview.uid)
+                                                                        )}
+                                                                        style={{
+                                                                            position: 'absolute',
+                                                                            top: 3,
+                                                                            right: 3,
+                                                                            width: 17,
+                                                                            height: 17,
+                                                                            minWidth: 17,
+                                                                            padding: 0,
+                                                                            borderRadius: 9,
+                                                                            background: 'rgba(0,0,0,0.58)'
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : null}
+                                                                </Space>
+                                                            </Card>
+                                                        </Col>
+                                                    </Row>
 
                                                     <div
                                                         style={{
@@ -6844,7 +6828,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                 destroyOnClose
                             >
                                 {queriesLoading ? (
-                                    <LoadingOverlay tip="Loading queries..." />
+                                    <Skeleton active paragraph={{ rows: 4 }} />
                                 ) : selectedQueries.length > 0 ? (
                                     <List
                                         dataSource={selectedQueries}

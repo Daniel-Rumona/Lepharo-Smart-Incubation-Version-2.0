@@ -1,3 +1,4 @@
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Empty,
@@ -50,7 +51,6 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import dayjs from 'dayjs'
 import '@/styles/calender.css'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import AppointmentDetailsModal, {
     type AppointmentDetailsV2Record
 } from '@/components/modals/AppointmentDetails'
@@ -1392,9 +1392,7 @@ const MyCalendarPage: React.FC = () => {
                         isAllPrograms={isAllPrograms}
                     />
                 ) : loading ? (
-                    <div className="smart-calendar-loading">
-                        <LoadingOverlay tip="Getting calendar ready" />
-                    </div>
+                    <MotionCard loading skeleton='chart' skeletonRows={7} />
                 ) : calendarEvents.length === 0 ? (
                     <div className="smart-calendar-empty-wrap">
                         <Empty

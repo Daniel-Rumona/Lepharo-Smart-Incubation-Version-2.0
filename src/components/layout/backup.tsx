@@ -93,7 +93,7 @@ import {
 } from "@ant-design/icons";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { safeLocal } from "@/utils/safeStorage";
-import { LoadingOverlay } from "../shared/LoadingOverlay";
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { endSession } from "@/utils/sessionTracking";
 import {
     ViewAsBanner,
@@ -2535,7 +2535,7 @@ export const CustomLayout: React.FC = () => {
                     background: "#fff",
                 }}
             >
-                <LoadingOverlay tip="Preparing your workspace..." />
+                <DashboardLoader overlay label="Preparing your workspace..." />
             </div>
         );
     }

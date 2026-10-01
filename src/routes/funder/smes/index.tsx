@@ -52,7 +52,7 @@ import {
     MotionCard,
     DashboardHeaderCard
 } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { Helmet } from 'react-helmet'
 
 const { Text, Title } = Typography
@@ -801,7 +801,7 @@ const IncubateesOverview: React.FC = () => {
     if (!allReady) {
         return (
             <div style={{ minHeight: '100vh' }}>
-                <LoadingOverlay tip='Loading incubatees and interventions' />
+                <PageSkeleton variant='list' />
             </div>
         )
     }

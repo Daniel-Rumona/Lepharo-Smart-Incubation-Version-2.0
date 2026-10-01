@@ -27,6 +27,7 @@ export * from "./kpiReminders";
 export * from "./revenueMetricsSync";
 export * from "./workflowQueryReminders";
 export * from "./movValidationReminders";
+export * from "./outcomeFollowUps";
 export * from "./governanceMeetingReminders";
 export { onInquiryCreatedNotifyStaff } from "./emailInquiries";
 export * from "./pushNotifications";

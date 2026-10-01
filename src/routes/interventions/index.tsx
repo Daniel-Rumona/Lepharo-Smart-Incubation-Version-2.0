@@ -49,7 +49,6 @@ import {
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
 import { chunk } from '@/types/types'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { assignedInterventionService } from '@/services/assignedInterventionService'
@@ -1131,9 +1130,7 @@ const InterventionDatabaseView = () => {
             <Helmet>
                 <title>Interventions Database</title>
             </Helmet>
-            {loading ? (
-                <LoadingOverlay tip='Loading interventions' />
-            ) : (
+            {(
                 <>
                     <Row gutter={[16, 16]} align="stretch" style={{ marginBottom: 10 }}>
                         <Col xs={24} sm={12} md={6}>
@@ -1144,6 +1141,7 @@ const InterventionDatabaseView = () => {
                             >
                                 <MotionCard>
                                     <MotionCard.Metric
+                                        loading={loading}
                                         title="Total Beneficiaries"
                                         value={totalBeneficiaries}
                                         icon={<TeamOutlined style={{ fontSize: 18, color: '#722ed1' }} />}
@@ -1162,6 +1160,7 @@ const InterventionDatabaseView = () => {
                             >
                                 <MotionCard>
                                     <MotionCard.Metric
+                                        loading={loading}
                                         title="Total Interventions"
                                         value={totalInterventions}
                                         icon={<FileDoneOutlined style={{ fontSize: 18, color: '#1890ff' }} />}
@@ -1184,6 +1183,7 @@ const InterventionDatabaseView = () => {
                                     >
                                         <div>
                                             <MotionCard.Metric
+                                                loading={loading}
                                                 title="POE Coverage"
                                                 value={`${Number(poeCoverage.pct || 0).toFixed(0)}%`}
                                                 icon={<CalendarOutlined style={{ fontSize: 18, color: '#52c41a' }} />}
@@ -1212,6 +1212,7 @@ const InterventionDatabaseView = () => {
                                     >
                                         <div>
                                             <MotionCard.Metric
+                                                loading={loading}
                                                 title="Overall Progress"
                                                 value={
                                                     requiredCompletionAvg.countParticipants
@@ -1242,6 +1243,9 @@ const InterventionDatabaseView = () => {
                     >
                         <MotionCard
                             hoverable
+                            loading={loading}
+                            skeleton='table'
+                            skeletonRows={6}
                             filterBar={filterBar}
                             filterBarProps={{
                                 background: '#f8fafc',

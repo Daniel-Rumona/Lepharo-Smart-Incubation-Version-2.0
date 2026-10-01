@@ -116,6 +116,12 @@
     margin-left: 1px;
     color: #8b95a5;
     font-size: 9px;
+    display: inline-flex;
+    transition: transform 0.2s ease;
+}
+
+.workspace-segment-chevron-open {
+    transform: rotate(180deg);
 }
 
 .workspace-primary-segment-active .workspace-segment-chevron {

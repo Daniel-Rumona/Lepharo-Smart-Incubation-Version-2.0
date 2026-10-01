@@ -16,7 +16,7 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import isBetween from 'dayjs/plugin/isBetween'
 dayjs.extend(isBetween)
 
@@ -766,7 +766,7 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
     return (
         <div>
             {!allLoaded ? (
-                <LoadingOverlay tip='Loading Departmental Analytics' />
+                <PageSkeleton variant='analytics' tiles={0} />
             ) : (
                 <>
                     {topError && (

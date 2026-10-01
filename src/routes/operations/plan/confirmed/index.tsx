@@ -6,6 +6,7 @@ import {
     Empty,
     message,
     Modal,
+    Popconfirm,
     Progress,
     Segmented,
     Table,
@@ -32,6 +33,14 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { applyKpiDeltas } from '@/lib/kpis'
 import { toAssignedInterventionView } from '@/services/assignedInterventionService'
 import { resolveAssignmentLifecycle } from '@/services/assignmentLifecycleService'
+import { CloseSupportModal, type CloseSupportTarget } from '@/components/interventions/CloseSupportModal'
+import {
+    closedKey,
+    reopenSupport,
+    subscribeClosures,
+    type SupportClosure
+} from '@/services/interventionClosureService'
+import { canCloseSupport, closeReasonLabel } from '@/services/interventionClosureRules'
 import { DocumentHeader } from '@/components/documents/DocumentHeader'
 import { roundBtn } from '@/components/shared/StyledButton'
 import {
@@ -265,6 +274,15 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
 
     /** Live delivery records for this participant */
     const [assignments, setAssignments] = useState<any[]>([])
+
+    // Support an HOD has closed for this SME (shared rule with the Assignments page).
+    const [closures, setClosures] = useState<Map<string, SupportClosure>>(new Map())
+    const [closeTarget, setCloseTarget] = useState<CloseSupportTarget | null>(null)
+    const mayCloseSupport = canCloseSupport(roleRaw)
+    useEffect(() => {
+        if (!open || !participantId) return
+        return subscribeClosures(db, { participantId }, setClosures)
+    }, [open, participantId])
 
     const [deptDocs, setDeptDocs] = useState<DeptDoc[]>([])
     const [deptIdToName, setDeptIdToName] = useState<Record<string, string>>({})
@@ -766,11 +784,17 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                 if (at && (!lastActivity || at > lastActivity)) lastActivity = at
             }
 
-            const state: 'delivered' | 'in-progress' | 'not-started' =
-                completed > 0 ? 'delivered' : matches.length > 0 ? 'in-progress' : 'not-started'
+            const closure = closures.get(closedKey(participantId, key))
+
+            const state: 'delivered' | 'in-progress' | 'not-started' | 'closed' = closure
+                ? 'closed'
+                : completed > 0 ? 'delivered' : matches.length > 0 ? 'in-progress' : 'not-started'
 
             return {
                 key: key || intervention?.title,
+                interventionId: key,
+                departmentId: String(intervention?.departmentId || intervention?.addedByDeptId || '') || null,
+                closure,
                 title: String(intervention?.title || 'Untitled'),
                 deptName: String(intervention?.submittedDeptName || '—'),
                 assignments: matches.length,
@@ -782,16 +806,19 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                 state
             }
         })
-    }, [confirmedInterventions, assignments])
+    }, [confirmedInterventions, assignments, closures, participantId])
 
     const coverage = useMemo(() => {
-        const total = coverageRows.length
+        // Closed support is neither behind nor outstanding, so it leaves the percentage.
+        const closed = coverageRows.filter(row => row.state === 'closed').length
+        const total = coverageRows.length - closed
         const delivered = coverageRows.filter(row => row.state === 'delivered').length
         const inProgress = coverageRows.filter(row => row.state === 'in-progress').length
         const sessions = coverageRows.reduce((sum, row) => sum + row.sessions, 0)
 
         return {
             total,
+            closed,
             delivered,
             inProgress,
             notStarted: total - delivered - inProgress,
@@ -1385,6 +1412,14 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                                                 </Text>
                                                 <Text type="secondary"> not started</Text>
                                             </span>
+                                            {coverage.closed > 0 && (
+                                                <span>
+                                                    <Text strong style={{ fontSize: 20 }}>
+                                                        {coverage.closed}
+                                                    </Text>
+                                                    <Text type="secondary"> closed</Text>
+                                                </span>
+                                            )}
                                             <span>
                                                 <Text strong style={{ fontSize: 20 }}>
                                                     {coverage.sessions}
@@ -1434,8 +1469,12 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                                                     title: 'Status',
                                                     dataIndex: 'state',
                                                     width: 130,
-                                                    render: (state: string) =>
-                                                        state === 'delivered' ? (
+                                                    render: (state: string, row: any) =>
+                                                        state === 'closed' ? (
+                                                            <Tag color="gold">
+                                                                Closed{row.closure?.reason ? ` · ${closeReasonLabel(row.closure.reason)}` : ''}
+                                                            </Tag>
+                                                        ) : state === 'delivered' ? (
                                                             <Tag color="green">Delivered</Tag>
                                                         ) : state === 'in-progress' ? (
                                                             <Tag color="blue">In progress</Tag>
@@ -1479,7 +1518,64 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                                                             {value ? value.toLocaleDateString() : '—'}
                                                         </Text>
                                                     )
-                                                }
+                                                },
+                                                ...(mayCloseSupport
+                                                    ? [{
+                                                        title: 'Support',
+                                                        key: 'support',
+                                                        width: 110,
+                                                        align: 'right' as const,
+                                                        render: (_: unknown, row: any) =>
+                                                            row.closure ? (
+                                                                <Popconfirm
+                                                                    title="Reopen this support?"
+                                                                    description="Cancelled assignments return to how they were."
+                                                                    okText="Reopen"
+                                                                    onConfirm={async () => {
+                                                                        try {
+                                                                            await reopenSupport({
+                                                                                db,
+                                                                                closure: row.closure,
+                                                                                user: {
+                                                                                    uid: String((user as any)?.uid || ''),
+                                                                                    name: String((user as any)?.name || ''),
+                                                                                    role: roleRaw
+                                                                                }
+                                                                            })
+                                                                            message.success('Support reopened.')
+                                                                        } catch (error) {
+                                                                            console.error(error)
+                                                                            message.error('Could not reopen support.')
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <Button type="link" size="small">Reopen</Button>
+                                                                </Popconfirm>
+                                                            ) : (
+                                                                <Button
+                                                                    type="link"
+                                                                    size="small"
+                                                                    danger
+                                                                    disabled={!row.interventionId}
+                                                                    onClick={() =>
+                                                                        setCloseTarget({
+                                                                            participantId,
+                                                                            participantName: String(
+                                                                                participantInfo?.beneficiaryName ||
+                                                                                participantInfo?.name || ''
+                                                                            ),
+                                                                            interventionId: row.interventionId,
+                                                                            interventionTitle: row.title,
+                                                                            departmentId: row.departmentId,
+                                                                            programId: programId || null
+                                                                        })
+                                                                    }
+                                                                >
+                                                                    Close
+                                                                </Button>
+                                                            )
+                                                    }]
+                                                    : [])
                                             ]}
                                         />
                                     </>
@@ -1699,6 +1795,12 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                     </>
                 )}
             </div>
+            <CloseSupportModal
+                target={closeTarget}
+                user={{ uid: String((user as any)?.uid || ''), name: String((user as any)?.name || ''), role: roleRaw }}
+                onClose={() => setCloseTarget(null)}
+                onDone={() => setCloseTarget(null)}
+            />
         </Modal>
     )
 }

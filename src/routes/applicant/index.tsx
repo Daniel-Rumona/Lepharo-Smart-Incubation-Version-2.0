@@ -31,7 +31,7 @@ import {
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
-import LoadingOverlay from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -455,9 +455,7 @@ const ApplicantLandingPage = () => {
                 }}
             >
                 {loading ? (
-                    <div style={{ padding: '48px 0', textAlign: 'center' }}>
-                        <LoadingOverlay tip='Loading programs...' />
-                    </div>
+                    <PageSkeleton variant='cards' />
                 ) : allPrograms.length > 0 ? (
                     <Row gutter={[16, 16]}>
                         {allPrograms.map((p, idx) => renderProgramCard(p, idx))}

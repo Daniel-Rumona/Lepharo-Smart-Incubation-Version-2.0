@@ -65,7 +65,7 @@ import {
     DashboardHeaderCard,
     MotionCard
 } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 
 const { Text } = Typography
 const { RangePicker } = DatePicker
@@ -2569,7 +2569,7 @@ const DocumentationHub: React.FC = () => {
             </Helmet>
 
             {isPageLoading ? (
-                <LoadingOverlay tip='Loading documents…' />
+                <PageSkeleton variant='cards' />
             ) : missingState ? (
                 <Result
                     status={

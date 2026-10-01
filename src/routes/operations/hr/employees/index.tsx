@@ -58,7 +58,6 @@ import {
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { branchService } from '@/services/branchService'
 
 dayjs.extend(isBetween)
@@ -1595,20 +1594,13 @@ const EmployeesPage: React.FC = () => {
         onChange: (keys: React.Key[]) => setSelectedEmployeeIds(keys)
     }
 
-    if (loading) {
-        return (
-            <div style={{ minHeight: '100vh' }}>
-                <LoadingOverlay tip='Loading employees' />
-            </div>
-        )
-    }
-
     return (
         <div style={{ padding: 24, minHeight: '100vh' }}>
             <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
                         <MotionCard.Metric
+                            loading={loading}
                             icon={<TeamOutlined />}
                             iconBg='rgba(22,119,255,.12)'
                             title='Total Staff'
@@ -1621,6 +1613,7 @@ const EmployeesPage: React.FC = () => {
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
                         <MotionCard.Metric
+                            loading={loading}
                             icon={<ApartmentOutlined />}
                             iconBg='rgba(82,196,26,.12)'
                             title='Departments'
@@ -1633,6 +1626,7 @@ const EmployeesPage: React.FC = () => {
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
                         <MotionCard.Metric
+                            loading={loading}
                             icon={<IdcardOutlined />}
                             iconBg='rgba(250,173,20,.12)'
                             title='Positions'
@@ -1645,10 +1639,11 @@ const EmployeesPage: React.FC = () => {
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
                         <MotionCard.Metric
+                            loading={loading || metricsLoading}
                             icon={<CalendarOutlined />}
                             iconBg='rgba(114,46,209,.12)'
                             title='Leave Pending'
-                            value={metricsLoading ? '...' : metrics.pendingLeave}
+                            value={metrics.pendingLeave}
                             subtitle='Awaiting action'
                         />
                     </MotionCard>
@@ -1657,10 +1652,11 @@ const EmployeesPage: React.FC = () => {
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
                         <MotionCard.Metric
+                            loading={loading || metricsLoading}
                             icon={<CalendarOutlined />}
                             iconBg='rgba(19,194,194,.12)'
                             title='On Leave Today'
-                            value={metricsLoading ? '...' : metrics.onLeaveToday}
+                            value={metrics.onLeaveToday}
                             subtitle='Approved leave'
                         />
                     </MotionCard>
@@ -1669,10 +1665,11 @@ const EmployeesPage: React.FC = () => {
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
                         <MotionCard.Metric
+                            loading={loading || metricsLoading}
                             icon={<CheckCircleOutlined />}
                             iconBg='rgba(82,196,26,.12)'
                             title='Checked-in Today'
-                            value={metricsLoading ? '...' : metrics.checkedInToday}
+                            value={metrics.checkedInToday}
                             subtitle='Timesheet activity today'
                         />
                     </MotionCard>
@@ -1681,6 +1678,10 @@ const EmployeesPage: React.FC = () => {
 
             <MotionCard
                 style={{ marginTop: 16 }}
+                loading={loading}
+                skeleton='table'
+                skeletonRows={8}
+                skeletonColumns={6}
                 filterBar={
                     <Row gutter={[12, 12]} align='middle'>
                         <Col xs={24} md={8} lg={7}>

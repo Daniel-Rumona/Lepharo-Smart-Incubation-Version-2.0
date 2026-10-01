@@ -41,7 +41,7 @@ import {
 // Project hooks/components
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
-import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { DashboardHeaderCard } from "@/components/dashboards/metrics/Header";
 import {
     REPORT_CHART_COLORS,
@@ -1867,7 +1867,7 @@ const FunderAnalytics: React.FC = () => {
             />
 
             {loading ? (
-                <LoadingOverlay tip={"Loading Analytics..."} />
+                <PageSkeleton variant='analytics' />
             ) : viewMode === "interventions" ? (
                 <>
                     <Row gutter={[24, 24]} style={{ marginBottom: 16 }}>
@@ -1948,7 +1948,7 @@ const FunderAnalytics: React.FC = () => {
                     </Row>
 
                     {demographicsMode === "applicants" && allAppsLoading ? (
-                        <LoadingOverlay tip="Loading applicant demographics..." />
+                        <PageSkeleton variant='analytics' tiles={0} />
                     ) : (
                         <>
                             <Row gutter={[24, 24]} style={{ marginBottom: 16 }}>

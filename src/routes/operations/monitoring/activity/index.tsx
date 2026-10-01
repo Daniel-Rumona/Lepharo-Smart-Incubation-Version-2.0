@@ -40,7 +40,7 @@ import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { Helmet } from 'react-helmet'
 
 const { Text } = Typography
@@ -1105,7 +1105,7 @@ export const MonitoringActivity: React.FC = () => {
                 <Helmet>
                     <title>User Activity | Smart Incubation</title>
                 </Helmet>
-                <LoadingOverlay tip="Loading user monitoring activity" />
+                <PageSkeleton variant='list' />
             </div>
         )
     }

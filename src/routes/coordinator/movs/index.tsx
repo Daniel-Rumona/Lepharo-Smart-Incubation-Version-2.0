@@ -61,7 +61,6 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import { MovDocumentView } from '@/components/movs/MovDocumentView'
 import { MetricsGrid } from '@/components/dashboards/metrics/MetricsGrid'
 import { workflowQueryService } from '@/services/workflowQueryService'
@@ -1449,16 +1448,14 @@ const CoordinatorMOVs: React.FC = () => {
                 <title>Coordinator MOVs | Smart Incubation</title>
             </Helmet>
 
-            {initialLoading && <LoadingOverlay tip="Loading your MOVs..." />}
-
             <MetricsGrid metrics={[
-                { key: 'my-movs', title: 'My MOVs', value: metrics.total, icon: <FileTextOutlined />, iconBg: '#e6f4ff' },
-                { key: 'approved', title: 'Approved', value: metrics.approved, icon: <CheckCircleOutlined />, iconBg: '#f6ffed' },
-                { key: 'awaiting', title: 'Awaiting Review', value: metrics.awaiting, icon: <ClockCircleOutlined />, iconBg: '#fffbe6' },
-                { key: 'queried', title: 'Queried MOVs', value: metrics.queried, icon: <ExclamationCircleOutlined />, iconBg: '#fff2f0' }
+                { key: 'my-movs', title: 'My MOVs', value: metrics.total, icon: <FileTextOutlined />, iconBg: '#e6f4ff', loading: initialLoading },
+                { key: 'approved', title: 'Approved', value: metrics.approved, icon: <CheckCircleOutlined />, iconBg: '#f6ffed', loading: initialLoading },
+                { key: 'awaiting', title: 'Awaiting Review', value: metrics.awaiting, icon: <ClockCircleOutlined />, iconBg: '#fffbe6', loading: initialLoading },
+                { key: 'queried', title: 'Queried MOVs', value: metrics.queried, icon: <ExclamationCircleOutlined />, iconBg: '#fff2f0', loading: initialLoading }
             ]} />
 
-            <MotionCard style={{ marginTop: 24 }}>
+            <MotionCard style={{ marginTop: 24 }} loading={initialLoading} skeletonRows={2}>
                 <Skeleton loading={reloading} active paragraph={{ rows: 3 }}>
                     {metrics.total > 0 ? (
                         <>
@@ -1498,6 +1495,10 @@ const CoordinatorMOVs: React.FC = () => {
 
             <MotionCard
                 style={{ marginTop: 16 }}
+                loading={initialLoading}
+                skeleton='table'
+                skeletonRows={6}
+                skeletonColumns={5}
                 filterBar={
                     <Row gutter={[12, 12]} align="middle">
                         <Col xs={24} md={12} xl={6}>
@@ -1527,7 +1528,6 @@ const CoordinatorMOVs: React.FC = () => {
                         dataSource={filteredMovs}
                         columns={movColumns as any}
                         rowKey="id"
-                        loading={initialLoading}
                         pagination={{ pageSize: 6, showSizeChanger: false, position: ['bottomCenter'] }}
                         scroll={{ x: 900 }}
                         locale={{ emptyText: <Empty description={filtersActive ? 'No MOVs match the selected filters.' : 'No SME-confirmed MOVs found for your account in this program.'} /> }}

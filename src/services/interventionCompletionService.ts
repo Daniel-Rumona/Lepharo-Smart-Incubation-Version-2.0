@@ -378,6 +378,12 @@ export async function completeIntervention(input: {
     manualMovs?: ManualMovUpload[]
     /** POE list mirrored onto each MOV, alongside the legacy resources field. */
     poeEvidence?: Array<Record<string, any>>
+    /**
+     * When true the intervention can be completed with no POE at all. The MOV
+     * is the compulsory proof of delivery; a POE (the named deliverable) is a
+     * bonus. Every other caller keeps today's "at least one POE" rule.
+     */
+    poeOptional?: boolean
 }) {
     const { db, storage, user } = input
     if (!user.uid)
@@ -421,7 +427,7 @@ export async function completeIntervention(input: {
             throw new CompletionValidationError(
                 'Each POE file must be 25 MB or smaller.'
             )
-        if (context.missingEvidenceCount && !files.length)
+        if (context.missingEvidenceCount && !files.length && !input.poeOptional)
             throw new CompletionValidationError(
                 'Attach at least one POE file. Some selected assignments have no saved evidence.'
             )
@@ -567,6 +573,7 @@ export async function completeIntervention(input: {
                             : resource.type || 'poe'
                 }))
                 if (
+                    !input.poeOptional &&
                     !context.summaryAssignmentIds.includes(row.id) &&
                     !resources.length
                 ) {

@@ -66,7 +66,7 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { hasSmeGapSubmission } from '@/utils/agreementStatus'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
@@ -3260,8 +3260,8 @@ const SMEOverview: React.FC = () => {
             />
 
             {loading ? (
-                <div style={{ paddingTop: 80, textAlign: 'center' }}>
-                    <LoadingOverlay tip='Getting SMEs data' />
+                <div>
+                    <PageSkeleton variant='cards' />
                 </div>
             ) : !filteredRows.length ? (
                 <Empty description='No accepted SMEs found for this program with current filters.' />
