@@ -2,21 +2,19 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
     Row,
     Col,
-    List,
     Button,
     Tag,
     Table,
     Space,
-    Grid,
     Empty,
     Result,
     Skeleton,
+    Progress,
     Typography
 } from 'antd'
 import {
     MessageOutlined,
     BarChartOutlined,
-    CalendarOutlined,
     CheckCircleOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -32,9 +30,6 @@ import {
 import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
 
-import Highcharts from 'highcharts'
-import HighchartsReact from 'highcharts-react-official'
-
 import { workflowQueryService } from '@/services/workflowQueryService'
 import {
     dedupeAssignedInterventionViews,
@@ -46,14 +41,55 @@ import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import {
     fetchAppointments,
-    getAppointmentTitle,
-    resolveAppointmentActor,
-    resolveAppointmentStart
+    resolveAppointmentActor
 } from '@/services/appointmentService'
 import ResolveQueryModal from '@/components/modals/ResolveQueryModal'
+import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
 
-const { useBreakpoint } = Grid
 const { Text } = Typography
+
+const HealthGauge = ({ percent }: { percent: number }) => {
+    const color =
+        percent >= 75 ? '#52c41a' : percent >= 50 ? '#faad14' : '#ff4d4f'
+
+    const arcLength = Math.PI * 80
+
+    return (
+        <div style={{ width: 200, textAlign: 'center' }}>
+            <svg viewBox='0 0 200 110' width='100%'>
+                <path
+                    d='M 20 100 A 80 80 0 0 1 180 100'
+                    fill='none'
+                    stroke='#f0f0f0'
+                    strokeWidth={16}
+                    strokeLinecap='round'
+                />
+
+                <path
+                    d='M 20 100 A 80 80 0 0 1 180 100'
+                    fill='none'
+                    stroke={color}
+                    strokeWidth={16}
+                    strokeLinecap='round'
+                    strokeDasharray={`${(arcLength * percent) / 100} ${arcLength}`}
+                />
+
+                <text
+                    x='100'
+                    y='92'
+                    textAnchor='middle'
+                    fontSize='30'
+                    fontWeight='600'
+                    fill={color}
+                >
+                    {percent}%
+                </text>
+            </svg>
+
+            <Text type='secondary'>Health</Text>
+        </div>
+    )
+}
 
 const CoordinatorDashboardSkeleton = () => (
     <Row gutter={[16, 16]}>
@@ -137,28 +173,6 @@ interface Intervention {
     lifecycle?: ReturnType<
         typeof getAssignedInterventionLifecycle
     >
-}
-
-interface Appointment {
-    id: string
-
-    title: string
-    withName?: string
-
-    location?: string
-    startAt?: Date
-
-    deliveryMethod?:
-    | 'virtual'
-    | 'in_person'
-    | 'telephonically'
-
-    meetingLink?: string
-
-    userConfirmation?:
-    | 'pending'
-    | 'confirmed'
-    | 'declined'
 }
 
 interface CQ {
@@ -255,152 +269,6 @@ const getQueryLabel = (
                     character.toUpperCase()
             )
     )
-}
-
-const confirmationTag = (
-    status?:
-        | 'pending'
-        | 'confirmed'
-        | 'declined'
-) => {
-    const map: Record<
-        string,
-        {
-            color: string
-            label: string
-        }
-    > = {
-        confirmed: {
-            color: 'success',
-            label: 'Confirmed'
-        },
-
-        declined: {
-            color: 'error',
-            label: 'Declined'
-        },
-
-        pending: {
-            color: 'processing',
-            label: 'Pending'
-        }
-    }
-
-    const meta =
-        map[status || 'pending']
-
-    return (
-        <Tag color={meta.color}>
-            {meta.label}
-        </Tag>
-    )
-}
-
-const parseAppointmentStart = (
-    dateValue: any,
-    timeValue: any,
-    startAtValue?: any
-) => {
-    const explicitStart =
-        typeof startAtValue?.toDate ===
-            'function'
-            ? startAtValue.toDate()
-            : startAtValue
-
-    if (
-        explicitStart &&
-        dayjs(explicitStart).isValid()
-    ) {
-        return dayjs(
-            explicitStart
-        ).toDate()
-    }
-
-    const rawDate =
-        typeof dateValue?.toDate ===
-            'function'
-            ? dateValue.toDate()
-            : dateValue
-
-    const baseDate =
-        dayjs(rawDate)
-
-    if (!baseDate.isValid()) {
-        return undefined
-    }
-
-    const rawTime =
-        typeof timeValue?.toDate ===
-            'function'
-            ? timeValue.toDate()
-            : timeValue
-
-    if (
-        rawTime instanceof Date &&
-        dayjs(rawTime).isValid()
-    ) {
-        return baseDate
-            .hour(
-                rawTime.getHours()
-            )
-            .minute(
-                rawTime.getMinutes()
-            )
-            .second(0)
-            .millisecond(0)
-            .toDate()
-    }
-
-    const timeText =
-        String(
-            rawTime || ''
-        ).trim()
-
-    const match =
-        timeText.match(
-            /^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i
-        )
-
-    if (!match) {
-        return undefined
-    }
-
-    let hour =
-        Number(match[1])
-
-    const minute =
-        Number(match[2])
-
-    const meridiem =
-        match[3]?.toUpperCase()
-
-    if (
-        meridiem === 'PM' &&
-        hour < 12
-    ) {
-        hour += 12
-    }
-
-    if (
-        meridiem === 'AM' &&
-        hour === 12
-    ) {
-        hour = 0
-    }
-
-    if (
-        hour > 23 ||
-        minute > 59
-    ) {
-        return undefined
-    }
-
-    return baseDate
-        .hour(hour)
-        .minute(minute)
-        .second(0)
-        .millisecond(0)
-        .toDate()
 }
 
 const parseAssignedAt = (
@@ -1247,9 +1115,6 @@ const hydrateDashboardQueryContext =
 
 export const CoordinatorDashboard:
     React.FC = () => {
-        const screens =
-            useBreakpoint()
-
         const navigate =
             useNavigate()
 
@@ -1317,7 +1182,7 @@ export const CoordinatorDashboard:
             setAppointments
         ] =
             useState<
-                Appointment[]
+                any[]
             >([])
 
         const [
@@ -1787,117 +1652,8 @@ export const CoordinatorDashboard:
                                 }
                             )
 
-                        const now =
-                            dayjs()
-
-                        const inFourteenDays =
-                            dayjs().add(
-                                14,
-                                'day'
-                            )
-
-                        const appts:
-                            Appointment[] =
-                            appointmentRows
-                                .map(
-                                    appointment => {
-                                        const resolved =
-                                            resolveAppointmentStart(
-                                                appointment
-                                            )
-
-                                        const startAt =
-                                            resolved.date?.toDate() ||
-                                            parseAppointmentStart(
-                                                appointment.date,
-                                                appointment.startTime,
-                                                appointment.startAt
-                                            )
-
-                                        return {
-                                            id:
-                                                appointment.id,
-
-                                            title:
-                                                getAppointmentTitle(
-                                                    appointment
-                                                ),
-
-                                            withName:
-                                                appointment.participantName ||
-                                                appointment.withName ||
-                                                appointment.with,
-
-                                            location:
-                                                appointment.location ||
-                                                appointment.venue,
-
-                                            startAt,
-
-                                            deliveryMethod:
-                                                appointment.deliveryMethod,
-
-                                            meetingLink:
-                                                appointment.meetingLink,
-
-                                            userConfirmation:
-                                                appointment.userConfirmation ||
-                                                'pending'
-                                        }
-                                    }
-                                )
-                                .filter(
-                                    appointment => {
-                                        if (
-                                            !appointment.startAt
-                                        ) {
-                                            return false
-                                        }
-
-                                        const date =
-                                            dayjs(
-                                                appointment.startAt
-                                            )
-
-                                        const afterStart =
-                                            date.isAfter(
-                                                now
-                                            ) ||
-                                            date.isSame(
-                                                now,
-                                                'minute'
-                                            )
-
-                                        const beforeEnd =
-                                            date.isBefore(
-                                                inFourteenDays
-                                            ) ||
-                                            date.isSame(
-                                                inFourteenDays,
-                                                'minute'
-                                            )
-
-                                        return (
-                                            afterStart &&
-                                            beforeEnd
-                                        )
-                                    }
-                                )
-                                .sort(
-                                    (
-                                        first,
-                                        second
-                                    ) =>
-                                        first.startAt!.getTime() -
-                                        second.startAt!.getTime()
-                                )
-                                .slice(
-                                    0,
-                                    5
-                                )
-
                         setAppointments(
-                            appts
+                            appointmentRows as any[]
                         )
 
                         /*
@@ -2463,254 +2219,41 @@ export const CoordinatorDashboard:
                 allInterventions
             ])
 
-        const donutSeries =
-            [
-                perfCounts.completed,
-                perfCounts.inProgress,
-                perfCounts.rejectedOrDeclined
-            ]
+        const totalInterventions = allInterventions.length
 
-        const donutOptions:
-            Highcharts.Options =
-        {
-            chart: {
-                type:
-                    'pie'
-            },
-
-            title: {
-                text:
-                    'Intervention Performance'
-            },
-
-            credits: {
-                enabled:
-                    false
-            },
-
-            plotOptions: {
-                pie: {
-                    innerSize:
-                        '60%',
-
-                    dataLabels:
-                    {
-                        enabled:
-                            true,
-
-                        distance:
-                            10,
-
-                        style:
-                        {
-                            textOutline:
-                                'none'
-                        },
-
-                        formatter:
-                            function () {
-                                if (
-                                    this.y &&
-                                    this.y >
-                                    0
-                                ) {
-                                    return `${this.point.name}: ${this.y}`
-                                }
-
-                                return null
-                            }
-                    }
-                }
-            },
-
-            tooltip: {
-                pointFormat:
-                    '<b>{point.y}</b>'
-            },
-
-            series: [
-                {
-                    type:
-                        'pie',
-
-                    name:
-                        'Count',
-
-                    data: [
-                        {
-                            name:
-                                'Completed',
-
-                            y:
-                                donutSeries[0],
-
-                            color:
-                                '#52c41a'
-                        },
-
-                        {
-                            name:
-                                'In Progress',
-
-                            y:
-                                donutSeries[1],
-
-                            color:
-                                '#faad14'
-                        },
-
-                        {
-                            name:
-                                'Rejected/Declined',
-
-                            y:
-                                donutSeries[2],
-
-                            color:
-                                '#ff4d4f'
-                        }
-                    ]
-                }
-            ]
-        }
+        const toPercent = (value: number) =>
+            totalInterventions
+                ? Math.round((value / totalInterventions) * 100)
+                : 0
 
         /*
-         * -----------------------------------------------------
-         * APPOINTMENT COLUMNS
-         * -----------------------------------------------------
+         * Health = share of interventions that are not
+         * rejected, declined or awaiting reassignment.
          */
-        const upcomingCols =
-            [
-                {
-                    title:
-                        'When',
+        const healthPercent = toPercent(
+            totalInterventions - perfCounts.rejectedOrDeclined
+        )
 
-                    key:
-                        'when',
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                Appointment
-                        ) =>
-                            record.startAt
-                                ? dayjs(
-                                    record.startAt
-                                ).format(
-                                    'YYYY-MM-DD HH:mm'
-                                )
-                                : 'TBA'
-                },
-
-                {
-                    title:
-                        'Title',
-
-                    dataIndex:
-                        'title',
-
-                    key:
-                        'title'
-                },
-
-                {
-                    title:
-                        'With',
-
-                    dataIndex:
-                        'withName',
-
-                    key:
-                        'withName'
-                },
-
-                {
-                    title:
-                        'Confirmation',
-
-                    dataIndex:
-                        'userConfirmation',
-
-                    key:
-                        'userConfirmation',
-
-                    render:
-                        (
-                            status:
-                                Appointment['userConfirmation']
-                        ) =>
-                            confirmationTag(
-                                status
-                            )
-                },
-
-                {
-                    title:
-                        'Details',
-
-                    key:
-                        'details',
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                Appointment
-                        ) => {
-                            if (
-                                record.deliveryMethod ===
-                                'virtual' &&
-                                record.meetingLink
-                            ) {
-                                return (
-                                    <a
-                                        href={
-                                            record.meetingLink
-                                        }
-                                        target='_blank'
-                                        rel='noreferrer'
-                                    >
-                                        Join meeting
-                                    </a>
-                                )
-                            }
-
-                            if (
-                                record.deliveryMethod ===
-                                'in_person' &&
-                                record.location
-                            ) {
-                                return (
-                                    <span>
-                                        {
-                                            record.location
-                                        }
-                                    </span>
-                                )
-                            }
-
-                            if (
-                                record.deliveryMethod ===
-                                'telephonically'
-                            ) {
-                                return (
-                                    <span>
-                                        Telephonic
-                                    </span>
-                                )
-                            }
-
-                            return (
-                                <span>
-                                    —
-                                </span>
-                            )
-                        }
-                }
-            ]
+        const performanceRows = [
+            {
+                label: 'Completed',
+                value: perfCounts.completed,
+                percent: toPercent(perfCounts.completed),
+                color: '#52c41a'
+            },
+            {
+                label: 'In Progress',
+                value: perfCounts.inProgress,
+                percent: toPercent(perfCounts.inProgress),
+                color: '#faad14'
+            },
+            {
+                label: 'Rejected/Declined',
+                value: perfCounts.rejectedOrDeclined,
+                percent: toPercent(perfCounts.rejectedOrDeclined),
+                color: '#ff4d4f'
+            }
+        ]
 
         /*
          * -----------------------------------------------------
@@ -2979,30 +2522,68 @@ export const CoordinatorDashboard:
                             */}
                             <Col
                                 xs={24}
-                                lg={10}
+                                lg={12}
                             >
-                                <MotionCard>
-                                    {donutSeries.some(
-                                        value =>
-                                            value > 0
-                                    ) ? (
-                                        <HighchartsReact
-                                            highcharts={
-                                                Highcharts
-                                            }
-                                            options={
-                                                donutOptions
-                                            }
-                                        />
+                                <MotionCard
+                                    title='Intervention Performance'
+                                >
+                                    {allInterventions.length > 0 ? (
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 24,
+                                                flexWrap: 'wrap'
+                                            }}
+                                        >
+                                            <HealthGauge
+                                                percent={healthPercent}
+                                            />
+
+                                            <div
+                                                style={{
+                                                    flex: 1,
+                                                    minWidth: 200
+                                                }}
+                                            >
+                                                {performanceRows.map(row => (
+                                                    <div
+                                                        key={row.label}
+                                                        style={{
+                                                            marginBottom: 12
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                display: 'flex',
+                                                                justifyContent: 'space-between'
+                                                            }}
+                                                        >
+                                                            <Text>
+                                                                {row.label}
+                                                            </Text>
+
+                                                            <Text strong>
+                                                                {row.value}
+                                                            </Text>
+                                                        </div>
+
+                                                        <Progress
+                                                            percent={row.percent}
+                                                            strokeColor={row.color}
+                                                            showInfo={false}
+                                                            size='small'
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
                                     ) : (
                                         <Empty
-                                            image={
-                                                Empty.PRESENTED_IMAGE_SIMPLE
-                                            }
+                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
                                             description='No performance data yet'
                                             style={{
-                                                padding:
-                                                    '25px 0'
+                                                padding: '25px 0'
                                             }}
                                         />
                                     )}
@@ -3011,137 +2592,23 @@ export const CoordinatorDashboard:
 
                             <Col
                                 xs={24}
-                                lg={14}
+                                lg={12}
                             >
-                                <MotionCard
-                                    title={
-                                        <Space>
-                                            <CalendarOutlined />
-
-                                            Upcoming Appointments
-                                        </Space>
+                                <UpcomingAppointmentsCard
+                                    appointments={
+                                        appointments
                                     }
-                                    extra={
-                                        <Button
-                                            type='link'
-                                            onClick={() =>
-                                                navigate(
-                                                    '/calendar'
-                                                )
-                                            }
-                                        >
-                                            Go To Calendar
-                                        </Button>
+                                    programId={
+                                        activeProgramId
                                     }
-                                >
-                                    {appointments.length >
-                                        0 ? (
-                                        screens.md ? (
-                                            <Table
-                                                rowKey='id'
-                                                dataSource={
-                                                    appointments
-                                                }
-                                                columns={
-                                                    upcomingCols as any
-                                                }
-                                                pagination={
-                                                    false
-                                                }
-                                                scroll={{
-                                                    x:
-                                                        760
-                                                }}
-                                            />
-                                        ) : (
-                                            <List
-                                                itemLayout='horizontal'
-                                                dataSource={
-                                                    appointments
-                                                }
-                                                renderItem={
-                                                    appointment => (
-                                                        <List.Item
-                                                            actions={[
-                                                                confirmationTag(
-                                                                    appointment.userConfirmation
-                                                                ),
-
-                                                                ...(
-                                                                    appointment.deliveryMethod ===
-                                                                        'virtual' &&
-                                                                        appointment.meetingLink
-                                                                        ? [
-                                                                            <a
-                                                                                key='join'
-                                                                                href={
-                                                                                    appointment.meetingLink
-                                                                                }
-                                                                                target='_blank'
-                                                                                rel='noreferrer'
-                                                                            >
-                                                                                Join
-                                                                            </a>
-                                                                        ]
-                                                                        : []
-                                                                )
-                                                            ]}
-                                                        >
-                                                            <List.Item.Meta
-                                                                title={
-                                                                    appointment.title
-                                                                }
-                                                                description={
-                                                                    <>
-                                                                        {appointment.withName && (
-                                                                            <div>
-                                                                                With:{' '}
-                                                                                {
-                                                                                    appointment.withName
-                                                                                }
-                                                                            </div>
-                                                                        )}
-
-                                                                        <div>
-                                                                            When:{' '}
-                                                                            {appointment.startAt
-                                                                                ? dayjs(
-                                                                                    appointment.startAt
-                                                                                ).format(
-                                                                                    'YYYY-MM-DD HH:mm'
-                                                                                )
-                                                                                : 'TBA'}
-                                                                        </div>
-
-                                                                        {appointment.deliveryMethod ===
-                                                                            'in_person' &&
-                                                                            appointment.location && (
-                                                                                <div>
-                                                                                    Where:{' '}
-                                                                                    {
-                                                                                        appointment.location
-                                                                                    }
-                                                                                </div>
-                                                                            )}
-
-                                                                        {appointment.deliveryMethod ===
-                                                                            'telephonically' && (
-                                                                                <div>
-                                                                                    Telephonic
-                                                                                </div>
-                                                                            )}
-                                                                    </>
-                                                                }
-                                                            />
-                                                        </List.Item>
-                                                    )
-                                                }
-                                            />
+                                    daysAhead={7}
+                                    limit={8}
+                                    onViewCalendar={() =>
+                                        navigate(
+                                            '/calendar'
                                         )
-                                    ) : (
-                                        <Empty description='No upcoming appointments' />
-                                    )}
-                                </MotionCard>
+                                    }
+                                />
                             </Col>
                         </Row>
                     </div>
