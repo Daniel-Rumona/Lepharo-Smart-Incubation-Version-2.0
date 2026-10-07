@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
     Row,
+    List,
     Col,
     Button,
     Tag,
@@ -10,6 +11,8 @@ import {
     Result,
     Skeleton,
     Progress,
+    Modal,
+    Rate,
     Typography
 } from 'antd'
 import {
@@ -44,6 +47,9 @@ import {
     resolveAppointmentActor
 } from '@/services/appointmentService'
 import ResolveQueryModal from '@/components/modals/ResolveQueryModal'
+import InterventionCompletionModal, {
+    type InterventionCompletionTarget
+} from '@/components/interventions/InterventionCompletionModal'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
 
 const { Text } = Typography
@@ -88,6 +94,96 @@ const HealthGauge = ({ percent }: { percent: number }) => {
 
             <Text type='secondary'>Health</Text>
         </div>
+    )
+}
+
+type ReadyForCompletion = {
+    key: string
+    assignmentIds: string[]
+    beneficiaryNames: string[]
+    interventionTitle: string
+    sessionsCompleted: number
+    plannedSessions: number
+}
+
+/*
+ * Mirrors the Assigned-to-me rule: progress has reached 100%, the
+ * intervention is not yet completed, and the facilitator has not
+ * already submitted completion.
+ */
+const getRowProgress = (
+    row: Intervention
+) => {
+    const raw = row.raw || {}
+
+    const planned = Math.max(
+        1,
+        Number(raw.plannedSessions) || 1
+    )
+
+    const sessionProgress =
+        (Number(
+            raw.tracking?.sessionsLogged || 0
+        ) /
+            planned) *
+        100
+
+    const computed = Number(
+        raw.computedProgress
+    )
+
+    const history = Math.max(
+        0,
+        ...(raw.progressUpdates || []).map(
+            (update: any) =>
+                Number(
+                    update?.computedProgress || 0
+                )
+        )
+    )
+
+    const progress = Math.min(
+        100,
+        Math.max(
+            Number.isFinite(computed)
+                ? computed
+                : 0,
+            sessionProgress,
+            history
+        )
+    )
+
+    return ['pending', 'deferred'].includes(
+        String(raw.completionStatus || '')
+    )
+        ? Math.min(progress, 99)
+        : progress
+}
+
+const isReadyForCompletion = (
+    row: Intervention
+) => {
+    const raw = row.raw || {}
+
+    const facilitatorDone =
+        String(
+            raw.assigneeCompletionStatus || ''
+        ).toLowerCase() === 'completed' ||
+        String(
+            raw.assignmentStatus || ''
+        ).toLowerCase() === 'completed'
+
+    return (
+        ![
+            'completed',
+            'declined',
+            'cancelled',
+            'needs-reassignment'
+        ].includes(
+            String(row.lifecycle || '')
+        ) &&
+        !facilitatorDone &&
+        getRowProgress(row) >= 100
     )
 }
 
@@ -173,6 +269,8 @@ interface Intervention {
     lifecycle?: ReturnType<
         typeof getAssignedInterventionLifecycle
     >
+
+    raw?: Record<string, any>
 }
 
 interface CQ {
@@ -1619,7 +1717,9 @@ export const CoordinatorDashboard:
 
                                             participantCompletionStatus:
                                                 data.participantCompletionStatus ||
-                                                'pending'
+                                                'pending',
+
+                                            raw: data
                                         }
                                     }
                                 )
@@ -1740,6 +1840,180 @@ export const CoordinatorDashboard:
          * OPEN QUERIES
          * -----------------------------------------------------
          */
+        const [
+            completionTarget,
+            setCompletionTarget
+        ] =
+            useState<InterventionCompletionTarget | null>(
+                null
+            )
+
+        const [
+            queriesModalOpen,
+            setQueriesModalOpen
+        ] = useState(false)
+
+        const readyForCompletion =
+            useMemo(() => {
+                const groups =
+                    new Map<
+                        string,
+                        ReadyForCompletion
+                    >()
+
+                allInterventions
+                    .filter(
+                        isReadyForCompletion
+                    )
+                    .forEach(row => {
+                        const raw =
+                            row.raw || {}
+
+                        const groupKey =
+                            raw.groupKey ||
+                            raw.groupId ||
+                            raw.groupAssignmentId
+
+                        const key = groupKey
+                            ? `group:${groupKey}`
+                            : `single:${row.id}`
+
+                        const existing =
+                            groups.get(key)
+
+                        const logged =
+                            Number(
+                                raw.tracking
+                                    ?.sessionsLogged ||
+                                0
+                            )
+
+                        if (existing) {
+                            existing.assignmentIds.push(
+                                row.id
+                            )
+
+                            existing.beneficiaryNames.push(
+                                row.beneficiaryName
+                            )
+
+                            existing.sessionsCompleted =
+                                Math.max(
+                                    existing.sessionsCompleted,
+                                    logged
+                                )
+
+                            return
+                        }
+
+                        groups.set(key, {
+                            key,
+
+                            assignmentIds: [
+                                row.id
+                            ],
+
+                            beneficiaryNames: [
+                                row.beneficiaryName
+                            ],
+
+                            interventionTitle:
+                                row.subInterventionTitle
+                                    ? `${row.intervention} — ${row.subInterventionTitle}`
+                                    : row.intervention,
+
+                            sessionsCompleted:
+                                logged,
+
+                            plannedSessions:
+                                Math.max(
+                                    1,
+                                    Number(
+                                        raw.plannedSessions
+                                    ) || 1
+                                )
+                        })
+                    })
+
+                return Array.from(
+                    groups.values()
+                )
+            }, [allInterventions])
+
+        const deriveDeliveryMethod = (
+            assignmentIds: string[]
+        ) => {
+            const ids = new Set(
+                assignmentIds
+            )
+
+            const methods =
+                new Set<string>()
+
+            appointments.forEach(
+                (appointment: any) => {
+                    if (
+                        ids.has(
+                            String(
+                                appointment.assignedInterventionId ||
+                                ''
+                            )
+                        ) &&
+                        !['cancelled', 'postponed'].includes(
+                            appointment.status
+                        ) &&
+                        appointment.deliveryMethod
+                    ) {
+                        methods.add(
+                            appointment.deliveryMethod
+                        )
+                    }
+                }
+            )
+
+            if (
+                methods.has('in_person') &&
+                methods.has('virtual')
+            ) {
+                return 'hybrid'
+            }
+
+            return methods.size === 1
+                ? Array.from(methods)[0]
+                : undefined
+        }
+
+        const ratingSummary =
+            useMemo(() => {
+                const ratings =
+                    allInterventions
+                        .map(row =>
+                            Number(
+                                row.raw?.feedback
+                                    ?.rating
+                            )
+                        )
+                        .filter(
+                            value =>
+                                Number.isFinite(
+                                    value
+                                ) && value > 0
+                        )
+
+                return {
+                    count: ratings.length,
+
+                    average:
+                        ratings.length
+                            ? ratings.reduce(
+                                (sum, value) =>
+                                    sum + value,
+                                0
+                            ) / ratings.length
+                            : 0
+                }
+            }, [allInterventions])
+
         const openQueries =
             useMemo(
                 () =>
@@ -2350,7 +2624,7 @@ export const CoordinatorDashboard:
                             */}
                             <Col
                                 xs={24}
-                                md={8}
+                                md={6}
                             >
                                 <MotionCard.Metric
                                     icon={
@@ -2375,7 +2649,7 @@ export const CoordinatorDashboard:
 
                             <Col
                                 xs={24}
-                                md={8}
+                                md={6}
                             >
                                 <MotionCard.Metric
                                     icon={
@@ -2400,7 +2674,7 @@ export const CoordinatorDashboard:
 
                             <Col
                                 xs={24}
-                                md={8}
+                                md={6}
                             >
                                 <MotionCard.Metric
                                     icon={
@@ -2423,106 +2697,132 @@ export const CoordinatorDashboard:
                                 />
                             </Col>
 
-                            {/*
-                              Priority work:
-                              Open queries are intentionally
-                              placed directly below metrics.
-                            */}
-                            {openQueries.length >
-                                0 ? (
-                                <Col xs={24}>
+                            <Col xs={24} md={6}>
+                                <MotionCard.Metric
+                                    icon={
+                                        <MessageOutlined
+                                            style={{ fontSize: 18, color: '#d48806' }}
+                                        />
+                                    }
+                                    iconBg='rgba(250,173,20,0.14)'
+                                    title='Open Queries'
+                                    value={openQueries.length}
+                                    subtitle='Click to view and resolve'
+                                    onClick={() => setQueriesModalOpen(true)}
+                                />
+                            </Col>
+
+                            {readyForCompletion.length > 0 ? (
+                                <Col xs={24} lg={18}>
                                     <MotionCard
                                         title={
-                                            <Space
-                                                size={
-                                                    8
-                                                }
-                                                wrap
-                                            >
-                                                <MessageOutlined
-                                                    style={{
-                                                        color:
-                                                            '#d48806'
-                                                    }}
-                                                />
+                                            <Space size={8}>
+                                                <CheckCircleOutlined style={{ color: '#52c41a' }} />
 
-                                                <Text strong>
-                                                    My Queries
-                                                </Text>
+                                                <Text strong>Ready for completion</Text>
 
                                                 <Tag
-                                                    color='orange'
-                                                    style={{
-                                                        borderRadius:
-                                                            999,
-
-                                                        marginInlineEnd:
-                                                            0
-                                                    }}
+                                                    color='green'
+                                                    style={{ borderRadius: 999, marginInlineEnd: 0 }}
                                                 >
-                                                    {
-                                                        openQueries.length
-                                                    }{' '}
-                                                    open
+                                                    {readyForCompletion.length}
                                                 </Tag>
                                             </Space>
                                         }
-                                        style={{
-                                            border:
-                                                '1px solid #ffd591',
-
-                                            borderRadius:
-                                                12,
-
-                                            boxShadow:
-                                                '0 8px 24px rgba(250,173,20,0.12)'
-                                        }}
                                     >
-                                        <Table
-                                            size='small'
-                                            rowKey='id'
-                                            dataSource={
-                                                openQueries
-                                            }
-                                            columns={
-                                                queryColumns as any
-                                            }
-                                            pagination={
-                                                openQueries.length >
-                                                    3
-                                                    ? {
-                                                        pageSize:
-                                                            3,
-
-                                                        showSizeChanger:
-                                                            false,
-
-                                                        position:
-                                                            [
-                                                                'bottomCenter'
-                                                            ]
-                                                    }
-                                                    : false
-                                            }
-                                            scroll={{
-                                                x:
-                                                    1050
-                                            }}
-                                            locale={{
-                                                emptyText:
-                                                    <Empty description='No queries' />
-                                            }}
+                                        <List
+                                            dataSource={readyForCompletion}
+                                            renderItem={item => (
+                                                <List.Item
+                                                    key={item.key}
+                                                    actions={[
+                                                        <Button
+                                                            key='complete'
+                                                            type='primary'
+                                                            shape='round'
+                                                            icon={<CheckCircleOutlined />}
+                                                            onClick={() =>
+                                                                setCompletionTarget({
+                                                                    assignmentIds: item.assignmentIds,
+                                                                    interventionTitle: item.interventionTitle,
+                                                                    sessionsCompleted: item.sessionsCompleted,
+                                                                    plannedSessions: item.plannedSessions,
+                                                                    deliveryMethod: deriveDeliveryMethod(
+                                                                        item.assignmentIds
+                                                                    )
+                                                                })
+                                                            }
+                                                        >
+                                                            Complete
+                                                        </Button>
+                                                    ]}
+                                                >
+                                                    <List.Item.Meta
+                                                        title={item.interventionTitle}
+                                                        description={
+                                                            item.beneficiaryNames.length > 1
+                                                                ? `${item.beneficiaryNames.length} SMEs (grouped)`
+                                                                : item.beneficiaryNames[0]
+                                                        }
+                                                    />
+                                                </List.Item>
+                                            )}
                                         />
                                     </MotionCard>
                                 </Col>
                             ) : null}
+
+                            <Col
+                                xs={24}
+                                lg={6}
+                                order={readyForCompletion.length > 0 ? 0 : 1}
+                            >
+                                <MotionCard title='My review rating'>
+                                    {ratingSummary.count > 0 ? (
+                                        <div style={{ textAlign: 'center' }}>
+                                            <Progress
+                                                type='dashboard'
+                                                gapDegree={75}
+                                                percent={(ratingSummary.average / 5) * 100}
+                                                strokeColor='#1677ff'
+                                                size={140}
+                                                format={() => (
+                                                    <div>
+                                                        <div style={{ fontSize: 22, fontWeight: 600 }}>
+                                                            {ratingSummary.average.toFixed(1)}/5
+                                                        </div>
+
+                                                        <Rate
+                                                            disabled
+                                                            allowHalf
+                                                            value={ratingSummary.average}
+                                                            style={{ fontSize: 14 }}
+                                                        />
+
+                                                        <div style={{ fontSize: 12, color: '#1677ff' }}>
+                                                            {ratingSummary.count} review
+                                                            {ratingSummary.count === 1 ? '' : 's'}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <Empty
+                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                            description='No reviews yet'
+                                            style={{ padding: '25px 0' }}
+                                        />
+                                    )}
+                                </MotionCard>
+                            </Col>
 
                             {/*
                               Secondary dashboard information
                             */}
                             <Col
                                 xs={24}
-                                lg={12}
+                                lg={readyForCompletion.length > 0 ? 12 : 18}
                             >
                                 <MotionCard
                                     title='Intervention Performance'
@@ -2592,7 +2892,8 @@ export const CoordinatorDashboard:
 
                             <Col
                                 xs={24}
-                                lg={12}
+                                lg={readyForCompletion.length > 0 ? 12 : 24}
+                                order={readyForCompletion.length > 0 ? 0 : 2}
                             >
                                 <UpcomingAppointmentsCard
                                     appointments={
@@ -2613,6 +2914,84 @@ export const CoordinatorDashboard:
                         </Row>
                     </div>
                 )}
+
+                <Modal
+                    open={queriesModalOpen}
+                    title={`My Queries (${openQueries.length} open)`}
+                    footer={null}
+                    width={1100}
+                    onCancel={() => setQueriesModalOpen(false)}
+                    destroyOnClose
+                >
+                                        <Table
+                                            size='small'
+                                            rowKey='id'
+                                            dataSource={
+                                                openQueries
+                                            }
+                                            columns={
+                                                queryColumns as any
+                                            }
+                                            pagination={
+                                                openQueries.length >
+                                                    3
+                                                    ? {
+                                                        pageSize:
+                                                            3,
+
+                                                        showSizeChanger:
+                                                            false,
+
+                                                        position:
+                                                            [
+                                                                'bottomCenter'
+                                                            ]
+                                                    }
+                                                    : false
+                                            }
+                                            scroll={{
+                                                x:
+                                                    1050
+                                            }}
+                                            locale={{
+                                                emptyText:
+                                                    <Empty description='No queries' />
+                                            }}
+                                        />
+                </Modal>
+
+                <InterventionCompletionModal
+                    target={completionTarget}
+                    user={
+                        user
+                            ? {
+                                uid: user.uid || user.id,
+                                name: user.name || user.displayName,
+                                email: user.email,
+                                departmentName: user.departmentName
+                            }
+                            : null
+                    }
+                    onClose={() => setCompletionTarget(null)}
+                    onCompleted={ids => {
+                        setCompletionTarget(null)
+
+                        setAllInterventions(previous =>
+                            previous.map(row =>
+                                ids.includes(row.id)
+                                    ? {
+                                        ...row,
+                                        lifecycle: 'completed',
+                                        raw: {
+                                            ...row.raw,
+                                            assigneeCompletionStatus: 'completed'
+                                        }
+                                    }
+                                    : row
+                            )
+                        )
+                    }}
+                />
 
                 <ResolveQueryModal
                     open={
