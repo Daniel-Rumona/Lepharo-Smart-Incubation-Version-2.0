@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.academyCoach = exports.academyAction = exports.lphWhatsAppGateway = exports.onInquiryCreatedNotifyStaff = exports.adminResetUserPassword = exports.createPlatformUser = exports.healthCheck = exports.googleOAuthCallback = exports.googleOAuthStart = exports.deleteUserCascade = exports.repairMissingInterventionRecords = exports.resendWelcomeEmail = exports.setEmployeeAccountStatus = exports.updateUserEmailCascade = exports.listAuthUsers = void 0;
+exports.academyCoach = exports.academyAction = exports.lphWhatsAppGateway = exports.onInquiryCreatedNotifyStaff = exports.recalculateDigitalTwin = exports.digitalTwinNightly = exports.adminResetUserPassword = exports.createPlatformUser = exports.healthCheck = exports.googleOAuthCallback = exports.googleOAuthStart = exports.deleteUserCascade = exports.repairMissingInterventionRecords = exports.resendWelcomeEmail = exports.setEmployeeAccountStatus = exports.updateUserEmailCascade = exports.listAuthUsers = void 0;
 __exportStar(require("./emailFunctions"), exports);
 __exportStar(require("./inquiryReferral"), exports);
 var adminTools_1 = require("./adminTools");
@@ -39,6 +39,9 @@ __exportStar(require("./syncCoordinatorPrograms"), exports);
 __exportStar(require("./complianceExpiry"), exports);
 __exportStar(require("./kpiReminders"), exports);
 __exportStar(require("./revenueMetricsSync"), exports);
+var digitalTwin_1 = require("./digitalTwin");
+Object.defineProperty(exports, "digitalTwinNightly", { enumerable: true, get: function () { return digitalTwin_1.digitalTwinNightly; } });
+Object.defineProperty(exports, "recalculateDigitalTwin", { enumerable: true, get: function () { return digitalTwin_1.recalculateDigitalTwin; } });
 __exportStar(require("./workflowQueryReminders"), exports);
 __exportStar(require("./movValidationReminders"), exports);
 __exportStar(require("./governanceMeetingReminders"), exports);

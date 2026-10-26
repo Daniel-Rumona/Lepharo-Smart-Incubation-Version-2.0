@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
     Avatar,
+    Button,
     Empty,
     Pagination,
     Progress,
@@ -14,9 +15,13 @@ import {
 import {
     ArrowRightOutlined,
     ClockCircleOutlined,
+    DeploymentUnitOutlined,
     ShopOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { useNavigate } from 'react-router-dom'
+
+import { SAMPLE_TWIN_ID } from '@/services/digitalTwinService'
 
 import {
     getRiskDriversForRow
@@ -127,6 +132,7 @@ export default function RegisterTable({
     onViewRow
 }: Props) {
     const { token } = theme.useToken()
+    const navigate = useNavigate()
     const [page, setPage] = useState(1)
 
     useEffect(() => {
@@ -176,7 +182,14 @@ export default function RegisterTable({
             <Empty
                 style={{ padding: '42px 16px' }}
                 description="No SMEs found for this risk view"
-            />
+            >
+                <Button
+                    icon={<DeploymentUnitOutlined />}
+                    onClick={() => navigate(`/twin/${SAMPLE_TWIN_ID}`)}
+                >
+                    Preview digital twin with sample data
+                </Button>
+            </Empty>
         )
     }
 

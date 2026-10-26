@@ -1,10 +1,18 @@
 import * as logger from "firebase-functions/logger";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { admin, db } from "./firebase";
+import { resolveAssignmentLifecycle } from "./twin/lifecycle";
 
-async function getApplicationForParticipant(participantId: string) {
+// The summary belongs on the application for the assignment's programme. An SME
+// can hold applications for several programmes, so only fall back to their
+// accepted (then first) application when the assignment carries no programme.
+async function getApplicationForParticipant(participantId: string, programId?: string) {
   const snap = await db.collection("applications").where("participantId", "==", participantId).get();
   if (snap.empty) return null;
+  const wantedProgram = String(programId || "").trim();
+  if (wantedProgram) {
+    return snap.docs.find((d) => String((d.data() as any).programId || "").trim() === wantedProgram) || null;
+  }
   const accepted =
     snap.docs.find(
       (d) =>
@@ -159,7 +167,7 @@ export const syncAssignedInterventionsDenorm = onDocumentWritten(
       return;
     }
 
-    const appDoc = await getApplicationForParticipant(a.participantId);
+    const appDoc = await getApplicationForParticipant(a.participantId, a.programId);
     if (!appDoc) {
       logger.warn(
         `No application found for participant ${a.participantId} (assignedInterventions/${assignedInterventionId})`
@@ -178,13 +186,12 @@ export const syncAssignedInterventionsDenorm = onDocumentWritten(
       ? [...interventions.completed]
       : [];
 
-    const assigneeAccepted = String(a.assigneeAcceptanceStatus || "").toLowerCase() === "accepted";
-    const userAccepted = String(a.participantAcceptanceStatus || "").toLowerCase() === "accepted";
-    const assigneeCompleted = String(a.assigneeCompletionStatus || "").toLowerCase() === "completed";
-    const userConfirmed = String(a.participantCompletionStatus || "").toLowerCase() === "confirmed";
-
-    const shouldBeAssigned = assigneeAccepted && userAccepted;
-    const shouldBeCompleted = assigneeCompleted && userConfirmed;
+    // Completed and accepted mean exactly what the web app and the digital twin
+    // mean by them: the shared assignment lifecycle decides.
+    const lifecycle = resolveAssignmentLifecycle(a);
+    const shouldBeAssigned =
+      lifecycle.assigneeAcceptance === "accepted" && lifecycle.participantAcceptance === "accepted";
+    const shouldBeCompleted = lifecycle.isCompleted;
 
     const base = {
       assignedInterventionId,

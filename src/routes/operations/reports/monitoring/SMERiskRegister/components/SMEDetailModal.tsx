@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+    Button,
     Col,
     Modal,
     Progress,
@@ -12,6 +13,7 @@ import {
 import {
     ApartmentOutlined,
     ClockCircleOutlined,
+    DeploymentUnitOutlined,
     FileDoneOutlined,
     FileProtectOutlined,
     HistoryOutlined,
@@ -21,6 +23,7 @@ import {
     ShopOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { useNavigate } from 'react-router-dom'
 
 import type {
     BounceStatus,
@@ -123,6 +126,7 @@ export default function SMEDetailModal({
     getBounceStatus
 }: Props) {
     const { token } = theme.useToken()
+    const navigate = useNavigate()
     const [section, setSection] = useState<Section>('overview')
 
     useEffect(() => {
@@ -324,6 +328,16 @@ export default function SMEDetailModal({
                         {row.ownerName || 'Owner not recorded'}
                     </Text>
                 </div>
+
+                {row.applicationId && (
+                    <Button
+                        icon={<DeploymentUnitOutlined />}
+                        onClick={() => navigate(`/twin/${row.applicationId}`)}
+                        style={{ flex: '0 0 auto' }}
+                    >
+                        Open digital twin
+                    </Button>
+                )}
             </div>
 
             <div

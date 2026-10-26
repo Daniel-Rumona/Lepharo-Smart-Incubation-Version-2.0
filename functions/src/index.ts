@@ -25,6 +25,7 @@ export * from "./syncCoordinatorPrograms";
 export * from "./complianceExpiry";
 export * from "./kpiReminders";
 export * from "./revenueMetricsSync";
+export { digitalTwinNightly, recalculateDigitalTwin } from "./digitalTwin";
 export * from "./workflowQueryReminders";
 export * from "./movValidationReminders";
 export * from "./governanceMeetingReminders";

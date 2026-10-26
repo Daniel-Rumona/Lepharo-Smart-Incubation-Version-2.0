@@ -1,6 +1,28 @@
 import type { CSSProperties } from 'react'
-import { Timestamp } from 'firebase/firestore'
-import dayjs from 'dayjs'
+import {
+    normalizeText,
+    normalizeLower,
+    firstNonEmpty,
+    toDate,
+    getParticipantId,
+    getEmail,
+    normalizeDepartmentName,
+    getInterventionDepartmentKey,
+    getBestInterventionDate,
+    getInterventionTitle,
+    isConfirmedValue,
+    isDeptConfirmedForDp,
+    isSmmeConfirmedForDp,
+    getRiskLevel,
+    getDepartmentDocForKey,
+    isInterventionsDepartment,
+    isDpInterventionDepartment,
+    getEligibleDpInterventions,
+    departmentMatchesScope,
+    computeRiskScore,
+    deriveDeliveryCoverage,
+    needsAttentionInputs
+} from '@twin/rules'
 
 import type {
     AnyDoc,
@@ -18,6 +40,31 @@ import type {
     ServiceRecencyFilter,
     SMERow
 } from './types'
+
+// Shared with the digital twin (functions/src/twin/rules.ts): one implementation of
+// these helpers and of the needs-attention score for the register and the twin.
+export {
+    normalizeText,
+    normalizeLower,
+    firstNonEmpty,
+    toDate,
+    getParticipantId,
+    getEmail,
+    normalizeDepartmentName,
+    getInterventionDepartmentKey,
+    getBestInterventionDate,
+    getInterventionTitle,
+    isConfirmedValue,
+    isDeptConfirmedForDp,
+    isSmmeConfirmedForDp,
+    getRiskLevel,
+    getDepartmentDocForKey,
+    isInterventionsDepartment,
+    isDpInterventionDepartment,
+    getEligibleDpInterventions,
+    departmentMatchesScope,
+    computeRiskScore
+}
 
 export const DOC_REQUIRED_KEYS = [
     'companyProfile',
@@ -59,55 +106,8 @@ export const INACTIVITY_TAG_COLORS: Record<InactivityBucket, string> = {
 export const SEMANTIC_DANGER_COLOR = '#a8071a'
 export const SEMANTIC_SUCCESS_COLOR = '#389e0d'
 
-export function normalizeText(value: any): string {
-    return String(value ?? '').trim()
-}
-
-export function normalizeLower(value: any): string {
-    return normalizeText(value).toLowerCase()
-}
-
-export function firstNonEmpty(...values: any[]): any {
-    for (const value of values) {
-        if (value === 0) return value
-        if (value === false) return value
-        if (value !== undefined && value !== null && String(value).trim() !== '') {
-            return value
-        }
-    }
-    return undefined
-}
-
-export function toDate(value: any): Date | null {
-    if (!value) return null
-    if (value instanceof Date) return value
-    if (typeof value?.toDate === 'function') return value.toDate()
-    if (value instanceof Timestamp) return value.toDate()
-    if (typeof value === 'string' || typeof value === 'number') {
-        const d = new Date(value)
-        return Number.isNaN(d.getTime()) ? null : d
-    }
-    if (typeof value === 'object' && typeof value.seconds === 'number') {
-        return new Date(value.seconds * 1000)
-    }
-    return null
-}
-
 export function uniqueStrings(values: string[]): string[] {
     return [...new Set(values.map(v => normalizeText(v)).filter(Boolean))]
-}
-
-export function getParticipantId(doc: AnyDoc): string {
-    return (
-        firstNonEmpty(
-            doc.participantId,
-            doc.participantID,
-            doc.incubateeId,
-            doc.smeId,
-            doc.userId,
-            doc.id
-        ) ?? ''
-    )
 }
 
 export function getApplicationId(doc: AnyDoc): string | undefined {
@@ -131,19 +131,6 @@ export function getOwnerName(participant?: AnyDoc): string | undefined {
 export function getGroup(application?: AnyDoc): string | undefined {
     const value = firstNonEmpty(application?.gapGroup, application?.group, application?.complianceGroup)
     return value ? String(value) : undefined
-}
-
-export function getEmail(doc?: AnyDoc): string | undefined {
-    if (!doc) return undefined
-    const value = firstNonEmpty(
-        doc.email,
-        doc.applicantEmail,
-        doc.ownerEmail,
-        doc.contactEmail,
-        doc.userEmail,
-        doc?.contactInfo?.email
-    )
-    return value ? String(value).trim().toLowerCase() : undefined
 }
 
 export function isInternalQuantilytixEmail(email?: string): boolean {
@@ -180,107 +167,6 @@ export function getInterventionParticipantId(doc: AnyDoc): string {
             doc.clientId
         ) ?? ''
     )
-}
-
-export function normalizeDepartmentName(value: any): string {
-    const raw = normalizeText(value)
-    if (!raw) return ''
-
-    const lower = raw.toLowerCase()
-
-    if (lower === 'rom' || lower.includes('recruitment') || lower.includes('onboarding')) {
-        return 'ROM'
-    }
-
-    if (lower.includes('hse') || lower.includes('labour')) {
-        return 'HSE & Labour Compliance'
-    }
-
-    if (lower.includes('financial')) {
-        return 'Financial Compliance'
-    }
-
-    if (lower === 'pds' || lower.includes('personal development')) {
-        return 'PDS'
-    }
-
-    /*
-     * IMPORTANT:
-     * Marketing must be checked before Market Linkages.
-     *
-     * `marketing` contains the substring `market`, so the previous
-     * `lower.includes('market')` check incorrectly normalised
-     * "Marketing and Communication" to "Market Linkages".
-     */
-    if (
-        lower.includes('marketing') ||
-        lower.includes('marketing and communication') ||
-        lower.includes('marketing & communication') ||
-        lower === 'communication' ||
-        lower === 'communications'
-    ) {
-        return 'Marketing and Communication'
-    }
-
-    if (
-        lower === 'market' ||
-        lower === 'market linkage' ||
-        lower === 'market linkages' ||
-        lower.includes('market linkage')
-    ) {
-        return 'Market Linkages'
-    }
-
-    if (lower.includes('legal')) {
-        return 'Legal Advisory Services'
-    }
-
-    if (lower.includes('wellness')) {
-        return 'Wellness Services'
-    }
-
-    if (lower.includes('training') || lower.includes('academy')) {
-        return 'Training Academy'
-    }
-
-    return raw
-}
-
-export function getInterventionDepartmentKey(
-    iv: AnyDoc,
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
-) {
-    const rawDepartmentId = normalizeText(iv?.departmentId)
-    const rawArea = normalizeDepartmentName(firstNonEmpty(iv?.area, iv?.areaOfSupport, iv?.departmentName, iv?.department))
-
-    if (rawDepartmentId && departmentsById[rawDepartmentId]) {
-        const dep = departmentsById[rawDepartmentId]
-        return {
-            departmentId: String(dep.id),
-            departmentName: normalizeDepartmentName(dep.name || rawArea || 'Unknown Department')
-        }
-    }
-
-    if (rawArea) {
-        const dep = departmentsByName[rawArea.toLowerCase()]
-        if (dep) {
-            return {
-                departmentId: String(dep.id),
-                departmentName: normalizeDepartmentName(dep.name || rawArea)
-            }
-        }
-
-        return {
-            departmentId: rawArea,
-            departmentName: rawArea
-        }
-    }
-
-    return {
-        departmentId: 'unknown',
-        departmentName: 'Unknown Department'
-    }
 }
 
 export function getInterventionStatus(doc: AnyDoc): string {
@@ -401,36 +287,6 @@ export function getInterventionBottleneck(doc: AnyDoc): string {
     return '-'
 }
 
-export function getBestInterventionDate(doc: AnyDoc): Date | null {
-    return (
-        toDate(
-            firstNonEmpty(
-                doc.completedAt,
-                doc.interventionDate,
-                doc.executionDate,
-                doc.engagementDate,
-                doc.attendanceDate,
-                doc.date,
-                doc.updatedAt,
-                doc.createdAt
-            )
-        ) ?? null
-    )
-}
-
-export function getInterventionTitle(doc: AnyDoc): string {
-    return String(
-        firstNonEmpty(
-            doc.interventionTitle,
-            doc.title,
-            doc.serviceTitle,
-            doc.activityTitle,
-            doc.interventionName,
-            'Untitled intervention'
-        )
-    )
-}
-
 export function getComputedProgress(doc: AnyDoc): number {
     const value = Number(doc?.computedProgress ?? 0)
     return Number.isFinite(value) ? value : 0
@@ -496,41 +352,6 @@ export function evaluateInterventionState(doc: AnyDoc) {
         awaitingSMECompletion,
         otherPending
     }
-}
-
-export function isConfirmedValue(v: any): boolean {
-    if (v === true) return true
-    if (v && typeof v === 'object') return v.confirmed === true
-    return false
-}
-
-export function isDeptConfirmedForDp(dp: AnyDoc, deptId?: string, deptName?: string): boolean {
-    const id = String(deptId || '').trim()
-    const name = String(deptName || '').trim()
-
-    const deptValById = id ? dp?.confirmedByDeptId?.[id] : undefined
-    const deptValByName = name ? dp?.confirmed?.[name] : undefined
-
-    return isConfirmedValue(deptValById) || isConfirmedValue(deptValByName)
-}
-
-export function isSmmeConfirmedForDp(dp: AnyDoc, deptId?: string, deptName?: string): boolean {
-    const id = String(deptId || '').trim()
-    const name = String(deptName || '').trim()
-
-    const smmeConfirmed =
-        (!!id && isConfirmedValue(firstNonEmpty(
-            dp?.smmeConfirmedByDeptId?.[id],
-            dp?.incubateeDepartmentConfirmationsByDeptId?.[id]
-        ))) ||
-        (!!name && isConfirmedValue(firstNonEmpty(
-            dp?.smmeConfirmedByDept?.[name],
-            dp?.incubateeConfirmedByDept?.[name],
-            dp?.incubateeDepartmentConfirmations?.[name],
-            dp?.smmeConfirmedMap?.[name]
-        )))
-
-    return smmeConfirmed
 }
 
 export function parseComplianceDocuments(application: AnyDoc): {
@@ -639,13 +460,6 @@ export function getUserId(doc?: AnyDoc): string | undefined {
     return value ? String(value).trim() : undefined
 }
 
-export function getRiskLevel(score: number): RiskLevel {
-    if (score >= 75) return 'Critical'
-    if (score >= 50) return 'High'
-    if (score >= 25) return 'Medium'
-    return 'Low'
-}
-
 export function getRiskRowStyle(level: RiskLevel): CSSProperties {
     return { backgroundColor: RISK_ROW_BACKGROUND[level] }
 }
@@ -712,49 +526,6 @@ export function getSystemAccessInfo(application?: AnyDoc, participant?: AnyDoc, 
             application?.hasSignedIn === true,
         lastSystemAccessDate
     }
-}
-
-export function getDepartmentDocForKey(
-    dep: { departmentId: string; departmentName: string },
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
-): AnyDoc | undefined {
-    return departmentsById[dep.departmentId] || departmentsByName[dep.departmentName.toLowerCase()]
-}
-
-export function isInterventionsDepartment(depDoc?: AnyDoc): boolean {
-    return depDoc?.interventionsDepartment === true
-}
-
-export function isDpInterventionDepartment(
-    iv: AnyDoc,
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
-): boolean {
-    const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
-    return isInterventionsDepartment(getDepartmentDocForKey(dep, departmentsById, departmentsByName))
-}
-
-export function getEligibleDpInterventions(
-    interventions: AnyDoc[],
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
-) {
-    return interventions.filter(iv => isDpInterventionDepartment(iv, departmentsById, departmentsByName))
-}
-
-export function departmentMatchesScope(
-    dep: { departmentId: string; departmentName: string },
-    scope?: { departmentId?: string; departmentName?: string }
-) {
-    if (!scope?.departmentId && !scope?.departmentName) return true
-
-    const depId = normalizeLower(dep.departmentId)
-    const depName = normalizeLower(dep.departmentName)
-    const scopeId = normalizeLower(scope.departmentId)
-    const scopeName = normalizeLower(scope.departmentName)
-
-    return (!!scopeId && depId === scopeId) || (!!scopeName && depName === scopeName)
 }
 
 export function hasActiveWarnings(row: SMERow) {
@@ -850,106 +621,6 @@ export function getBounceStatus(emailSuppressions: BounceStatus[], participantId
     return emailSuppressions.find(entry => String(entry.participantId || '') === String(participantId))
 }
 
-// Named weights for the risk formula (previously inline magic numbers). Values are
-// unchanged from the original implementation -- this is a rename/extraction, not a
-// re-tuning. Exported so computeRiskScore can also be driven by a hypothetical
-// (what-if) RiskScoreInputs object for the simulation panel.
-const RISK_SCORE_WEIGHTS = {
-    neverReceivedService: 85,
-    unknownLastService: 70,
-    inactive6Months: 80,
-    inactive3Months: 65,
-    inactive1Month: 45,
-    recentlyServiced: 15,
-    missingDocPerItem: 4,
-    missingDocCap: 12,
-    queriedDocPerItem: 3,
-    queriedDocCap: 9,
-    rejectedDocPerItem: 4,
-    rejectedDocCap: 12,
-    missingDeptPerItem: 5,
-    missingDeptCap: 15,
-    unresponsivePerItem: 8,
-    unresponsiveCap: 24,
-    unresponsiveThresholdCount: 3,
-    unresponsiveThresholdFloor: 85,
-    repeatDeclinePenalty: 8,
-    repeatDeclineThreshold: 2
-} as const
-
-export function computeRiskScore(input: RiskScoreInputs): RiskScoreResult {
-    const breakdown: { label: string; delta: number }[] = []
-    let score: number
-
-    if (input.hasNeverReceivedService) {
-        score = RISK_SCORE_WEIGHTS.neverReceivedService
-        breakdown.push({ label: 'Never received an expected service', delta: score })
-    } else if (input.daysSinceLastService === null) {
-        score = RISK_SCORE_WEIGHTS.unknownLastService
-        breakdown.push({ label: 'Last service date unknown', delta: score })
-    } else if (input.daysSinceLastService >= 180) {
-        score = RISK_SCORE_WEIGHTS.inactive6Months
-        breakdown.push({ label: 'No service in 6+ months', delta: score })
-    } else if (input.daysSinceLastService >= 90) {
-        score = RISK_SCORE_WEIGHTS.inactive3Months
-        breakdown.push({ label: 'No service in 3+ months', delta: score })
-    } else if (input.daysSinceLastService >= 30) {
-        score = RISK_SCORE_WEIGHTS.inactive1Month
-        breakdown.push({ label: 'No service in 1+ month', delta: score })
-    } else {
-        score = RISK_SCORE_WEIGHTS.recentlyServiced
-        breakdown.push({ label: 'Recently serviced', delta: score })
-    }
-
-    const missingDocsDelta = Math.min(input.docsMissing * RISK_SCORE_WEIGHTS.missingDocPerItem, RISK_SCORE_WEIGHTS.missingDocCap)
-    if (missingDocsDelta > 0) {
-        score += missingDocsDelta
-        breakdown.push({ label: `${input.docsMissing} missing document(s)`, delta: missingDocsDelta })
-    }
-
-    const queriedDocsDelta = Math.min(input.docsQueried * RISK_SCORE_WEIGHTS.queriedDocPerItem, RISK_SCORE_WEIGHTS.queriedDocCap)
-    if (queriedDocsDelta > 0) {
-        score += queriedDocsDelta
-        breakdown.push({ label: `${input.docsQueried} queried document(s)`, delta: queriedDocsDelta })
-    }
-
-    const rejectedDocsDelta = Math.min(input.docsRejected * RISK_SCORE_WEIGHTS.rejectedDocPerItem, RISK_SCORE_WEIGHTS.rejectedDocCap)
-    if (rejectedDocsDelta > 0) {
-        score += rejectedDocsDelta
-        breakdown.push({ label: `${input.docsRejected} rejected document(s)`, delta: rejectedDocsDelta })
-    }
-
-    const missingDeptDelta = Math.min(input.missingDepartmentsCount * RISK_SCORE_WEIGHTS.missingDeptPerItem, RISK_SCORE_WEIGHTS.missingDeptCap)
-    if (missingDeptDelta > 0) {
-        score += missingDeptDelta
-        breakdown.push({ label: `${input.missingDepartmentsCount} department(s) needing follow-up`, delta: missingDeptDelta })
-    }
-
-    const unresponsiveCount = input.smePendingAcceptanceCount + input.smePendingConfirmationCount
-    const unresponsiveDelta = Math.min(unresponsiveCount * RISK_SCORE_WEIGHTS.unresponsivePerItem, RISK_SCORE_WEIGHTS.unresponsiveCap)
-    if (unresponsiveDelta > 0) {
-        score += unresponsiveDelta
-        breakdown.push({ label: `${unresponsiveCount} intervention(s) awaiting SME response`, delta: unresponsiveDelta })
-    }
-
-    if (unresponsiveCount >= RISK_SCORE_WEIGHTS.unresponsiveThresholdCount && score < RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor) {
-        breakdown.push({ label: 'SME responsiveness threshold reached', delta: RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor - score })
-        score = RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor
-    }
-
-    if (input.declinedTouches >= RISK_SCORE_WEIGHTS.repeatDeclineThreshold) {
-        score += RISK_SCORE_WEIGHTS.repeatDeclinePenalty
-        breakdown.push({ label: `${input.declinedTouches} declined intervention(s)`, delta: RISK_SCORE_WEIGHTS.repeatDeclinePenalty })
-    }
-
-    if (score > 100) {
-        breakdown.push({ label: 'Capped at 100', delta: 100 - score })
-        score = 100
-    }
-
-    return { score, level: getRiskLevel(score), breakdown }
-}
-
 
 export function getRiskDriversForRow(row: SMERow): Array<{
     key: string
@@ -998,92 +669,23 @@ export function buildRow(args: {
     const participantId = getParticipantId(application ?? participant ?? {})
     const applicationId = getApplicationId(application ?? participant ?? {})
     const docs = parseComplianceDocuments(application ?? {})
-    const today = dayjs()
-    const diagnosticPlanDoc = diagnosticPlan || {}
-
-    const dpInterventions = Array.isArray(diagnosticPlanDoc.interventions)
-        ? diagnosticPlanDoc.interventions
-        : []
-    const eligibleDpInterventions = getEligibleDpInterventions(dpInterventions, departmentsById, departmentsByName)
-        .filter((iv: AnyDoc) => {
-            const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
-            return departmentMatchesScope(dep, scopedDepartment)
-        })
     const accessInfo = getSystemAccessInfo(application, participant, sessions)
 
-    const expectedMap = new Map<string, DepartmentSummary>()
-    let smePendingAcceptanceCount = 0
-    let smePendingConfirmationCount = 0
-    const responsivenessRiskDepartmentSet = new Set<string>()
-
-    eligibleDpInterventions.forEach((iv: AnyDoc) => {
-        const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
-        const deptConfirmed = isDeptConfirmedForDp(diagnosticPlanDoc, dep.departmentId, dep.departmentName)
-        const smmeConfirmed = isSmmeConfirmedForDp(diagnosticPlanDoc, dep.departmentId, dep.departmentName)
-
-        if (!expectedMap.has(dep.departmentId)) {
-            expectedMap.set(dep.departmentId, {
-                departmentId: dep.departmentId,
-                departmentName: dep.departmentName,
-                deptConfirmed,
-                smmeConfirmed,
-                expectedInterventionIds: [],
-                expectedInterventionTitles: [],
-                servicedCount: 0,
-                completedCount: 0,
-                pendingCount: 0,
-                declinedCount: 0,
-                latestServiceDate: null,
-                actions: []
-            })
-        }
-
-        const entry = expectedMap.get(dep.departmentId)!
-        entry.deptConfirmed = entry.deptConfirmed || deptConfirmed
-        entry.smmeConfirmed = entry.smmeConfirmed || smmeConfirmed
-        const ivId = normalizeText(iv?.id)
-        const ivTitle = getInterventionTitle(iv)
-
-        if (ivId && !entry.expectedInterventionIds.includes(ivId)) {
-            entry.expectedInterventionIds.push(ivId)
-        }
-        if (ivTitle && !entry.expectedInterventionTitles.includes(ivTitle)) {
-            entry.expectedInterventionTitles.push(ivTitle)
-        }
+    // Coverage comes from the shared twin rules, so the register and the digital
+    // twin count completed, declined and waiting-on-SME the same way: through
+    // resolveAssignmentLifecycle, not a separate set of status checks.
+    const coverage = deriveDeliveryCoverage({
+        diagnosticPlan,
+        assignments,
+        departmentsById,
+        departmentsByName,
+        scope: scopedDepartment
     })
 
-    assignments.forEach((assignment: AnyDoc) => {
-        const dep = getInterventionDepartmentKey(assignment, departmentsById, departmentsByName)
-        if (!departmentMatchesScope(dep, scopedDepartment)) return
-
-        const entry = expectedMap.get(dep.departmentId)
-
-        if (!entry) return
-
-        const state = evaluateInterventionState(assignment)
-        const status = getInterventionStatus(assignment)
-        const date = getBestInterventionDate(assignment)
-
-        entry.servicedCount += 1
-        if (state.isCompleted || isCompletedStatus(status)) entry.completedCount += 1
-        else if (state.isDeclined || isDeclinedStatus(status)) entry.declinedCount += 1
-        else entry.pendingCount += 1
-
-        if (state.awaitingSMEAcceptance) {
-            smePendingAcceptanceCount += 1
-            responsivenessRiskDepartmentSet.add(dep.departmentName)
-        }
-
-        if (state.awaitingSMECompletion) {
-            smePendingConfirmationCount += 1
-            responsivenessRiskDepartmentSet.add(dep.departmentName)
-        }
-
-        if (!entry.latestServiceDate || (date && date.getTime() > entry.latestServiceDate.getTime())) {
-            entry.latestServiceDate = date
-        }
-
-        entry.actions.push({
+    const actionsByDepartment = new Map<string, DepartmentAction[]>()
+    coverage.matchedAssignments.forEach(({ assignment, departmentId }) => {
+        const actions = actionsByDepartment.get(departmentId) ?? []
+        actions.push({
             assignmentId: String(assignment.id),
             interventionId: normalizeText(assignment?.interventionId) || undefined,
             title: getInterventionTitle(assignment),
@@ -1091,21 +693,20 @@ export function buildRow(args: {
             bottleneck: getInterventionBottleneck(assignment),
             cycleKey: assignment?.cycleKey || null,
             consultantName: normalizeText(assignment?.assigneeName) || undefined,
-            date,
+            date: getBestInterventionDate(assignment),
             progress: getComputedProgress(assignment)
         })
+        actionsByDepartment.set(departmentId, actions)
     })
 
-    const expectedDepartments = [...expectedMap.values()]
-        .map(item => ({
-            ...item,
-            actions: [...item.actions].sort((a, b) => {
-                const at = a.date ? a.date.getTime() : 0
-                const bt = b.date ? b.date.getTime() : 0
-                return bt - at
-            })
-        }))
-        .sort((a, b) => a.departmentName.localeCompare(b.departmentName))
+    const expectedDepartments: DepartmentSummary[] = coverage.expectedDepartments.map(item => ({
+        ...item,
+        actions: [...(actionsByDepartment.get(item.departmentId) ?? [])].sort((a, b) => {
+            const at = a.date ? a.date.getTime() : 0
+            const bt = b.date ? b.date.getTime() : 0
+            return bt - at
+        })
+    }))
 
     const servicedDepartments = expectedDepartments.filter(item => item.servicedCount > 0)
     const missingDepartments = expectedDepartments.filter(
@@ -1113,42 +714,26 @@ export function buildRow(args: {
     )
     const fullyConfirmedDepartments = expectedDepartments.filter(item => item.deptConfirmed && item.smmeConfirmed)
 
-    const allActions = expectedDepartments.flatMap(item => item.actions)
-    const completedTouches = expectedDepartments.reduce((sum, item) => sum + item.completedCount, 0)
-    const pendingTouches = expectedDepartments.reduce((sum, item) => sum + item.pendingCount, 0)
-    const declinedTouches = expectedDepartments.reduce((sum, item) => sum + item.declinedCount, 0)
-    const totalTouches = expectedDepartments.reduce((sum, item) => sum + item.servicedCount, 0)
-    const totalExpectedInterventions = expectedDepartments.reduce((sum, item) => sum + item.expectedInterventionIds.length, 0)
-
-    const lastInterventionDate =
-        allActions
-            .map(action => action.date)
-            .filter(Boolean)
-            .sort((a, b) => (b!.getTime() - a!.getTime()))[0] ?? null
-
-    const daysSinceLastService =
-        lastInterventionDate ? today.diff(dayjs(lastInterventionDate), 'day') : null
-
-    const inactivityBucket = getInactivityBucket(daysSinceLastService)
-
-    const hasExpectedServices = fullyConfirmedDepartments.length > 0
-    const hasNeverReceivedService = hasExpectedServices && totalTouches === 0
-
-    const { score: riskScore, level: riskLevel, breakdown: riskBreakdown } = computeRiskScore({
-        daysSinceLastService,
-        hasNeverReceivedService,
-        docsMissing: docs.missing,
-        docsQueried: docs.queried,
-        docsRejected: docs.rejected,
-        missingDepartmentsCount: missingDepartments.length,
+    const {
         smePendingAcceptanceCount,
         smePendingConfirmationCount,
-        declinedTouches
-    })
+        completedTouches,
+        pendingTouches,
+        declinedTouches,
+        totalTouches,
+        totalExpectedInterventions,
+        lastInterventionDate,
+        eligiblePlanInterventionCount
+    } = coverage
+
+    const riskInputs = needsAttentionInputs(coverage, docs, new Date())
+    const { daysSinceLastService } = riskInputs
+    const inactivityBucket = getInactivityBucket(daysSinceLastService)
+    const { score: riskScore, level: riskLevel, breakdown: riskBreakdown } = computeRiskScore(riskInputs)
 
     const notes: string[] = []
     const noServiceReasons: string[] = []
-    const responsivenessRiskDepartments = [...responsivenessRiskDepartmentSet].filter(Boolean).sort()
+    const responsivenessRiskDepartments = coverage.responsivenessRiskDepartments
 
     if (docs.missing > 0) notes.push(`${docs.missing} missing document${docs.missing > 1 ? 's' : ''}`)
     if (docs.queried > 0) notes.push(`${docs.queried} queried document${docs.queried > 1 ? 's' : ''}`)
@@ -1166,7 +751,7 @@ export function buildRow(args: {
     if (!diagnosticPlan) {
         notes.push('No diagnostic plan linked')
         noServiceReasons.push('No diagnostic plan has been created or linked for this SME.')
-    } else if (eligibleDpInterventions.length === 0) {
+    } else if (eligiblePlanInterventionCount === 0) {
         notes.push('Diagnostic plan has no intervention department services')
         noServiceReasons.push('The diagnostic plan does not list services for departments marked as intervention departments.')
     } else if (fullyConfirmedDepartments.length === 0) {

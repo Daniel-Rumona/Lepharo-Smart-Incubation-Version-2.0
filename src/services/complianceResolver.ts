@@ -83,68 +83,9 @@ export type ResolvedComplianceStatus =
     | 'queried'
     | string
 
-const complianceDate = (value: any): Date | null => {
-    if (!value) return null
-    if (typeof value?.toDate === 'function') return value.toDate()
-    if (typeof value?.seconds === 'number') {
-        return new Date(value.seconds * 1000)
-    }
-    if (value instanceof Date) return value
-
-    const parsed = new Date(value)
-    return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
-export const resolveComplianceDocumentStatus = (
-    document: any,
-    effectiveExpiry?: unknown,
-    now = new Date(),
-    expiringSoonDays = COMPLIANCE_EXPIRING_SOON_DAYS
-): ResolvedComplianceStatus => {
-    const storedStatus = String(document?.status || 'pending')
-        .trim()
-        .toLowerCase()
-
-    if (storedStatus === 'missing') return 'missing'
-
-    const expiry = complianceDate(
-        effectiveExpiry ?? document?.expiryDate
-    )
-
-    if (expiry && expiry.getTime() < now.getTime()) {
-        return 'expired'
-    }
-
-    if (['invalid', 'rejected', 'queried'].includes(storedStatus)) {
-        return storedStatus
-    }
-
-    if (
-        ['valid', 'approved', 'verified', 'accepted'].includes(
-            storedStatus
-        )
-    ) {
-        if (
-            expiry &&
-            expiry.getTime() <=
-                now.getTime() +
-                    expiringSoonDays * 24 * 60 * 60 * 1000
-        ) {
-            return 'expiring-soon'
-        }
-
-        return 'valid'
-    }
-
-    return storedStatus
-}
-
-export const complianceStatusCountsAsCovered = (
-    status: unknown
-) =>
-    ['valid', 'expiring-soon', 'signed'].includes(
-        String(status || '').trim().toLowerCase()
-    )
+// Document status and coverage are shared with the digital twin
+// (functions/src/twin/rules.ts) so every compliance screen and the twin agree.
+export { resolveComplianceDocumentStatus, complianceStatusCountsAsCovered } from '@twin/rules'
 
 export const complianceStatusLabel = (status: unknown) => {
     const normalized = String(status || 'missing')

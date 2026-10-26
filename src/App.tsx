@@ -238,6 +238,7 @@ const Resources = lazy(() => import("./routes/resources"));
 const RespondSurvey = lazy(() => import("./components/surveys/response"));
 const RoadmapFlow = lazy(() => import("./routes/incubatee/roadmap"));
 const SMECoverageRegisterPage = lazy(() => import("./routes/operations/reports/monitoring/SMERiskRegister"));
+const DigitalTwinPage = lazy(() => import("./routes/twin"));
 const SMEOverview = lazy(() => import("./routes/shared/incubatees"));
 const SmeFeedbackPage = lazy(() => import("./routes/incubatee/feedback"));
 const StakeholderEngagementPage = lazy(() => import("./routes/operations/stakeholder"));
@@ -347,6 +348,15 @@ const App = () => {
                                                 shell stays on screen while the chunk loads. */}
                                             <Suspense fallback={<RouteFallback />}>
                                                 <Routes>
+                                                    {/* Full screen, outside the app layout; the page itself admits staff only. */}
+                                                    <Route
+                                                        path="twin/:applicationId"
+                                                        element={
+                                                            <Authenticated key="digital-twin" fallback={<CatchAllNavigate to="/" />}>
+                                                                <DigitalTwinPage />
+                                                            </Authenticated>
+                                                        }
+                                                    />
                                                     <Route
                                                         element={
                                                             <Authenticated fallback={<CatchAllNavigate to="/" />}>

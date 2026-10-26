@@ -1,3 +1,5 @@
+import type { RiskLevel } from '@twin/needsAttention'
+
 export type Props = {
     programId?: string
     parentPadding?: number
@@ -5,7 +7,8 @@ export type Props = {
 
 export type AnyDoc = Record<string, any>
 
-export type RiskLevel = 'Low' | 'Medium' | 'High' | 'Critical'
+// Score types are shared with the digital twin (functions/src/twin/needsAttention.ts).
+export type { RiskLevel, RiskScoreInputs, RiskScoreResult } from '@twin/needsAttention'
 export type InactivityBucket = 'Never Serviced' | '1 Month' | '3 Months' | '6 Months' | 'Recently Serviced'
 export type ServiceRecencyFilter = 'all' | 'one_month' | 'three_months' | 'six_months' | 'never_serviced'
 
@@ -119,24 +122,6 @@ export type SMERow = {
     noServiceReasons: string[]
     hasAccessedSystem: boolean
     lastSystemAccessDate: Date | null
-}
-
-export type RiskScoreInputs = {
-    daysSinceLastService: number | null
-    hasNeverReceivedService: boolean
-    docsMissing: number
-    docsQueried: number
-    docsRejected: number
-    missingDepartmentsCount: number
-    smePendingAcceptanceCount: number
-    smePendingConfirmationCount: number
-    declinedTouches: number
-}
-
-export type RiskScoreResult = {
-    score: number
-    level: RiskLevel
-    breakdown: { label: string; delta: number }[]
 }
 
 export type ReminderEmailLog = {

@@ -20,9 +20,9 @@ import dayjs from 'dayjs'
 import {
     getChallengeStatusColor,
     isOpenChallengeStatus,
-    normalizeText,
     toDate
 } from '../riskEngine'
+import { recommendNextAction } from '@twin/rules'
 import type {
     BounceStatus,
     CommunicationAttempt,
@@ -109,11 +109,6 @@ export default function RiskOutlookPanel({
 
     const latestEntry = timeline[0]
 
-    const suggestedAction = openChallenges
-        .flatMap(challenge => challenge.mitigationSteps || [])
-        .map(normalizeText)
-        .find(Boolean)
-
     const contactIsRecent =
         !!latestEntry?.date &&
         dayjs().diff(latestEntry.date, 'day') <= 14
@@ -127,89 +122,12 @@ export default function RiskOutlookPanel({
         )
     })
 
-    const recommendedAction = useMemo(() => {
-        // 1. Explicit mitigation recorded against an open challenge
-        if (suggestedAction) {
-            return suggestedAction
-        }
-
-        // 2. Department has not reviewed the DP
-        const pendingDepartmentReviews = row.expectedDepartments.filter(
-            department => !department.deptConfirmed
-        )
-
-        if (pendingDepartmentReviews.length > 0) {
-            const names = pendingDepartmentReviews
-                .map(department => department.departmentName)
-                .join(', ')
-
-            return pendingDepartmentReviews.length === 1
-                ? `Follow up with ${names} to review the Developmental Plan.`
-                : `Follow up with ${names} to review their Developmental Plan sections.`
-        }
-
-        // 3. Department reviewed, but SME has not confirmed
-        const pendingSmmeConfirmations = row.expectedDepartments.filter(
-            department =>
-                department.deptConfirmed &&
-                !department.smmeConfirmed
-        )
-
-        if (pendingSmmeConfirmations.length > 0) {
-            const names = pendingSmmeConfirmations
-                .map(department => department.departmentName)
-                .join(', ')
-
-            return pendingSmmeConfirmations.length === 1
-                ? `Remind the SME to confirm the Developmental Plan for ${names}.`
-                : `Remind the SME to confirm the Developmental Plans for ${names}.`
-        }
-
-        // 4. Services are approved but nothing has been delivered
-        if (
-            row.fullyConfirmedDepartmentsCount > 0 &&
-            row.totalTouches === 0
-        ) {
-            return `Schedule the first service intervention for the SME.`
-        }
-
-        // 5. An intervention is awaiting SME acceptance
-        if (row.smePendingAcceptanceCount > 0) {
-            return row.smePendingAcceptanceCount === 1
-                ? 'Follow up with the SME to accept the pending intervention.'
-                : `Follow up with the SME to accept ${row.smePendingAcceptanceCount} pending interventions.`
-        }
-
-        // 6. Completion is waiting for SME confirmation
-        if (row.smePendingConfirmationCount > 0) {
-            return row.smePendingConfirmationCount === 1
-                ? 'Follow up with the SME to confirm the completed intervention.'
-                : `Follow up with the SME to confirm ${row.smePendingConfirmationCount} completed interventions.`
-        }
-
-        // 7. Service inactivity
-        if ((row.daysSinceLastService ?? 0) >= 30) {
-            return `Schedule a follow-up service; the SME has not been serviced for ${row.daysSinceLastService} days.`
-        }
-
-        // 8. Declined service/intervention
-        if (row.declinedTouches > 0) {
-            return row.declinedTouches === 1
-                ? 'Review the declined intervention and agree on the next delivery step with the SME.'
-                : `Review the ${row.declinedTouches} declined interventions and agree on the next delivery steps with the SME.`
-        }
-
-        return 'Continue monitoring the SME’s service delivery progress.'
-    }, [
-        suggestedAction,
-        row.expectedDepartments,
-        row.fullyConfirmedDepartmentsCount,
-        row.totalTouches,
-        row.smePendingAcceptanceCount,
-        row.smePendingConfirmationCount,
-        row.daysSinceLastService,
-        row.declinedTouches
-    ])
+    // Shared with the digital twin (functions/src/twin/rules.ts) so both
+    // suggest the same next step for the same SME.
+    const recommendedAction = useMemo(
+        () => recommendNextAction(row, openChallenges),
+        [row, openChallenges]
+    )
 
     const outlookTrend =
         hasOverdueChallenge ||
