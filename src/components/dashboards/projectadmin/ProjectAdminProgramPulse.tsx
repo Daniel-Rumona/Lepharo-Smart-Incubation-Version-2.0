@@ -571,6 +571,16 @@ const getFinanceToken = async () => {
 export const loadProgramFinanceSeries = async (
     programId: string | null | undefined
 ) => {
+    // Without a current program there is no population to scope to, and the
+    // unscoped path would sum every SME the finance API knows about.
+    if (!programId) {
+        return {
+            series: [] as FinanceCompanySeries[],
+            failed: 0,
+            total: 0
+        }
+    }
+
     const token = await getFinanceToken()
 
     const [participantsSnap, applicationsSnap, membershipsResponse] =
@@ -718,12 +728,15 @@ const ProjectAdminProgramPulse: React.FC<Props> = ({
             setJobsError('')
 
             try {
-                const jobsQuery = programId
-                    ? query(
-                        collection(db, 'hseJobContracts'),
-                        where('programId', '==', programId)
-                    )
-                    : query(collection(db, 'hseJobContracts'))
+                if (!programId) {
+                    setJobContracts([])
+                    return
+                }
+
+                const jobsQuery = query(
+                    collection(db, 'hseJobContracts'),
+                    where('programId', '==', programId)
+                )
 
                 const snap = await getDocs(jobsQuery)
 

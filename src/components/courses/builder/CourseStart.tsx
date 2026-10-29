@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { Alert, App, Button, Checkbox, Dropdown, Input, Tag, Upload } from "antd";
+import { Alert, App, Button, Checkbox, Input, Tag, Upload } from "antd";
 import {
   ArrowLeftOutlined,
   DeleteOutlined,
-  DownOutlined,
   EditOutlined,
   FileTextOutlined,
   InboxOutlined,
@@ -18,7 +17,7 @@ import {
   draftOutline,
 } from "@/services/courseAiService";
 import { type SavedCourse, saveCourse } from "../courseStorage";
-import { KindIcon, kindOf, newItem, uid, useBuilderVars } from "./kinds";
+import { KindIcon, kindOf, newItem, uid } from "./kinds";
 import { AiMark, Crumbs, OptionCard, TopBar, Typewriter } from "./parts";
 import type { DraftJob } from "./CourseBuilder";
 
@@ -79,13 +78,11 @@ const formatMinutes = (total: number) =>
   total >= 60 ? `${Math.floor(total / 60)}h ${String(total % 60).padStart(2, "0")}m` : `${total} min`;
 
 export default function CourseStart() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const navigate = useNavigate();
   const { user } = useFullIdentity();
-  const vars = useBuilderVars();
 
   const [mode, setMode] = useState<Mode>("describe");
-  const [step, setStep] = useState<"choose" | "brief">("choose");
   const [phase, setPhase] = useState<"brief" | "review">("brief");
   const [topic, setTopic] = useState("");
   const [audience, setAudience] = useState("");
@@ -194,39 +191,18 @@ export default function CourseStart() {
     }
   }
 
-  const modeMenu = (
-    <Dropdown
-      trigger={["click"]}
-      menu={{
-        selectable: true,
-        selectedKeys: [mode],
-        items: (Object.keys(modes) as Mode[]).map((key) => ({
-          key,
-          icon: <span className="cb-menu-icon">{modes[key].icon}</span>,
-          label: (
-            <span className="cb-menu-label">
-              <strong>{modes[key].title}</strong>
-              <small>{modes[key].short}</small>
-            </span>
-          ),
-        })),
-        onClick: ({ key }) => setMode(key as Mode),
-      }}
-    >
-      <Button shape="round" className="cb-mode-trigger">
-        <span className="cb-menu-icon">{modes[mode].icon}</span>
-        <span className="cb-ellipsis">{modes[mode].title}</span>
-        <DownOutlined />
-      </Button>
-    </Dropdown>
-  );
-
   if (phase === "review" && outline) {
     const minutes = kept.reduce((sum, item) => sum + item.minutes, 0);
     const updateModule = (key: string, change: (m: ReviewModule) => ReviewModule) =>
       setOutline({ ...outline, modules: outline.modules.map((m) => (m.key === key ? change(m) : m)) });
     return (
-      <div className="cb-page" style={vars}>
+      <div className="cb-page">
+        <TopBar>
+          <Crumbs trail={["Training Academy", "Courses"]} current="New course" />
+          <Button type="text" shape="round" onClick={() => navigate(COURSES)}>
+            Cancel
+          </Button>
+        </TopBar>
         <div className="cb-review">
           <aside className="cb-panel cb-review-aside">
             <Button type="text" size="small" shape="round" icon={<ArrowLeftOutlined />} className="cb-back-link" onClick={() => setPhase("brief")}>
@@ -268,7 +244,21 @@ export default function CourseStart() {
             {outline.warnings.map((warning) => (
               <Alert key={warning} type="warning" showIcon message={warning} />
             ))}
-            <Button shape="round" icon={<AiMark />} loading={busy === "outline"} onClick={() => void requestOutline()}>
+            <Button
+              shape="round"
+              icon={<AiMark />}
+              loading={busy === "outline"}
+              onClick={() =>
+                modal.confirm({
+                  centered: true,
+                  title: "Draft a new outline?",
+                  content: "Any renaming and unticking you did here is replaced by the new draft.",
+                  okText: "Draft again",
+                  cancelText: "Keep this one",
+                  onOk: () => void requestOutline(),
+                })
+              }
+            >
               Draft again
             </Button>
           </aside>
@@ -346,62 +336,42 @@ export default function CourseStart() {
   }
 
   return (
-    <div className="cb-page" style={vars}>
+    <div className="cb-page">
       <TopBar>
-        {step === "brief" ? (
-          <>
-            <Button type="text" shape="round" icon={<ArrowLeftOutlined />} aria-label="Back to start options" onClick={() => setStep("choose")} />
-            <div className="cb-crumbs">{modeMenu}</div>
-          </>
-        ) : (
-          <>
-            <Crumbs trail={["Training Academy", "Courses"]} current="New course" />
-            <Button type="text" shape="round" onClick={() => navigate(COURSES)}>
-              Cancel
-            </Button>
-          </>
-        )}
+        <Crumbs trail={["Training Academy", "Courses"]} current="New course" />
+        <Button type="text" shape="round" onClick={() => navigate(COURSES)}>
+          Cancel
+        </Button>
       </TopBar>
 
       <div className="cb-start">
-        {step === "choose" && (
-          <div className="cb-choose-stage">
-            <div className="cb-start-head">
+        {(
+          <section className="cb-panel cb-brief">
+            <div className="cb-brief-title">
               <h1>Create a course</h1>
               <p>
                 <Typewriter text={INTRO_TEXT} />
               </p>
             </div>
-            <div className="cb-paths" role="radiogroup" aria-label="How to start">
-              {(Object.keys(modes) as Mode[]).map((key) => (
-                <OptionCard
-                  key={key}
-                  id={`start-mode-${key}`}
-                  size="large"
-                  ai={modes[key].ai}
-                  icon={modes[key].icon}
-                  title={modes[key].title}
-                  hint={modes[key].hint}
-                  selected={mode === key}
-                  onSelect={() => setMode(key)}
-                />
-              ))}
-            </div>
-            <div className="cb-choose-continue">
-              <Button type="primary" block size="large" shape="round" onClick={() => setStep("brief")}>
-                Continue
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {step === "brief" && (
-          <section className="cb-panel cb-brief">
-            <div className="cb-brief-title">
-              <h1>{modes[mode].title}</h1>
-              <p>
+            <div className="cb-field">
+              <span className="cb-label">How do you want to start?</span>
+              <div className="cb-opt-grid cb-start-modes" role="radiogroup" aria-label="How to start">
+                {(Object.keys(modes) as Mode[]).map((key) => (
+                  <OptionCard
+                    key={key}
+                    id={`start-mode-${key}`}
+                    ai={modes[key].ai}
+                    icon={modes[key].icon}
+                    title={modes[key].title}
+                    hint={modes[key].short}
+                    selected={mode === key}
+                    onSelect={() => setMode(key)}
+                  />
+                ))}
+              </div>
+              <small className="cb-muted">
                 <Typewriter key={mode} text={modes[mode].lead} />
-              </p>
+              </small>
             </div>
             {mode === "describe" && (
               <>
@@ -470,6 +440,7 @@ export default function CourseStart() {
               </div>
             )}
 
+            {mode !== "blank" && (
             <div className="cb-field">
               <span className="cb-label">Level</span>
               <div className="cb-opt-grid" role="radiogroup" aria-label="Level">
@@ -478,6 +449,7 @@ export default function CourseStart() {
                 ))}
               </div>
             </div>
+            )}
             {mode !== "blank" && (
               <>
                 <div className="cb-field">

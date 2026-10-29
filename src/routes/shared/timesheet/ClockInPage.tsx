@@ -48,6 +48,7 @@ import { useBranchOperatingHours } from '@/hooks/useBranchOperatingHours'
 import { BranchDayHours, LEGACY_SHIFT, getDayHours, plannedMinutes, lateMinutes, overtimeMinutes } from '@/utils/branchOperatingHours'
 import EmployeeAttendanceAnalytics from '@/components/attendance/EmployeeAttendanceAnalytics'
 import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import {
     CenterLocation,
     isCenterClockIn,
@@ -71,7 +72,6 @@ import {
 import AttendanceHeatmapCard from './AttendanceHeatmapCard'
 import AttendanceDensityCard from './AttendanceDensityCard'
 import './clock-in.css'
-import '@/styles/nav-segmented.css'
 
 dayjs.extend(quarterOfYear)
 
@@ -1203,7 +1203,6 @@ const ClockinPage = () => {
                             )}
 
                             <Segmented
-                                className='nav-pill-segmented'
                                 value={activeView}
                                 onChange={value =>
                                     setActiveView(
@@ -1239,49 +1238,48 @@ const ClockinPage = () => {
                 />
             ) : (
                 <>
-                    {branchSchedule.branchId && (
+                    {branchSchedule.error && (
                         <Alert
                             style={{ marginBottom: 16 }}
-                            type={branchSchedule.error ? 'error' : 'info'}
+                            type='error'
                             showIcon
-                            message={branchSchedule.error || `${branchSchedule.branchName || 'Branch'} hours today: ${todayHours.closed ? 'Closed' : `${todayHours.opens}–${todayHours.closes}`}`}
-                            description={branchSchedule.error ? 'Attendance changes are paused until the schedule loads.' :
-                                `${branchSchedule.configured ? 'Using your assigned branch operating hours.' : 'No custom branch hours set; using Mon–Fri 07:00–15:00.'} ${todayHours.closed ? 'Work recorded on closed days is submitted for overtime approval.' : 'Overtime after closing still requires approval.'}`}
-                            action={branchSchedule.error ? <Button onClick={branchSchedule.retry}>Retry</Button> : undefined}
+                            message={branchSchedule.error}
+                            description='Attendance changes are paused until the schedule loads.'
+                            action={<Button onClick={branchSchedule.retry}>Retry</Button>}
                         />
                     )}
                     <Row gutter={[16, 16]} className='timesheet-metrics'>
                         <Col xs={24} sm={12} xl={6}>
-                            <MotionCard.Metric
+                            <MetricTile
                                 icon={<ClockCircleOutlined />}
-                                iconBg='rgba(22,119,255,.12)'
+                                tone='info'
                                 title='Planned hours'
                                 value={branchSchedule.error ? 'Unavailable' : formatMinutes(filteredExpectedMinutes)}
                                 subtitle={`Days worked: ${filteredWorkedDaysCount}/${filteredExpectedDays}`}
                             />
                         </Col>
                         <Col xs={24} sm={12} xl={6}>
-                            <MotionCard.Metric
+                            <MetricTile
                                 icon={<CheckCircleOutlined />}
-                                iconBg='rgba(34,160,107,.12)'
+                                tone='success'
                                 title='Worked hours'
                                 value={formatMinutes(filteredWorkedMinutes)}
                                 subtitle='Recorded in selected period'
                             />
                         </Col>
                         <Col xs={24} sm={12} xl={6}>
-                            <MotionCard.Metric
+                            <MetricTile
                                 icon={<HourglassOutlined />}
-                                iconBg='rgba(250,173,20,.12)'
+                                tone='warning'
                                 title='Late in period'
                                 value={`${filteredLateMinutes}m`}
                                 subtitle='Accumulated late minutes'
                             />
                         </Col>
                         <Col xs={24} sm={12} xl={6}>
-                            <MotionCard.Metric
+                            <MetricTile
                                 icon={<ExclamationCircleOutlined />}
-                                iconBg='rgba(114,46,209,.12)'
+                                tone='info'
                                 title='Overtime'
                                 value={formatMinutes(filteredOvertimeMinutes)}
                                 subtitle='In the selected period'

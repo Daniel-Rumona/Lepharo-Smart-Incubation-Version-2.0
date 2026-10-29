@@ -35,6 +35,7 @@ import { auth, db } from '@/firebase'
 import { Helmet } from 'react-helmet'
 import { useNavigate } from 'react-router-dom'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import {
     guideTarget,
     usePageGuides,
@@ -279,7 +280,7 @@ const ApplicationTracker = () => {
             title: 'All Applications',
             value: statusCounts.Total,
             icon: <AppstoreOutlined />,
-            iconBg: 'rgba(22, 119, 255, 0.12)'
+            tone: 'accent' as const
         }
 
         const pendingMetric = {
@@ -287,7 +288,7 @@ const ApplicationTracker = () => {
             title: 'Pending',
             value: statusCounts.Pending,
             icon: <ClockCircleOutlined />,
-            iconBg: 'rgba(250, 173, 20, 0.14)'
+            tone: 'warning' as const
         }
 
         const rejectedMetric = {
@@ -295,7 +296,7 @@ const ApplicationTracker = () => {
             title: 'Rejected',
             value: statusCounts.Rejected,
             icon: <CloseCircleOutlined />,
-            iconBg: 'rgba(255, 77, 79, 0.12)'
+            tone: 'danger' as const
         }
 
         if (!isMobile) {
@@ -798,12 +799,12 @@ const ApplicationTracker = () => {
                                     }}
                                 />
                             ) : (
-                                <MotionCard.Metric
+                                <MetricTile
                                     title={metric.title}
                                     value={metric.value}
                                     icon={metric.icon}
-                                    iconBg={
-                                        metric.iconBg
+                                    tone={
+                                        metric.tone
                                     }
                                     wrapperStyle={{
                                         minHeight:

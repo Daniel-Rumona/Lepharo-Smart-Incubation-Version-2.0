@@ -22,25 +22,14 @@ export default function HSEDashboard() {
     const { range } = useDashboardDateRange()
 
     const departmentId = user?.departmentId
-    const departmentName = String(user?.departmentName || '').toLowerCase().trim()
 
     /**
      * Memoised because InterventionsDashboard refetches whenever this identity
      * changes — an inline arrow would make that every render.
      */
     const matchesDepartment = useCallback(
-        (entry: Record<string, any>) => {
-            if (!departmentName) return true
-            if (departmentId && entry?.departmentId === departmentId) return true
-
-            const area = String(entry?.area || entry?.areaOfSupport || '')
-                .toLowerCase()
-                .trim()
-            const department = String(entry?.departmentName || '').toLowerCase().trim()
-
-            return area === departmentName || department === departmentName
-        },
-        [departmentId, departmentName]
+        (entry: Record<string, any>) => !departmentId || entry?.departmentId === departmentId,
+        [departmentId]
     )
 
     return (

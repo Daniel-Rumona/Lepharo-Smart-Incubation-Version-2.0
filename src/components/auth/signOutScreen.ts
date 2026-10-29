@@ -65,10 +65,10 @@ const THEME: Record<'light' | 'dark', Palette> = {
         accent: '#a6201f',
     },
     dark: {
-        ground: '#0e1117',
+        ground: '#1e2024',
         title: '#e7eaee',
         body: '#8c9099',
-        track: '#222831',
+        track: '#33373d',
         accent: '#f08a80',
     },
 }

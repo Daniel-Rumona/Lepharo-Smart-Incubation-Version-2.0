@@ -1,50 +1,49 @@
 // ConsolidatedInvoicePacks.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-    Table,
-    Card,
-    Row,
-    Col,
-    Typography,
-    Tag,
-    Space,
     Button,
-    Modal,
-    Alert,
-    message,
-    Select,
+    Card,
+    Col,
     DatePicker,
-    Form,
-    InputNumber,
-    Upload,
-    Input
+    Grid,
+    List,
+    Modal,
+    Result,
+    Row,
+    Segmented,
+    Select,
+    Space,
+    Table,
+    Tag,
+    Tooltip,
+    Typography,
+    message,
+    theme
 } from 'antd'
 import {
-    FileDoneOutlined,
     CheckCircleOutlined,
-    ExclamationCircleOutlined,
-    EyeOutlined,
     CheckOutlined,
-    CloseOutlined
+    ClockCircleOutlined,
+    CloseCircleOutlined,
+    CloseOutlined,
+    EyeOutlined,
+    EyeInvisibleOutlined,
+    FileDoneOutlined,
+    FileTextOutlined,
+    WarningOutlined,
+    SendOutlined
 } from '@ant-design/icons'
 import { motion } from 'framer-motion'
 import dayjs, { Dayjs } from 'dayjs'
-import {
-    collection,
-    getDocs,
-    query,
-    where,
-    addDoc,
-    onSnapshot
-} from 'firebase/firestore'
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+import FinanceActionModal, { FinanceActionTarget } from '../FinanceActionModal'
+import { requestPackInvoice } from '@/lib/financeActions'
 
 const { Title, Text } = Typography
-const { Option } = Select
-const { MonthPicker } = DatePicker
-const { TextArea } = Input
 
 type MovDoc = {
     id?: string
@@ -79,6 +78,10 @@ type ConsolidatedPack = {
     hodName?: string
     hodSignatureUrl?: string
     hodDigitalSignature?: string
+    // The head of department who submitted it, asked for the invoice if missing
+    hodUid?: string
+    // When finance last asked for the invoice
+    invoiceRequestedAt?: any
 }
 
 type InvoiceDecision = {
@@ -87,101 +90,102 @@ type InvoiceDecision = {
     decision?: 'approved' | 'rejected'
     decidedAt?: any
     amount?: number
+    reason?: string
     popAttachment?: { name?: string; url?: string }
     invoice?: { name?: string; url?: string } | null
 }
 
-const cardStyle: React.CSSProperties = {
-    boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-    transition: 'all 0.3s ease',
-    borderRadius: 12,
-    border: '1px solid #d6e4ff'
-}
-
-const Motion: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-    >
-        {children}
-    </motion.div>
-)
+type StatusFilter = 'all' | 'awaiting' | 'approved' | 'rejected'
+const STATUS_OPTIONS = [
+    { value: 'all', label: 'All' },
+    { value: 'awaiting', label: 'Awaiting' },
+    { value: 'approved', label: 'Approved' },
+    { value: 'rejected', label: 'Rejected' }
+]
 
 const clip = (s?: string) => (s ? `${s.slice(0, 10)}…${s.slice(-6)}` : '—')
 const isPdf = (url?: string) => !!url && /\.pdf($|\?)/i.test(url)
-const isImage = (url?: string) =>
-    !!url && /\.(png|jpe?g|gif|webp)($|\?)/i.test(url)
-const financeTag = (d?: 'approved' | 'rejected') =>
-    d ? (
-        <Tag color={d === 'approved' ? 'green' : 'red'}>{d.toUpperCase()}</Tag>
-    ) : (
-        <Tag>Pending</Tag>
+const isImage = (url?: string) => !!url && /\.(png|jpe?g|gif|webp)($|\?)/i.test(url)
+
+const formatMoney = (value?: number) =>
+    typeof value === 'number'
+        ? `R ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+        : '—'
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+const toDate = (value: any): Date | undefined => {
+    if (!value) return undefined
+    const d = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
+    return Number.isNaN(d.getTime()) ? undefined : d
+}
+
+// Packs reach finance once they have final admin confirmation
+const finalApproval = (pack: ConsolidatedPack) =>
+    (pack.approvals || []).find(a =>
+        ['final_submission', 'final_confirmation'].includes(String(a.step || '').toLowerCase())
     )
+
+const invoiceOf = (pack: ConsolidatedPack) => {
+    const inv = pack.invoiceAttachment
+    const url = typeof inv === 'string' ? inv : inv?.url
+    return url ? { url, name: (typeof inv === 'string' ? '' : inv?.name) || 'Invoice' } : undefined
+}
+
+const itemCount = (pack: ConsolidatedPack) =>
+    (pack.interventions || pack.interventionsSnapshot || []).length || pack.totalItems || 0
+
+const monthLabel = (m?: string) =>
+    m && dayjs(m, ['YYYY-MM', 'YYYY-MM-DD']).isValid() ? dayjs(m).format('MMMM YYYY') : m || ''
 
 // ---------- Component ----------
 const ConsolidatedInvoicePacks: React.FC = () => {
     const { user } = useFullIdentity()
-    const [allPacks, setAllPacks] = useState<ConsolidatedPack[]>([])
-    const [loading, setLoading] = useState(false)
+    const { token } = theme.useToken()
+    const screens = Grid.useBreakpoint()
+    const isDesktop = screens.sm !== false
+    // Below md, modals become bottom sheets (index.css) and the filter bar stacks
+    const isMobile = screens.md === false
+    const barCol = (flex: string) => (isMobile ? { span: 24 } : { flex })
 
-    // finance decisions index: packId -> latest decision
-    const [decisionsByPack, setDecisionsByPack] = useState<
-        Record<string, InvoiceDecision>
-    >({})
+    const [livePacks, setAllPacks] = useState<ConsolidatedPack[]>([])
+    const [loading, setLoading] = useState(true)
+    const [liveDecisions, setDecisionsByPack] = useState<Record<string, InvoiceDecision>>({})
 
     // filters
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+    const [dept, setDept] = useState<string | undefined>()
     const [selectedMonth, setSelectedMonth] = useState<Dayjs | null>(null)
-    const [dept, setDept] = useState<string>('all')
 
-    // pack modal
-    const [packModalOpen, setPackModalOpen] = useState(false)
+    // modals
     const [activePack, setActivePack] = useState<ConsolidatedPack | null>(null)
+    // The invoice preview inside the pack modal, collapsed for each newly opened pack
+    const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false)
+    useEffect(() => setInvoicePreviewOpen(false), [activePack?.id])
+    const [actionTarget, setActionTarget] = useState<{
+        target: FinanceActionTarget
+        mode: 'approve' | 'reject'
+    } | null>(null)
 
-    // invoice viewer modal
-    const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
-
-    // approve/reject modals
-    const [approveOpen, setApproveOpen] = useState(false)
-    const [rejectOpen, setRejectOpen] = useState(false)
-    const [approveSubmitting, setApproveSubmitting] = useState(false)
-    const [rejectSubmitting, setRejectSubmitting] = useState(false)
-    const [popFile, setPopFile] = useState<File | null>(null)
-    const [approveForm] = Form.useForm()
-    const [rejectForm] = Form.useForm()
-
-    // fetch packs
-    const fetchPacks = async () => {
-        setLoading(true)
-        try {
-            const qy = query(
-                collection(db, 'consolidatedMOVs')
-
-            )
-            const snap = await getDocs(qy)
-            const list = snap.docs.map(d => ({
-                id: d.id,
-                ...(d.data() as any)
-            })) as ConsolidatedPack[]
-            setAllPacks(list)
-        } catch (e) {
-            console.error(e)
-            message.error('Failed to load consolidated MOV packs')
-        } finally {
-            setLoading(false)
-        }
-    }
-
+    // Live packs (previously a one-off fetch with a Refresh button)
     useEffect(() => {
-        fetchPacks()
+        const unsub = onSnapshot(
+            collection(db, 'consolidatedMOVs'),
+            snap => {
+                setAllPacks(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
+                setLoading(false)
+            },
+            error => {
+                console.error('consolidatedMOVs onSnapshot error:', error)
+                setLoading(false)
+            }
+        )
+        return () => unsub()
     }, [])
 
-    // subscribe to invoices and build a decisions index (latest per packId)
+    // finance decisions index: packId -> latest decision
     useEffect(() => {
-        const qy = query(
-            collection(db, 'invoices')
-        )
-        const unsub = onSnapshot(qy, snap => {
+        const unsub = onSnapshot(collection(db, 'invoices'), snap => {
             const map: Record<string, InvoiceDecision> = {}
             snap.forEach(d => {
                 const data = d.data() as any
@@ -197,6 +201,7 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                         decision: data.decision,
                         decidedAt: data.decidedAt,
                         amount: data.amount,
+                        reason: data.reason,
                         popAttachment: data.popAttachment || undefined,
                         invoice: data.invoice || null
                     }
@@ -207,445 +212,438 @@ const ConsolidatedInvoicePacks: React.FC = () => {
         return () => unsub()
     }, [])
 
+    const allPacks = livePacks
+    const decisionsByPack = liveDecisions
+
     // Only packs that have final admin confirmation
-    const finalConfirmed = useMemo(() => {
-        const hasFinal = (a?: Approval[]) =>
-            (a || []).some(x =>
-                ['final_submission', 'final_confirmation'].includes(
-                    String(x.step || '').toLowerCase()
-                )
-            )
-        const inDept = (p: ConsolidatedPack) =>
-            dept === 'all'
-                ? true
-                : (p.department || '').toLowerCase() === dept.toLowerCase()
-        const inMonth = (p: ConsolidatedPack) => {
-            if (!selectedMonth) return true
-            const m = dayjs(p.month, ['YYYY-MM', 'YYYY-MM-DD'])
-            return m.isValid() && m.isSame(selectedMonth, 'month')
-        }
-        return allPacks
-            .filter(p => hasFinal(p.approvals))
-            .filter(p => inDept(p) && inMonth(p))
-            .sort((a, b) => {
-                const aT = a.createdAt?.toDate?.() || a.createdAt || 0
-                const bT = b.createdAt?.toDate?.() || b.createdAt || 0
-                return new Date(bT).getTime() - new Date(aT).getTime()
-            })
-    }, [allPacks, dept, selectedMonth])
+    const confirmedPacks = useMemo(() => allPacks.filter(p => finalApproval(p)), [allPacks])
 
     const uniqueDepartments = useMemo(
         () =>
-            Array.from(new Set(allPacks.map(p => p.department).filter(Boolean))).sort(
+            Array.from(new Set(confirmedPacks.map(p => p.department).filter(Boolean))).sort(
                 (a, b) => String(a).localeCompare(String(b))
             ),
-        [allPacks]
+        [confirmedPacks]
     )
 
-    // metrics
-    const metrics = useMemo(() => {
-        const packs = finalConfirmed
-        const count = packs.length
-        const hasInvoice = packs.filter(p => {
-            const inv = p.invoiceAttachment
-            const url = typeof inv === 'string' ? inv : inv?.url
-            return !!url
-        }).length
-        const awaitingME = packs.filter(
-            p => !(p.approvals || []).some(a => a.step === 'validation')
-        ).length
-        return {
-            total: count,
-            withInvoice: hasInvoice,
-            withoutInvoice: count - hasInvoice,
-            awaitingME
-        }
-    }, [finalConfirmed])
+    const decisionOf = (pack: ConsolidatedPack) => decisionsByPack[pack.id]?.decision
 
-    // table (listing)
-    const columns = [
-        {
-            title: 'Month',
-            dataIndex: 'month',
-            render: (m: string) =>
-                dayjs(m, ['YYYY-MM', 'YYYY-MM-DD']).isValid()
-                    ? dayjs(m).format('MMM YYYY')
-                    : m
-        },
-        { title: 'Department', dataIndex: 'department' },
-        {
-            title: 'Items',
-            render: (rec: ConsolidatedPack) =>
-                (rec.interventions || rec.interventionsSnapshot || []).length ||
-                rec.totalItems ||
+    // ---------- metrics (all confirmed packs) ----------
+    const metrics = useMemo(() => {
+        const awaiting = confirmedPacks.filter(p => !decisionOf(p))
+        const approved = confirmedPacks.filter(p => decisionOf(p) === 'approved')
+        return {
+            awaiting: awaiting.length,
+            awaitingMissingInvoice: awaiting.filter(p => !invoiceOf(p)).length,
+            approved: approved.length,
+            approvedAmount: approved.reduce(
+                (t, p) => t + (decisionsByPack[p.id]?.amount ?? 0),
                 0
-        },
-        {
-            title: 'Invoice',
-            render: (_: any, rec: ConsolidatedPack) => {
-                const inv = rec.invoiceAttachment
-                const url = typeof inv === 'string' ? inv : inv?.url
-                const name = typeof inv === 'string' ? 'Invoice' : inv?.name
-                return url ? (
-                    <Button
-                        type='link'
-                        onClick={() => {
-                            setActivePack(rec)
-                            setInvoiceModalOpen(true)
-                        }}
-                    >
-                        {name || 'View'}
-                    </Button>
-                ) : (
-                    <Tag color='volcano'>Missing</Tag>
-                )
+            ),
+            rejected: confirmedPacks.filter(p => decisionOf(p) === 'rejected').length,
+            missingInvoice: confirmedPacks.filter(p => !invoiceOf(p)).length,
+            total: confirmedPacks.length
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [confirmedPacks, decisionsByPack])
+
+    // ---------- filtered list: undecided first, then newest ----------
+    const filtered = useMemo(() => {
+        const time = (p: ConsolidatedPack) =>
+            toDate(finalApproval(p)?.date)?.getTime() ?? toDate(p.createdAt)?.getTime() ?? 0
+        return confirmedPacks
+            .filter(p => {
+                const decision = decisionOf(p)
+                const statusMatch =
+                    statusFilter === 'all' ||
+                    (statusFilter === 'awaiting' && !decision) ||
+                    statusFilter === decision
+                const month = dayjs(p.month, ['YYYY-MM', 'YYYY-MM-DD'])
+                const monthMatch =
+                    !selectedMonth || (month.isValid() && month.isSame(selectedMonth, 'month'))
+                return statusMatch && monthMatch && (!dept || p.department === dept)
+            })
+            .sort((a, b) => Number(!decisionOf(b)) - Number(!decisionOf(a)) || time(b) - time(a))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [confirmedPacks, decisionsByPack, statusFilter, dept, selectedMonth])
+
+    const hasFilters = statusFilter !== 'all' || !!dept || !!selectedMonth
+
+    // When finance last asked for this pack's invoice, e.g. '14 Oct'
+    const requestedOn = (pack: ConsolidatedPack) => {
+        const at = toDate(pack.invoiceRequestedAt)
+        return at ? dayjs(at).format('D MMM') : undefined
+    }
+
+    const [requestingId, setRequestingId] = useState<string | null>(null)
+
+    const requestInvoice = async (pack: ConsolidatedPack) => {
+        setRequestingId(pack.id)
+        try {
+            await requestPackInvoice(
+                { id: pack.id, department: pack.department, month: pack.month, hodUid: pack.hodUid },
+                user as any
+            )
+            message.success(`Invoice requested from ${pack.hodName || 'the head of department'}`)
+        } catch (error: any) {
+            console.error('Failed to request invoice:', error)
+            message.error(error?.message || 'Could not request the invoice')
+        } finally {
+            setRequestingId(null)
+        }
+    }
+
+    const openAction = (pack: ConsolidatedPack, mode: 'approve' | 'reject') => {
+        setActivePack(null)
+        setActionTarget({
+            mode,
+            target: {
+                kind: 'pack',
+                pack: {
+                    id: pack.id,
+                    department: pack.department,
+                    month: pack.month,
+                    totalItems: itemCount(pack),
+                    invoice: invoiceOf(pack)
+                }
             }
-        },
-        {
-            title: 'Finance',
-            render: (rec: ConsolidatedPack) =>
-                financeTag(decisionsByPack[rec.id]?.decision)
-        },
-        {
-            title: 'Actions',
-            render: (_: any, rec: ConsolidatedPack) => {
-                const decided = !!decisionsByPack[rec.id]?.decision
-                return (
-                    <Space>
-                        <Button
-                            type='link'
-                            icon={<EyeOutlined />}
-                            onClick={() => {
-                                setActivePack(rec)
-                                setPackModalOpen(true)
-                            }}
-                        >
-                            View Pack
-                        </Button>
-                        {!decided && (
+        })
+    }
+
+    // ---------- cards (same design as Resource Requests) ----------
+    const actionStyle = (on: boolean): React.CSSProperties =>
+        on
+            ? {
+                borderColor: token.colorWarningBorder,
+                borderLeft: `4px solid ${token.colorWarning}`,
+                background: token.colorWarningBg
+            }
+            : {}
+
+    const iconCircle = (on: boolean, size = 36) => (
+        <div
+            style={{
+                width: size,
+                height: size,
+                borderRadius: '50%',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: size / 2.2,
+                flexShrink: 0,
+                background: on ? token.colorWarningBgHover : token.colorPrimaryBg,
+                color: on ? token.colorWarning : token.colorPrimary
+            }}
+        >
+            <FileDoneOutlined />
+        </div>
+    )
+
+    const statusTag = (pack: ConsolidatedPack) => {
+        const decision = decisionOf(pack)
+        if (!decision)
+            return (
+                <Tag color='orange' style={{ marginInlineEnd: 0, flexShrink: 0 }}>
+                    {invoiceOf(pack) ? 'Decide on invoice' : 'Needs invoice'}
+                </Tag>
+            )
+        return (
+            <Tag
+                color={decision === 'approved' ? 'green' : 'red'}
+                style={{ marginInlineEnd: 0, flexShrink: 0 }}
+            >
+                Invoice {decision}
+            </Tag>
+        )
+    }
+
+    const renderCard = (pack: ConsolidatedPack) => {
+        const awaiting = !decisionOf(pack)
+        const invoice = invoiceOf(pack)
+        const confirmed = toDate(finalApproval(pack)?.date)
+        const amount = decisionsByPack[pack.id]?.amount
+        const details = [
+            plural(itemCount(pack), 'intervention'),
+            confirmed && `Confirmed ${dayjs(confirmed).format('D MMM YYYY')}`,
+            typeof amount === 'number' && formatMoney(amount)
+        ].filter(Boolean)
+
+        return (
+            <Card
+                size='small'
+                hoverable
+                style={{ width: '100%', borderRadius: 12, ...actionStyle(awaiting) }}
+                onClick={() => setActivePack(pack)}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {iconCircle(awaiting)}
+                    {/* Two lines: whose pack and its status, then its contents */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <Text strong ellipsis style={{ minWidth: 0 }}>
+                                {pack.department || 'Unassigned department'}
+                            </Text>
+                            <Tag style={{ marginInlineEnd: 0, flexShrink: 0 }}>
+                                {dayjs(pack.month, ['YYYY-MM', 'YYYY-MM-DD']).isValid()
+                                    ? dayjs(pack.month).format('MMM YYYY')
+                                    : pack.month}
+                            </Tag>
+                            {statusTag(pack)}
+                            {!invoice && requestedOn(pack) && (
+                                <Tag color='gold' style={{ marginInlineEnd: 0, flexShrink: 0 }}>
+                                    Requested {requestedOn(pack)}
+                                </Tag>
+                            )}
+                        </div>
+                        <Text type='secondary' ellipsis style={{ fontSize: 12, display: 'block' }}>
+                            {details.join(' · ')}
+                        </Text>
+                    </div>
+                    <Space
+                        size={8}
+                        style={{ flexShrink: 0 }}
+                        // The buttons mustn't also open the pack
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <Tooltip title='View pack'>
+                            <Button
+                                shape='circle'
+                                aria-label='View pack'
+                                icon={<EyeOutlined />}
+                                onClick={() => setActivePack(pack)}
+                            />
+                        </Tooltip>
+                        {awaiting && invoice && (
                             <>
-                                <Button
-                                    onClick={() => {
-                                        setActivePack(rec)
-                                        setApproveOpen(true)
-                                    }}
-                                    icon={<CheckOutlined />}
-                                    type='link'
-                                >
-                                    Approve
-                                </Button>
-                                <Button
-                                    danger
-                                    onClick={() => {
-                                        setActivePack(rec)
-                                        setRejectOpen(true)
-                                    }}
-                                    icon={<CloseOutlined />}
-                                    type='link'
-                                >
-                                    Reject
-                                </Button>
+                                <Tooltip title='Approve invoice'>
+                                    <Button
+                                        shape='circle'
+                                        type='primary'
+                                        aria-label='Approve invoice'
+                                        icon={<CheckOutlined />}
+                                        onClick={() => openAction(pack, 'approve')}
+                                    />
+                                </Tooltip>
+                                <Tooltip title='Reject'>
+                                    <Button
+                                        shape='circle'
+                                        danger
+                                        aria-label='Reject'
+                                        icon={<CloseOutlined />}
+                                        onClick={() => openAction(pack, 'reject')}
+                                    />
+                                </Tooltip>
                             </>
                         )}
+                        {/* No invoice yet: nothing to approve, so ask for it instead */}
+                        {awaiting && !invoice && (
+                            <Tooltip
+                                title={
+                                    requestedOn(pack)
+                                        ? `Requested ${requestedOn(pack)}; ask again`
+                                        : 'Ask the department for its invoice'
+                                }
+                            >
+                                <Button
+                                    type='primary'
+                                    shape={isDesktop ? 'round' : 'circle'}
+                                    icon={<SendOutlined />}
+                                    loading={requestingId === pack.id}
+                                    onClick={() => requestInvoice(pack)}
+                                >
+                                    {isDesktop && 'Request invoice'}
+                                </Button>
+                            </Tooltip>
+                        )}
                     </Space>
-                )
-            }
-        }
-    ]
-
-    const monthLabel = (m?: string) =>
-        m && dayjs(m, ['YYYY-MM', 'YYYY-MM-DD']).isValid()
-            ? dayjs(m).format('MMMM YYYY')
-            : m || ''
-
-    // ---------- helpers for uploads / writes ----------
-    const uploadPOPIfAny = async (file: File | null, pathBase: string) => {
-        if (!file) return null
-        try {
-            const storage = getStorage()
-            const safe = file.name.replace(/\s+/g, '_')
-            const rf = ref(storage, `${pathBase}/${Date.now()}_${safe}`)
-            await uploadBytes(rf, file)
-            const url = await getDownloadURL(rf)
-            return { name: file.name, url, path: rf.fullPath }
-        } catch (e) {
-            console.error(e)
-            message.error(
-                'Failed to upload POP (approve will still save without it).'
-            )
-            return null
-        }
+                </div>
+            </Card>
+        )
     }
 
-    const writeInvoiceDecision = async (payload: any) => {
-        await addDoc(collection(db, 'invoices'), payload)
-    }
-
-    // ---------- approve / reject submit ----------
-    const handleApproveSubmit = async () => {
-        if (!activePack || !user) return
-        try {
-            const vals = await approveForm.validateFields()
-            setApproveSubmitting(true)
-
-            const inv = activePack.invoiceAttachment
-            const invoiceUrl = typeof inv === 'string' ? inv : inv?.url || null
-            const invoiceName =
-                typeof inv === 'string' ? 'Invoice' : inv?.name || null
-
-            const popMeta = await uploadPOPIfAny(
-                popFile,
-                `invoices/${activePack.department}/${dayjs(
-                    activePack.month
-                ).format('YYYY-MM')}`
-            )
-
-            await writeInvoiceDecision({
-                decision: 'approved',
-                department: activePack.department || null,
-                month: activePack.month || null,
-                packId: activePack.id,
-                items:
-                    (activePack.interventions || activePack.interventionsSnapshot || [])
-                        .length ||
-                    activePack.totalItems ||
-                    0,
-                invoice: invoiceUrl ? { name: invoiceName, url: invoiceUrl } : null,
-                popAttachment: popMeta,
-                amount: vals.amount ?? null,
-                paidDate: vals.paidDate ? vals.paidDate.toDate() : null,
-                notes: vals.notes || null,
-                decidedAt: new Date(),
-                decidedBy: {
-                    uid: user.uid,
-                    name: user.name || '',
-                    role: user.role || '',
-                    email: user.email || ''
-                },
-                type: 'department_invoice'
-            })
-
-            message.success('Invoice approved and saved.')
-            setApproveOpen(false)
-            setPopFile(null)
-            approveForm.resetFields()
-            // no manual UI mutation needed — onSnapshot(invoices) will hide the buttons
-        } catch (e) {
-            if ((e as any).errorFields) return
-            console.error(e)
-            message.error('Could not save approval.')
-        } finally {
-            setApproveSubmitting(false)
-        }
-    }
-
-    const handleRejectSubmit = async () => {
-        if (!activePack || !user) return
-        try {
-            const vals = await rejectForm.validateFields()
-            setRejectSubmitting(true)
-
-            const inv = activePack.invoiceAttachment
-            const invoiceUrl = typeof inv === 'string' ? inv : inv?.url || null
-            const invoiceName =
-                typeof inv === 'string' ? 'Invoice' : inv?.name || null
-
-            await writeInvoiceDecision({
-                decision: 'rejected',
-                reason: vals.reason || null,
-                department: activePack.department || null,
-                month: activePack.month || null,
-                packId: activePack.id,
-                items:
-                    (activePack.interventions || activePack.interventionsSnapshot || [])
-                        .length ||
-                    activePack.totalItems ||
-                    0,
-                invoice: invoiceUrl ? { name: invoiceName, url: invoiceUrl } : null,
-                decidedAt: new Date(),
-                decidedBy: {
-                    uid: user.uid,
-                    name: user.name || '',
-                    role: user.role || '',
-                    email: user.email || ''
-                }
-            })
-
-            message.success('Rejection saved.')
-            setRejectOpen(false)
-            rejectForm.resetFields()
-            // buttons will hide automatically via invoices subscription
-        } catch (e) {
-            if ((e as any).errorFields) return
-            console.error(e)
-            message.error('Could not save rejection.')
-        } finally {
-            setRejectSubmitting(false)
-        }
-    }
+    const activeInvoice = activePack ? invoiceOf(activePack) : undefined
+    const activeDecision = activePack ? decisionsByPack[activePack.id] : undefined
 
     // ---------- Render ----------
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
-            <Motion>
-                <Alert
-                    type='info'
-                    showIcon
-                    style={{ marginBottom: 16 }}
-                    message='Consolidated MOV Invoice Packs (Confirmed)'
-                    description='Below are only the monthly packs that have reached the final confirmation stage.'
-                />
-            </Motion>
-
-            {/* KPI Cards */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
-                <Col xs={24} sm={8}>
-                    <Motion>
-                        <Card hoverable style={cardStyle}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                                <div
-                                    style={{
-                                        background: '#e6f7ff',
-                                        padding: 12,
-                                        borderRadius: '50%',
-                                        marginRight: 16
-                                    }}
-                                >
-                                    <FileDoneOutlined
-                                        style={{ fontSize: 24, color: '#1890ff' }}
-                                    />
-                                </div>
-                                <div>
-                                    <Text type='secondary'>Total Packs</Text>
-                                    <Title level={3} style={{ margin: 0, color: '#1890ff' }}>
-                                        {metrics.total}
-                                    </Title>
-                                </div>
-                            </div>
-                        </Card>
-                    </Motion>
+        <div style={{ padding: isDesktop ? 24 : 12, minHeight: '100vh' }}>
+            {/* Metrics: two side by side on mobile */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={12} md={6}>
+                    <MetricTile
+                        icon={<ClockCircleOutlined />}
+                        tone='warning'
+                        title='Awaiting Decision'
+                        value={metrics.awaiting}
+                        subtitle={
+                            metrics.awaitingMissingInvoice
+                                ? `${metrics.awaitingMissingInvoice} without an invoice`
+                                : 'All have invoices'
+                        }
+                        loading={loading}
+                    />
                 </Col>
-                <Col xs={24} sm={8}>
-                    <Motion>
-                        <Card hoverable style={cardStyle}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                                <div
-                                    style={{
-                                        background: '#f6ffed',
-                                        padding: 12,
-                                        borderRadius: '50%',
-                                        marginRight: 16
-                                    }}
-                                >
-                                    <CheckCircleOutlined
-                                        style={{ fontSize: 24, color: '#52c41a' }}
-                                    />
-                                </div>
-                                <div>
-                                    <Text type='secondary'>With Invoice</Text>
-                                    <Title level={3} style={{ margin: 0, color: '#52c41a' }}>
-                                        {metrics.withInvoice}
-                                    </Title>
-                                </div>
-                            </div>
-                        </Card>
-                    </Motion>
+                <Col xs={12} md={6}>
+                    <MetricTile
+                        icon={<CheckCircleOutlined />}
+                        tone='success'
+                        title='Approved'
+                        value={metrics.approved}
+                        subtitle={`${formatMoney(metrics.approvedAmount)} paid`}
+                        loading={loading}
+                    />
                 </Col>
-                <Col xs={24} sm={8}>
-                    <Motion>
-                        <Card hoverable style={cardStyle}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                                <div
-                                    style={{
-                                        background: '#fff7e6',
-                                        padding: 12,
-                                        borderRadius: '50%',
-                                        marginRight: 16
-                                    }}
-                                >
-                                    <ExclamationCircleOutlined
-                                        style={{ fontSize: 24, color: '#fa8c16' }}
-                                    />
-                                </div>
-                                <div>
-                                    <Text type='secondary'>Missing Invoice</Text>
-                                    <Title level={3} style={{ margin: 0, color: '#fa8c16' }}>
-                                        {metrics.withoutInvoice}
-                                    </Title>
-                                </div>
-                            </div>
-                        </Card>
-                    </Motion>
+                <Col xs={0} md={6}>
+                    <MetricTile
+                        icon={<CloseCircleOutlined />}
+                        tone='danger'
+                        title='Rejected'
+                        value={metrics.rejected}
+                        subtitle={`of ${plural(metrics.total, 'confirmed pack')}`}
+                        loading={loading}
+                    />
+                </Col>
+                <Col xs={0} md={6}>
+                    <MetricTile
+                        icon={<WarningOutlined />}
+                        tone='warning'
+                        title='Missing Invoice'
+                        value={metrics.missingInvoice}
+                        subtitle='Departments still to attach one'
+                        loading={loading}
+                    />
                 </Col>
             </Row>
 
-            {/* Filters */}
-            <Motion>
-                <Card hoverable style={cardStyle}>
-                    <Row gutter={[16, 16]}>
-                        <Col xs={24} sm={8}>
-                            <Select style={{ width: '100%' }} value={dept} onChange={setDept}>
-                                <Option key='all' value='all'>
-                                    All Departments
-                                </Option>
-                                {uniqueDepartments.map(d => (
-                                    <Option key={d} value={d!}>
-                                        {d}
-                                    </Option>
-                                ))}
-                            </Select>
-                        </Col>
-                        <Col xs={24} sm={8}>
-                            <MonthPicker
-                                style={{ width: '100%' }}
-                                value={selectedMonth as any}
-                                onChange={setSelectedMonth as any}
-                            />
-                        </Col>
-                        <Col xs={24} sm={8}>
-                            <Space wrap>
-                                <Button onClick={() => setSelectedMonth(null)}>Clear</Button>
-                                <Button type='primary' onClick={fetchPacks}>
-                                    Refresh
-                                </Button>
-                            </Space>
-                        </Col>
-                    </Row>
-                </Card>
-            </Motion>
+            <DashboardFilterBar>
+                <Row gutter={[12, 12]} align='middle'>
+                    <Col {...barCol('2 1 360px')}>
+                        <Segmented
+                            block
+                            value={statusFilter}
+                            onChange={value => setStatusFilter(value as StatusFilter)}
+                            options={STATUS_OPTIONS}
+                        />
+                    </Col>
+                    <Col {...barCol('1 1 200px')}>
+                        <Select
+                            allowClear
+                            placeholder='All departments'
+                            value={dept}
+                            onChange={setDept}
+                            options={uniqueDepartments.map(d => ({ value: d, label: d }))}
+                            style={{ width: '100%' }}
+                        />
+                    </Col>
+                    <Col {...barCol('1 1 180px')}>
+                        <DatePicker
+                            picker='month'
+                            placeholder='Any month'
+                            value={selectedMonth}
+                            onChange={setSelectedMonth}
+                            style={{ width: '100%' }}
+                        />
+                    </Col>
+                </Row>
+            </DashboardFilterBar>
 
-            {/* Table */}
-            <Motion>
-                <Card hoverable style={{ ...cardStyle, marginTop: 12 }}>
-                    <Table
-                        rowKey='id'
-                        dataSource={finalConfirmed}
-                        loading={loading}
-                        columns={columns as any}
-                        pagination={{ pageSize: 10 }}
-                    />
-                </Card>
-            </Motion>
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+            >
+                <List
+                    dataSource={filtered}
+                    rowKey='id'
+                    loading={loading}
+                    split={false}
+                    pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }}
+                    locale={{
+                        emptyText: hasFilters ? (
+                            <Result
+                                icon={<FileDoneOutlined />}
+                                title='No packs found'
+                                subTitle='Nothing matches your filters.'
+                                extra={
+                                    <Button
+                                        onClick={() => {
+                                            setStatusFilter('all')
+                                            setDept(undefined)
+                                            setSelectedMonth(null)
+                                        }}
+                                    >
+                                        Clear filters
+                                    </Button>
+                                }
+                            />
+                        ) : (
+                            <Result
+                                icon={<FileDoneOutlined />}
+                                title='No confirmed MOV packs yet'
+                                subTitle='Department packs appear here once they have final confirmation.'
+                            />
+                        )
+                    }}
+                    renderItem={pack => (
+                        <List.Item style={{ padding: '6px 0' }}>{renderCard(pack)}</List.Item>
+                    )}
+                />
+            </motion.div>
 
             {/* PACK MODAL — document style */}
             <Modal
-                open={packModalOpen}
-                onCancel={() => setPackModalOpen(false)}
-                footer={null}
+                open={!!activePack}
+                onCancel={() => setActivePack(null)}
                 width={1100}
                 title={
                     activePack
-                        ? `Consolidated MOV • ${activePack.department} • ${monthLabel(
-                            activePack.month
-                        )}`
+                        ? `Consolidated MOV • ${activePack.department} • ${monthLabel(activePack.month)}`
                         : 'Pack'
+                }
+                footer={
+                    activePack && !activeDecision?.decision ? (
+                        activeInvoice ? (
+                            <Row gutter={8}>
+                                <Col span={12}>
+                                    <Button
+                                        block
+                                        type='primary'
+                                        icon={<CheckOutlined />}
+                                        onClick={() => openAction(activePack, 'approve')}
+                                    >
+                                        Approve invoice
+                                    </Button>
+                                </Col>
+                                <Col span={12}>
+                                    <Button
+                                        block
+                                        danger
+                                        icon={<CloseOutlined />}
+                                        onClick={() => openAction(activePack, 'reject')}
+                                    >
+                                        Reject
+                                    </Button>
+                                </Col>
+                            </Row>
+                        ) : (
+                            // Nothing to decide on until the department attaches an invoice
+                            <Button
+                                block
+                                type='primary'
+                                icon={<SendOutlined />}
+                                loading={requestingId === activePack.id}
+                                onClick={() => requestInvoice(activePack)}
+                            >
+                                {requestedOn(activePack) ? 'Request invoice again' : 'Request invoice'}
+                            </Button>
+                        )
+                    ) : null
                 }
             >
                 {activePack && (
                     <div
                         style={{
-                            background: '#fff',
-                            border: '1px solid #e8e8e8',
+                            background: token.colorBgContainer,
+                            border: `1px solid ${token.colorBorderSecondary}`,
                             borderRadius: 8,
                             padding: 16
                         }}
@@ -667,9 +665,9 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                                 />
                             </div>
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: 12, color: '#666' }}>
+                                <Text type='secondary' style={{ fontSize: 12 }}>
                                     {activePack.department} • {monthLabel(activePack.month)}
-                                </div>
+                                </Text>
                             </div>
                             <div style={{ textAlign: 'right' }}>
                                 <img
@@ -681,13 +679,17 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                         </div>
 
                         <div
-                            style={{ borderTop: '1px solid #eee', margin: '6px 0 12px' }}
+                            style={{
+                                borderTop: `1px solid ${token.colorBorderSecondary}`,
+                                margin: '6px 0 12px'
+                            }}
                         />
 
                         <Table
                             size='small'
                             bordered
-                            pagination={{ pageSize: 8 }}
+                            pagination={{ pageSize: 8, showSizeChanger: false, hideOnSinglePage: true }}
+                            scroll={{ x: 720 }}
                             rowKey={(x: any, i) =>
                                 x.id ||
                                 `${x.smmeCompanyName}-${x.interventionTitle}-${x.interventionDate}-${i}`
@@ -705,11 +707,8 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                                     title: 'Date Completed',
                                     dataIndex: 'interventionDate',
                                     render: (val: any) => {
-                                        const d =
-                                            typeof val?.toDate === 'function' ? val.toDate() : val
-                                        return dayjs(d).isValid()
-                                            ? dayjs(d).format('YYYY-MM-DD')
-                                            : '—'
+                                        const d = toDate(val)
+                                        return d ? dayjs(d).format('YYYY-MM-DD') : '—'
                                     }
                                 },
                                 {
@@ -734,60 +733,106 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                             ]}
                         />
 
-                        {/* Invoice + action buttons */}
+                        {/* Invoice and finance status */}
                         <div
                             style={{
-                                marginTop: 10,
+                                marginTop: 12,
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 12,
                                 flexWrap: 'wrap'
                             }}
                         >
-                            <div>
-                                <Text strong>Invoice: </Text>
-                                {(() => {
-                                    const inv = activePack.invoiceAttachment
-                                    const url = typeof inv === 'string' ? inv : inv?.url
-                                    const name = typeof inv === 'string' ? 'Invoice' : inv?.name
-                                    return url ? (
+                            {activeInvoice ? (
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 12,
+                                        flex: '1 1 280px',
+                                        padding: '8px 12px',
+                                        borderRadius: token.borderRadiusLG,
+                                        border: `1px solid ${token.colorBorderSecondary}`,
+                                        background: token.colorFillQuaternary
+                                    }}
+                                >
+                                    <FileTextOutlined
+                                        style={{ fontSize: 16, color: token.colorTextSecondary }}
+                                    />
+                                    <Text style={{ flex: 1, minWidth: 0 }} ellipsis>
+                                        {activeInvoice.name}
+                                    </Text>
+                                    <Tooltip title={invoicePreviewOpen ? 'Hide invoice' : 'View invoice'}>
                                         <Button
-                                            type='link'
-                                            onClick={() => setInvoiceModalOpen(true)}
-                                        >
-                                            {name || 'View'}
-                                        </Button>
-                                    ) : (
-                                        <em>None</em>
-                                    )
-                                })()}
-                            </div>
-
-                            {/* Finance status + actions */}
-                            <Space>
-                                {financeTag(decisionsByPack[activePack.id]?.decision)}
-                                {!decisionsByPack[activePack.id]?.decision && (
-                                    <>
-                                        <Button type='primary' onClick={() => setApproveOpen(true)}>
-                                            Approve
-                                        </Button>
-                                        <Button danger onClick={() => setRejectOpen(true)}>
-                                            Reject
-                                        </Button>
-                                    </>
-                                )}
-                            </Space>
+                                            shape='circle'
+                                            size='small'
+                                            aria-label={invoicePreviewOpen ? 'Hide invoice' : 'View invoice'}
+                                            icon={invoicePreviewOpen ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                                            onClick={() => setInvoicePreviewOpen(open => !open)}
+                                        />
+                                    </Tooltip>
+                                </div>
+                            ) : (
+                                <Tag color='volcano'>No invoice attached</Tag>
+                            )}
+                            {statusTag(activePack)}
+                            {activeDecision?.decision === 'rejected' && activeDecision.reason && (
+                                <Text type='danger' style={{ fontSize: 12 }}>
+                                    {activeDecision.reason}
+                                </Text>
+                            )}
                         </div>
+
+                        {/* Invoice preview opens in place rather than in a second modal */}
+                        {activeInvoice && invoicePreviewOpen && (
+                            <div
+                                style={{
+                                    marginTop: 12,
+                                    borderRadius: token.borderRadiusLG,
+                                    border: `1px solid ${token.colorBorderSecondary}`,
+                                    overflow: 'hidden'
+                                }}
+                            >
+                                {isPdf(activeInvoice.url) ? (
+                                    <embed
+                                        src={activeInvoice.url}
+                                        type='application/pdf'
+                                        style={{ width: '100%', height: 560, border: 0, display: 'block' }}
+                                    />
+                                ) : isImage(activeInvoice.url) ? (
+                                    <img
+                                        src={activeInvoice.url}
+                                        alt='Invoice'
+                                        style={{
+                                            width: '100%',
+                                            maxHeight: 560,
+                                            objectFit: 'contain',
+                                            display: 'block'
+                                        }}
+                                    />
+                                ) : (
+                                    // Other file types can't be shown inline
+                                    <div style={{ padding: 16 }}>
+                                        <a href={activeInvoice.url} target='_blank' rel='noreferrer'>
+                                            Open invoice in a new tab
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Signatures bottom */}
                         <div
-                            style={{ borderTop: '1px solid #eee', margin: '14px 0 10px' }}
+                            style={{
+                                borderTop: `1px solid ${token.colorBorderSecondary}`,
+                                margin: '14px 0 10px'
+                            }}
                         />
                         <Title level={5} style={{ margin: '0 0 8px' }}>
                             Signatures
                         </Title>
-                        <Row gutter={24}>
-                            <Col span={12}>
+                        <Row gutter={[24, 16]}>
+                            <Col xs={24} md={12}>
                                 {(() => {
                                     const first = (activePack.interventions ||
                                         activePack.interventionsSnapshot ||
@@ -810,7 +855,7 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                                                         alt='SMME signature'
                                                         style={{
                                                             height: 48,
-                                                            border: '1px dashed #ddd',
+                                                            border: `1px dashed ${token.colorBorder}`,
                                                             padding: 4
                                                         }}
                                                     />
@@ -818,14 +863,14 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                                                     <em>—</em>
                                                 )}
                                             </div>
-                                            <div style={{ color: '#888' }}>
+                                            <Text type='secondary'>
                                                 Cryptographic: {clip(smmeCrypto)}
-                                            </div>
+                                            </Text>
                                         </div>
                                     )
                                 })()}
                             </Col>
-                            <Col span={12}>
+                            <Col xs={24} md={12}>
                                 <div>
                                     <div style={{ marginBottom: 4 }}>
                                         <Text strong>HOD Name: </Text>
@@ -839,7 +884,7 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                                                 alt='HOD signature'
                                                 style={{
                                                     height: 48,
-                                                    border: '1px dashed #ddd',
+                                                    border: `1px dashed ${token.colorBorder}`,
                                                     padding: 4
                                                 }}
                                             />
@@ -847,9 +892,9 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                                             <em>—</em>
                                         )}
                                     </div>
-                                    <div style={{ color: '#888' }}>
+                                    <Text type='secondary'>
                                         Cryptographic: {clip(activePack.hodDigitalSignature)}
-                                    </div>
+                                    </Text>
                                 </div>
                             </Col>
                         </Row>
@@ -857,133 +902,13 @@ const ConsolidatedInvoicePacks: React.FC = () => {
                 )}
             </Modal>
 
-            {/* INVOICE VIEWER MODAL */}
-            <Modal
-                open={invoiceModalOpen}
-                onCancel={() => setInvoiceModalOpen(false)}
-                footer={null}
-                width={900}
-                title='Invoice'
-                bodyStyle={{ padding: 0 }}
-            >
-                {activePack &&
-                    (() => {
-                        const inv = activePack.invoiceAttachment
-                        const url = typeof inv === 'string' ? inv : inv?.url
-                        if (!url)
-                            return (
-                                <div style={{ padding: 16 }}>
-                                    <em>No invoice</em>
-                                </div>
-                            )
-                        if (isPdf(url))
-                            return (
-                                <embed
-                                    src={url}
-                                    type='application/pdf'
-                                    style={{ width: '100%', height: 600, border: 0 }}
-                                />
-                            )
-                        if (isImage(url))
-                            return (
-                                <img
-                                    src={url}
-                                    alt='Invoice'
-                                    style={{
-                                        width: '100%',
-                                        maxHeight: 600,
-                                        objectFit: 'contain'
-                                    }}
-                                />
-                            )
-                        return (
-                            <div style={{ padding: 16 }}>
-                                <a href={url} target='_blank' rel='noreferrer'>
-                                    Open invoice
-                                </a>
-                            </div>
-                        )
-                    })()}
-            </Modal>
-
-            {/* APPROVE MODAL */}
-            <Modal
-                open={approveOpen}
-                onCancel={() => {
-                    setApproveOpen(false)
-                    approveForm.resetFields()
-                    setPopFile(null)
-                }}
-                onOk={handleApproveSubmit}
-                confirmLoading={approveSubmitting}
-                okText='Approve & Save'
-                title='Approve Invoice'
-            >
-                <Alert
-                    type='info'
-                    showIcon
-                    style={{ marginBottom: 12 }}
-                    message='Optionally include payment details and upload Proof of Payment (POP).'
-                />
-                <Form form={approveForm} layout='vertical'>
-                    <Form.Item name='amount' label='Amount (optional)'>
-                        <InputNumber style={{ width: '100%' }} min={0} step={0.01} />
-                    </Form.Item>
-                    <Form.Item name='paidDate' label='Paid Date (optional)'>
-                        <DatePicker style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name='notes' label='Notes (optional)'>
-                        <TextArea rows={3} />
-                    </Form.Item>
-                    <Form.Item label='Upload POP (optional)'>
-                        <Upload
-                            beforeUpload={file => {
-                                setPopFile(file)
-                                return false
-                            }}
-                            maxCount={1}
-                            accept='.pdf,.png,.jpg,.jpeg,.webp'
-                        >
-                            <Button>Choose File</Button>
-                        </Upload>
-                        {popFile && (
-                            <div style={{ marginTop: 6 }}>
-                                <Tag color='blue'>{popFile.name}</Tag>
-                            </div>
-                        )}
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* REJECT MODAL */}
-            <Modal
-                open={rejectOpen}
-                onCancel={() => {
-                    setRejectOpen(false)
-                    rejectForm.resetFields()
-                }}
-                onOk={handleRejectSubmit}
-                confirmLoading={rejectSubmitting}
-                okText='Reject & Save'
-                okButtonProps={{ danger: true }}
-                title='Reject Invoice'
-            >
-                <Alert
-                    type='warning'
-                    showIcon
-                    style={{ marginBottom: 12 }}
-                    message='Provide a reason for rejection. This will be stored with the invoice record.'
-                />
-                <Form form={rejectForm} layout='vertical'>
-                    <Form.Item
-                        name='reason'
-                        label='Reason'
-                        rules={[{ required: true, message: 'Please provide a reason.' }]}
-                    >
-                        <TextArea rows={4} />
-                    </Form.Item>
-                </Form>
-            </Modal>
+            {/* Quick approve / reject, shared with the dashboard and Resource Requests */}
+            <FinanceActionModal
+                target={actionTarget?.target ?? null}
+                initialMode={actionTarget?.mode}
+                user={user as any}
+                onClose={() => setActionTarget(null)}
+            />
         </div>
     )
 }

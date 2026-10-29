@@ -10,7 +10,10 @@ const admin = require('firebase-admin')
 const APPLY = process.argv.includes('--apply')
 
 // Roles whose user accounts (Auth + users doc) are copied.
-const ROLES = ['operations']
+const ROLES = ['operations', 'projectadmin', 'admin', 'incubatee']
+// Old role name -> role stored in the new project. The old `admin` was the
+// system admin; `admin` is now reserved for the admin team.
+const ROLE_MAP = { admin: 'system_admin' }
 // Only accounts with this email domain are copied (set to '' for all).
 const EMAIL_DOMAIN = '@quantilytix.co.za'
 // Initial password for every created Auth account.
@@ -63,7 +66,8 @@ async function main() {
     } else {
       console.log('     (no Auth user with this UID in old project)')
     }
-    await newDb.collection('users').doc(d.id).set(data)
+    const newRole = ROLE_MAP[roleOf(data)]
+    await newDb.collection('users').doc(d.id).set(newRole ? { ...data, role: newRole } : data)
   }
 }
 

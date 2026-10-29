@@ -26,18 +26,18 @@ CANCEL_WORDS = {
     "no thanks", "forget it", "abort",
 }
 
-_ALL_STAFF = ["admin", "director", "hod", "coordinator", "employee", "receptionist"]
+_ALL_STAFF = ["system_admin", "director", "hod", "coordinator", "employee", "receptionist"]
 # System administrators oversee the programme; they do not set up appointments or interventions.
 _SME_LOOKUP = ["hod", "coordinator", "employee"]
 
 READ_TOOLS: dict[str, dict[str, Any]] = {
     "staff_overview": {
-        "groups": ["admin", "director", "hod"],
+        "groups": ["system_admin", "director", "hod"],
         "description": "Counts of users by role, SMEs, intervention assignments by status and upcoming sessions.",
         "arguments": {},
     },
     "governance_summary": {
-        "groups": ["admin", "director"],
+        "groups": ["system_admin", "director"],
         "description": "Feature governance: features by status, pipeline progress, pending meetings and open challenges.",
         "arguments": {},
     },
@@ -60,7 +60,7 @@ READ_TOOLS: dict[str, dict[str, Any]] = {
 
 PROPOSALS: dict[str, dict[str, Any]] = {
     "log_meeting": {
-        "groups": ["admin"],
+        "groups": ["system_admin"],
         "description": "Log a feature-governance meeting.",
         "params": {
             "title": "required, short meeting title",
@@ -72,7 +72,7 @@ PROPOSALS: dict[str, dict[str, Any]] = {
         },
     },
     "log_feature": {
-        "groups": ["admin"],
+        "groups": ["system_admin"],
         "description": "Log a feature request, or add a feature to the delivery pipeline.",
         "params": {
             "title": "required",
@@ -222,7 +222,6 @@ class TurnResult:
 # ------------------------------------------------------------------ formatting
 
 ROLE_LABELS = {
-    "admin": "System administrators",
     "systemadmin": "System administrators",
     "director": "Directors",
     "operations": "Heads of departments",

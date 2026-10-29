@@ -140,7 +140,7 @@ const GapResponsesModal: React.FC<Props> = ({
 
                     {blocks.map(block => {
                         const rows = gapsOnly
-                            ? block.rows.filter(row => row.state !== 'yes')
+                            ? block.rows.filter(row => row.state === 'no' || row.state === 'blank')
                             : block.rows
 
                         return (
@@ -174,7 +174,7 @@ const GapResponsesModal: React.FC<Props> = ({
                                     {block.states.map((state, index) => (
                                         <div
                                             key={index}
-                                            title={`Q${index + 1} — ${state === 'yes' ? 'Yes' : state === 'no' ? 'No' : 'Unanswered'}`}
+                                            title={`Q${index + 1} — ${state === 'yes' ? 'In place' : state === 'no' ? 'Gap' : state === 'info' ? 'Not scored' : 'Unanswered'}`}
                                             style={{
                                                 height: 22,
                                                 borderRadius: 4,
@@ -235,7 +235,7 @@ const GapResponsesModal: React.FC<Props> = ({
                                             </div>
                                             <div style={{ flex: '0 0 auto' }}>
                                                 {row.answer ? (
-                                                    <Tag color={yes(row.answer) ? 'green' : 'red'}>
+                                                    <Tag color={row.state === 'yes' ? 'green' : row.state === 'no' ? 'red' : undefined}>
                                                         {row.answer}
                                                     </Tag>
                                                 ) : (

@@ -16,7 +16,7 @@ import {
 } from "antd";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
-import HighchartsMore from "highcharts/highcharts-more";
+import "highcharts/highcharts-more";
 import { motion } from "framer-motion";
 import dayjs, { Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
@@ -38,10 +38,8 @@ import {
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
-import {
-    DashboardHeaderCard,
-    MotionCard,
-} from "@/components/dashboards/metrics/Header";
+import { DashboardHeaderCard } from "@/components/dashboards/metrics/Header";
+import { MetricTile } from "@/components/dashboards/metrics/MetricTile";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { buildMonthlyReportWithCharts } from "@/utils/buildMonthlyReportWithCharts";
 import { exportMonthlyDepartmentReportDocx } from "@/utils/monthlyReportDocx";
@@ -53,10 +51,10 @@ import ReachAnalytics from "@/components/reports/ReachAnalytics";
 import { MilestoneJourneyButton } from "@/components/milestone-journey/MilestoneJourney";
 import { filterReportRecords } from "@/utils/reportVisibility";
 import { rollupReportAssignments } from "@/utils/reportGroupAssignments";
+import type { ChartDataLabels } from '@/lib/highchartsTypes'
 
 dayjs.extend(isoWeek);
 
-if (typeof HighchartsMore === "function") HighchartsMore(Highcharts);
 
 const { RangePicker } = DatePicker;
 const cardStyle: React.CSSProperties = {
@@ -78,15 +76,15 @@ const REPORT_COLORS = {
     completed: "#16a34a",
 };
 
-const METRIC_ICON_COLORS = {
-    reach: { bg: "#eff6ff", color: "#60a5fa" },
-    completion: { bg: "#ecfdf5", color: "#34d399" },
-    turnaround: { bg: "#fff7ed", color: "#fb923c" },
-    feedback: { bg: "#f5f3ff", color: "#a78bfa" },
-    overdue: { bg: "#fef2f2", color: "#f87171" },
-};
+const METRIC_TONES = {
+    reach: "accent",
+    completion: "success",
+    turnaround: "warning",
+    feedback: "info",
+    overdue: "danger",
+} as const;
 
-const visibleDataLabels = (format?: string): Highcharts.DataLabelsOptions => ({
+const visibleDataLabels = (format?: string): ChartDataLabels => ({
     enabled: true,
     allowOverlap: true,
     crop: false,
@@ -114,7 +112,6 @@ const withLabels = <T extends Highcharts.SeriesOptionsType>(series: T): T =>
 
 interface AssignedIntervention {
     id: string;
-    areaOfSupport?: string;
     assigneeId?: string;
     assigneeName?: string;
     assigneeRole?: string;
@@ -1087,7 +1084,6 @@ const ReportingDashboard: React.FC = () => {
 
             const departmentName =
                 (user as any)?.departmentName ||
-                (user as any)?.areaOfSupport ||
                 "Department";
 
             const reportData = await buildMonthlyReportWithCharts({
@@ -1208,57 +1204,49 @@ const ReportingDashboard: React.FC = () => {
                         title: "SMEs Reached",
                         value: uniqueSmesHelped,
                         icon: (
-                            <TeamOutlined style={{ color: METRIC_ICON_COLORS.reach.color }} />
+                            <TeamOutlined />
                         ),
-                        iconBg: METRIC_ICON_COLORS.reach.bg,
+                        tone: METRIC_TONES.reach,
                     },
                     {
                         title: "Completion Rate",
                         value: `${completionRate}%`,
                         icon: (
-                            <RiseOutlined
-                                style={{ color: METRIC_ICON_COLORS.completion.color }}
-                            />
+                            <RiseOutlined />
                         ),
-                        iconBg: METRIC_ICON_COLORS.completion.bg,
+                        tone: METRIC_TONES.completion,
                     },
                     {
                         title: "Avg Turnaround",
                         value: avgTurnaround ? `${avgTurnaround} days` : "0 days",
                         icon: (
-                            <FieldTimeOutlined
-                                style={{ color: METRIC_ICON_COLORS.turnaround.color }}
-                            />
+                            <FieldTimeOutlined />
                         ),
-                        iconBg: METRIC_ICON_COLORS.turnaround.bg,
+                        tone: METRIC_TONES.turnaround,
                     },
                     {
                         title: "Avg Feedback",
                         value: avgFeedback ? `${avgFeedback}/5` : "No ratings",
                         icon: (
-                            <StarOutlined
-                                style={{ color: METRIC_ICON_COLORS.feedback.color }}
-                            />
+                            <StarOutlined />
                         ),
-                        iconBg: METRIC_ICON_COLORS.feedback.bg,
+                        tone: METRIC_TONES.feedback,
                     },
                     {
                         title: "Overdue Carryover",
                         value: overdueTotal,
                         icon: (
-                            <WarningOutlined
-                                style={{ color: METRIC_ICON_COLORS.overdue.color }}
-                            />
+                            <WarningOutlined />
                         ),
-                        iconBg: METRIC_ICON_COLORS.overdue.bg,
+                        tone: METRIC_TONES.overdue,
                     },
                 ].map((metric) => (
                     <Col flex="1 1 210px" key={metric.title}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title={metric.title}
                             value={metric.value}
                             icon={metric.icon}
-                            iconBg={metric.iconBg}
+                            tone={metric.tone}
                         />
                     </Col>
                 ))}

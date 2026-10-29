@@ -51,7 +51,9 @@ import { motion } from 'framer-motion'
 import { chunk } from '@/types/types'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { assignedInterventionService } from '@/services/assignedInterventionService'
+import { useDepartmentRoles, type DepartmentRoleKey } from '@/services/departmentRoles'
 
 const { Panel } = Collapse
 const { Text } = Typography
@@ -179,21 +181,22 @@ const InterventionDatabaseView = () => {
         Record<string, string>
     >({})
 
-    // Depts that use a narrative Summary instead of file POEs
-    const SUMMARY_DEPTS = [
-        'Legal Advisory Services',
-        'Wellness Services',
-        'PDS (Personal Development Services)'
-    ]
+    const { roleOf } = useDepartmentRoles()
 
-    const isSummaryDept = (area: string | undefined | null) =>
-        SUMMARY_DEPTS.some(
-            d =>
-                d.toLowerCase() ===
-                String(area || '')
-                    .trim()
-                    .toLowerCase()
+    // Depts that use a narrative Summary instead of file POEs
+    const SUMMARY_ROLES: DepartmentRoleKey[] = ['legal', 'wellness', 'pds']
+
+    const deptIdOf = (item: any): string =>
+        String(
+            item?.departmentId ||
+            deptIdByInterventionId[String(item?.interventionId || '')] ||
+            ''
         )
+
+    const isSummaryDept = (departmentId: string | undefined | null) => {
+        const role = roleOf(departmentId)
+        return !!role && SUMMARY_ROLES.includes(role)
+    }
 
     // ─────────────────────────────────────────────
     // 1) Load only current user
@@ -909,16 +912,6 @@ const InterventionDatabaseView = () => {
         return { categories: cats, data }
     }, [filteredInterventions])
 
-    // By Area of Support
-    const byArea = React.useMemo(() => {
-        const m: Record<string, number> = {}
-        filteredInterventions.forEach(iv => {
-            const k = iv.areaOfSupport || 'Unknown'
-            m[k] = (m[k] || 0) + 1
-        })
-        return Object.entries(m).map(([name, y]) => ({ name, y }))
-    }, [filteredInterventions])
-
     // By Program
     const byProgram = React.useMemo(() => {
         const m: Record<string, number> = {}
@@ -1140,12 +1133,12 @@ const InterventionDatabaseView = () => {
                                 transition={{ duration: 0.4 }}
                             >
                                 <MotionCard>
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         loading={loading}
                                         title="Total Beneficiaries"
                                         value={totalBeneficiaries}
-                                        icon={<TeamOutlined style={{ fontSize: 18, color: '#722ed1' }} />}
-                                        iconBg="rgba(114,46,209,.12)"
+                                        icon={<TeamOutlined style={{ fontSize: 18 }} />}
+                                        tone='accent'
                                         subtitle="Beneficiaries in current scope."
                                     />
                                 </MotionCard>
@@ -1159,12 +1152,12 @@ const InterventionDatabaseView = () => {
                                 transition={{ duration: 0.4, delay: 0.1 }}
                             >
                                 <MotionCard>
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         loading={loading}
                                         title="Total Interventions"
                                         value={totalInterventions}
-                                        icon={<FileDoneOutlined style={{ fontSize: 18, color: '#1890ff' }} />}
-                                        iconBg="rgba(24,144,255,.12)"
+                                        icon={<FileDoneOutlined style={{ fontSize: 18 }} />}
+                                        tone='accent'
                                         subtitle="Interventions in filtered range."
                                     />
                                 </MotionCard>
@@ -1182,12 +1175,12 @@ const InterventionDatabaseView = () => {
                                         title={`${poeCoverage.covered} of ${filteredInterventions.length} interventions have evidence`}
                                     >
                                         <div>
-                                            <MotionCard.Metric
+                                            <MetricTile
                                                 loading={loading}
                                                 title="POE Coverage"
                                                 value={`${Number(poeCoverage.pct || 0).toFixed(0)}%`}
-                                                icon={<CalendarOutlined style={{ fontSize: 18, color: '#52c41a' }} />}
-                                                iconBg="rgba(82,196,26,.12)"
+                                                icon={<CalendarOutlined style={{ fontSize: 18 }} />}
+                                                tone='success'
                                                 subtitle="Interventions with uploaded evidence."
                                             />
                                         </div>
@@ -1211,7 +1204,7 @@ const InterventionDatabaseView = () => {
                                         }
                                     >
                                         <div>
-                                            <MotionCard.Metric
+                                            <MetricTile
                                                 loading={loading}
                                                 title="Overall Progress"
                                                 value={
@@ -1219,8 +1212,8 @@ const InterventionDatabaseView = () => {
                                                         ? `${Number(requiredCompletionAvg.avg || 0).toFixed(0)}%`
                                                         : '0%'
                                                 }
-                                                icon={<BarChartOutlined style={{ fontSize: 18, color: '#fa8c16' }} />}
-                                                iconBg="rgba(250,140,22,.12)"
+                                                icon={<BarChartOutlined style={{ fontSize: 18 }} />}
+                                                tone='warning'
                                                 subtitle={
                                                     requiredCompletionAvg.countParticipants
                                                         ? 'Average completion across required items.'
@@ -1329,18 +1322,19 @@ const InterventionDatabaseView = () => {
                                             setPassword('')
                                         }}
                                     >
-                                        <Option value='all'>All Areas</Option>
+                                        <Option value='all'>All Departments</Option>
                                         {Array.from(
-                                            new Set(
+                                            new Set<string>(
                                                 (selectedView.interventions || []).map(
-                                                    (i: any) => i.areaOfSupport || 'Unknown'
+                                                    (i: any) => deptIdOf(i)
                                                 )
                                             )
                                         )
-                                            .sort()
-                                            .map(area => (
-                                                <Option key={area} value={area}>
-                                                    {area}
+                                            .map(id => ({ id, name: (id && deptNameById[id]) || 'Unknown' }))
+                                            .sort((a, b) => a.name.localeCompare(b.name))
+                                            .map(({ id, name }) => (
+                                                <Option key={id || 'unknown'} value={id}>
+                                                    {name}
                                                 </Option>
                                             ))}
                                     </Select>
@@ -1349,7 +1343,7 @@ const InterventionDatabaseView = () => {
                                 <Divider>{`Completed Interventions (${selectedView.interventions?.filter((i: any) =>
                                     modalArea === 'all'
                                         ? true
-                                        : (i.areaOfSupport || 'Unknown') === modalArea
+                                        : deptIdOf(i) === modalArea
                                 ).length || 0
                                     })`}</Divider>
 
@@ -1359,7 +1353,7 @@ const InterventionDatabaseView = () => {
                                             .filter((item: any) =>
                                                 modalArea === 'all'
                                                     ? true
-                                                    : (item.areaOfSupport || 'Unknown') === modalArea
+                                                    : deptIdOf(item) === modalArea
                                             )
                                             .map((item: any, index: number) => (
                                                 <li key={index} style={{ marginBottom: 12 }}>
@@ -1470,12 +1464,12 @@ const InterventionDatabaseView = () => {
 
                                                                         <Descriptions.Item
                                                                             label={
-                                                                                isSummaryDept(item.areaOfSupport)
+                                                                                isSummaryDept(deptIdOf(item))
                                                                                     ? 'Summary'
                                                                                     : 'POE'
                                                                             }
                                                                         >
-                                                                            {isSummaryDept(item.areaOfSupport) ? (
+                                                                            {isSummaryDept(deptIdOf(item)) ? (
                                                                                 (() => {
                                                                                     const summary =
                                                                                         item.resources?.find(

@@ -63,6 +63,7 @@ import { motion } from 'framer-motion'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { LeaveCalendar } from './LeaveCalendar'
 import {
     LeaveType,
@@ -1717,9 +1718,9 @@ const AdminLeaveManagement: React.FC = () => {
                 <Col xs={24}>
                     <Row gutter={[16, 16]}>
                         <Col xs={24} sm={12} md={6}>
-                            <MotionCard.Metric
-                                icon={<BarChartOutlined style={{ color: '#1890ff', fontSize: 18 }} />}
-                                iconBg="rgba(24,144,255,0.12)"
+                            <MetricTile
+                                icon={<BarChartOutlined style={{ fontSize: 18 }} />}
+                                tone='accent'
                                 title="Total"
                                 value={stats.total}
                                 onClick={() => setStatusFilter(undefined)}
@@ -1731,9 +1732,9 @@ const AdminLeaveManagement: React.FC = () => {
                             />
                         </Col>
                         <Col xs={24} sm={12} md={6}>
-                            <MotionCard.Metric
-                                icon={<ClockCircleOutlined style={{ color: '#faad14', fontSize: 18 }} />}
-                                iconBg="rgba(250,173,20,0.14)"
+                            <MetricTile
+                                icon={<ClockCircleOutlined style={{ fontSize: 18 }} />}
+                                tone='warning'
                                 title="Pending"
                                 value={stats.pending}
                                 onClick={() =>
@@ -1749,9 +1750,9 @@ const AdminLeaveManagement: React.FC = () => {
                             />
                         </Col>
                         <Col xs={24} sm={12} md={6}>
-                            <MotionCard.Metric
-                                icon={<CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />}
-                                iconBg="rgba(82,196,26,0.12)"
+                            <MetricTile
+                                icon={<CheckCircleOutlined style={{ fontSize: 18 }} />}
+                                tone='success'
                                 title="Approved"
                                 value={stats.approved}
                                 onClick={() =>
@@ -1767,9 +1768,9 @@ const AdminLeaveManagement: React.FC = () => {
                             />
                         </Col>
                         <Col xs={24} sm={12} md={6}>
-                            <MotionCard.Metric
-                                icon={<CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />}
-                                iconBg="rgba(255,77,79,0.12)"
+                            <MetricTile
+                                icon={<CloseCircleOutlined style={{ fontSize: 18 }} />}
+                                tone='danger'
                                 title="Rejected"
                                 value={stats.rejected}
                                 onClick={() =>

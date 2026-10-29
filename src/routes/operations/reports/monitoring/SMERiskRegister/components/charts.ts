@@ -191,25 +191,25 @@ export function buildPortfolioRiskChartOptions(
                         y: risk.critical,
                         color: colors.criticalRisk,
                         visible: !hidden.has('Critical')
-                    },
+                    } as Highcharts.PointOptionsObject,
                     {
                         name: 'High',
                         y: risk.high,
                         color: colors.highRisk,
                         visible: !hidden.has('High')
-                    },
+                    } as Highcharts.PointOptionsObject,
                     {
                         name: 'Medium',
                         y: risk.medium,
                         color: colors.mediumRisk,
                         visible: !hidden.has('Medium')
-                    },
+                    } as Highcharts.PointOptionsObject,
                     {
                         name: 'Low',
                         y: risk.low,
                         color: colors.success,
                         visible: !hidden.has('Low')
-                    }
+                    } as Highcharts.PointOptionsObject
                 ]
             }
         ]
@@ -510,9 +510,7 @@ export function buildDepartmentRiskPressureChartOptions(
         plotOptions: {
             ...base.plotOptions,
             series: {
-                stacking: 'normal',
-                borderWidth: 0,
-                maxPointWidth: 42
+                stacking: 'normal'
             },
             column: {
                 borderWidth: 0,

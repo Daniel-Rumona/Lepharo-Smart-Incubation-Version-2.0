@@ -1,19 +1,25 @@
 import * as logger from "firebase-functions/logger";
-import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
+import { suppressRecordNotifications } from "./syntheticData";
 import { onRequest } from "firebase-functions/v2/https";
-import { admin, APP_BASE_URL, db, getTransporter } from "./emailShared";
+import { admin, APP_BASE_URL, db, getHODRecipients, getTransporter } from "./emailShared";
+import { getDepartmentHods, resolveMovDepartmentId, uidsForEmails } from "./movRecipients";
 import { logBrevoSend, sendViaBrevo } from "./brevoClient";
+import { notifyInApp, uidForEmail, uidForParticipant } from "./inAppNotifications";
+import { BREVO_EGRESS } from "./config";
+import { departmentNameOf } from "./departmentRoles";
 
 type Doc = Record<string, any>;
 const REGION = "us-central1";
 const FROM = () => process.env.SMTP_FROM || process.env.SMTP_USER!;
 const LOGIN_URL = APP_BASE_URL.replace(/\/$/, "");
 
-/** Sends and logs a direct SME intervention reminder without creating a
- * notifications document. The client supplies only the assignment context;
- * the recipient is resolved server-side from the participant record. */
+/** Sends and logs a direct SME intervention reminder. The client supplies
+ * only the assignment context; the recipient is resolved server-side from the
+ * participant record. The in-app copy uses 'intervention_reminder_sme', which
+ * is deliberately absent from NOTIFICATION_REGISTRY so it never emails twice. */
 export const sendInterventionReminderEmail = onRequest(
-  { region: REGION, cors: true },
+  { ...BREVO_EGRESS, region: REGION, cors: true },
   (req, res) => {
     (async () => {
     let recipientEmail: string | null = null;
@@ -32,6 +38,13 @@ export const sendInterventionReminderEmail = onRequest(
       const participantName = clean(body.participantName);
       const reminderReason = clean(body.reminderReason) || 'confirmation';
       if (!participantId) return res.status(400).json({ ok: false, error: 'Missing participantId.' });
+      const sourceParticipant = await db.collection('participants').doc(participantId).get();
+      // A seeded assignment on a real participant must not email them either.
+      const assignmentId = clean(body.assignedInterventionId);
+      const assignment = assignmentId ? (await db.collection('assignedInterventions').doc(assignmentId).get()).data() : null;
+      if (suppressRecordNotifications(sourceParticipant.data(), participantId) || suppressRecordNotifications({ programId }) || (assignment && suppressRecordNotifications(assignment, assignmentId))) {
+        return res.status(200).json({ ok: true, suppressed: true });
+      }
 
       const recipient = await participant({
         participantId,
@@ -53,6 +66,14 @@ export const sendInterventionReminderEmail = onRequest(
 
       const { messageId } = await sendViaBrevo({ to: recipientEmail, subject, html: content.html, text: content.text, tags: ['intervention-reminder'] });
       await logBrevoSend({ type: 'INTERVENTION_REMINDER', to: recipientEmail, subject, status: 'sent', messageId, participantId, programId });
+      await notifyInApp({
+        type: 'intervention_reminder_sme',
+        message: `Reminder for ${interventionTitle}: ${action.replace(' in the incubatee dashboard', '')}`,
+        recipientIds: [await uidForParticipant(participantId, recipientEmail)],
+        participantId,
+        programId,
+        link: '/incubatee/interventions',
+      });
       return res.status(200).json({ ok: true, sent: 1, email: recipientEmail });
     } catch (err: any) {
       const error = String(err?.message || err);
@@ -129,6 +150,11 @@ async function userEmail(data: Doc): Promise<string | null> {
   return email(snap.data()?.email);
 }
 
+/** The requester's uid for the in-app copy of a decision email. */
+async function requesterUid(data: Doc, to: string): Promise<string | null> {
+  return clean(data.userId || data.requesterId || data.requestedByUid) || uidForEmail(to);
+}
+
 export async function participant(data: Doc): Promise<{ email: string | null; name: string }> {
   const direct = email(data.participantEmail || data.applicantEmail || data.userEmail);
   const id = clean(data.participantId);
@@ -154,7 +180,7 @@ export async function participant(data: Doc): Promise<{ email: string | null; na
   return { email: null, name: clean(data.participantName || data.beneficiaryName) || "Participant" };
 }
 
-async function assignee(data: Doc): Promise<{ email: string | null; name: string }> {
+export async function assignee(data: Doc): Promise<{ email: string | null; name: string }> {
   const direct = email(data.assigneeEmail);
   const id = clean(data.assigneeId);
   if (direct) return { email: direct, name: clean(data.assigneeName) || "Facilitator" };
@@ -200,6 +226,13 @@ export const onLeaveRequestDecisionEmail = onDocumentWritten(
       after.to || after.endDate ? `To: ${clean(after.to || after.endDate)}` : "",
       decision === "rejected" && after.rejectionReason ? `Reason: ${clean(after.rejectionReason)}` : "",
     ], "/operations/hr/leave");
+    await notifyInApp({
+      type: `leave_${decision}`,
+      message: `Your ${clean(after.type || after.leaveType) || "leave"} request has been ${decision}.`,
+      recipientIds: [await requesterUid(after, to)],
+      leaveRequestId: event.params.requestId,
+      link: "/leave",
+    });
     await event.data!.after.ref.update(notificationPatch("leaveDecision", decision, to));
   },
 );
@@ -218,7 +251,51 @@ export const onResourceRequestDecisionEmail = onDocumentWritten(
       after.purpose ? `Purpose: ${clean(after.purpose)}` : "",
       decision === "rejected" && after.rejectionReason ? `Reason: ${clean(after.rejectionReason)}` : "",
     ], "/resources/internal");
+    await notifyInApp({
+      type: `resource_request_${decision}`,
+      message: `Your request for ${clean(after.resourceName) || "a resource"} has been ${decision}.`,
+      recipientIds: [await requesterUid(after, to)],
+      resourceRequestId: event.params.requestId,
+      link: "/resources/internal",
+    });
     await event.data!.after.ref.update(notificationPatch("resourceDecision", decision, to));
+  },
+);
+
+/**
+ * In-app notice to the HODs of the requested intervention's department when
+ * an SME asks for one. Done here rather than in the SME's browser because the
+ * SME can't read staff user docs; addressed by uid so it doesn't reach every
+ * operations user across all companies. Falls back to all HODs (still by uid)
+ * only when the department is unknown or has none, so a request isn't missed.
+ */
+export const onInterventionRequestCreated = onDocumentCreated(
+  { region: REGION, document: "interventionRequests/{requestId}" },
+  async (event) => {
+    const after = event.data?.data() as Doc | undefined;
+    if (!after || suppressRecordNotifications(after, event.params.requestId)) return;
+
+    const departmentId = await resolveMovDepartmentId(after);
+    let recipientIds = departmentId ? (await getDepartmentHods(departmentId)).uids : [];
+    if (!recipientIds.length) {
+      logger.warn("intervention_request_in_app.hodFallback", { requestId: event.params.requestId, departmentId });
+      recipientIds = await uidsForEmails(await getHODRecipients());
+    }
+
+    const title = clean(after.interventionTitle) || "an intervention";
+    const departmentName = await departmentNameOf(departmentId);
+    await notifyInApp({
+      type: "intervention-request",
+      message: `A new intervention "${title}" has been requested${departmentName ? ` in ${departmentName}` : ""}.` +
+        (clean(after.reason) ? ` Reason: ${clean(after.reason)}` : ""),
+      recipientIds,
+      interventionRequestId: event.params.requestId,
+      participantId: after.participantId,
+      programId: after.programId,
+      departmentId,
+      interventionTitle: after.interventionTitle,
+      link: "/operations/requests",
+    });
   },
 );
 
@@ -231,13 +308,22 @@ export const onInterventionRequestDecisionEmail = onDocumentWritten(
     const decision = status(after.status);
     const recipient = await participant(after);
     if (!recipient.email) return logger.warn("intervention_request_email.no_recipient", { requestId: event.params.requestId });
+    const requested = clean(after.interventionTitle) || await departmentNameOf(after.departmentId) || "an intervention";
     await send(recipient.email, `Intervention request ${decision}`, "Intervention request decision", [
       `Hello ${recipient.name},`,
-      `Your request for ${clean(after.interventionTitle || after.areaOfSupport) || "an intervention"} has been ${decision}.`,
+      `Your request for ${requested} has been ${decision}.`,
       after.reason ? `Your request: ${clean(after.reason)}` : "",
       (decision === "rejected" || decision === "declined") && after.rejectionReason
         ? `Reason: ${clean(after.rejectionReason)}` : "",
     ], "/incubatee/interventions");
+    await notifyInApp({
+      type: `intervention_request_${decision}`,
+      message: `Your request for ${requested} has been ${decision}.`,
+      recipientIds: [await uidForParticipant(after.participantId, recipient.email)],
+      interventionRequestId: event.params.requestId,
+      participantId: after.participantId,
+      link: "/incubatee/interventions",
+    });
     await event.data!.after.ref.update(notificationPatch("interventionDecision", decision, recipient.email));
   },
 );
@@ -248,8 +334,14 @@ export const onAssignedInterventionEmail = onDocumentWritten(
     const before = event.data?.before.data() as Doc | undefined;
     const after = event.data?.after.data() as Doc | undefined;
     if (!after) return;
+    // Seeded or test data opts out of every assignment email by setting this on the document.
+    if (suppressRecordNotifications(after, event.params.assignmentId)) return;
     const ref = event.data!.after.ref;
     const title = clean(after.interventionTitle || after.title) || "Intervention";
+    const assigneeUid = clean(after.assigneeId);
+    const smeUid = () => uidForParticipant(after.participantId, after.participantEmail);
+    const inApp = (type: string, message: string, recipientIds: Array<string | null>, link: string) =>
+      notifyInApp({ type, message, recipientIds, assignedInterventionId: event.params.assignmentId, participantId: after.participantId, link });
 
     if (!before || clean(before.assigneeId) !== clean(after.assigneeId)) {
       const assigned = await assignee(after);
@@ -270,6 +362,8 @@ export const onAssignedInterventionEmail = onDocumentWritten(
         ], "/incubatee/interventions");
         await ref.update(notificationPatch("assignment", "participant", sme.email));
       }
+      await inApp("intervention_assigned", `${title} has been assigned to you for ${sme.name}.`, [assigneeUid], "/coordinator/allocated");
+      await inApp("intervention_assigned_sme", `${title} has been assigned to ${assigned.name}. Please review and accept it.`, [await smeUid()], "/incubatee/interventions");
     }
 
     if (before && status(before.assigneeCompletionStatus) !== "completed" &&
@@ -283,6 +377,7 @@ export const onAssignedInterventionEmail = onDocumentWritten(
         ], "/incubatee/interventions");
         await ref.update(notificationPatch("assignmentLifecycle", "completionRequested", sme.email));
       }
+      await inApp("intervention_completion_requested", `The facilitator marked ${title} as completed. Please confirm or reject completion.`, [await smeUid()], "/incubatee/interventions");
     }
 
     if (before && status(before.participantAcceptanceStatus) !== status(after.participantAcceptanceStatus) &&
@@ -295,6 +390,8 @@ export const onAssignedInterventionEmail = onDocumentWritten(
         ], "/coordinator/allocated");
         await ref.update(notificationPatch("assignmentLifecycle", `participant${decision}`, assigned.email));
       }
+      const decision = status(after.participantAcceptanceStatus);
+      await inApp(`intervention-${decision}`, `${clean(after.participantName) || "The participant"} has ${decision} ${title}.`, [assigneeUid], "/coordinator/allocated");
     }
 
     if (before && status(before.participantCompletionStatus) !== status(after.participantCompletionStatus) &&
@@ -302,10 +399,17 @@ export const onAssignedInterventionEmail = onDocumentWritten(
       const assigned = await assignee(after);
       if (assigned.email) {
         const decision = status(after.participantCompletionStatus);
+        const reason = clean(after.participantCompletionRejectionReason);
         await send(assigned.email, `Completion ${decision}: ${title}`, "Completion review update", [
           `${clean(after.participantName) || "The participant"} has ${decision} completion of ${title}.`,
+          ...(decision === "rejected" && reason ? [`Their reason: “${reason}”`, "Correct it, deliver what's missing, or explain in the system; the HOD decides if you can't agree."] : []),
         ], "/coordinator/allocated");
         await ref.update(notificationPatch("assignmentLifecycle", `completion${decision}`, assigned.email));
+      }
+      const decision = status(after.participantCompletionStatus);
+      // A rejection's in-app notice (with the reason) comes from onWorkflowQueryChanged, as a delivery dispute.
+      if (decision === "confirmed") {
+        await inApp("intervention-confirmed", `${clean(after.participantName) || "The participant"} has confirmed completion of ${title}.`, [assigneeUid], "/coordinator/allocated");
       }
     }
   },

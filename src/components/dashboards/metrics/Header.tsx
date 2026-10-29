@@ -1,9 +1,11 @@
 import { CardSkeleton, type CardSkeletonVariant } from './CardSkeleton'
+import { IconChip, MetricTile, type IconChipProps, type MetricTileProps } from './MetricTile'
 import React from 'react'
-import { Card, Row, Col, Space, Button, Typography, Tag, Skeleton, theme } from 'antd'
+import { Card, Row, Col, Space, Button, Typography, Tag, theme } from 'antd'
 import type { CardProps, TagProps } from 'antd'
-import { CalendarOutlined, RightOutlined } from '@ant-design/icons'
+import { CalendarOutlined } from '@ant-design/icons'
 import { useColorMode } from '@/contexts/ThemeContext'
+import './metrics.css'
 
 const { Title, Text } = Typography
 
@@ -11,8 +13,9 @@ const { Title, Text } = Typography
  * Palette for this file, derived from the active Ant Design theme.
  *
  * These cards are rendered across most dashboards, so their colours are read
- * from tokens rather than hardcoded — the previous pale-blue borders and
- * rgba(0,0,0,.45) labels disappeared against a dark panel.
+ * from tokens rather than hardcoded. Borders and hover colours follow the
+ * --app-* tokens, so they track the selected accent (crimson by default)
+ * instead of a fixed blue.
  */
 export const useMetricPalette = () => {
     const { token } = theme.useToken()
@@ -28,19 +31,19 @@ export const useMetricPalette = () => {
          * are 11–12px and tertiary (42% white) only reaches ~4.4:1 on a panel.
          */
         muted: isDark ? token.colorTextSecondary : 'rgba(0,0,0,.45)',
-        border: isDark ? 'rgba(74, 155, 255, 0.22)' : '#e6efff',
-        borderHover: isDark ? 'rgba(74, 155, 255, 0.45)' : '#cfe0ff',
+        border: 'var(--app-border)',
+        borderHover: 'var(--app-accent-border-strong)',
         chipBorder: isDark ? token.colorBorder : '#d9d9d9',
-        // Light mode keeps its original lifted-card shadow; on dark a soft grey
+        // A soft, close shadow: cards sit just above the page. On dark a grey
         // glow reads as fog, so it goes deeper and tighter instead.
         shadow: isDark
-            ? '0 6px 18px rgba(0, 0, 0, 0.40)'
-            : '0 12px 32px rgba(0,0,0,0.10)',
+            ? '0 6px 18px rgba(0, 0, 0, 0.35)'
+            : '0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -14px rgba(15, 23, 42, 0.14)',
         shadowHover: isDark
-            ? '0 10px 26px rgba(0, 0, 0, 0.55)'
-            : '0 16px 36px rgba(0,0,0,0.14)',
+            ? '0 10px 26px rgba(0, 0, 0, 0.5)'
+            : '0 1px 2px rgba(15, 23, 42, 0.05), 0 14px 30px -14px rgba(15, 23, 42, 0.22)',
         arrowIdle: isDark ? token.colorTextTertiary : 'rgba(0,0,0,.38)',
-        arrowHover: isDark ? '#7db4ff' : 'rgba(22,119,255,.95)',
+        arrowHover: 'var(--app-accent)',
         filterBarBg: isDark ? 'rgba(255, 255, 255, 0.04)' : '#fafafa',
         filterBarBorder: isDark ? token.colorBorder : '#f0f0f0',
         filterBarShadow: isDark
@@ -49,274 +52,8 @@ export const useMetricPalette = () => {
     }
 }
 
-/** ---------- IconChip ---------- */
-type IconChipProps = {
-    bg?: string
-    icon: React.ReactNode
-    size?: number
-    radius?: number
-    style?: React.CSSProperties
-}
-
-const IconChipBase: React.FC<IconChipProps> = ({
-    bg = 'rgba(22,119,255,.12)',
-    icon,
-    size = 40,
-    radius = 999,
-    style
-}) => (
-    <div
-        style={{
-            width: size,
-            height: size,
-            borderRadius: radius,
-            display: 'grid',
-            placeItems: 'center',
-            background: bg,
-            flex: '0 0 auto',
-            ...style
-        }}
-    >
-        {icon}
-    </div>
-)
-
-/** ---------- Metric helper ---------- */
-type MetricProps = {
-    icon?: React.ReactNode
-    iconBg?: string
-    title: React.ReactNode
-    value: React.ReactNode
-    subtitle?: React.ReactNode
-    right?: React.ReactNode
-    onClick?: () => void
-    clickable?: boolean
-    disabled?: boolean
-    cursor?: React.CSSProperties['cursor']
-    wrapperStyle?: React.CSSProperties
-    loading?: boolean
-}
-
-const MetricBase: React.FC<MetricProps> = ({
-    icon,
-    iconBg,
-    title,
-    value,
-    subtitle,
-    right,
-    onClick,
-    clickable = Boolean(onClick),
-    disabled = false,
-    cursor,
-    wrapperStyle,
-    loading = false
-}) => {
-    const isClickable = clickable && !!onClick && !disabled && !loading
-    const palette = useMetricPalette()
-
-    // Hover/focus visuals (border, shadow, lift) are pure CSS (:hover /
-    // :focus-visible), not JS-tracked state: a div[tabIndex] doesn't reliably
-    // fire mouseleave/blur in every case, which left a previously-active
-    // tile's border "stuck" until it was hovered again. CSS always reflects
-    // the real cursor/focus position, so it can't get stuck.
-    //
-    // Crucially, border/boxShadow/transform must NOT be set inline here:
-    // inline styles always beat stylesheet rules (even :hover ones), so an
-    // inline value would make the CSS below dead code. They're driven
-    // entirely by the CSS variables + class rules instead. `wrapperStyle`
-    // (used by many callers to inline an "active/selected" border) still
-    // works as before, since it's spread last and inline still wins over
-    // the stylesheet for whichever sub-properties it sets.
-    const style = {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 8,
-        width: '100%',
-        minWidth: 0,
-        padding: '11px 12px',
-        borderRadius: 10,
-        background: palette.surface,
-        transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
-        cursor: loading ? 'default' : disabled ? 'not-allowed' : cursor || (isClickable ? 'pointer' : 'default'),
-        userSelect: isClickable ? 'none' : undefined,
-        opacity: disabled ? 0.6 : 1,
-        outline: 'none',
-        '--qtx-metric-border': palette.border,
-        '--qtx-metric-shadow': palette.shadow,
-        '--qtx-metric-border-hover': palette.borderHover,
-        '--qtx-metric-shadow-hover': palette.shadowHover,
-        '--qtx-metric-chip-border-hover': palette.borderHover,
-        '--qtx-metric-arrow-hover': palette.arrowHover,
-        ...wrapperStyle
-    }
-
-    return (
-        <div
-            role={isClickable ? 'button' : undefined}
-            tabIndex={isClickable ? 0 : undefined}
-            onClick={isClickable ? onClick : undefined}
-            onKeyDown={
-                isClickable
-                    ? (e) => {
-                        if (e.key === 'Enter' || e.key === ' ') onClick?.()
-                    }
-                    : undefined
-            }
-            className={isClickable ? 'qtx-metric-tile qtx-metric-tile--clickable' : 'qtx-metric-tile'}
-            style={style as React.CSSProperties}
-        >
-            <Space size={10} align="center" style={{ minWidth: 0, flex: '1 1 auto' }}>
-                {icon ? (
-                    <IconChipBase size={36} radius={999} bg={iconBg} icon={icon} />
-                ) : null}
-
-                <div
-                    style={{
-                        minWidth: 0,
-                        marginLeft: 14,
-                        flex: '1 1 auto'
-                    }}
-                >
-                    {loading ? (
-                        // Icon and title are known up front, so only the parts
-                        // that depend on data are skeletons - the tile keeps its
-                        // real shape and nothing shifts when the numbers arrive.
-                        <>
-                            <div
-                                style={{
-                                    fontSize: 12,
-                                    color: palette.muted,
-                                    lineHeight: 1.15,
-                                    overflowWrap: 'normal',
-                                    wordBreak: 'normal'
-                                }}
-                            >
-                                {title}
-                            </div>
-                            <Skeleton.Input
-                                active
-                                size="small"
-                                style={{ width: 36, minWidth: 0, height: 20, display: 'block', marginBlock: 2 }}
-                            />
-                            {subtitle ? (
-                                <Skeleton.Input
-                                    active
-                                    size="small"
-                                    style={{ width: 120, minWidth: 0, height: 11, display: 'block' }}
-                                />
-                            ) : null}
-                        </>
-                    ) : (
-                        <>
-                            <div
-                                style={{
-                                    fontSize: 12,
-                                    color: palette.muted,
-                                    lineHeight: 1.15,
-                                    overflowWrap: 'normal',
-                                    wordBreak: 'normal'
-                                }}
-                            >
-                                {title}
-                            </div>
-                            <div
-                                style={{
-                                    fontSize: 20,
-                                    fontWeight: 700,
-                                    color: palette.text,
-                                    lineHeight: 1.1,
-                                    overflowWrap: 'normal',
-                                    wordBreak: 'normal'
-                                }}
-                            >
-                                {value}
-                            </div>
-                            {subtitle ? (
-                                <div
-                                    style={{
-                                        marginTop: 2,
-                                        fontSize: 11,
-                                        color: palette.muted,
-                                        lineHeight: 1.15,
-                                        overflowWrap: 'normal',
-                                        wordBreak: 'normal'
-                                    }}
-                                >
-                                    {subtitle}
-                                </div>
-                            ) : null}
-                        </>
-                    )}
-                </div>
-            </Space>
-
-            {!loading && (right || clickable) ? (
-                <div
-                    style={{
-                        flex: '0 0 auto',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6
-                    }}
-                >
-                    {right}
-                    {clickable ? (
-                        <span
-                            aria-hidden="true"
-                            className="qtx-metric-chevron"
-                            style={{
-                                width: 28,
-                                height: 28,
-                                borderRadius: 999,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                border: `1px solid ${palette.chipBorder}`,
-                                background: palette.surface,
-                                transition: 'all .2s ease'
-                            }}
-                        >
-                            <RightOutlined
-                                className="qtx-metric-arrow"
-                                style={{
-                                    fontSize: 11,
-                                    color: palette.arrowIdle,
-                                    transform: 'translateX(0)',
-                                    transition: 'color .2s ease, transform .2s ease'
-                                }}
-                            />
-                        </span>
-                    ) : null}
-                </div>
-            ) : null}
-
-            <style>{`
-                .qtx-metric-tile {
-                    border: 1px solid var(--qtx-metric-border);
-                    box-shadow: var(--qtx-metric-shadow);
-                    transform: translateY(0);
-                }
-                .qtx-metric-tile--clickable:hover,
-                .qtx-metric-tile--clickable:focus-visible {
-                    border-color: var(--qtx-metric-border-hover);
-                    box-shadow: var(--qtx-metric-shadow-hover);
-                    transform: translateY(-2px);
-                }
-                .qtx-metric-tile--clickable:hover .qtx-metric-chevron,
-                .qtx-metric-tile--clickable:focus-visible .qtx-metric-chevron {
-                    border-color: var(--qtx-metric-chip-border-hover);
-                    background: rgba(22,119,255,.06);
-                }
-                .qtx-metric-tile--clickable:hover .qtx-metric-arrow,
-                .qtx-metric-tile--clickable:focus-visible .qtx-metric-arrow {
-                    color: var(--qtx-metric-arrow-hover);
-                    transform: translateX(1px);
-                }
-            `}</style>
-        </div>
-    )
-}
+export { MetricTile, IconChip } from './MetricTile'
+export type { MetricTone, MetricTrend, MetricTileProps, IconChipProps } from './MetricTile'
 
 /** ---------- MotionCard ---------- */
 export type DashboardFilterBarProps = {
@@ -355,6 +92,10 @@ export const DashboardFilterBar: React.FC<DashboardFilterBarProps> = ({
                 border: `1px solid ${borderColor ?? palette.filterBarBorder}`,
                 boxShadow: boxShadow ?? palette.filterBarShadow,
                 width: '100%',
+                boxSizing: 'border-box',
+                minWidth: 0,
+                overflowX: 'auto',
+                overflowY: 'hidden',
                 ...style
             }}
         >
@@ -385,8 +126,10 @@ type MotionCardOwnProps = {
 }
 
 type MotionCardComponent = React.FC<CardProps & MotionCardOwnProps> & {
+    /** @deprecated Use IconChip from metrics/MetricTile. */
     IconChip: React.FC<IconChipProps>
-    Metric: React.FC<MetricProps>
+    /** @deprecated Use MetricTile from metrics/MetricTile. */
+    Metric: React.FC<MetricTileProps>
 }
 
 export const MotionCard: MotionCardComponent = ({
@@ -404,20 +147,15 @@ export const MotionCard: MotionCardComponent = ({
 
     const cardStyle: React.CSSProperties = {
         boxShadow: palette.shadow,
-        transition: 'all 0.3s ease',
+        transition: 'box-shadow 0.3s ease, border-color 0.3s ease',
         borderRadius: 14,
-        border: `1px solid ${palette.border}`,
-        backdropFilter: 'blur(3px)'
+        border: `1px solid ${palette.border}`
     }
 
     return (
-        <div
-            style={{
-                transform: 'translateY(10px)',
-                opacity: 0,
-                animation: 'enter .35s ease forwards'
-            }}
-        >
+        // The entrance animation lives in metrics.css (one keyframes rule for
+        // the whole app, not one <style> tag per card).
+        <div className='qtx-motion-card'>
             <Card {...rest} style={{ ...cardStyle, ...(style || {}) }}>
                 {loading ? (
                     typeof skeleton === 'string' ? (
@@ -441,21 +179,14 @@ export const MotionCard: MotionCardComponent = ({
                     </>
                 )}
             </Card>
-
-            <style>{`
-        @keyframes enter {
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
-        }
-      `}</style>
         </div>
     )
 }
 
-MotionCard.IconChip = IconChipBase
-MotionCard.Metric = MetricBase
+// Deprecated aliases, kept so any remaining callers keep working.
+MotionCard.IconChip = IconChip
+MotionCard.Metric = MetricTile
+
 
 /** ---------- header card ---------- */
 type SubtitleTag =
@@ -549,7 +280,7 @@ export const DashboardHeaderCard: React.FC<HeaderCardProps> = ({
             <Row align="middle" justify="space-between" gutter={[12, 12]} wrap style={{ position: 'relative', minHeight: 46 }}>
                 <Col flex="auto">
                     <Space align="center" size={12} wrap>
-                        {titleIcon && <IconChipBase size={38} radius={999} bg='rgba(126,226,168,.14)' icon={<span style={{ display: 'inline-flex', fontSize: 20, color: '#7ee2a8' }}>{titleIcon}</span>} />}
+                        {titleIcon && <IconChip size={38} radius={999} bg='rgba(126,226,168,.14)' icon={<span style={{ display: 'inline-flex', fontSize: 20, color: '#7ee2a8' }}>{titleIcon}</span>} />}
                         <Title level={3} style={{ margin: 0, color: '#fff', lineHeight: 1.15 }}>
                             {title}
                         </Title>

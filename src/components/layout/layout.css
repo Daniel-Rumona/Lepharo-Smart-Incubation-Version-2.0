@@ -211,6 +211,11 @@
     border-color: var(--app-accent-border);
 }
 
+.workspace-program-control-tag {
+    background: var(--app-accent-wash);
+    border-color: var(--app-accent-border);
+}
+
 .workspace-program-lock {
     flex: 0 0 auto;
     color: #6b8fc7;
@@ -228,17 +233,26 @@
     color: #cf1322;
 }
 
-.workspace-logout-button {
-    border: 1px solid #ffccc7 !important;
-    background: #fff !important;
-}
-
-.workspace-theme-toggle {
+/* Outlined circular icon buttons in the top bar: theme, notifications and
+   the reporting-period filter. */
+.workspace-theme-toggle,
+.workspace-notification-button,
+.workspace-icon-button {
     border: 1px solid #dfe3e8 !important;
 }
 
+html[data-theme="dark"] .workspace-theme-toggle,
+html[data-theme="dark"] .workspace-notification-button,
+html[data-theme="dark"] .workspace-icon-button {
+    border-color: var(--app-border-strong) !important;
+}
+
 .workspace-theme-toggle:hover,
-.workspace-theme-toggle:focus-visible {
+.workspace-theme-toggle:focus-visible,
+.workspace-notification-button:hover,
+.workspace-notification-button:focus-visible,
+.workspace-icon-button:hover,
+.workspace-icon-button:focus-visible {
     border-color: var(--app-accent-border-strong) !important;
     color: var(--app-accent) !important;
     background: var(--app-accent-wash) !important;
@@ -262,12 +276,6 @@
     border-color: var(--app-accent-border-strong) !important;
     color: var(--app-accent-strong) !important;
     background: var(--app-accent-soft) !important;
-}
-
-.workspace-logout-button:hover,
-.workspace-logout-button:focus-visible {
-    border-color: #ff7875 !important;
-    background: #fff2f0 !important;
 }
 
 .workspace-more-modal .ant-modal-content {
@@ -343,8 +351,16 @@
     flex-wrap: nowrap;
     gap: 3px;
     padding: 4px;
+    /* Tabs never shrink below their label; a role with many sections
+       scrolls the strip sideways instead of clipping names. */
+    overflow-x: auto;
+    scrollbar-width: none;
     border-radius: 13px;
     background: #f2f4f7;
+}
+
+.workspace-more-segmented::-webkit-scrollbar {
+    display: none;
 }
 
 .workspace-more-segment {
@@ -353,8 +369,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex: 1 1 0;
-    padding: 4px 6px;
+    flex: 1 0 auto;
+    padding: 4px 12px;
     overflow: hidden;
     border: 0;
     border-radius: 9px;
@@ -526,41 +542,61 @@
         display: none;
     }
 
+    /* Leads the actions, so on narrow phones it gives up width (the name ellipsizes)
+       rather than overflowing under the logo. */
     .workspace-topbar-mobile .workspace-program-control {
-        width: 142px;
-        min-width: 142px;
+        width: auto;
+        min-width: 0;
         max-width: 142px;
-        flex-basis: 142px;
+        flex: 0 1 142px;
         padding-inline: 7px;
     }
 
     .workspace-topbar-mobile .workspace-program-control .ant-select {
-        min-width: 92px;
+        min-width: 0;
         max-width: 105px;
     }
 
     .workspace-topbar.workspace-topbar-mobile.workspace-topbar-nonav.workspace-topbar-incubatee-mobile {
-        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-        grid-template-areas: "incubatee-left brand incubatee-right";
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas: "brand incubatee-program incubatee-right";
         gap: 6px;
         padding: 4px 6px;
-    }
-
-    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-left {
-        grid-area: incubatee-left;
-        min-width: 0;
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 4px;
     }
 
     .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-brand {
         grid-area: brand;
         width: 78px;
         height: 32px;
-        justify-self: center;
+        justify-self: start;
         padding: 3px 5px;
+    }
+
+    /* Programme name sits in the middle and gives up width first. */
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-program {
+        grid-area: incubatee-program;
+        min-width: 0;
+        display: flex;
+        justify-content: center;
+    }
+
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-program .workspace-program-control {
+        width: auto;
+        min-width: 0;
+        max-width: 100%;
+        flex: 0 1 auto;
+        height: 32px;
+        padding-inline: 8px;
+    }
+
+    /* A dropdown has no intrinsic width, so let it fill the middle column. */
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-program .workspace-program-control-selectable {
+        width: 100%;
+    }
+
+    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-program .workspace-program-control .ant-select {
+        min-width: 0;
+        max-width: none;
     }
 
     .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-right {
@@ -572,14 +608,12 @@
         gap: 4px;
     }
 
-    .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-left>*,
     .workspace-topbar-incubatee-mobile .workspace-incubatee-mobile-right>* {
         flex: 0 0 auto;
     }
 
     .workspace-topbar-incubatee-mobile .workspace-assistant-button,
-    .workspace-topbar-incubatee-mobile .workspace-logout-button,
-    .workspace-topbar-incubatee-mobile .workspace-theme-toggle {
+    .workspace-topbar-incubatee-mobile .workspace-notification-button {
         width: 32px;
         min-width: 32px;
         height: 32px;
@@ -702,6 +736,122 @@ Shared by the staff workspace and the applicant portal. */
     margin-left: 6px;
 }
 
+/* More as a bottom sheet (incubatees on phones). The sheet itself comes from
+   mobile-sheet.css; this is its content: one scrolling list of thumb-sized
+   rows grouped under small headings. Theme variables carry it through dark
+   mode. */
+.workspace-more-sheet-section+.workspace-more-sheet-section {
+    margin-top: 10px;
+}
+
+.workspace-more-sheet-section h3 {
+    margin: 0;
+    padding: 6px 4px 4px;
+    color: var(--app-text-muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.workspace-more-sheet-row {
+    width: 100%;
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 14px;
+    color: var(--app-text);
+    background: transparent;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.workspace-more-sheet-row:active {
+    background: var(--app-surface-sunken);
+}
+
+.workspace-more-sheet-row-active {
+    color: var(--app-accent);
+    background: var(--app-accent-soft);
+}
+
+.workspace-more-sheet-icon {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    color: var(--app-accent);
+    background: var(--app-accent-wash);
+    font-size: 17px;
+}
+
+.workspace-more-sheet-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-more-sheet-arrow {
+    flex: 0 0 auto;
+    color: var(--app-text-muted);
+    font-size: 12px;
+}
+
+/* Labelled variant (incubatees): every tab shows its name under the icon, so
+   nothing has to be guessed from an icon alone. The bar spans the width. */
+.workspace-bottom-nav-labelled {
+    width: calc(100vw - 32px);
+    gap: 2px;
+    padding: 4px;
+    border-radius: 20px;
+}
+
+.workspace-bottom-nav-labelled .workspace-bottom-nav-item {
+    position: relative;
+    /* Sized from the label, so short names (Home, More) leave room for long ones. */
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 52px;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0 1px;
+    border-radius: 16px;
+    transition: color 160ms ease, background 160ms ease;
+}
+
+.workspace-bottom-nav-labelled .workspace-bottom-nav-label,
+.workspace-bottom-nav-labelled .workspace-bottom-nav-item-active .workspace-bottom-nav-label {
+    max-width: 100%;
+    margin-left: 0;
+    overflow: hidden;
+    opacity: 1;
+    font-size: 10.5px;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+}
+
+.workspace-bottom-nav-labelled .workspace-bottom-nav-icon {
+    font-size: 18px;
+}
+
+.workspace-bottom-nav-labelled .workspace-bottom-nav-item .ant-badge {
+    position: absolute;
+    top: 3px;
+    left: calc(50% + 6px);
+    margin-left: 0;
+}
+
 @media (max-width: 767px) {
     .workspace-bottom-nav {
         display: flex;
@@ -725,4 +875,8 @@ Shared by the staff workspace and the applicant portal. */
     .workspace-bottom-nav-label {
         transition: none;
     }
+}
+
+.workspace-more-grid-stacked {
+    grid-template-columns: minmax(0, 1fr);
 }

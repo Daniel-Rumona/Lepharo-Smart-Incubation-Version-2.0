@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  AutoComplete,
   Button,
   Checkbox,
   Col,
@@ -17,19 +18,31 @@ import {
   Row,
   Segmented,
   Select,
+  Slider,
   TimePicker,
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
   theme,
 } from "antd";
+import type { ModalProps } from "antd";
 import type { UploadFile } from "antd/es/upload/interface";
 import {
+  AppstoreOutlined,
+  ArrowLeftOutlined,
+  ArrowRightOutlined,
+  AimOutlined,
+  BulbOutlined,
   CalendarOutlined,
+  CheckCircleFilled,
   CheckCircleOutlined,
+  CheckOutlined,
+  LinkOutlined,
+  MailOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -38,17 +51,23 @@ import {
   FilePptOutlined,
   PlayCircleOutlined,
   SyncOutlined,
-  MinusCircleOutlined,
   PictureOutlined,
   PlusOutlined,
-  ProductOutlined,
   RocketOutlined,
   SearchOutlined,
   TeamOutlined,
+  ToolOutlined,
   UserOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  deleteField,
+  getDocs,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
 import dayjs, { Dayjs } from "dayjs";
 import { db, storage } from "@/firebase";
 import {
@@ -61,6 +80,11 @@ import {
   DashboardFilterBar,
   MotionCard,
 } from "@/components/dashboards/metrics/Header";
+import {
+  MetricsGrid,
+  type DashboardMetric,
+} from "@/components/dashboards/metrics/MetricsGrid";
+import type { MetricTone } from "@/components/dashboards/metrics/MetricTile";
 import { featureGovernanceService } from "@/services/featureGovernanceService";
 import {
   FeatureGovernanceRecord,
@@ -83,6 +107,9 @@ import ReportPlayer from "./ReportPlayer";
 const { Text, Title } = Typography;
 const { TextArea } = Input;
 const { RangePicker } = DatePicker;
+// Modals close from the header X, so the footer carries only the primary
+// action, stretched across the row (okButtonProps sets block).
+const okOnlyFooter: ModalProps["footer"] = (_, { OkBtn }) => <OkBtn />;
 type ReportPeriod = "week" | "month" | "quarter" | "all" | "custom";
 type GovernanceWorkspaceItem = {
   id: string;
@@ -95,8 +122,9 @@ type GovernanceWorkspaceItem = {
 };
 const DEPARTMENT_ROLES = ["operations", "coordinator", "headofdepartment"];
 const BRANCH_ROLES = ["projectadmin", "receptionist", "employee"];
+// Roles a feature can affect. System admins see everything, so they are not
+// offered as an audience.
 const ROLES = [
-  "admin",
   "director",
   "operations",
   "coordinator",
@@ -107,7 +135,7 @@ const ROLES = [
   "funder",
 ];
 const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
+  system_admin: "System Admin",
   director: "Director",
   operations: "Heads Of Departments",
   headofdepartment: "Heads Of Departments",
@@ -169,9 +197,609 @@ const SCHEDULE_DEFAULTS = () => ({
   weekday: 1,
   dayOfMonth: 1,
   reminderEmail: "daniel@quantilytix.co.za",
-  startDate: dayjs(),
+  // Weekends can't be picked, so roll a Saturday/Sunday default to Monday.
+  startDate:
+    dayjs().day() === 6
+      ? dayjs().add(2, "day")
+      : dayjs().day() === 0
+      ? dayjs().add(1, "day")
+      : dayjs(),
   time: dayjs("09:00", "HH:mm"),
 });
+// Meetings run on weekdays only; values stay as WEEKDAYS indexes (0 = Sunday).
+const WEEKDAY_CHIPS = [1, 2, 3, 4, 5].map((value) => ({
+  value,
+  label: WEEKDAYS[value].slice(0, 3),
+}));
+const occursOn = (schedule: GovernanceMeetingSchedule, date: Dayjs) => {
+  if (date.isBefore(dayjs(schedule.startDate), "day")) return false;
+  if (schedule.frequency === "monthly")
+    return (
+      date.date() === Math.min(schedule.dayOfMonth || 1, date.daysInMonth())
+    );
+  if (date.day() !== schedule.weekday) return false;
+  if (schedule.frequency === "weekly") return true;
+  const weeks = Math.floor(
+    date.startOf("day").diff(dayjs(schedule.startDate).startOf("day"), "day") /
+      7
+  );
+  return weeks % 2 === 0;
+};
+/** The most recent occurrence on or before today, as YYYY-MM-DD. */
+const latestOccurrence = (schedule: GovernanceMeetingSchedule) => {
+  const today = dayjs().startOf("day");
+  for (let back = 0; back <= 62; back += 1) {
+    const date = today.subtract(back, "day");
+    if (date.isBefore(dayjs(schedule.startDate), "day")) return null;
+    if (occursOn(schedule, date)) return date.format("YYYY-MM-DD");
+  }
+  return null;
+};
+/** The next occurrence after today, as YYYY-MM-DD. */
+const nextOccurrence = (schedule: GovernanceMeetingSchedule) => {
+  const today = dayjs().startOf("day");
+  for (let ahead = 1; ahead <= 62; ahead += 1) {
+    const date = today.add(ahead, "day");
+    if (occursOn(schedule, date)) return date.format("YYYY-MM-DD");
+  }
+  return null;
+};
+const isWeekend = (date: Dayjs) => date.day() === 0 || date.day() === 6;
+// Discussion is stored as plain text, one point per line, so older free-text
+// notes still read the same.
+const discussionPoints = (text?: string) =>
+  String(text || "")
+    .split("\n")
+    .map((line) => line.replace(/^\s*[•\-*]\s*/, "").trim())
+    .filter(Boolean);
+const DiscussionText: React.FC<{ text?: string; empty: string }> = ({
+  text,
+  empty,
+}) => {
+  const points = discussionPoints(text);
+  if (!points.length) return <Text type="secondary">{empty}</Text>;
+  if (points.length === 1) return <Text>{points[0]}</Text>;
+  return (
+    <ul style={{ margin: 0, paddingLeft: 18 }}>
+      {points.map((point, index) => (
+        <li key={index}>
+          <Text>{point}</Text>
+        </li>
+      ))}
+    </ul>
+  );
+};
+// One line to type in, a round add button, and the added items as cards
+// with a delete button each.
+const PointsListInput: React.FC<{
+  points: string[];
+  onChange: (points: string[]) => void;
+  placeholder: string;
+  noun: string;
+}> = ({ points, onChange, placeholder, noun }) => {
+  const { token } = theme.useToken();
+  const [draft, setDraft] = useState("");
+  const update = onChange;
+  const addPoint = () => {
+    const text = draft.trim();
+    if (!text) return;
+    update([...points, text]);
+    setDraft("");
+  };
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Input
+          value={draft}
+          placeholder={placeholder}
+          onChange={(event) => setDraft(event.target.value)}
+          onPressEnter={(event) => {
+            event.preventDefault();
+            addPoint();
+          }}
+        />
+        <Button
+          type="primary"
+          shape="circle"
+          icon={<PlusOutlined />}
+          aria-label={`Add ${noun}`}
+          disabled={!draft.trim()}
+          onClick={addPoint}
+        />
+      </div>
+      {points.length > 0 && (
+        <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
+          {points.map((point, index) => (
+            <div
+              key={`${index}-${point}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 6px 6px 12px",
+                borderRadius: 10,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorFillAlter,
+              }}
+            >
+              <Text style={{ flex: 1, minWidth: 0 }}>{point}</Text>
+              <Button
+                danger
+                type="text"
+                shape="circle"
+                size="small"
+                icon={<DeleteOutlined />}
+                aria-label={`Remove ${noun}`}
+                onClick={() =>
+                  update(points.filter((_, itemIndex) => itemIndex !== index))
+                }
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+const DiscussionPointsInput: React.FC<{
+  value?: string;
+  onChange?: (value: string) => void;
+}> = ({ value, onChange }) => (
+  <PointsListInput
+    points={discussionPoints(value)}
+    onChange={(next) => onChange?.(next.join("\n"))}
+    placeholder="Type a point and press Enter"
+    noun="point"
+  />
+);
+// Challenges keep their stored shape ({ text }[]) so saving is unchanged.
+const ChallengePointsInput: React.FC<{
+  value?: { text?: string }[];
+  onChange?: (value: { text: string }[]) => void;
+}> = ({ value, onChange }) => (
+  <PointsListInput
+    points={(value || [])
+      .map((item) => String(item?.text || "").trim())
+      .filter(Boolean)}
+    onChange={(next) => onChange?.(next.map((text) => ({ text })))}
+    placeholder="Type a challenge and press Enter"
+    noun="challenge"
+  />
+);
+// Slim single-choice cards, used where a checkbox or select hid the choice.
+const ChoiceCards: React.FC<{
+  value?: string | boolean;
+  onChange?: (value: any) => void;
+  options: {
+    value: string | boolean;
+    title: string;
+    hint?: string;
+    icon: React.ReactNode;
+  }[];
+  /** Cards per row; defaults to all on one row. */
+  columns?: number;
+}> = ({ value, onChange, options, columns }) => {
+  const { token } = theme.useToken();
+  return (
+    <div
+      role="radiogroup"
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${
+          columns || options.length
+        }, minmax(0, 1fr))`,
+        gap: 10,
+      }}
+    >
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={String(option.value)}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange?.(option.value)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              minWidth: 0,
+              padding: "8px 12px",
+              borderRadius: 12,
+              border: `1px solid ${
+                active ? token.colorPrimary : token.colorBorderSecondary
+              }`,
+              background: active
+                ? token.colorPrimaryBg
+                : token.colorBgContainer,
+              color: token.colorText,
+              font: "inherit",
+              textAlign: "left",
+              cursor: "pointer",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 16,
+                color: active ? token.colorPrimary : token.colorTextSecondary,
+              }}
+            >
+              {option.icon}
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <Text strong style={{ display: "block", lineHeight: 1.3 }}>
+                {option.title}
+              </Text>
+              {option.hint && (
+                <Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                  {option.hint}
+                </Text>
+              )}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+// Multi-select cards (affected roles), three to a row.
+const MultiChoiceCards: React.FC<{
+  value?: string[];
+  onChange?: (value: string[]) => void;
+  options: { value: string; label: string }[];
+}> = ({ value = [], onChange, options }) => {
+  const { token } = theme.useToken();
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+        gap: 8,
+      }}
+    >
+      {options.map((option) => {
+        const active = value.includes(option.value);
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="checkbox"
+            aria-checked={active}
+            onClick={() =>
+              onChange?.(
+                active
+                  ? value.filter((item) => item !== option.value)
+                  : [...value, option.value]
+              )
+            }
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 6,
+              minWidth: 0,
+              minHeight: 40,
+              padding: "6px 10px",
+              borderRadius: 10,
+              border: `1px solid ${
+                active ? token.colorPrimary : token.colorBorderSecondary
+              }`,
+              background: active
+                ? token.colorPrimaryBg
+                : token.colorBgContainer,
+              color: active ? token.colorPrimary : token.colorText,
+              font: "inherit",
+              fontSize: 13,
+              fontWeight: 600,
+              textAlign: "left",
+              cursor: "pointer",
+            }}
+          >
+            <span
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {option.label}
+            </span>
+            {active && <CheckCircleFilled style={{ flex: "0 0 auto" }} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+const STATUS_CARDS: Record<
+  string,
+  { title: string; hint: string; icon: React.ReactNode }
+> = {
+  submitted: {
+    title: "Under review",
+    hint: "Not yet planned",
+    icon: <EyeOutlined />,
+  },
+  planned: {
+    title: "Planned",
+    hint: "Scheduled, not started",
+    icon: <CalendarOutlined />,
+  },
+  "in-progress": {
+    title: "In progress",
+    hint: "Being built",
+    icon: <SyncOutlined />,
+  },
+  blocked: {
+    title: "At risk",
+    hint: "Blocked or slipping",
+    icon: <WarningOutlined />,
+  },
+  "awaiting-meeting": {
+    title: "Meeting pending",
+    hint: "Done, awaiting sign-off",
+    icon: <TeamOutlined />,
+  },
+  released: {
+    title: "Completed",
+    hint: "Live for users",
+    icon: <CheckCircleOutlined />,
+  },
+};
+type FeatureSection = "details" | "delivery" | "release" | "audience";
+// Sections offered when editing; picking some turns each into a step.
+const FEATURE_SECTIONS: {
+  key: FeatureSection;
+  title: string;
+  hint: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    key: "details",
+    title: "Details",
+    hint: "Title, description and scope",
+    icon: <EditOutlined />,
+  },
+  {
+    key: "delivery",
+    title: "Status and progress",
+    hint: "Where delivery stands",
+    icon: <RocketOutlined />,
+  },
+  {
+    key: "release",
+    title: "What's New publication",
+    hint: "Announce a completed feature",
+    icon: <PictureOutlined />,
+  },
+  {
+    key: "audience",
+    title: "Affected users",
+    hint: "Roles, departments and centres",
+    icon: <TeamOutlined />,
+  },
+];
+const FEATURE_STEP_TITLES: Record<string, string> = {
+  choose: "What do you want to update?",
+  details: "Details",
+  delivery: "Status and progress",
+  release: "What's New publication",
+  audience: "Affected users",
+};
+const FEATURE_STEP_FIELDS: Record<string, string[]> = {
+  details: [
+    "title",
+    "description",
+    "category",
+    "requestedByName",
+    "programSpecific",
+  ],
+  delivery: ["type", "status", "progress", "dueDate", "completedAt"],
+  release: [
+    "publishToWhatsNew",
+    "releaseHeadline",
+    "releaseSummary",
+    "releaseDate",
+  ],
+  audience: ["roles", "departmentIds", "branchIds"],
+};
+// Slim read-only "before → after" row for a value an update will change.
+const ChangeCard: React.FC<{
+  label: string;
+  from: string;
+  to: string;
+  icon: React.ReactNode;
+}> = ({ label, from, to, icon }) => {
+  const { token } = theme.useToken();
+  const changed = from !== to;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 12px",
+        borderRadius: 12,
+        border: `1px solid ${
+          changed ? token.colorPrimary : token.colorBorderSecondary
+        }`,
+        background: changed ? token.colorPrimaryBg : token.colorFillAlter,
+      }}
+    >
+      <span
+        style={{
+          display: "grid",
+          placeItems: "center",
+          flex: "0 0 auto",
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          fontSize: 15,
+          color: changed ? "#fff" : token.colorPrimary,
+          background: changed ? token.colorPrimary : token.colorPrimaryBg,
+        }}
+      >
+        {icon}
+      </span>
+      <Text type="secondary" style={{ fontSize: 13 }}>
+        {label}
+      </Text>
+      <span
+        style={{
+          marginLeft: "auto",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          minWidth: 0,
+        }}
+      >
+        <Text strong={!changed} type={changed ? "secondary" : undefined}>
+          {from}
+        </Text>
+        {changed && (
+          <>
+            <ArrowRightOutlined
+              style={{ fontSize: 12, color: token.colorPrimary }}
+            />
+            <Text strong style={{ color: token.colorPrimary }}>
+              {to}
+            </Text>
+          </>
+        )}
+      </span>
+    </div>
+  );
+};
+const MeetingStatusCards: React.FC<{
+  value?: string;
+  onChange?: (value: string) => void;
+}> = ({ value, onChange }) => {
+  const { token } = theme.useToken();
+  const options = [
+    {
+      value: "held",
+      title: "Held",
+      hint: "It already took place",
+      icon: <CheckCircleOutlined />,
+    },
+    {
+      value: "pending",
+      title: "Upcoming",
+      hint: "It is still to be held",
+      icon: <ClockCircleOutlined />,
+    },
+  ];
+  return (
+    <div
+      role="radiogroup"
+      style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+    >
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange?.(option.value)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: `1px solid ${
+                active ? token.colorPrimary : token.colorBorderSecondary
+              }`,
+              background: active
+                ? token.colorPrimaryBg
+                : token.colorBgContainer,
+              color: token.colorText,
+              font: "inherit",
+              textAlign: "left",
+              cursor: "pointer",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 18,
+                color: active ? token.colorPrimary : token.colorTextSecondary,
+              }}
+            >
+              {option.icon}
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <Text strong style={{ display: "block" }}>
+                {option.title}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {option.hint}
+              </Text>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+type MeetingExtra = "challenges" | "feature" | "links";
+// Optional parts of a meeting record. Each one picked on the first step of
+// "Add meeting" becomes its own step, in this order.
+const MEETING_EXTRAS: {
+  key: MeetingExtra;
+  title: string;
+  hint: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    key: "challenges",
+    title: "Challenges raised",
+    hint: "Problems or blockers that came up",
+    icon: <WarningOutlined />,
+  },
+  {
+    key: "feature",
+    title: "New feature request",
+    hint: "Log a request that came out of the meeting",
+    icon: <BulbOutlined />,
+  },
+  {
+    key: "links",
+    title: "Link existing features",
+    hint: "Connect features that were discussed",
+    icon: <LinkOutlined />,
+  },
+];
+const MEETING_STEP_FIELDS: Record<string, string[]> = {
+  details: [
+    "title",
+    "status",
+    "withName",
+    "meetingDate",
+    "dueDate",
+    "discussion",
+  ],
+  challenges: ["challenges"],
+  feature: [
+    "featureTitle",
+    "featureDescription",
+    "featureRoles",
+    "featureDepartmentIds",
+    "featureBranchIds",
+    "featureDueDate",
+  ],
+  links: ["relatedFeatureIds"],
+};
+const MEETING_STEP_TITLES: Record<string, string> = {
+  choose: "What are you recording?",
+  details: "Meeting details",
+  challenges: "Challenges raised",
+  feature: "New feature request",
+  links: "Link existing features",
+};
 const roleOptions = ROLES.map((value) => ({ value, label: roleLabel(value) }));
 const normalizeChallenges = (
   value: GovernanceMeeting["challenges"]
@@ -245,7 +873,9 @@ const FeatureGovernancePage: React.FC = () => {
   const [notHeldMeeting, setNotHeldMeeting] = useState<any | null>(null);
   const [notHeldForm] = Form.useForm();
   const [playerOpen, setPlayerOpen] = useState(false);
+  const [playerOrigin, setPlayerOrigin] = useState<{ x: number; y: number } | null>(null);
   const [formStep, setFormStep] = useState(0);
+  const [featureSections, setFeatureSections] = useState<FeatureSection[]>([]);
   const [meetingOpen, setMeetingOpen] = useState(false);
   const [directChallengeOpen, setDirectChallengeOpen] = useState(false);
   const [meetings, setMeetings] = useState<FeatureMeeting[]>([]);
@@ -272,7 +902,25 @@ const FeatureGovernancePage: React.FC = () => {
   const selectedRoles = Form.useWatch("roles", form) || [];
   const selectedFeatureStatus = Form.useWatch("status", form);
   const publishToWhatsNew = Form.useWatch("publishToWhatsNew", form);
-  const createFeatureFromMeeting = Form.useWatch("createFeature", meetingForm);
+  const [meetingStep, setMeetingStep] = useState(0);
+  const [meetingExtras, setMeetingExtras] = useState<MeetingExtra[]>([]);
+  const meetingSteps = [
+    "choose",
+    "details",
+    ...MEETING_EXTRAS.map((extra) => extra.key).filter((key) =>
+      meetingExtras.includes(key)
+    ),
+  ];
+  const currentMeetingStep = meetingSteps[meetingStep];
+  const onLastMeetingStep = meetingStep === meetingSteps.length - 1;
+  const createFeatureFromMeeting = meetingExtras.includes("feature");
+  const [scheduleView, setScheduleView] = useState<"list" | "form">("form");
+  const [editingSchedule, setEditingSchedule] =
+    useState<GovernanceMeetingSchedule | null>(null);
+  const scheduleWeekday = Form.useWatch("weekday", scheduleForm);
+  const scheduleDayOfMonth = Form.useWatch("dayOfMonth", scheduleForm);
+  const scheduleTime = Form.useWatch("time", scheduleForm);
+  const scheduleStartDate = Form.useWatch("startDate", scheduleForm);
   const meetingRoles = Form.useWatch("featureRoles", meetingForm) || [];
   const needsDepartments = selectedRoles.some((role: string) =>
     DEPARTMENT_ROLES.includes(role)
@@ -318,6 +966,52 @@ const FeatureGovernancePage: React.FC = () => {
     if (!identityLoading) load();
   }, [identityLoading]);
 
+  // Names for the "Requested by" suggestions, loaded the first time the
+  // feature form opens.
+  const [userDirectory, setUserDirectory] = useState<
+    { id: string; name: string; email: string }[]
+  >([]);
+  useEffect(() => {
+    if (!open || userDirectory.length) return;
+    getDocs(collection(db, "users"))
+      .then((snap) =>
+        setUserDirectory(
+          snap.docs
+            .map((d) => {
+              const data = d.data() as any;
+              return {
+                id: d.id,
+                name: String(
+                  data.name || data.fullName || data.displayName || ""
+                ).trim(),
+                email: String(data.email || "").trim(),
+              };
+            })
+            .filter((item) => item.name)
+            .sort((a, b) => a.name.localeCompare(b.name))
+        )
+      )
+      .catch((error) => console.warn("Could not load users", error));
+  }, [open, userDirectory.length]);
+  const featureCategory = Form.useWatch("category", form);
+  const featureProgress = Form.useWatch("progress", form);
+  const updateProgress: number =
+    Form.useWatch("progress", updateForm) ?? updating?.progress ?? 0;
+  const updateAtRisk: boolean = !!Form.useWatch("atRisk", updateForm);
+  // The progress update never picks a status directly; it follows from how
+  // far delivery has moved (and whether it's flagged at risk).
+  const nextUpdateStatus = (() => {
+    const current = updating?.status || "planned";
+    const touched =
+      updateProgress !== (updating?.progress || 0) ||
+      updateAtRisk !== (current === "blocked");
+    if (!touched) return current;
+    if (updateProgress >= 100)
+      return current === "awaiting-meeting" ? "awaiting-meeting" : "released";
+    if (updateAtRisk) return "blocked";
+    if (updateProgress > 0) return "in-progress";
+    return current === "blocked" ? "planned" : current;
+  })();
   const people = useMemo(
     () =>
       Array.from(
@@ -348,8 +1042,67 @@ const FeatureGovernancePage: React.FC = () => {
       }),
     [records, search, statusFilter, personFilter]
   );
+  // The reminder cron only writes an occurrence 30 minutes after it starts
+  // (and not at all if the cron isn't running), so each active schedule's
+  // latest occurrence is shown straight away. Until someone answers it, it
+  // lives only here ("virtual"); answering writes it under the cron's id.
+  const recurringOccurrences = useMemo(
+    () =>
+      schedules
+        .filter((schedule) => schedule.active)
+        .flatMap((schedule) =>
+          (
+            [
+              ["latest", latestOccurrence(schedule)],
+              ["next", nextOccurrence(schedule)],
+            ] as const
+          ).map(([kind, date]) => {
+            if (!date) return null;
+            const id = `${schedule.id}_${date}`;
+            const saved = governanceMeetings.find(
+              (meeting) => meeting.id === id
+            );
+            if (saved) return { schedule, kind, meeting: saved };
+            const meeting: GovernanceMeeting & { virtual: true } = {
+              id,
+              virtual: true,
+              source: "recurring",
+              scheduleId: schedule.id,
+              occurrenceDate: date,
+              title: schedule.title,
+              status: "pending",
+              withName: schedule.withName,
+              meetingDate: date,
+              dueDate: "",
+              discussion: "",
+              challenges: [],
+              requests: "",
+              relatedFeatureIds: [],
+              createdFeatureIds: [],
+              createdBy: schedule.createdBy || "system",
+              createdByName: schedule.createdByName || "Recurring schedule",
+            };
+            return { schedule, kind, meeting };
+          })
+        )
+        .filter(Boolean) as {
+        schedule: GovernanceMeetingSchedule;
+        kind: "latest" | "next";
+        meeting: GovernanceMeeting & { virtual?: boolean };
+      }[],
+    [schedules, governanceMeetings]
+  );
+  const allGovernanceMeetings = useMemo(
+    () => [
+      ...governanceMeetings,
+      ...recurringOccurrences
+        .map((item) => item.meeting)
+        .filter((meeting) => meeting.virtual),
+    ],
+    [governanceMeetings, recurringOccurrences]
+  );
   const meetingRows = useMemo(() => {
-    const standalone = governanceMeetings
+    const standalone = allGovernanceMeetings
       .filter((meeting) => !personFilter || meeting.withName === personFilter)
       .map((meeting) => ({
         ...meeting,
@@ -368,14 +1121,14 @@ const FeatureGovernancePage: React.FC = () => {
       }))
     );
     return [...standalone, ...legacy];
-  }, [filtered, governanceMeetings, personFilter, records]);
+  }, [filtered, allGovernanceMeetings, personFilter, records]);
   const metrics = {
     total: records.length,
     pipeline: records.filter((r) =>
       ["planned", "in-progress"].includes(r.status)
     ).length,
     pendingMeetings:
-      governanceMeetings.filter((m) => m.status === "pending").length +
+      allGovernanceMeetings.filter((m) => m.status === "pending").length +
       records.reduce(
         (n, r) =>
           n + (r.meetings || []).filter((m) => m.status === "pending").length,
@@ -443,6 +1196,7 @@ const FeatureGovernancePage: React.FC = () => {
   ) => {
     setEntryMode(mode);
     setFormStep(0);
+    setFeatureSections([]);
     setEditing(null);
     form.resetFields();
     setReleaseImages([]);
@@ -477,6 +1231,7 @@ const FeatureGovernancePage: React.FC = () => {
     );
     setEditing(record);
     setFormStep(0);
+    setFeatureSections([]);
     form.setFieldsValue({
       ...record,
       roles: record.audience.roles,
@@ -506,25 +1261,66 @@ const FeatureGovernancePage: React.FC = () => {
     );
     setOpen(true);
   };
-  const steppedForm = entryMode === "pipeline" && !editing;
-  const showStep = (step: number) => !steppedForm || formStep === step;
-  const STEP_FIELDS: string[][] = [
-    ["title", "description"],
-    ["status", "progress", "dueDate"],
-    ["roles", "departmentIds", "branchIds"],
-  ];
+  // Adding walks every section; editing first asks which sections to change.
+  const featureSteps: string[] = editing
+    ? [
+        "choose",
+        ...FEATURE_SECTIONS.map((section) => section.key).filter((key) =>
+          featureSections.includes(key)
+        ),
+      ]
+    : ["details", "delivery", "audience"];
+  const currentFeatureStep = featureSteps[formStep] || featureSteps[0];
+  const onLastFeatureStep = formStep >= featureSteps.length - 1;
+  const showFeatureStep = (key: string) => currentFeatureStep === key;
   const nextStep = async () => {
     try {
-      await form.validateFields(STEP_FIELDS[formStep]);
+      await form.validateFields(FEATURE_STEP_FIELDS[currentFeatureStep] || []);
       setFormStep(formStep + 1);
     } catch {
       /* validation messages are shown on the fields */
     }
   };
+  const toggleFeatureSection = (key: FeatureSection) =>
+    setFeatureSections((current) =>
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key]
+    );
+  // Every section stays mounted, so saving validates all of them. If a
+  // section that was not picked fails (e.g. an older record missing a
+  // field), add it and jump there so the message is visible.
+  const saveFeature = async () => {
+    try {
+      await save();
+    } catch (error: any) {
+      const field = String(error?.errorFields?.[0]?.name?.[0] || "");
+      const section = (
+        Object.keys(FEATURE_STEP_FIELDS) as FeatureSection[]
+      ).find((key) => FEATURE_STEP_FIELDS[key].includes(field));
+      if (!section) return;
+      if (editing) {
+        const picked = featureSections.includes(section)
+          ? featureSections
+          : [...featureSections, section];
+        setFeatureSections(picked);
+        const order = [
+          "choose",
+          ...FEATURE_SECTIONS.map((item) => item.key).filter((key) =>
+            picked.includes(key)
+          ),
+        ];
+        setFormStep(order.indexOf(section));
+      } else {
+        setFormStep(featureSteps.indexOf(section));
+      }
+    }
+  };
   const startUpdate = (record: FeatureGovernanceRecord) => {
     setUpdating(record);
+    updateForm.resetFields();
     updateForm.setFieldsValue({
-      status: record.status,
+      atRisk: record.status === "blocked",
       progress: record.progress || 0,
       dueDate: record.dueDate ? dayjs(record.dueDate) : undefined,
     });
@@ -535,8 +1331,8 @@ const FeatureGovernancePage: React.FC = () => {
     setSaving(true);
     try {
       const result = resolveCompletion(
-        value.status,
-        value.progress,
+        nextUpdateStatus,
+        Math.max(value.progress ?? 0, updating.progress || 0),
         null,
         updating.completedAt
       );
@@ -569,6 +1365,16 @@ const FeatureGovernancePage: React.FC = () => {
     setNotHeldMeeting(item);
     notHeldForm.resetFields();
   };
+  // A virtual recurring occurrence has no document yet; write it whole.
+  const writeMeeting = (item: any, patch: Partial<GovernanceMeeting>) => {
+    if (!item.virtual) return governanceMeetingService.update(item.id, patch);
+    const { virtual, featureTitle, ...base } = item;
+    return governanceMeetingService.upsert(item.id, {
+      ...base,
+      ...patch,
+      createdAt: serverTimestamp(),
+    });
+  };
   const saveMeetingUpdate = async () => {
     if (!meetingUpdating) return;
     const value = await meetingUpdateForm.validateFields();
@@ -582,7 +1388,7 @@ const FeatureGovernancePage: React.FC = () => {
           text,
           status: "open" as const,
         }));
-      await governanceMeetingService.update(meetingUpdating.id, {
+      await writeMeeting(meetingUpdating, {
         status: "held",
         notHeldReason: "",
         meetingDate: value.meetingDate.format("YYYY-MM-DD"),
@@ -609,7 +1415,7 @@ const FeatureGovernancePage: React.FC = () => {
     const value = await notHeldForm.validateFields();
     setSaving(true);
     try {
-      await governanceMeetingService.update(notHeldMeeting.id, {
+      await writeMeeting(notHeldMeeting, {
         status: "not-held",
         notHeldReason: value.reason.trim(),
         notHeldAt: dayjs().format("YYYY-MM-DD"),
@@ -629,23 +1435,43 @@ const FeatureGovernancePage: React.FC = () => {
     const value = await scheduleForm.validateFields();
     setSaving(true);
     try {
-      await governanceMeetingScheduleService.create({
+      const details = {
         title: value.title.trim(),
         withName: value.withName.trim(),
         frequency: value.frequency,
+        time: value.time.format("HH:mm"),
+        startDate: value.startDate.format("YYYY-MM-DD"),
+        reminderEmail: value.reminderEmail.trim(),
         ...(value.frequency === "monthly"
           ? { dayOfMonth: value.dayOfMonth }
           : { weekday: value.weekday }),
-        time: value.time.format("HH:mm"),
-        startDate: value.startDate.format("YYYY-MM-DD"),
-        active: true,
-        reminderEmail: value.reminderEmail.trim(),
-        createdBy: user.id,
-        createdByName: user.name,
-      } as any);
-      message.success("Recurring meeting scheduled");
+      };
+      if (editingSchedule) {
+        // Applies from the next occurrence; meetings already recorded keep
+        // their own date. Drop the day field the new frequency doesn't use.
+        await governanceMeetingScheduleService.update(editingSchedule.id, {
+          ...details,
+          ...(value.frequency === "monthly"
+            ? { weekday: deleteField() }
+            : { dayOfMonth: deleteField() }),
+        } as any);
+      } else {
+        await governanceMeetingScheduleService.create({
+          ...details,
+          active: true,
+          createdBy: user.id,
+          createdByName: user.name,
+        } as any);
+      }
+      message.success(
+        editingSchedule
+          ? "Recurring meeting updated"
+          : "Recurring meeting scheduled"
+      );
+      setEditingSchedule(null);
       scheduleForm.resetFields();
       scheduleForm.setFieldsValue(SCHEDULE_DEFAULTS());
+      setScheduleView("list");
       await load();
     } catch (error: any) {
       if (error?.errorFields) return;
@@ -654,6 +1480,33 @@ const FeatureGovernancePage: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+  const startNewSchedule = () => {
+    setEditingSchedule(null);
+    scheduleForm.resetFields();
+    scheduleForm.setFieldsValue(SCHEDULE_DEFAULTS());
+    setScheduleView("form");
+  };
+  const startEditSchedule = (item: GovernanceMeetingSchedule) => {
+    setEditingSchedule(item);
+    scheduleForm.resetFields();
+    scheduleForm.setFieldsValue({
+      ...SCHEDULE_DEFAULTS(),
+      title: item.title,
+      withName: item.withName,
+      frequency: item.frequency,
+      weekday: item.weekday ?? 1,
+      dayOfMonth: item.dayOfMonth ?? 1,
+      time: dayjs(item.time || "09:00", "HH:mm"),
+      startDate: dayjs(item.startDate),
+      reminderEmail: item.reminderEmail,
+    });
+    setScheduleView("form");
+  };
+  const openSchedules = () => {
+    startNewSchedule();
+    setScheduleView(schedules.length ? "list" : "form");
+    setScheduleOpen(true);
   };
   const toggleSchedule = async (item: GovernanceMeetingSchedule) => {
     await governanceMeetingScheduleService.setActive(item.id, !item.active);
@@ -672,13 +1525,45 @@ const FeatureGovernancePage: React.FC = () => {
           }`;
     return `${when} at ${item.time}`;
   };
+  const openAddMeeting = () => {
+    meetingForm.resetFields();
+    meetingForm.setFieldsValue({
+      status: segment === "Meetings" ? "held" : "pending",
+      challenges: [],
+    });
+    setMeetingExtras([]);
+    setMeetingStep(0);
+    setMeetingOpen(true);
+  };
+  const toggleMeetingExtra = (key: MeetingExtra) => {
+    const adding = !meetingExtras.includes(key);
+    setMeetingExtras(
+      adding
+        ? [...meetingExtras, key]
+        : meetingExtras.filter((item) => item !== key)
+    );
+  };
+  const nextMeetingStep = async () => {
+    try {
+      await meetingForm.validateFields(
+        MEETING_STEP_FIELDS[currentMeetingStep] || [],
+        { recursive: true }
+      );
+      setMeetingStep(meetingStep + 1);
+    } catch {
+      /* validation messages are shown on the fields */
+    }
+  };
   const addMeeting = async () => {
     const value = await meetingForm.validateFields();
     setSaving(true);
     try {
-      const relatedFeatureIds: string[] = value.relatedFeatureIds || [];
+      // Only the parts picked on the first step are saved.
+      const relatedFeatureIds: string[] = meetingExtras.includes("links")
+        ? [...(value.relatedFeatureIds || [])]
+        : [];
       const createdFeatureIds: string[] = [];
-      if (value.createFeature) {
+      if (meetingExtras.includes("feature")) {
         const departmentIds = value.featureDepartmentIds || [];
         const branchIds = value.featureBranchIds || [];
         const created = await featureGovernanceService.create({
@@ -715,7 +1600,10 @@ const FeatureGovernancePage: React.FC = () => {
         meetingDate: value.meetingDate?.format("YYYY-MM-DD") || "",
         dueDate: value.dueDate?.format("YYYY-MM-DD") || "",
         discussion: value.discussion?.trim() || "",
-        challenges: (value.challenges || [])
+        challenges: (meetingExtras.includes("challenges")
+          ? value.challenges || []
+          : []
+        )
           .map((item: any) => item?.text?.trim())
           .filter(Boolean)
           .map((text: string, index: number) => ({
@@ -817,6 +1705,23 @@ const FeatureGovernancePage: React.FC = () => {
             : null,
         appliesToAllPrograms: !!value.programSpecific && isAllPrograms,
         type: value.type,
+        ...(entryMode === "pipeline"
+          ? (() => {
+              const requestedByName =
+                value.category === "requested"
+                  ? String(value.requestedByName || "").trim()
+                  : "";
+              const match = userDirectory.find(
+                (item) =>
+                  item.name.toLowerCase() === requestedByName.toLowerCase()
+              );
+              return {
+                category: value.category,
+                requestedByName,
+                requestedById: match?.id || null,
+              };
+            })()
+          : {}),
         title: value.title.trim(),
         description: value.description.trim(),
         status,
@@ -1239,6 +2144,73 @@ const FeatureGovernancePage: React.FC = () => {
         data: item,
       }));
   }, [challengeRows, filtered, meetingRows, segment]);
+  // The metric cards double as the register switcher, so each count matches
+  // exactly what that register lists.
+  const registerMeetings = meetingRows.filter(
+    (item: any) => item.status !== "pending" || item.source === "recurring"
+  ).length;
+  const openChallenges = challengeRows.filter(
+    (item: any) => item.status !== "resolved"
+  ).length;
+  const registerMetric = (
+    key: string,
+    value: number,
+    subtitle: string,
+    icon: React.ReactElement,
+    color: string,
+    tone: MetricTone
+  ): DashboardMetric => ({
+    key,
+    title: key,
+    value,
+    subtitle,
+    icon,
+    tone,
+    important: true,
+    onClick: () => setSegment(key),
+    wrapperStyle:
+      segment === key
+        ? {
+            outline: `2px solid ${color}`,
+            outlineOffset: 0,
+            borderRadius: 14,
+          }
+        : undefined,
+  });
+  const registerMetrics: DashboardMetric[] = [
+    registerMetric(
+      "Meetings",
+      registerMeetings,
+      `${metrics.pendingMeetings} pending`,
+      <CalendarOutlined />,
+      "#1A98FF",
+      "info"
+    ),
+    registerMetric(
+      "Pipeline",
+      filtered.filter((item) => item.status !== "released").length,
+      metrics.overdue ? `${metrics.overdue} overdue` : "None overdue",
+      <RocketOutlined />,
+      "#243FFF",
+      "accent"
+    ),
+    registerMetric(
+      "Completed",
+      filtered.filter((item) => item.status === "released").length,
+      "Released features",
+      <CheckCircleOutlined />,
+      "#52C41A",
+      "success"
+    ),
+    registerMetric(
+      "Challenges",
+      challengeRows.length,
+      `${openChallenges} open`,
+      <WarningOutlined />,
+      "#FF1F85",
+      "warning"
+    ),
+  ];
   const selectedWorkspaceItem =
     workspaceItems.find((item) => item.id === selectedWorkspaceItemId) ||
     workspaceItems[0];
@@ -1310,7 +2282,11 @@ const FeatureGovernancePage: React.FC = () => {
           shape="round"
           type="primary"
           icon={<PlayCircleOutlined />}
-          onClick={() => setPlayerOpen(true)}
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect();
+            setPlayerOrigin({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
+            setPlayerOpen(true);
+          }}
         >
           Play
         </Button>
@@ -1321,11 +2297,7 @@ const FeatureGovernancePage: React.FC = () => {
             block
             shape="round"
             icon={<SyncOutlined />}
-            onClick={() => {
-              scheduleForm.resetFields();
-              scheduleForm.setFieldsValue(SCHEDULE_DEFAULTS());
-              setScheduleOpen(true);
-            }}
+            onClick={openSchedules}
           >
             Recurring
           </Button>
@@ -1341,14 +2313,7 @@ const FeatureGovernancePage: React.FC = () => {
             shape="round"
             type="primary"
             icon={<PlusOutlined />}
-            onClick={() => {
-              meetingForm.resetFields();
-              meetingForm.setFieldsValue({
-                status: segment === "Meetings" ? "held" : "pending",
-                challenges: [],
-              });
-              setMeetingOpen(true);
-            }}
+            onClick={openAddMeeting}
           >
             Add meeting
           </Button>
@@ -1380,39 +2345,13 @@ const FeatureGovernancePage: React.FC = () => {
     </Row>
   );
 
-  if (!identityLoading && user?.role !== "admin")
+  if (!identityLoading && user?.role !== "system_admin")
     return (
       <Empty description="Only system administrators can manage feature governance." />
     );
   return (
     <div style={{ padding: "24px", minHeight: "100vh" }}>
-      <Row gutter={[16, 16]}>
-        {[
-          ["Total features", metrics.total, <ProductOutlined />, "#814DFF"],
-          [
-            "Features in pipeline",
-            metrics.pipeline,
-            <RocketOutlined />,
-            "#243FFF",
-          ],
-          [
-            "Meetings pending",
-            metrics.pendingMeetings,
-            <CalendarOutlined />,
-            "#1A98FF",
-          ],
-          ["Overdue features", metrics.overdue, <WarningOutlined />, "#FF1F85"],
-        ].map(([title, value, icon, color]: any) => (
-          <Col xs={24} sm={12} lg={6} key={title}>
-            <MotionCard.Metric
-              title={title}
-              value={value}
-              icon={React.cloneElement(icon, { style: { color } })}
-              iconBg={`${color}16`}
-            />
-          </Col>
-        ))}
-      </Row>
+      <MetricsGrid metrics={registerMetrics} />
       <DashboardFilterBar style={{ marginTop: 16, marginBottom: 0 }}>
         {filterControls}
       </DashboardFilterBar>
@@ -1425,19 +2364,12 @@ const FeatureGovernancePage: React.FC = () => {
                 borderBottom: `1px solid ${token.colorBorderSecondary}`,
               }}
             >
-              <Segmented
-                block
-                value={segment}
-                onChange={(value) => setSegment(String(value))}
-                options={["Meetings", "Pipeline", "Completed", "Challenges"]}
-              />
               <Input
                 allowClear
                 prefix={<SearchOutlined />}
-                placeholder="Search this register"
+                placeholder={`Search ${segment.toLowerCase()}`}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                style={{ marginTop: 12 }}
               />
             </div>
             <div style={{ maxHeight: "62vh", overflowY: "auto", padding: 10 }}>
@@ -1499,7 +2431,7 @@ const FeatureGovernancePage: React.FC = () => {
                             {{
                               held: "Held",
                               "not-held": "Not held",
-                              pending: "Pending",
+                              pending: "Upcoming",
                               released: "Completed",
                               resolved: "Resolved",
                               open: "Open",
@@ -1570,7 +2502,7 @@ const FeatureGovernancePage: React.FC = () => {
                       {{
                         held: "Held",
                         "not-held": "Not held",
-                        pending: "Pending",
+                        pending: "Upcoming",
                         released: "Completed",
                         resolved: "Resolved",
                         open: "Open",
@@ -1832,50 +2764,92 @@ const FeatureGovernancePage: React.FC = () => {
                             </div>
                           </div>
                         )}
-                        {item.status !== "held" && !item.featureId && (
-                          <Row gutter={[12, 12]} style={{ marginTop: 18 }}>
-                            <Col xs={24} sm={12}>
-                              <Button
-                                block
-                                shape="round"
-                                type="primary"
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => startMeetingUpdate(item)}
-                              >
-                                Meeting was held - update
-                              </Button>
-                            </Col>
-                            {item.status === "pending" && (
+                        {item.status === "pending" &&
+                          item.source === "recurring" &&
+                          dayjs(item.occurrenceDate).isAfter(
+                            dayjs(),
+                            "day"
+                          ) && (
+                            <Text
+                              type="secondary"
+                              style={{ display: "block", marginTop: 18 }}
+                            >
+                              Upcoming ·{" "}
+                              {dayjs(item.occurrenceDate).format("dddd D MMM")}.
+                              You can record it from that day.
+                            </Text>
+                          )}
+                        {item.status !== "held" &&
+                          !item.featureId &&
+                          !(
+                            item.status === "pending" &&
+                            item.source === "recurring" &&
+                            dayjs(item.occurrenceDate).isAfter(dayjs(), "day")
+                          ) && (
+                            <Row gutter={[12, 12]} style={{ marginTop: 18 }}>
                               <Col xs={24} sm={12}>
                                 <Button
                                   block
                                   shape="round"
-                                  danger
-                                  onClick={() => startNotHeld(item)}
+                                  type="primary"
+                                  icon={<CheckCircleOutlined />}
+                                  onClick={() => startMeetingUpdate(item)}
                                 >
-                                  Meeting was not held
+                                  Meeting was held - update
                                 </Button>
                               </Col>
-                            )}
-                          </Row>
-                        )}
+                              {item.status === "pending" && (
+                                <Col xs={24} sm={12}>
+                                  <Button
+                                    block
+                                    shape="round"
+                                    danger
+                                    onClick={() => startNotHeld(item)}
+                                  >
+                                    Meeting was not held
+                                  </Button>
+                                </Col>
+                              )}
+                            </Row>
+                          )}
                         <div style={{ marginTop: 18 }}>
-                          <Text type="secondary">What was discussed</Text>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 8,
+                            }}
+                          >
+                            <Text type="secondary">What was discussed</Text>
+                            {item.status === "held" && !item.featureId && (
+                              <Tooltip title="Edit what was discussed">
+                                <Button
+                                  shape="circle"
+                                  size="small"
+                                  icon={<EditOutlined />}
+                                  aria-label="Edit what was discussed"
+                                  onClick={() => startMeetingUpdate(item)}
+                                />
+                              </Tooltip>
+                            )}
+                          </div>
                           <div style={{ ...sunkenPanel, marginTop: 6 }}>
-                            <Text>
-                              {item.discussion || "No discussion recorded"}
-                            </Text>
+                            <DiscussionText
+                              text={item.discussion}
+                              empty="No discussion recorded"
+                            />
                           </div>
                         </div>
-                        <div style={{ marginTop: 18 }}>
-                          <Text type="secondary">Challenges raised</Text>
-                          <div style={{ marginTop: 8 }}>
-                            <Space
-                              direction="vertical"
-                              style={{ width: "100%" }}
-                            >
-                              {challenges.length ? (
-                                challenges.map((challenge) => (
+                        {challenges.length > 0 && (
+                          <div style={{ marginTop: 18 }}>
+                            <Text type="secondary">Challenges raised</Text>
+                            <div style={{ marginTop: 8 }}>
+                              <Space
+                                direction="vertical"
+                                style={{ width: "100%" }}
+                              >
+                                {challenges.map((challenge) => (
                                   <div
                                     key={challenge.id}
                                     style={{ ...sunkenPanel, padding: 10 }}
@@ -1903,15 +2877,11 @@ const FeatureGovernancePage: React.FC = () => {
                                       </Tag>
                                     </Space>
                                   </div>
-                                ))
-                              ) : (
-                                <Text type="secondary">
-                                  No challenges recorded
-                                </Text>
-                              )}
-                            </Space>
+                                ))}
+                              </Space>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </>
                     );
                   })()}
@@ -2026,6 +2996,7 @@ const FeatureGovernancePage: React.FC = () => {
       <ReportPlayer
         dark={isDark}
         open={playerOpen}
+        origin={playerOrigin}
         onClose={() => setPlayerOpen(false)}
         records={filtered}
         meetings={governanceMeetings.filter(
@@ -2042,31 +3013,64 @@ const FeatureGovernancePage: React.FC = () => {
         title={updating ? `Update: ${updating.title}` : "Update feature"}
         okText="Save update"
         confirmLoading={saving}
-        okButtonProps={{ shape: "round" }}
-        cancelButtonProps={{ shape: "round" }}
+        okButtonProps={{ shape: "round", block: true }}
+        footer={okOnlyFooter}
         onOk={saveUpdate}
         onCancel={() => setUpdating(null)}
       >
-        <Form form={updateForm} layout="vertical">
+        <Form form={updateForm} layout="vertical" style={{ marginTop: 8 }}>
+          <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+            <ChangeCard
+              label="Status"
+              icon={<FlagOutlined />}
+              from={STATUS_CARDS[updating?.status || "planned"]?.title || "—"}
+              to={STATUS_CARDS[nextUpdateStatus]?.title || "—"}
+            />
+            <ChangeCard
+              label="Progress"
+              icon={<RocketOutlined />}
+              from={`${updating?.progress || 0}%`}
+              to={`${updateProgress}%`}
+            />
+          </div>
           <Form.Item
-            name="status"
-            label="Delivery status"
-            rules={[{ required: true }]}
+            name="progress"
+            label="Move delivery forward"
+            extra={
+              (updating?.progress || 0) >= 100
+                ? "This feature is already at 100%."
+                : undefined
+            }
           >
-            <Select
-              options={[
-                ["submitted", "Under review"],
-                ["planned", "Planned"],
-                ["in-progress", "In progress"],
-                ["blocked", "At risk"],
-                ["awaiting-meeting", "Completed - meeting pending"],
-                ["released", "Completed"],
-              ].map(([value, label]) => ({ value, label }))}
+            <Slider
+              // Starts at the saved progress, so it can't go backwards.
+              min={updating?.progress || 0}
+              max={100}
+              step={1}
+              disabled={(updating?.progress || 0) >= 100}
+              tooltip={{ formatter: (value) => `${value}%` }}
             />
           </Form.Item>
-          <Form.Item name="progress" label="Delivery progress (%)">
-            <InputNumber min={0} max={100} style={{ width: "100%" }} />
-          </Form.Item>
+          {updateProgress < 100 && (
+            <Form.Item name="atRisk" label="Is delivery at risk?">
+              <ChoiceCards
+                options={[
+                  {
+                    value: false,
+                    title: "No",
+                    hint: "On track",
+                    icon: <CheckCircleOutlined />,
+                  },
+                  {
+                    value: true,
+                    title: "Yes",
+                    hint: "Blocked or slipping",
+                    icon: <WarningOutlined />,
+                  },
+                ]}
+              />
+            </Form.Item>
+          )}
           <Form.Item name="dueDate" label="Target completion date">
             <DatePicker style={{ width: "100%" }} />
           </Form.Item>
@@ -2075,335 +3079,754 @@ const FeatureGovernancePage: React.FC = () => {
 
       <Modal
         centered
-        width={780}
+        width={680}
         open={open}
         onCancel={() => {
           setOpen(false);
           setReleaseImages([]);
         }}
         title={
-          editing
-            ? "Update feature"
-            : entryMode === "pipeline"
-            ? "Add pipeline feature"
-            : entryMode === "released"
-            ? "Add completed feature"
-            : "Add feature request"
+          <div>
+            <div>
+              {editing
+                ? "Update feature"
+                : entryMode === "pipeline"
+                ? "Add pipeline feature"
+                : entryMode === "released"
+                ? "Add completed feature"
+                : "Add feature request"}
+            </div>
+            <Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
+              {FEATURE_STEP_TITLES[currentFeatureStep]}
+            </Text>
+          </div>
         }
-        okText={
-          entryMode === "released"
-            ? "Save completed feature"
-            : entryMode === "pipeline"
-            ? "Save pipeline feature"
-            : "Save feature"
-        }
-        confirmLoading={saving}
-        okButtonProps={{ shape: "round" }}
-        cancelButtonProps={{ shape: "round" }}
-        onOk={save}
         footer={
-          steppedForm
-            ? () => (
-                <div style={{ display: "flex", gap: 12 }}>
-                  {formStep === 0 ? (
-                    <Button
-                      block
-                      shape="round"
-                      onClick={() => {
-                        setOpen(false);
-                        setReleaseImages([]);
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  ) : (
-                    <Button
-                      block
-                      shape="round"
-                      onClick={() => setFormStep(formStep - 1)}
-                    >
-                      Back
-                    </Button>
-                  )}
-                  {formStep < 2 ? (
-                    <Button
-                      block
-                      shape="round"
-                      type="primary"
-                      onClick={nextStep}
-                    >
-                      Next
-                    </Button>
-                  ) : (
-                    <Button
-                      block
-                      shape="round"
-                      type="primary"
-                      loading={saving}
-                      onClick={save}
-                    >
-                      Save pipeline feature
-                    </Button>
-                  )}
-                </div>
-              )
-            : undefined
+          <div style={{ display: "flex", gap: 12 }}>
+            {formStep > 0 && (
+              <Button
+                block
+                shape="round"
+                icon={<ArrowLeftOutlined />}
+                onClick={() => setFormStep(formStep - 1)}
+              >
+                Back
+              </Button>
+            )}
+            {onLastFeatureStep ? (
+              <Button
+                block
+                shape="round"
+                type="primary"
+                icon={<CheckOutlined />}
+                loading={saving}
+                disabled={!!editing && featureSteps.length === 1}
+                onClick={() => void saveFeature()}
+              >
+                {editing ? "Save changes" : "Save pipeline feature"}
+              </Button>
+            ) : (
+              <Button
+                block
+                shape="round"
+                type="primary"
+                icon={<ArrowRightOutlined />}
+                iconPosition="end"
+                onClick={() => void nextStep()}
+              >
+                Next
+              </Button>
+            )}
+          </div>
         }
         destroyOnClose={false}
         styles={{
-          body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 8 },
+          body: { maxHeight: "72vh", overflowY: "auto" },
         }}
       >
-        <Form form={form} layout="vertical">
-          <div style={sunkenPanel}>
-            <Title level={5}>
-              {entryMode === "pipeline"
-                ? "Pipeline feature details"
-                : entryMode === "released"
-                ? "Completed feature details"
-                : "Feature request details"}
-            </Title>
-            {entryMode !== "feature" && (
-              <Form.Item name="type" hidden>
-                <Input />
-              </Form.Item>
-            )}
-            <div style={{ display: showStep(0) ? undefined : "none" }}>
-              <Form.Item
-                name="title"
-                label="Feature title"
-                rules={[{ required: true, whitespace: true }]}
-              >
-                <Input placeholder="What is changing or being requested?" />
-              </Form.Item>
-              <Form.Item
-                name="description"
-                label="Delivery description"
-                rules={[{ required: true, whitespace: true }]}
-              >
-                <TextArea
-                  rows={4}
-                  placeholder="Describe the need, value and expected outcome"
-                />
-              </Form.Item>
-              <Form.Item name="programSpecific" valuePropName="checked">
-                <Checkbox>
-                  <Text strong>Program-specific feature</Text>
-                  <br />
-                  <Text type="secondary">
-                    Leave unchecked for system-wide features. When checked, this
-                    applies to {programScopeLabel}.
-                  </Text>
-                </Checkbox>
-              </Form.Item>
-            </div>
-            <div style={{ display: showStep(1) ? undefined : "none" }}>
-              {entryMode === "released" ? (
-                <Form.Item name="status" hidden>
-                  <Input />
-                </Form.Item>
-              ) : (
-                <Row gutter={12}>
-                  {entryMode === "feature" && (
-                    <Col span={12}>
-                      <Form.Item
-                        name="type"
-                        label="Feature record type"
-                        rules={[{ required: true }]}
-                      >
-                        <Select
-                          options={[
-                            ["request", "Feature request"],
-                            ["update", "Feature update"],
-                            ["new-feature", "New feature added"],
-                          ].map(([value, label]) => ({ value, label }))}
-                        />
-                      </Form.Item>
-                    </Col>
-                  )}
-                  <Col span={entryMode === "feature" ? 12 : 24}>
-                    <Form.Item
-                      name="status"
-                      label="Delivery status"
-                      rules={[{ required: true }]}
+        <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
+          {entryMode !== "feature" && (
+            <Form.Item name="type" hidden>
+              <Input />
+            </Form.Item>
+          )}
+
+          {editing && (
+            <div
+              style={{
+                display: showFeatureStep("choose") ? undefined : "none",
+              }}
+            >
+              <Text type="secondary">
+                Pick the parts of this feature you want to change.
+              </Text>
+              <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+                {FEATURE_SECTIONS.filter(
+                  (section) =>
+                    section.key !== "release" ||
+                    selectedFeatureStatus === "released"
+                ).map((section) => {
+                  const active = featureSections.includes(section.key);
+                  return (
+                    <button
+                      key={section.key}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={active}
+                      onClick={() => toggleFeatureSection(section.key)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        width: "100%",
+                        padding: "12px 14px",
+                        borderRadius: 14,
+                        border: `1px solid ${
+                          active
+                            ? token.colorPrimary
+                            : token.colorBorderSecondary
+                        }`,
+                        background: active
+                          ? token.colorPrimaryBg
+                          : token.colorBgContainer,
+                        color: token.colorText,
+                        font: "inherit",
+                        textAlign: "left",
+                        cursor: "pointer",
+                      }}
                     >
-                      <Select
-                        options={(entryMode === "pipeline"
-                          ? [
-                              ["planned", "Planned"],
-                              ["in-progress", "In progress"],
-                              ["blocked", "At risk"],
-                              [
-                                "awaiting-meeting",
-                                "Completed - meeting pending",
-                              ],
-                              ["released", "Completed"],
-                            ]
-                          : [
-                              ["submitted", "Under review"],
-                              ["planned", "Planned"],
-                              ["in-progress", "In progress"],
-                              ["blocked", "At risk"],
-                              [
-                                "awaiting-meeting",
-                                "Completed - meeting pending",
-                              ],
-                              ["released", "Completed"],
-                            ]
-                        ).map(([value, label]) => ({ value, label }))}
-                      />
-                    </Form.Item>
-                  </Col>
-                </Row>
-              )}
-              <Row gutter={12}>
-                <Col span={12}>
-                  <Form.Item name="progress" label="Delivery progress (%)">
-                    <InputNumber
-                      min={0}
-                      max={100}
-                      disabled={entryMode === "released"}
-                      style={{ width: "100%" }}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  {entryMode === "released" ||
-                  selectedFeatureStatus === "released" ? (
-                    <Form.Item name="completedAt" label="Completed at">
-                      <DatePicker
-                        style={{ width: "100%" }}
-                        placeholder="Defaults to today"
-                      />
-                    </Form.Item>
-                  ) : (
-                    <Form.Item name="dueDate" label="Target completion date">
-                      <DatePicker style={{ width: "100%" }} />
-                    </Form.Item>
-                  )}
-                </Col>
-              </Row>
-            </div>
-          </div>
-          {selectedFeatureStatus === "released" && (
-            <div style={{ display: showStep(1) ? undefined : "none" }}>
-              <Divider />
-              <div style={sunkenPanel}>
-                <Title level={5}>
-                  <PictureOutlined /> What's New publication
-                </Title>
-                <Form.Item
-                  name="publishToWhatsNew"
-                  valuePropName="checked"
-                  style={{ marginBottom: publishToWhatsNew ? 16 : 0 }}
-                >
-                  <Checkbox>
-                    <Text strong>
-                      Publish this completed feature on What's New
-                    </Text>
-                    <br />
-                    <Text type="secondary">
-                      Only the affected users selected below will see this
-                      release.
-                    </Text>
-                  </Checkbox>
-                </Form.Item>
-                {publishToWhatsNew && (
-                  <>
-                    <Form.Item
-                      name="releaseHeadline"
-                      label="Release headline"
-                      rules={[{ required: true, whitespace: true }]}
-                    >
-                      <Input placeholder="A short, user-friendly headline" />
-                    </Form.Item>
-                    <Form.Item
-                      name="releaseSummary"
-                      label="What changed"
-                      rules={[{ required: true, whitespace: true }]}
-                    >
-                      <TextArea
-                        rows={4}
-                        placeholder="Explain what users can now do and why it is useful."
-                      />
-                    </Form.Item>
-                    <Form.Item
-                      name="releaseDate"
-                      label="Release date"
-                      rules={[{ required: true }]}
-                    >
-                      <DatePicker style={{ width: "100%" }} />
-                    </Form.Item>
-                    <Form.Item
-                      label="Screenshots (optional)"
-                      extra="Add up to eight images. They will appear in a carousel in the order shown."
-                    >
-                      <Upload
-                        accept="image/*"
-                        listType="picture-card"
-                        fileList={releaseImages}
-                        maxCount={8}
-                        multiple
-                        beforeUpload={(file) => {
-                          if (!file.type.startsWith("image/")) {
-                            message.error("Release media must be an image.");
-                            return Upload.LIST_IGNORE;
-                          }
-                          if (file.size > 10 * 1024 * 1024) {
-                            message.error(
-                              "Each release image must be 10 MB or smaller."
-                            );
-                            return Upload.LIST_IGNORE;
-                          }
-                          return false;
+                      <span
+                        style={{
+                          display: "grid",
+                          placeItems: "center",
+                          flex: "0 0 auto",
+                          width: 36,
+                          height: 36,
+                          borderRadius: 10,
+                          fontSize: 17,
+                          color: active ? "#fff" : token.colorPrimary,
+                          background: active
+                            ? token.colorPrimary
+                            : token.colorPrimaryBg,
                         }}
-                        onChange={({ fileList }) => setReleaseImages(fileList)}
                       >
-                        {releaseImages.length < 8 && (
-                          <div>
-                            <PlusOutlined />
-                            <div style={{ marginTop: 8 }}>Add image</div>
-                          </div>
-                        )}
-                      </Upload>
-                    </Form.Item>
-                  </>
-                )}
+                        {section.icon}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <Text strong style={{ display: "block" }}>
+                          {section.title}
+                        </Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {section.hint}
+                        </Text>
+                      </span>
+                      {active && (
+                        <CheckCircleFilled
+                          style={{ fontSize: 18, color: token.colorPrimary }}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
-          <div style={{ display: showStep(2) ? undefined : "none" }}>
-            <Divider />
-            <div style={sunkenPanel}>
-              <Title level={5}>
-                <TeamOutlined /> Affected users
-              </Title>
+
+          <div
+            style={{ display: showFeatureStep("details") ? undefined : "none" }}
+          >
+            <Form.Item
+              name="title"
+              label="Feature title"
+              rules={[{ required: true, whitespace: true }]}
+            >
+              <Input placeholder="What is changing or being requested?" />
+            </Form.Item>
+            <Form.Item
+              name="description"
+              label="Delivery description"
+              rules={[{ required: true, whitespace: true }]}
+            >
+              <TextArea
+                rows={4}
+                placeholder="Describe the need, value and expected outcome"
+              />
+            </Form.Item>
+            {entryMode === "pipeline" && (
+              <>
+                <Form.Item
+                  name="category"
+                  label="Category"
+                  rules={[{ required: true, message: "Pick a category" }]}
+                >
+                  <ChoiceCards
+                    options={[
+                      {
+                        value: "requested",
+                        title: "Requested",
+                        hint: "Someone asked for it",
+                        icon: <UserOutlined />,
+                      },
+                      {
+                        value: "improvement",
+                        title: "Improvement",
+                        hint: "Raised by the team, no owner",
+                        icon: <ToolOutlined />,
+                      },
+                    ]}
+                  />
+                </Form.Item>
+                {featureCategory === "requested" && (
+                  <Form.Item
+                    name="requestedByName"
+                    label="Requested by"
+                    rules={[
+                      {
+                        required: true,
+                        whitespace: true,
+                        message: "Who requested this?",
+                      },
+                    ]}
+                  >
+                    <AutoComplete
+                      placeholder="Start typing a name"
+                      filterOption={(input, option) =>
+                        String(option?.value || "")
+                          .toLowerCase()
+                          .includes(input.toLowerCase())
+                      }
+                      options={userDirectory.map((item) => ({
+                        value: item.name,
+                        label: (
+                          <div>
+                            <div>{item.name}</div>
+                            {item.email && (
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                {item.email}
+                              </Text>
+                            )}
+                          </div>
+                        ),
+                      }))}
+                    />
+                  </Form.Item>
+                )}
+              </>
+            )}
+            <Form.Item name="programSpecific" label="Applies to">
+              <ChoiceCards
+                options={[
+                  {
+                    value: false,
+                    title: "All programs",
+                    hint: "System-wide",
+                    icon: <AppstoreOutlined />,
+                  },
+                  {
+                    value: true,
+                    title: "Current program",
+                    hint: `Only ${programScopeLabel}`,
+                    icon: <AimOutlined />,
+                  },
+                ]}
+              />
+            </Form.Item>
+          </div>
+
+          <div
+            style={{
+              display: showFeatureStep("delivery") ? undefined : "none",
+            }}
+          >
+            {entryMode === "feature" && (
               <Form.Item
-                name="roles"
-                label="Roles"
+                name="type"
+                label="Record type"
+                rules={[{ required: true }]}
+              >
+                <ChoiceCards
+                  options={[
+                    {
+                      value: "request",
+                      title: "Request",
+                      icon: <BulbOutlined />,
+                    },
+                    {
+                      value: "update",
+                      title: "Update",
+                      icon: <SyncOutlined />,
+                    },
+                    {
+                      value: "new-feature",
+                      title: "New feature",
+                      icon: <RocketOutlined />,
+                    },
+                  ]}
+                />
+              </Form.Item>
+            )}
+            {entryMode === "released" ? (
+              <Form.Item name="status" hidden>
+                <Input />
+              </Form.Item>
+            ) : (
+              <Form.Item
+                name="status"
+                label="Delivery status"
+                rules={[{ required: true }]}
+              >
+                <ChoiceCards
+                  columns={2}
+                  options={(entryMode === "pipeline"
+                    ? ["planned", "in-progress", "blocked", "awaiting-meeting"]
+                    : ["submitted", "planned", "in-progress", "blocked"]
+                  )
+                    // Completing is an update, never part of adding.
+                    .concat(
+                      editing
+                        ? entryMode === "pipeline"
+                          ? ["released"]
+                          : ["awaiting-meeting", "released"]
+                        : []
+                    )
+                    .map((key) => ({ value: key, ...STATUS_CARDS[key] }))}
+                />
+              </Form.Item>
+            )}
+            <Form.Item
+              name="progress"
+              label={`Delivery progress · ${featureProgress ?? 0}%`}
+              extra={
+                editing
+                  ? "Reaching 100% marks the feature as completed."
+                  : undefined
+              }
+            >
+              <Slider
+                min={0}
+                // A new feature can't start out completed.
+                max={editing ? 100 : 95}
+                step={5}
+                disabled={entryMode === "released"}
+                tooltip={{ formatter: (value) => `${value}%` }}
+                marks={
+                  editing
+                    ? { 0: "0%", 50: "50%", 100: "100%" }
+                    : { 0: "0%", 50: "50%", 95: "95%" }
+                }
+              />
+            </Form.Item>
+            {entryMode === "released" ||
+            selectedFeatureStatus === "released" ? (
+              <Form.Item name="completedAt" label="Completed at">
+                <DatePicker
+                  style={{ width: "100%" }}
+                  placeholder="Defaults to today"
+                />
+              </Form.Item>
+            ) : (
+              <Form.Item name="dueDate" label="Target completion date">
+                <DatePicker style={{ width: "100%" }} />
+              </Form.Item>
+            )}
+          </div>
+
+          {selectedFeatureStatus === "released" && (
+            <div
+              style={{
+                display: showFeatureStep("release") ? undefined : "none",
+              }}
+            >
+              <Form.Item
+                name="publishToWhatsNew"
+                valuePropName="checked"
+                style={{ marginBottom: publishToWhatsNew ? 16 : 0 }}
+              >
+                <Checkbox>
+                  <Text strong>
+                    Publish this completed feature on What's New
+                  </Text>
+                  <br />
+                  <Text type="secondary">
+                    Only the affected users selected below will see this
+                    release.
+                  </Text>
+                </Checkbox>
+              </Form.Item>
+              {publishToWhatsNew && (
+                <>
+                  <Form.Item
+                    name="releaseHeadline"
+                    label="Release headline"
+                    rules={[{ required: true, whitespace: true }]}
+                  >
+                    <Input placeholder="A short, user-friendly headline" />
+                  </Form.Item>
+                  <Form.Item
+                    name="releaseSummary"
+                    label="What changed"
+                    rules={[{ required: true, whitespace: true }]}
+                  >
+                    <TextArea
+                      rows={4}
+                      placeholder="Explain what users can now do and why it is useful."
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="releaseDate"
+                    label="Release date"
+                    rules={[{ required: true }]}
+                  >
+                    <DatePicker style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    label="Screenshots (optional)"
+                    extra="Add up to eight images. They will appear in a carousel in the order shown."
+                  >
+                    <Upload
+                      accept="image/*"
+                      listType="picture-card"
+                      fileList={releaseImages}
+                      maxCount={8}
+                      multiple
+                      beforeUpload={(file) => {
+                        if (!file.type.startsWith("image/")) {
+                          message.error("Release media must be an image.");
+                          return Upload.LIST_IGNORE;
+                        }
+                        if (file.size > 10 * 1024 * 1024) {
+                          message.error(
+                            "Each release image must be 10 MB or smaller."
+                          );
+                          return Upload.LIST_IGNORE;
+                        }
+                        return false;
+                      }}
+                      onChange={({ fileList }) => setReleaseImages(fileList)}
+                    >
+                      {releaseImages.length < 8 && (
+                        <div>
+                          <PlusOutlined />
+                          <div style={{ marginTop: 8 }}>Add image</div>
+                        </div>
+                      )}
+                    </Upload>
+                  </Form.Item>
+                </>
+              )}
+            </div>
+          )}
+
+          <div
+            style={{
+              display: showFeatureStep("audience") ? undefined : "none",
+            }}
+          >
+            <Form.Item
+              name="roles"
+              label="Affected roles"
+              rules={[
+                {
+                  required: true,
+                  message: "Select at least one affected role",
+                },
+              ]}
+            >
+              <MultiChoiceCards options={roleOptions} />
+            </Form.Item>
+            {needsDepartments && (
+              <Form.Item
+                name="departmentIds"
+                label="Affected departments"
+                rules={[{ required: true }]}
+              >
+                <Select
+                  mode="multiple"
+                  onSelect={(value) => {
+                    const current = form.getFieldValue("departmentIds") || [];
+                    if (value === "ALL")
+                      form.setFieldValue("departmentIds", ["ALL"]);
+                    else if (current.includes("ALL"))
+                      form.setFieldValue("departmentIds", [value]);
+                  }}
+                  options={[
+                    { value: "ALL", label: "ALL departments" },
+                    ...departments.map((d) => ({
+                      value: d.id,
+                      label: d.name,
+                    })),
+                  ]}
+                />
+              </Form.Item>
+            )}
+            {needsBranches && (
+              <Form.Item
+                name="branchIds"
+                label="Affected centres"
+                rules={[{ required: true }]}
+              >
+                <Select
+                  mode="multiple"
+                  onSelect={(value) => {
+                    const current = form.getFieldValue("branchIds") || [];
+                    if (value === "ALL")
+                      form.setFieldValue("branchIds", ["ALL"]);
+                    else if (current.includes("ALL"))
+                      form.setFieldValue("branchIds", [value]);
+                  }}
+                  options={[
+                    { value: "ALL", label: "ALL centres" },
+                    ...branches.map((b) => ({ value: b.id, label: b.name })),
+                  ]}
+                />
+              </Form.Item>
+            )}
+          </div>
+        </Form>
+      </Modal>
+      <Modal
+        centered
+        width={640}
+        open={meetingOpen}
+        title={
+          <div>
+            <div>Add meeting</div>
+            <Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
+              {MEETING_STEP_TITLES[currentMeetingStep]}
+            </Text>
+          </div>
+        }
+        onCancel={() => setMeetingOpen(false)}
+        destroyOnClose
+        footer={
+          <div style={{ display: "flex", gap: 12 }}>
+            {meetingStep > 0 && (
+              <Button
+                block
+                shape="round"
+                icon={<ArrowLeftOutlined />}
+                onClick={() => setMeetingStep(meetingStep - 1)}
+              >
+                Back
+              </Button>
+            )}
+            {onLastMeetingStep ? (
+              <Button
+                block
+                shape="round"
+                type="primary"
+                icon={<CheckOutlined />}
+                loading={saving}
+                onClick={() => void addMeeting().catch(() => undefined)}
+              >
+                Save meeting
+              </Button>
+            ) : (
+              <Button
+                block
+                shape="round"
+                type="primary"
+                icon={<ArrowRightOutlined />}
+                iconPosition="end"
+                onClick={() => void nextMeetingStep()}
+              >
+                Next
+              </Button>
+            )}
+          </div>
+        }
+        styles={{
+          body: { maxHeight: "68vh", overflowY: "auto", paddingRight: 8 },
+        }}
+      >
+        <Form
+          form={meetingForm}
+          layout="vertical"
+          initialValues={{ status: "pending", challenges: [] }}
+          style={{ marginTop: 8 }}
+        >
+          {/* Every picked step stays mounted (only hidden) so its values are
+              kept while moving back and forth. */}
+          <div hidden={currentMeetingStep !== "choose"}>
+            <Text type="secondary">
+              Meeting details are always recorded. Pick anything else that came
+              out of this meeting.
+            </Text>
+            <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+              {MEETING_EXTRAS.map((extra) => {
+                const active = meetingExtras.includes(extra.key);
+                return (
+                  <button
+                    key={extra.key}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={active}
+                    onClick={() => toggleMeetingExtra(extra.key)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      width: "100%",
+                      padding: "12px 14px",
+                      borderRadius: 14,
+                      border: `1px solid ${
+                        active ? token.colorPrimary : token.colorBorderSecondary
+                      }`,
+                      background: active
+                        ? token.colorPrimaryBg
+                        : token.colorBgContainer,
+                      color: token.colorText,
+                      font: "inherit",
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "grid",
+                        placeItems: "center",
+                        flex: "0 0 auto",
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        fontSize: 17,
+                        color: active ? "#fff" : token.colorPrimary,
+                        background: active
+                          ? token.colorPrimary
+                          : token.colorPrimaryBg,
+                      }}
+                    >
+                      {extra.icon}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <Text strong style={{ display: "block" }}>
+                        {extra.title}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {extra.hint}
+                      </Text>
+                    </span>
+                    {active && (
+                      <CheckCircleFilled
+                        style={{ fontSize: 18, color: token.colorPrimary }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div hidden={currentMeetingStep !== "details"}>
+            <Form.Item
+              name="title"
+              label="Meeting title"
+              rules={[{ required: true, message: "Add a meeting title" }]}
+            >
+              <Input placeholder="e.g. Monthly product review" />
+            </Form.Item>
+            <Form.Item
+              name="withName"
+              label="With whom"
+              rules={[{ required: true, whitespace: true }]}
+            >
+              <Input prefix={<UserOutlined />} placeholder="Name" />
+            </Form.Item>
+            <Form.Item
+              name="status"
+              label="Meeting status"
+              rules={[{ required: true }]}
+            >
+              <MeetingStatusCards />
+            </Form.Item>
+            <Row gutter={12}>
+              <Col xs={24} sm={12}>
+                <Form.Item name="meetingDate" label="Meeting date">
+                  <DatePicker
+                    disabledDate={isWeekend}
+                    style={{ width: "100%" }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item name="dueDate" label="Follow-up due date">
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item
+              name="discussion"
+              label="What was discussed"
+              style={{ marginBottom: 0 }}
+            >
+              <DiscussionPointsInput />
+            </Form.Item>
+          </div>
+
+          {meetingExtras.includes("challenges") && (
+            <div hidden={currentMeetingStep !== "challenges"}>
+              <Text type="secondary">
+                Add each challenge raised. They are tracked until closed out.
+              </Text>
+              <Form.Item
+                name="challenges"
+                style={{ marginTop: 12, marginBottom: 0 }}
                 rules={[
                   {
-                    required: true,
-                    message: "Select at least one affected role",
+                    validator: async (_, value) => {
+                      if (!(value || []).length)
+                        throw new Error("Add at least one challenge");
+                    },
                   },
                 ]}
               >
-                <Select mode="multiple" showSearch options={roleOptions} />
+                <ChallengePointsInput />
               </Form.Item>
-              {needsDepartments && (
+            </div>
+          )}
+
+          {createFeatureFromMeeting && (
+            <div hidden={currentMeetingStep !== "feature"}>
+              <Form.Item
+                name="featureTitle"
+                label="Feature request title"
+                rules={[{ required: true, whitespace: true }]}
+              >
+                <Input />
+              </Form.Item>
+              <Form.Item
+                name="featureDescription"
+                label="Feature request description"
+                rules={[{ required: true, whitespace: true }]}
+              >
+                <TextArea rows={3} />
+              </Form.Item>
+              <Form.Item
+                name="featureRoles"
+                label="Affected roles"
+                rules={[{ required: true }]}
+              >
+                <Select mode="multiple" options={roleOptions} />
+              </Form.Item>
+              {meetingNeedsDepartments && (
                 <Form.Item
-                  name="departmentIds"
+                  name="featureDepartmentIds"
                   label="Affected departments"
                   rules={[{ required: true }]}
                 >
                   <Select
                     mode="multiple"
                     onSelect={(value) => {
-                      const current = form.getFieldValue("departmentIds") || [];
+                      const current =
+                        meetingForm.getFieldValue("featureDepartmentIds") || [];
                       if (value === "ALL")
-                        form.setFieldValue("departmentIds", ["ALL"]);
+                        meetingForm.setFieldValue("featureDepartmentIds", [
+                          "ALL",
+                        ]);
                       else if (current.includes("ALL"))
-                        form.setFieldValue("departmentIds", [value]);
+                        meetingForm.setFieldValue("featureDepartmentIds", [
+                          value,
+                        ]);
                     }}
                     options={[
                       { value: "ALL", label: "ALL departments" },
@@ -2415,271 +3838,60 @@ const FeatureGovernancePage: React.FC = () => {
                   />
                 </Form.Item>
               )}
-              {needsBranches && (
+              {meetingNeedsBranches && (
                 <Form.Item
-                  name="branchIds"
+                  name="featureBranchIds"
                   label="Affected centres"
                   rules={[{ required: true }]}
                 >
                   <Select
                     mode="multiple"
                     onSelect={(value) => {
-                      const current = form.getFieldValue("branchIds") || [];
+                      const current =
+                        meetingForm.getFieldValue("featureBranchIds") || [];
                       if (value === "ALL")
-                        form.setFieldValue("branchIds", ["ALL"]);
+                        meetingForm.setFieldValue("featureBranchIds", ["ALL"]);
                       else if (current.includes("ALL"))
-                        form.setFieldValue("branchIds", [value]);
+                        meetingForm.setFieldValue("featureBranchIds", [value]);
                     }}
                     options={[
                       { value: "ALL", label: "ALL centres" },
-                      ...branches.map((b) => ({ value: b.id, label: b.name })),
+                      ...branches.map((b) => ({
+                        value: b.id,
+                        label: b.name,
+                      })),
                     ]}
                   />
                 </Form.Item>
               )}
+              <Form.Item name="featureDueDate" label="Requested due date">
+                <DatePicker style={{ width: "100%" }} />
+              </Form.Item>
             </div>
-          </div>
-        </Form>
-      </Modal>
-      <Modal
-        centered
-        width={760}
-        open={meetingOpen}
-        title="Add meeting"
-        okText="Save meeting"
-        confirmLoading={saving}
-        okButtonProps={{ shape: "round" }}
-        cancelButtonProps={{ shape: "round" }}
-        onOk={addMeeting}
-        onCancel={() => setMeetingOpen(false)}
-        destroyOnClose
-        styles={{
-          body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 8 },
-        }}
-      >
-        <Form
-          form={meetingForm}
-          layout="vertical"
-          initialValues={{
-            status: "pending",
-            createFeature: false,
-            challenges: [],
-          }}
-        >
-          <div style={sunkenPanel}>
-            <Title level={5}>Meeting details</Title>
-            <Form.Item
-              name="title"
-              label="Meeting title"
-              rules={[{ required: true }]}
-            >
-              <Input />
-            </Form.Item>
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item
-                  name="status"
-                  label="Meeting status"
-                  rules={[{ required: true }]}
-                >
-                  <Select
-                    options={[
-                      { value: "held", label: "Held" },
-                      { value: "pending", label: "Pending / to be held" },
-                    ]}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  name="withName"
-                  label="With whom"
-                  rules={[{ required: true, whitespace: true }]}
-                >
-                  <Input placeholder="Name" />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item name="meetingDate" label="Meeting date">
-                  <DatePicker style={{ width: "100%" }} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="dueDate" label="Follow-up due date">
-                  <DatePicker style={{ width: "100%" }} />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Form.Item name="discussion" label="What was discussed">
-              <TextArea rows={3} />
-            </Form.Item>
-            <Form.List name="challenges">
-              {(fields, { add, remove }) => (
-                <>
-                  <Text strong>Challenges raised</Text>
-                  {fields.map((field) => (
-                    <Space
-                      key={field.key}
-                      align="baseline"
-                      style={{ display: "flex", marginTop: 8 }}
-                    >
-                      <Form.Item
-                        {...field}
-                        name={[field.name, "text"]}
-                        rules={[
-                          {
-                            required: true,
-                            whitespace: true,
-                            message: "Enter the challenge or remove this row",
-                          },
-                        ]}
-                        style={{ flex: 1, marginBottom: 4 }}
-                      >
-                        <Input placeholder="Add one challenge" />
-                      </Form.Item>
-                      <Button
-                        shape="round"
-                        type="text"
-                        danger
-                        icon={<MinusCircleOutlined />}
-                        onClick={() => remove(field.name)}
-                      />
-                    </Space>
-                  ))}
-                  <Button
-                    shape="round"
-                    type="dashed"
-                    block
-                    icon={<PlusOutlined />}
-                    onClick={() => add()}
-                    style={{ marginTop: 8 }}
-                  >
-                    Add challenge
-                  </Button>
-                </>
-              )}
-            </Form.List>
-            <Form.Item
-              name="relatedFeatureIds"
-              label="Link existing features (optional)"
-              style={{ marginTop: 16 }}
-            >
-              <Select
-                mode="multiple"
-                showSearch
-                optionFilterProp="label"
-                options={records.map((record) => ({
-                  value: record.id,
-                  label: record.title,
-                }))}
-              />
-            </Form.Item>
-          </div>
-          <Divider />
-          <div style={sunkenPanel}>
-            <Form.Item
-              name="createFeature"
-              valuePropName="checked"
-              style={{ marginBottom: createFeatureFromMeeting ? 16 : 0 }}
-            >
-              <Checkbox>
-                <Text strong>
-                  A new feature request was raised in this meeting
-                </Text>
-              </Checkbox>
-            </Form.Item>
-            {createFeatureFromMeeting && (
-              <>
-                <Form.Item
-                  name="featureTitle"
-                  label="Feature request title"
-                  rules={[{ required: true, whitespace: true }]}
-                >
-                  <Input />
-                </Form.Item>
-                <Form.Item
-                  name="featureDescription"
-                  label="Feature request description"
-                  rules={[{ required: true, whitespace: true }]}
-                >
-                  <TextArea rows={3} />
-                </Form.Item>
-                <Form.Item
-                  name="featureRoles"
-                  label="Affected roles"
-                  rules={[{ required: true }]}
-                >
-                  <Select mode="multiple" options={roleOptions} />
-                </Form.Item>
-                {meetingNeedsDepartments && (
-                  <Form.Item
-                    name="featureDepartmentIds"
-                    label="Affected departments"
-                    rules={[{ required: true }]}
-                  >
-                    <Select
-                      mode="multiple"
-                      onSelect={(value) => {
-                        const current =
-                          meetingForm.getFieldValue("featureDepartmentIds") ||
-                          [];
-                        if (value === "ALL")
-                          meetingForm.setFieldValue("featureDepartmentIds", [
-                            "ALL",
-                          ]);
-                        else if (current.includes("ALL"))
-                          meetingForm.setFieldValue("featureDepartmentIds", [
-                            value,
-                          ]);
-                      }}
-                      options={[
-                        { value: "ALL", label: "ALL departments" },
-                        ...departments.map((d) => ({
-                          value: d.id,
-                          label: d.name,
-                        })),
-                      ]}
-                    />
-                  </Form.Item>
-                )}
-                {meetingNeedsBranches && (
-                  <Form.Item
-                    name="featureBranchIds"
-                    label="Affected centres"
-                    rules={[{ required: true }]}
-                  >
-                    <Select
-                      mode="multiple"
-                      onSelect={(value) => {
-                        const current =
-                          meetingForm.getFieldValue("featureBranchIds") || [];
-                        if (value === "ALL")
-                          meetingForm.setFieldValue("featureBranchIds", [
-                            "ALL",
-                          ]);
-                        else if (current.includes("ALL"))
-                          meetingForm.setFieldValue("featureBranchIds", [
-                            value,
-                          ]);
-                      }}
-                      options={[
-                        { value: "ALL", label: "ALL centres" },
-                        ...branches.map((b) => ({
-                          value: b.id,
-                          label: b.name,
-                        })),
-                      ]}
-                    />
-                  </Form.Item>
-                )}
-                <Form.Item name="featureDueDate" label="Requested due date">
-                  <DatePicker style={{ width: "100%" }} />
-                </Form.Item>
-              </>
-            )}
-          </div>
+          )}
+
+          {meetingExtras.includes("links") && (
+            <div hidden={currentMeetingStep !== "links"}>
+              <Form.Item
+                name="relatedFeatureIds"
+                label="Features discussed"
+                rules={[
+                  { required: true, message: "Pick at least one feature" },
+                ]}
+              >
+                <Select
+                  mode="multiple"
+                  showSearch
+                  placeholder="Search features"
+                  optionFilterProp="label"
+                  options={records.map((record) => ({
+                    value: record.id,
+                    label: record.title,
+                  }))}
+                />
+              </Form.Item>
+            </div>
+          )}
         </Form>
       </Modal>
       <Modal
@@ -2688,8 +3900,8 @@ const FeatureGovernancePage: React.FC = () => {
         title="Add implementation challenge"
         okText="Add challenge"
         confirmLoading={saving}
-        okButtonProps={{ shape: "round" }}
-        cancelButtonProps={{ shape: "round" }}
+        okButtonProps={{ shape: "round", block: true }}
+        footer={okOnlyFooter}
         onOk={addDirectChallenge}
         onCancel={() => {
           directChallengeForm.resetFields();
@@ -2743,8 +3955,8 @@ const FeatureGovernancePage: React.FC = () => {
         title="Close out challenge"
         okText="Close out"
         confirmLoading={saving}
-        okButtonProps={{ shape: "round" }}
-        cancelButtonProps={{ shape: "round" }}
+        okButtonProps={{ shape: "round", block: true }}
+        footer={okOnlyFooter}
         onOk={resolveChallenge}
         onCancel={() => {
           setChallengeToResolve(null);
@@ -2798,7 +4010,10 @@ const FeatureGovernancePage: React.FC = () => {
               : "Not set"}
           </Descriptions.Item>
           <Descriptions.Item label="Discussed">
-            {selectedMeeting?.discussion || "None recorded"}
+            <DiscussionText
+              text={selectedMeeting?.discussion}
+              empty="None recorded"
+            />
           </Descriptions.Item>
           <Descriptions.Item label="Challenges">
             {selectedMeeting?.challenges ? (
@@ -2822,151 +4037,311 @@ const FeatureGovernancePage: React.FC = () => {
       </Modal>
       <Modal
         centered
-        width={640}
+        width={600}
         open={scheduleOpen}
-        title="Recurring meetings"
-        okText="Add recurring meeting"
-        confirmLoading={saving}
-        okButtonProps={{ shape: "round" }}
-        cancelButtonProps={{ shape: "round" }}
-        onOk={saveSchedule}
+        title={
+          scheduleView === "list"
+            ? "Recurring meetings"
+            : editingSchedule
+            ? "Edit recurring meeting"
+            : "New recurring meeting"
+        }
         onCancel={() => setScheduleOpen(false)}
-        styles={{
-          body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 8 },
-        }}
-      >
-        <Text type="secondary">
-          A reminder is emailed 30 minutes after each meeting starts, asking
-          whether it was held.
-        </Text>
-        <Form form={scheduleForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item
-                name="title"
-                label="Meeting title"
-                rules={[{ required: true, whitespace: true }]}
-              >
-                <Input placeholder="e.g. Weekly check-in" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="withName"
-                label="Meeting with"
-                rules={[{ required: true, whitespace: true }]}
-              >
-                <Input placeholder="Requestee name" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="frequency" label="Repeats">
-                <Select
-                  options={[
-                    { value: "weekly", label: "Weekly" },
-                    { value: "biweekly", label: "Every 2 weeks" },
-                    { value: "monthly", label: "Monthly" },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              {scheduleFrequency === "monthly" ? (
-                <Form.Item name="dayOfMonth" label="Day of month">
-                  <InputNumber min={1} max={31} style={{ width: "100%" }} />
-                </Form.Item>
-              ) : (
-                <Form.Item name="weekday" label="Day">
-                  <Select
-                    options={WEEKDAYS.map((label, value) => ({
-                      value,
-                      label,
-                    }))}
-                  />
-                </Form.Item>
-              )}
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="time"
-                label="Start time"
-                rules={[{ required: true }]}
-              >
-                <TimePicker format="HH:mm" style={{ width: "100%" }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="startDate"
-                label="Starting from"
-                rules={[{ required: true }]}
-              >
-                <DatePicker style={{ width: "100%" }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="reminderEmail"
-                label="Send reminders to"
-                rules={[{ required: true, type: "email" }]}
-              >
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-        {schedules.length > 0 && (
-          <>
-            <Divider />
-            <Space direction="vertical" style={{ width: "100%" }}>
-              {schedules.map((item) => (
-                <div
-                  key={item.id}
-                  style={{
-                    ...sunkenPanel,
-                    padding: 12,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
-                    opacity: item.active ? 1 : 0.6,
+        footer={
+          scheduleView === "list" ? (
+            <Button
+              block
+              shape="round"
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={startNewSchedule}
+            >
+              New recurring meeting
+            </Button>
+          ) : (
+            <div style={{ display: "flex", gap: 12 }}>
+              {schedules.length > 0 && (
+                <Button
+                  block
+                  shape="round"
+                  icon={<ArrowLeftOutlined />}
+                  onClick={() => {
+                    setEditingSchedule(null);
+                    setScheduleView("list");
                   }}
                 >
-                  <div>
-                    <Text strong>
-                      {item.title} · {item.withName}
-                    </Text>
-                    <br />
-                    <Text type="secondary">
-                      {describeSchedule(item)} · {item.reminderEmail}
-                    </Text>
-                  </div>
-                  <Space>
+                  Back
+                </Button>
+              )}
+              <Button
+                block
+                shape="round"
+                type="primary"
+                icon={<SyncOutlined />}
+                loading={saving}
+                onClick={() => void saveSchedule().catch(() => undefined)}
+              >
+                {editingSchedule ? "Save changes" : "Add recurring meeting"}
+              </Button>
+            </div>
+          )
+        }
+        styles={{
+          body: { maxHeight: "70vh", overflowY: "auto", paddingRight: 8 },
+        }}
+      >
+        {scheduleView === "list" ? (
+          <Space direction="vertical" style={{ width: "100%" }}>
+            {schedules.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  ...sunkenPanel,
+                  padding: 12,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  opacity: item.active ? 1 : 0.6,
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <Text strong>
+                    {item.title} · {item.withName}
+                  </Text>
+                  <br />
+                  <Text type="secondary">
+                    {describeSchedule(item)} · {item.reminderEmail}
+                  </Text>
+                  {(() => {
+                    const occurrence = recurringOccurrences.find(
+                      (entry) =>
+                        entry.schedule.id === item.id && entry.kind === "latest"
+                    )?.meeting;
+                    const next = item.active ? nextOccurrence(item) : null;
+                    const nextLine = next ? (
+                      <Text
+                        type="secondary"
+                        style={{ display: "block", fontSize: 13, marginTop: 6 }}
+                      >
+                        {occurrence ? "Next" : "First meeting"} ·{" "}
+                        {dayjs(next).format("ddd D MMM")} at {item.time}
+                      </Text>
+                    ) : null;
+                    if (!occurrence) return nextLine;
+                    const when = dayjs(occurrence.occurrenceDate).format(
+                      "ddd D MMM"
+                    );
+                    const openOccurrence = (answer: "held" | "not-held") => {
+                      setScheduleOpen(false);
+                      if (answer === "held") startMeetingUpdate(occurrence);
+                      else startNotHeld(occurrence);
+                    };
+                    return (
+                      <>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            marginTop: 8,
+                          }}
+                        >
+                          <Text style={{ fontSize: 13 }}>Latest · {when}</Text>
+                          {occurrence.status === "pending" ? (
+                            <>
+                              <Button
+                                size="small"
+                                shape="round"
+                                type="primary"
+                                icon={<CheckCircleOutlined />}
+                                onClick={() => openOccurrence("held")}
+                              >
+                                Held
+                              </Button>
+                              <Button
+                                size="small"
+                                shape="round"
+                                danger
+                                onClick={() => openOccurrence("not-held")}
+                              >
+                                Not held
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Tag
+                                color={
+                                  occurrence.status === "held" ? "green" : "red"
+                                }
+                                style={{
+                                  marginInlineEnd: 0,
+                                  borderRadius: 999,
+                                }}
+                              >
+                                {occurrence.status === "held"
+                                  ? "Held"
+                                  : "Not held"}
+                              </Tag>
+                              {occurrence.status === "held" && (
+                                <Button
+                                  size="small"
+                                  shape="round"
+                                  type="link"
+                                  icon={<EditOutlined />}
+                                  onClick={() => openOccurrence("held")}
+                                >
+                                  Edit notes
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        {nextLine}
+                      </>
+                    );
+                  })()}
+                </div>
+                <Space>
+                  <Tooltip title="Edit schedule">
+                    <Button
+                      size="small"
+                      shape="circle"
+                      icon={<EditOutlined />}
+                      aria-label="Edit schedule"
+                      onClick={() => startEditSchedule(item)}
+                    />
+                  </Tooltip>
+                  <Button
+                    size="small"
+                    shape="round"
+                    onClick={() => toggleSchedule(item)}
+                  >
+                    {item.active ? "Pause" : "Resume"}
+                  </Button>
+                  <Popconfirm
+                    title="Delete this recurring meeting?"
+                    onConfirm={() => removeSchedule(item)}
+                    okButtonProps={{ shape: "round" }}
+                    cancelButtonProps={{ shape: "round" }}
+                  >
                     <Button
                       size="small"
                       shape="round"
-                      onClick={() => toggleSchedule(item)}
-                    >
-                      {item.active ? "Pause" : "Resume"}
-                    </Button>
-                    <Popconfirm
-                      title="Delete this recurring meeting?"
-                      onConfirm={() => removeSchedule(item)}
-                      okButtonProps={{ shape: "round" }}
-                      cancelButtonProps={{ shape: "round" }}
-                    >
-                      <Button
-                        size="small"
-                        shape="round"
-                        danger
-                        icon={<DeleteOutlined />}
-                      />
-                    </Popconfirm>
-                  </Space>
-                </div>
-              ))}
-            </Space>
-          </>
+                      danger
+                      icon={<DeleteOutlined />}
+                    />
+                  </Popconfirm>
+                </Space>
+              </div>
+            ))}
+          </Space>
+        ) : (
+          <Form
+            form={scheduleForm}
+            layout="vertical"
+            requiredMark={false}
+            style={{ marginTop: 8 }}
+          >
+            <Row gutter={12}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  name="title"
+                  label="Meeting title"
+                  rules={[{ required: true, whitespace: true }]}
+                >
+                  <Input placeholder="e.g. Weekly check-in" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  name="withName"
+                  label="Meeting with"
+                  rules={[{ required: true, whitespace: true }]}
+                >
+                  <Input prefix={<UserOutlined />} placeholder="Name" />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Form.Item name="frequency" label="Repeats">
+              <Segmented
+                block
+                options={[
+                  { value: "weekly", label: "Weekly" },
+                  { value: "biweekly", label: "Every 2 weeks" },
+                  { value: "monthly", label: "Monthly" },
+                ]}
+              />
+            </Form.Item>
+            {scheduleFrequency === "monthly" ? (
+              <Form.Item name="dayOfMonth" label="Day of the month">
+                <InputNumber min={1} max={31} style={{ width: "100%" }} />
+              </Form.Item>
+            ) : (
+              <Form.Item name="weekday" label="On">
+                <Segmented
+                  block
+                  options={WEEKDAY_CHIPS}
+                />
+              </Form.Item>
+            )}
+            <Row gutter={12}>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  name="time"
+                  label="Start time"
+                  rules={[{ required: true }]}
+                >
+                  <TimePicker
+                    format="HH:mm"
+                    minuteStep={15}
+                    style={{ width: "100%" }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item
+                  name="startDate"
+                  label="Starting from"
+                  rules={[{ required: true }]}
+                >
+                  <DatePicker
+                    disabledDate={isWeekend}
+                    style={{ width: "100%" }}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Text
+              type="secondary"
+              style={{ fontSize: 13, display: "block", marginBottom: 16 }}
+            >
+              <CalendarOutlined />{" "}
+              {scheduleFrequency === "monthly"
+                ? `Monthly on day ${scheduleDayOfMonth ?? 1}`
+                : `${
+                    scheduleFrequency === "weekly"
+                      ? "Every week"
+                      : "Every 2 weeks"
+                  } on ${WEEKDAYS[scheduleWeekday ?? 1]}`}
+              {scheduleTime ? ` at ${scheduleTime.format("HH:mm")}` : ""}
+              {scheduleStartDate
+                ? `, from ${scheduleStartDate.format("D MMM YYYY")}`
+                : ""}
+            </Text>
+
+            <Form.Item
+              name="reminderEmail"
+              label="Send reminders to"
+              rules={[{ required: true, type: "email" }]}
+              extra="Emailed 30 minutes after each meeting starts, asking whether it was held."
+              style={{ marginBottom: 0 }}
+            >
+              <Input prefix={<MailOutlined />} />
+            </Form.Item>
+          </Form>
         )}
       </Modal>
       <Modal
@@ -2978,8 +4353,8 @@ const FeatureGovernancePage: React.FC = () => {
         }
         okText="Save meeting update"
         confirmLoading={saving}
-        okButtonProps={{ shape: "round" }}
-        cancelButtonProps={{ shape: "round" }}
+        okButtonProps={{ shape: "round", block: true }}
+        footer={okOnlyFooter}
         onOk={saveMeetingUpdate}
         onCancel={() => setMeetingUpdating(null)}
         destroyOnClose
@@ -3005,40 +4380,11 @@ const FeatureGovernancePage: React.FC = () => {
             </Col>
           </Row>
           <Form.Item name="discussion" label="What was discussed">
-            <TextArea rows={4} placeholder="Key points and decisions" />
+            <DiscussionPointsInput />
           </Form.Item>
-          <Form.List name="challenges">
-            {(fields, { add, remove: removeField }) => (
-              <>
-                {fields.map((field) => (
-                  <Space
-                    key={field.key}
-                    align="start"
-                    style={{ display: "flex" }}
-                  >
-                    <Form.Item
-                      {...field}
-                      name={[field.name, "text"]}
-                      style={{ width: 520 }}
-                      rules={[{ required: true, whitespace: true }]}
-                    >
-                      <Input placeholder="Challenge raised" />
-                    </Form.Item>
-                    <MinusCircleOutlined
-                      onClick={() => removeField(field.name)}
-                    />
-                  </Space>
-                ))}
-                <Button
-                  shape="round"
-                  icon={<PlusOutlined />}
-                  onClick={() => add({ text: "" })}
-                >
-                  Add challenge
-                </Button>
-              </>
-            )}
-          </Form.List>
+          <Form.Item name="challenges" label="Challenges raised">
+            <ChallengePointsInput />
+          </Form.Item>
         </Form>
       </Modal>
       <Modal
@@ -3050,8 +4396,8 @@ const FeatureGovernancePage: React.FC = () => {
         }
         okText="Log reason"
         confirmLoading={saving}
-        okButtonProps={{ shape: "round", danger: true }}
-        cancelButtonProps={{ shape: "round" }}
+        okButtonProps={{ shape: "round", danger: true, block: true }}
+        footer={okOnlyFooter}
         onOk={saveNotHeld}
         onCancel={() => setNotHeldMeeting(null)}
         destroyOnClose

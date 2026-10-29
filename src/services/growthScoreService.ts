@@ -95,8 +95,7 @@ export async function loadGrowthScore(email: string): Promise<GrowthScore | null
     const departmentIds: string[] = Array.from(new Set<string>(planInterventions
         .map((item: any) => String(item?.departmentId || item?.addedByDeptId || '').trim())
         .filter((id: string) => Boolean(id))))
-    const participantConfirmations = latestPlan?.incubateeDepartmentConfirmationsByDeptId ||
-        latestPlan?.incubateeDepartmentConfirmations || {}
+    const participantConfirmations = latestPlan?.incubateeDepartmentConfirmationsByDeptId || {}
     const confirmedDepartments = departmentIds.filter(id => isConfirmed(participantConfirmations[id]))
     const roadmapScore = latestPlan?.finalConfirmation
         ? 20

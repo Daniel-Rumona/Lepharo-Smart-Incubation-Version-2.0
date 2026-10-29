@@ -93,7 +93,7 @@
       "prohibitedField": "assignedBranch"
     },
     "companyScoped": {
-      "roles": ["director", "admin"],
+      "roles": ["director", "system_admin"],
       "description": "These roles have company-wide access",
       "requiredField": "companyCode",
       "optionalFields": ["department", "assignedBranch"]

@@ -23,7 +23,7 @@ import {
 import { db } from '@/firebase'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import drilldown from 'highcharts/modules/drilldown'
+import 'highcharts/modules/drilldown'
 import dayjs, { Dayjs } from 'dayjs'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
@@ -39,9 +39,6 @@ import {
     type PageGuideRegistration
 } from '@/components/guide-me'
 
-if (typeof drilldown === 'function') {
-    drilldown(Highcharts)
-}
 
 const { Option } = Select
 const { RangePicker } = DatePicker

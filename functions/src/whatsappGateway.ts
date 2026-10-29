@@ -2,6 +2,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { admin, db } from "./firebase";
 import { candidatePhoneValues, clean, normalizePhone, timestampToIso } from "./whatsappCommon";
 import { handleStaffAction, resolveStaffByPhone, STAFF_ACTIONS } from "./whatsappStaff";
+import { recordCheckBackTap } from "./whatsappCheckBack";
 
 type GatewayAction =
   | "resolve_identity"
@@ -22,7 +23,8 @@ type GatewayAction =
   | "confirm_proposal"
   | "cancel_proposal"
   | "agent_state_get"
-  | "agent_state_set";
+  | "agent_state_set"
+  | "record_outcome_follow_up";
 
 type GatewayRequest = {
   action?: GatewayAction;
@@ -40,6 +42,9 @@ type GatewayRequest = {
   proposalKind?: string;
   params?: Record<string, unknown>;
   history?: Array<{ role?: string; text?: string }>;
+  // Outcome check-back button taps
+  followUpId?: string;
+  answerCode?: string;
 };
 
 type ParticipantIdentity = {
@@ -233,6 +238,20 @@ export const lphWhatsAppGateway = onRequest(
 
     try {
       const identity = await resolveParticipantByPhone(phoneNumber);
+
+      // A tap on a check-back button. Works for a facilitator or an SME, so it is
+      // handled before the two paths split; the rules live in whatsappCheckBackLogic.
+      if (action === "record_outcome_follow_up") {
+        const result = await recordCheckBackTap({
+          phoneNumber,
+          followUpId: clean(payload.followUpId),
+          code: clean(payload.answerCode),
+          smeParticipantIds: identity?.participantIds ?? [],
+        });
+        json(res, 200, { ok: true, matched: true, recorded: result.recorded, reply: result.reply });
+        return;
+      }
+
       if (!identity) {
         // Not an SME: this may be a Lepharo staff member with the number on their user profile.
         const staff = await resolveStaffByPhone(phoneNumber);

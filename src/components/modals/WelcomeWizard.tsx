@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-    Steps,
     Card,
     Typography,
     Button,
@@ -14,18 +13,28 @@ import {
     Form,
     Input,
     Grid,
-    Radio,
+    Segmented,
     Select,
-    Tag
+    Tag,
+    theme
 } from 'antd'
 import {
     SmileOutlined,
+    ArrowRightOutlined,
     SafetyCertificateOutlined,
     EditOutlined,
     CloudSyncOutlined,
     SolutionOutlined,
-    InboxOutlined
+    InboxOutlined,
+    ArrowLeftOutlined,
+    CheckOutlined,
+    SaveOutlined,
+    ClearOutlined,
+    DownloadOutlined,
+    FontSizeOutlined,
+    UploadOutlined
 } from '@ant-design/icons'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import type { UploadProps } from 'antd'
 import { useNavigate } from 'react-router-dom'
 
@@ -67,6 +76,17 @@ import html2canvas from 'html2canvas'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { PopiaContractModal } from '@/components/modals/Contracts/POPIA'
 import { DashboardLoader } from '@/components/layout/DashboardLoader'
+import { WhatsAppConsentCard } from '@/components/modals/WhatsAppConsentCard'
+import { needsWhatsAppPrompt } from '@/services/whatsappConsent'
+import {
+    mustChangePasswordFor,
+    pendingWelcomeSteps,
+    welcomeStepKeys,
+    type WelcomeStepKey
+} from '@/services/welcomeSteps'
+import { hasSignedPopia } from '@/services/popiaConsent'
+import { functionsBaseUrl } from '@/firebaseConfig'
+import { captureSignatureStrokes, rememberProfileSignature } from '@/utils/signatureReplay'
 
 const { Title, Paragraph, Text } = Typography
 const { Dragger } = Upload
@@ -74,11 +94,12 @@ const { useBreakpoint } = Grid
 const { Option } = Select
 
 type Role =
-    | 'admin'
+    | 'system_admin'
     | 'consultant'
     | 'incubatee'
     | 'operations'
     | 'director'
+    | 'training_sme'
     | 'unknown'
 type ProviderKey = 'google' | 'microsoft' | 'zoom'
 type ConnectionDoc = {
@@ -90,7 +111,7 @@ type ConnectionDoc = {
     externalAccountEmail?: string
 }
 
-const FUNCTIONS_BASE = 'https://us-central1-lph-smart-inc.cloudfunctions.net'
+const FUNCTIONS_BASE = functionsBaseUrl
 const FONT_OPTIONS = ['Dancing Script', 'Great Vibes', 'Pacifico', 'Satisfy']
 const roleKey = (r?: string): Role =>
     (r || '').toLowerCase().replace(/\s+/g, '') as Role
@@ -98,10 +119,38 @@ const roleKey = (r?: string): Role =>
 // Toggle off to bring consent back later
 const HIDE_CONSENT = true
 
+// What each step asks for, on the welcome screen, and what it leaves saved, on the last one.
+const STEP_ASK: Partial<Record<WelcomeStepKey, string>> = {
+    directorProfile: 'Confirm your company details',
+    signature: 'Set up your signature',
+    popia: 'Sign the POPIA privacy notice',
+    whatsapp: 'Choose WhatsApp updates',
+    consent: 'Connect your email & meeting tools'
+}
+// A friendly line under each item on the welcome screen.
+const STEP_HINT: Partial<Record<WelcomeStepKey, string>> = {
+    directorProfile: 'Just your company name.',
+    signature: 'Type it or draw it. It is used whenever you sign a document here, starting with the POPIA notice.',
+    popia: 'How we look after your personal information. Read it, then sign.',
+    whatsapp: 'Optional reminders and updates on your phone.',
+    consent: 'Lets the platform schedule meetings in your calendar.'
+}
+const STEP_SAVED: Partial<Record<WelcomeStepKey, string>> = {
+    directorProfile: 'your company details',
+    signature: 'your signature',
+    popia: 'your POPIA consent',
+    whatsapp: 'your WhatsApp choice',
+    consent: 'your email & meetings consent'
+}
+const joinList = (items: string[]) =>
+    items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+
 const WelcomeWizard: React.FC = () => {
     const navigate = useNavigate()
     const { user } = useFullIdentity()
     const screens = useBreakpoint()
+    // Colours come from the active theme so the screen matches light or dark mode.
+    const { token } = theme.useToken()
     const isMobile = !screens.md
     // whether this user must register company details (directors)
     // default to true so old users still see the step unless explicitly set to false
@@ -119,8 +168,18 @@ const WelcomeWizard: React.FC = () => {
     const [userId, setUserId] = useState<string | null>(null)
 
     // step states
-    const [popiaModalOpen, setPopiaModalOpen] = useState(false)
+    // The signed POPIA copy made on this visit, offered for download.
+    const [popiaPdfUrl, setPopiaPdfUrl] = useState('')
     const [popiaSigned, setPopiaSigned] = useState(false)
+    // An SME who has not finished setup before, as opposed to someone sent back for a missing item.
+    const [firstVisit, setFirstVisit] = useState(false)
+    // The steps this visit asks for, fixed once the profile is read so finished
+    // steps stay in the stepper rather than vanishing.
+    const [plan, setPlan] = useState<WelcomeStepKey[] | null>(null)
+    // WhatsApp updates: answered, or put off until the next login.
+    const [whatsappAnswered, setWhatsappAnswered] = useState(false)
+    const [whatsappSkipped, setWhatsappSkipped] = useState(false)
+    const [whatsappNumber, setWhatsappNumber] = useState('')
     const [signatureURL, setSignatureURL] = useState<string | null>(null)
 
     // consent-related (kept but hidden if HIDE_CONSENT)
@@ -137,6 +196,12 @@ const WelcomeWizard: React.FC = () => {
 
     // UI
     const [current, setCurrent] = useState(0)
+    // Which way the last step change went, so the next screen slides in from that side.
+    const [direction, setDirection] = useState<1 | -1>(1)
+    const reduceMotion = useReducedMotion()
+    // The drawing pad fills its box; its pixel width follows the box's width.
+    const sigPadRef = useRef<HTMLDivElement | null>(null)
+    const [sigPadWidth, setSigPadWidth] = useState(480)
     const [loading, setLoading] = useState(true)
     const storage = getStorage()
 
@@ -150,6 +215,9 @@ const WelcomeWizard: React.FC = () => {
     // password step state
     const [mustChangePassword, setMustChangePassword] = useState(false)
     const [pwdStepComplete, setPwdStepComplete] = useState(false)
+    // Fixed when the page loads: a person on a default password sees only the password
+    // step, and this must not flip when the password is saved or the rest would appear.
+    const [passwordOnly, setPasswordOnly] = useState(false)
     const [pwdForm] = Form.useForm()
 
     // loading guards
@@ -212,38 +280,19 @@ const WelcomeWizard: React.FC = () => {
                 }
             }
 
-            // POPIA check
-            if (!ps.empty) {
-                const pid = ps.docs[0].id
-                const apps = await getDocs(
-                    query(
-                        collection(db, 'applications'),
-                        where('participantId', '==', pid)
-                    )
-                )
-                if (!apps.empty) {
-                    const first = apps.docs[0].data() as any
-                    const signed = { ...(first?.signedAgreements || {}) }
-                    const legacy = Array.isArray(first?.signContracts)
-                        ? first.signContracts
-                        : Array.isArray(first?.signedContracts)
-                            ? first.signedContracts
-                            : []
-                    legacy.forEach((slug: string) => {
-                        if (!signed[slug]) signed[slug] = true
-                    })
-                    setPopiaSigned(!!signed['popia-act'])
-                }
-            }
+            // POPIA: every user signs it (profile record, or an SME's application).
+            setPopiaSigned(await hasSignedPopia(profile, r || 'unknown', u.email))
+            setFirstVisit(r === 'incubatee' && profile?.firstLoginComplete !== true)
+
+            // WhatsApp updates: already answered (e.g. on an earlier visit), and a number to prefill.
+            setWhatsappAnswered(!needsWhatsAppPrompt(profile))
+            setWhatsappNumber(String(profile?.phone || profile?.phoneNumber || ''))
 
             // Must-change-password logic
             const needsResetFromDoc = profile?.mustChangePassword
-            const nonIncubatee = (r || 'unknown') !== 'incubatee'
-            const must =
-                typeof needsResetFromDoc === 'boolean'
-                    ? needsResetFromDoc
-                    : nonIncubatee
+            const must = mustChangePasswordFor(needsResetFromDoc, r || 'unknown')
             setMustChangePassword(must)
+            setPasswordOnly(must)
             setPwdStepComplete(!must)
 
             setLoading(false)
@@ -292,26 +341,35 @@ const WelcomeWizard: React.FC = () => {
             icon: <SafetyCertificateOutlined />,
             isComplete: popiaSigned
         }
-
-        if (userRole !== 'incubatee') {
-            const maybePwd = mustChangePassword ? [passwordStep] : []
-            // NEW: only show company step for directors when mustRegisterCompany is true
-            const maybeDirector =
-                userRole === 'director' && mustRegisterCompany ? [director] : []
-            const adminish = [...maybePwd, ...maybeDirector, sig, consent]
-            return [...base, ...adminish]
+        const whatsapp = {
+            key: 'whatsapp',
+            title: 'WhatsApp Updates',
+            icon: <CloudSyncOutlined />,
+            isComplete: whatsappAnswered || whatsappSkipped
         }
 
-        // Incubatees flow
-        return [...base, popia, sig, consent]
+        // The decision of which steps to show lives in welcomeSteps (and is tested there).
+        const byKey: Record<string, (typeof base)[number] | typeof passwordStep> = {
+            welcome: base[0],
+            password: passwordStep,
+            directorProfile: director,
+            popia,
+            whatsapp,
+            signature: sig,
+            consent
+        }
+        return (plan ?? []).map(key => byKey[key])
     }, [
+        plan,
         userRole,
         popiaSigned,
+        whatsappAnswered,
+        whatsappSkipped,
         signatureURL,
         consentGiven,
         directorProfileComplete,
         pwdStepComplete,
-        mustChangePassword,
+        passwordOnly,
         mustRegisterCompany // NEW dependency
     ])
 
@@ -320,6 +378,8 @@ const WelcomeWizard: React.FC = () => {
         () => (HIDE_CONSENT ? steps.filter(s => s.key !== 'consent') : steps),
         [steps]
     )
+    // What this visit set out to do, for the welcome and completion wording.
+    const plannedTasks = visibleSteps.map(s => s.key as WelcomeStepKey).filter(key => key !== 'welcome')
 
     const currentKey = visibleSteps[current]?.key
 
@@ -330,15 +390,32 @@ const WelcomeWizard: React.FC = () => {
         }
     }, [visibleSteps.length, current])
 
-    // On load (or when prerequisites resolve), jump to first incomplete
+    // Once the profile is read, settle which steps this visit needs and start at the first.
     useEffect(() => {
-        if (!loading && visibleSteps.length) {
-            const firstIncomplete = visibleSteps.findIndex(s => !s.isComplete)
-            setCurrent(
-                firstIncomplete === -1 ? visibleSteps.length - 1 : firstIncomplete
+        if (loading || plan) return
+        const keys = welcomeStepKeys({
+            role: userRole,
+            passwordOnly,
+            mustRegisterCompany,
+            hideConsent: false
+        })
+        setPlan(
+            pendingWelcomeSteps(
+                keys,
+                {
+                    password: pwdStepComplete,
+                    directorProfile: directorProfileComplete,
+                    signature: !!signatureURL,
+                    popia: popiaSigned,
+                    whatsapp: whatsappAnswered,
+                    consent: !!consentGiven
+                },
+                firstVisit
             )
-        }
-    }, [loading, visibleSteps])
+        )
+        setCurrent(0)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, plan])
 
     // ---- Signature helpers ----
     const dataURLToBlob = async (dataUrl: string) => {
@@ -372,9 +449,10 @@ const WelcomeWizard: React.FC = () => {
             const url = await uploadSigBlob(blob, 'typed.png')
             await setDoc(
                 doc(db, 'users', auth.currentUser!.uid),
-                { signatureURL: url },
+                { signatureURL: url, signatureMethod: 'typed', signatureStrokes: null },
                 { merge: true }
             )
+            rememberProfileSignature(auth.currentUser!.uid, url, null)
             setSignatureURL(url)
             message.success('Typed signature saved to your profile.')
         } catch (e: any) {
@@ -393,13 +471,16 @@ const WelcomeWizard: React.FC = () => {
         setSavingSig(true)
         try {
             const dataURL = c.toDataURL('image/png')
+            // The PNG is the whole pad, so the strokes are not trimmed either.
+            const signatureStrokes = captureSignatureStrokes(c, false)
             const blob = await dataURLToBlob(dataURL)
             const url = await uploadSigBlob(blob, 'drawn.png')
             await setDoc(
                 doc(db, 'users', auth.currentUser!.uid),
-                { signatureURL: url },
+                { signatureURL: url, signatureMethod: 'drawn', signatureStrokes },
                 { merge: true }
             )
+            rememberProfileSignature(auth.currentUser!.uid, url, signatureStrokes)
             setSignatureURL(url)
             message.success('Drawn signature saved to your profile.')
         } catch (e: any) {
@@ -418,9 +499,10 @@ const WelcomeWizard: React.FC = () => {
             const url = await uploadSigBlob(file, file.name)
             await setDoc(
                 doc(db, 'users', auth.currentUser!.uid),
-                { signatureURL: url },
+                { signatureURL: url, signatureMethod: 'uploaded', signatureStrokes: null },
                 { merge: true }
             )
+            rememberProfileSignature(auth.currentUser!.uid, url, null)
             setSignatureURL(url)
             message.success('Signature image uploaded.')
         } finally {
@@ -479,11 +561,65 @@ const WelcomeWizard: React.FC = () => {
 
     // Navigation helpers (skip completed)
     const goNext = () => {
+        setDirection(1)
         let idx = current + 1
         while (idx < visibleSteps.length && visibleSteps[idx].isComplete) idx++
         setCurrent(Math.min(idx, visibleSteps.length - 1))
     }
-    const goPrev = () => setCurrent(Math.max(0, current - 1))
+    const goPrev = () => {
+        setDirection(-1)
+        setCurrent(Math.max(0, current - 1))
+    }
+
+    useEffect(() => {
+        if (sigMode !== 'drawn') return
+        const pad = sigPadRef.current
+        if (!pad) return
+        const update = () => {
+            // Inside the border, so pen and ink line up exactly.
+            const width = pad.clientWidth
+            if (width > 0) setSigPadWidth(width)
+        }
+        update()
+        const observer = new ResizeObserver(update)
+        observer.observe(pad)
+        return () => observer.disconnect()
+    }, [sigMode, currentKey])
+
+    // Back / Next and the like: one row, the buttons sharing it evenly.
+    const actionRow = (children: React.ReactNode, marginTop = 16) => (
+        <div
+            style={{
+                display: 'grid',
+                gridAutoFlow: 'column',
+                gridAutoColumns: 'minmax(0, 1fr)',
+                gap: 12,
+                marginTop
+            }}
+        >
+            {children}
+        </div>
+    )
+    const backButton = (disabled?: boolean) => (
+        <Button size='large' block icon={<ArrowLeftOutlined />} onClick={goPrev} disabled={disabled}>
+            Back
+        </Button>
+    )
+    // The last step's button finishes rather than moving on.
+    const isLastStep = current >= visibleSteps.length - 1
+    const nextButton = (props: { disabled?: boolean; onClick?: () => void }) => (
+        <Button
+            size='large'
+            block
+            type='primary'
+            icon={isLastStep ? <CheckOutlined /> : <ArrowRightOutlined />}
+            iconPosition='end'
+            disabled={props.disabled}
+            onClick={props.onClick ?? goNext}
+        >
+            {isLastStep ? 'Finish' : 'Next'}
+        </Button>
+    )
 
     // OAuth helpers (kept for future when consent step is re-enabled)
     const openAuthUrl = (authUrl: string) => {
@@ -563,15 +699,18 @@ const WelcomeWizard: React.FC = () => {
     const finish = async () => {
         if (!userId) return
 
-        // mark welcome complete
-        await setDoc(
-            doc(db, 'users', userId),
-            {
-                firstLoginComplete: true,
-                firstLoginCompletedAt: Timestamp.now()
-            },
-            { merge: true }
-        )
+        // mark welcome complete. After a password-only visit the rest of the setup
+        // (POPIA, WhatsApp, signature) has not happened yet, so it is left to appear next time.
+        if (!passwordOnly) {
+            await setDoc(
+                doc(db, 'users', userId),
+                {
+                    firstLoginComplete: true,
+                    firstLoginCompletedAt: Timestamp.now()
+                },
+                { merge: true }
+            )
+        }
 
         // role + email
         const uref = await getDoc(doc(db, 'users', userId))
@@ -626,8 +765,8 @@ const WelcomeWizard: React.FC = () => {
                     })
                 }
 
-                // GAP already completed → incubatee dashboard
-                return navigate('/incubatee')
+                // GAP already completed → plan review, then the incubatee dashboard
+                return navigate('/plan-review')
             }
 
             // if pending → tracker
@@ -638,7 +777,7 @@ const WelcomeWizard: React.FC = () => {
         }
 
         // non-incubatee roles
-        navigate(`/${r || 'unknown'}`)
+        navigate(r === 'training_sme' ? '/training' : `/${r || 'unknown'}`)
     }
 
     // Subscribe to connections docs (for when consent returns)
@@ -690,29 +829,100 @@ const WelcomeWizard: React.FC = () => {
     }, [])
 
     // ---- Renderers ----
-    const renderWelcome = () => (
-        <Card>
-            <Title level={3} style={{ marginTop: 0 }}>
-                Welcome to the Smart Incubation Platform 🎉
-            </Title>
-            <Paragraph>
-                Before you dive in, complete a few first-time checks.
-            </Paragraph>
-            <ul style={{ marginTop: 8 }}>
-                {userRole === 'incubatee' && <li>Sign the POPIA consent</li>}
-                {userRole === 'director' && <li>Confirm your company details</li>}
-                <li>Set up your digital signature (type or draw)</li>
-                {!HIDE_CONSENT && (
-                    <li>Give consent to connect your email & meeting tools</li>
-                )}
-            </ul>
-            <Space style={{ marginTop: 16 }}>
-                <Button type='primary' onClick={goNext} block={isMobile}>
-                    Let’s get started
+    // Lists only what this visit asks for, so someone back for one item is not
+    // told about steps they finished long ago.
+    const renderWelcome = () => {
+        const tasks = visibleSteps.filter(step => step.key !== 'welcome' && STEP_ASK[step.key as WelcomeStepKey])
+        const firstName = String(user?.name || '').trim().split(/\s+/)[0]
+        const greeting = firstVisit
+            ? `Welcome${firstName ? `, ${firstName}` : ''}! 👋`
+            : `Welcome back${firstName ? `, ${firstName}` : ''} 👋`
+        const intro = firstVisit
+            ? 'We’re glad you’re here. A few quick steps and you’re ready to go.'
+            : tasks.length === 1
+                ? 'Just one quick thing before you carry on. It only takes a minute.'
+                : 'Just a couple of quick things before you carry on. They only take a minute.'
+        return (
+            <div style={{ textAlign: 'center' }}>
+                <div
+                    aria-hidden='true'
+                    style={{
+                        width: 64,
+                        height: 64,
+                        margin: '4px auto 16px',
+                        borderRadius: '50%',
+                        display: 'grid',
+                        placeItems: 'center',
+                        fontSize: 30,
+                        color: token.colorPrimary,
+                        background: token.colorPrimaryBg
+                    }}
+                >
+                    <SmileOutlined />
+                </div>
+                <Title level={2} style={{ margin: 0 }}>
+                    {greeting}
+                </Title>
+                <Paragraph type='secondary' style={{ fontSize: 15, margin: '8px 0 24px' }}>
+                    {intro}
+                </Paragraph>
+
+                <ol style={{ listStyle: 'none', padding: 0, margin: 0, textAlign: 'left', display: 'grid', gap: 10 }}>
+                    {tasks.map((step, index) => (
+                        <li
+                            key={step.key}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 14,
+                                padding: '14px 16px',
+                                borderRadius: 12,
+                                border: `1px solid ${token.colorBorderSecondary}`,
+                                background: token.colorFillQuaternary
+                            }}
+                        >
+                            <span
+                                aria-hidden='true'
+                                style={{
+                                    flex: '0 0 auto',
+                                    width: 38,
+                                    height: 38,
+                                    borderRadius: 10,
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    fontSize: 18,
+                                    color: token.colorPrimary,
+                                    background: token.colorPrimaryBg
+                                }}
+                            >
+                                {step.icon}
+                            </span>
+                            <span style={{ minWidth: 0 }}>
+                                <Text strong style={{ display: 'block' }}>
+                                    {tasks.length > 1 ? `${index + 1}. ` : ''}{STEP_ASK[step.key as WelcomeStepKey]}
+                                </Text>
+                                {STEP_HINT[step.key as WelcomeStepKey] && (
+                                    <Text type='secondary' style={{ fontSize: 13 }}>
+                                        {STEP_HINT[step.key as WelcomeStepKey]}
+                                    </Text>
+                                )}
+                            </span>
+                        </li>
+                    ))}
+                </ol>
+
+                <Button
+                    type='primary'
+                    size='large'
+                    block
+                    onClick={goNext}
+                    style={{ marginTop: 24 }}
+                >
+                    {firstVisit || tasks.length > 1 ? 'Let’s get started' : 'Continue'} <ArrowRightOutlined />
                 </Button>
-            </Space>
-        </Card>
-    )
+            </div>
+        )
+    }
 
     const reauthAndRetryPasswordUpdate = async (newPassword: string) => {
         const cur = auth.currentUser
@@ -939,81 +1149,107 @@ const WelcomeWizard: React.FC = () => {
                     <Input.Password placeholder='Re-enter password' />
                 </Form.Item>
 
-                <Space wrap>
-                    <Button onClick={goPrev} block={isMobile} disabled={savingPwd}>
-                        Back
-                    </Button>
-                    <Button
-                        type='primary'
-                        htmlType='submit'
-                        block={isMobile}
-                        loading={savingPwd}
-                        disabled={savingPwd}
-                    >
-                        Update Password
-                    </Button>
-                </Space>
+                {actionRow(
+                    <>
+                        {!passwordOnly && backButton(savingPwd)}
+                        <Button
+                            size='large'
+                            block
+                            type='primary'
+                            htmlType='submit'
+                            icon={<SafetyCertificateOutlined />}
+                            loading={savingPwd}
+                            disabled={savingPwd}
+                        >
+                            Update Password
+                        </Button>
+                    </>,
+                    8
+                )}
             </Form>
         </Card>
     )
 
+    // The notice is read and signed right here, not in a window on top of the wizard.
     const renderPopia = () => (
         <>
             <Card>
                 <Title level={4} style={{ marginTop: 0 }}>
-                    POPIA Act Consent
+                    POPIA privacy notice
                 </Title>
                 {popiaSigned ? (
-                    <Alert
-                        type='success'
-                        showIcon
-                        message='POPIA consent already signed.'
-                    />
-                ) : (
                     <>
                         <Alert
-                            type='info'
+                            type='success'
                             showIcon
-                            message='We require your POPIA consent before continuing.'
-                            style={{ marginBottom: 12 }}
+                            message='POPIA notice signed'
+                            description='Thank you. A signed copy is kept with your account.'
                         />
-                        <Space>
+                        {popiaPdfUrl && (
                             <Button
-                                type='primary'
-                                onClick={() => setPopiaModalOpen(true)}
-                                block={isMobile}
+                                size='large'
+                                block
+                                icon={<DownloadOutlined />}
+                                href={popiaPdfUrl}
+                                target='_blank'
+                                rel='noopener noreferrer'
+                                style={{ marginTop: 12 }}
                             >
-                                Review & Sign POPIA
+                                Download signed copy
                             </Button>
-                        </Space>
+                        )}
+                    </>
+                ) : (
+                    <>
+                        <Paragraph type='secondary'>
+                            Please read how we collect, use and protect your personal information,
+                            then tick the box at the end and sign.
+                        </Paragraph>
+                        <PopiaContractModal
+                            inline
+                            open
+                            participantId={participantId || ''}
+                            onClose={() => undefined}
+                            onSigned={meta => {
+                                setPopiaPdfUrl(meta.pdfUrl || '')
+                                setPopiaSigned(true)
+                            }}
+                        />
                     </>
                 )}
             </Card>
-            <div style={{ marginTop: 16 }}>
-                <Space style={{ width: '100%' }} wrap>
-                    <Button onClick={goPrev} block={isMobile}>
-                        Back
-                    </Button>
-                    <Button
-                        type='primary'
-                        onClick={goNext}
-                        disabled={!popiaSigned}
-                        block={isMobile}
-                    >
-                        Next
-                    </Button>
-                </Space>
-            </div>
-            <PopiaContractModal
-                open={popiaModalOpen}
-                participantId={participantId || ''}
-                onClose={() => setPopiaModalOpen(false)}
-                onSigned={() => {
-                    setPopiaModalOpen(false)
-                    setPopiaSigned(true)
-                    message.success('POPIA consent signed. Thank you!')
-                }}
-            />
+            {actionRow(
+                <>
+                    {backButton()}
+                    {nextButton({ disabled: !popiaSigned })}
+                </>
+            )}
+        </>
+    )
+
+    const renderWhatsApp = () => (
+        <>
+            <Card>
+                <Title level={4} style={{ marginTop: 0 }}>
+                    Updates on WhatsApp
+                </Title>
+                {userId ? (
+                    <WhatsAppConsentCard
+                        userId={userId}
+                        initialNumber={whatsappNumber}
+                        source='welcome'
+                        onAnswered={() => {
+                            setWhatsappAnswered(true)
+                            goNext()
+                        }}
+                        onLater={() => {
+                            setWhatsappSkipped(true)
+                            goNext()
+                        }}
+                    />
+                ) : null}
+            </Card>
+            {actionRow(backButton())}
         </>
     )
 
@@ -1035,29 +1271,23 @@ const WelcomeWizard: React.FC = () => {
                     >
                         <Input />
                     </Form.Item>
-                    <Button type='primary' htmlType='submit' block={isMobile}>
+                    <Button size='large' block type='primary' htmlType='submit' icon={<SaveOutlined />}>
                         Save
                     </Button>
                 </Form>
             </Card>
-            <div style={{ marginTop: 16 }}>
-                <Space style={{ width: '100%' }} wrap>
-                    <Button onClick={goPrev} block={isMobile}>
-                        Back
-                    </Button>
-                    <Button
-                        type='primary'
-                        onClick={async () => {
+            {actionRow(
+                <>
+                    {backButton()}
+                    {nextButton({
+                        disabled: !directorProfileComplete,
+                        onClick: async () => {
                             await saveDirectorProfile()
                             goNext()
-                        }}
-                        disabled={!directorProfileComplete}
-                        block={isMobile}
-                    >
-                        Next
-                    </Button>
-                </Space>
-            </div>
+                        }
+                    })}
+                </>
+            )}
         </>
     )
 
@@ -1078,28 +1308,52 @@ const WelcomeWizard: React.FC = () => {
                         />
                     )}
 
-                    <Radio.Group
+                    {/* Large, full-width choice: the radio buttons were easy to miss. */}
+                    <Segmented
+                        block
+                        size='large'
                         value={sigMode}
-                        onChange={e => setSigMode(e.target.value)}
-                        style={{ marginBottom: 12 }}
-                    >
-                        <Radio value='typed'>Type</Radio>
-                        <Radio value='drawn'>Draw</Radio>
-                        <Radio value='upload'>Upload (optional)</Radio>
-                    </Radio.Group>
+                        onChange={value => setSigMode(value as typeof sigMode)}
+                        style={{ marginBottom: 16 }}
+                        // On phones the icon sits above the word, so all three fit uncut.
+                        options={([
+                            ['typed', 'Type', <FontSizeOutlined key='t' />],
+                            ['drawn', 'Draw', <EditOutlined key='d' />],
+                            ['upload', 'Upload', <UploadOutlined key='u' />]
+                        ] as const).map(([value, text, icon]) =>
+                            isMobile
+                                ? {
+                                    value,
+                                    label: (
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '6px 0', lineHeight: 1.2 }}>
+                                            <span style={{ fontSize: 18 }}>{icon}</span>
+                                            <span>{text}</span>
+                                        </div>
+                                    )
+                                }
+                                : { value, label: text, icon }
+                        )}
+                    />
 
                     {/* TYPED */}
                     {sigMode === 'typed' && (
                         <div>
-                            <div style={{ marginBottom: 12, maxWidth: 340 }}>
+                            <div
+                                style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 2fr) minmax(0, 1fr)',
+                                    gap: 12,
+                                    marginBottom: 12
+                                }}
+                            >
                                 <Input
+                                    size='large'
                                     placeholder='Your full name'
                                     value={typedName}
                                     onChange={e => setTypedName(e.target.value)}
                                 />
-                            </div>
-                            <div style={{ marginBottom: 12, maxWidth: 260 }}>
                                 <Select
+                                    size='large'
                                     value={typedFont}
                                     onChange={setTypedFont}
                                     style={{ width: '100%' }}
@@ -1111,30 +1365,38 @@ const WelcomeWizard: React.FC = () => {
                                     ))}
                                 </Select>
                             </div>
+                            {/* keep-light: this box is photographed into the signature PNG, so the
+                                dark theme must not repaint it (that would save light ink on dark). */}
                             <div
                                 ref={styledRef}
+                                className='keep-light'
                                 style={{
                                     fontFamily: `${typedFont}, cursive`,
-                                    fontSize: 40,
-                                    padding: '10px 20px',
+                                    fontSize: isMobile ? 34 : 44,
+                                    padding: '16px 24px',
                                     border: '1px dashed #aaa',
+                                    borderRadius: 8,
                                     background: '#fff',
-                                    display: 'inline-block',
-                                    minWidth: 260
+                                    color: '#111',
+                                    textAlign: 'center',
+                                    overflowWrap: 'anywhere'
                                 }}
                             >
                                 {typedName || 'Your styled signature'}
                             </div>
-                            <div style={{ marginTop: 12 }}>
+                            {actionRow(
                                 <Button
+                                    size='large'
+                                    block
                                     type='primary'
+                                    icon={<SaveOutlined />}
                                     onClick={saveTypedSignature}
                                     disabled={!typedName.trim()}
-                                    block={isMobile}
                                 >
-                                    Save Typed Signature
-                                </Button>
-                            </div>
+                                    {isMobile ? 'Save signature' : 'Save Typed Signature'}
+                                </Button>,
+                                12
+                            )}
                         </div>
                     )}
 
@@ -1142,12 +1404,14 @@ const WelcomeWizard: React.FC = () => {
                     {sigMode === 'drawn' && (
                         <div>
                             <div
+                                ref={sigPadRef}
+                                className='keep-light'
                                 style={{
                                     border: '1px dashed #aaa',
+                                    borderRadius: 8,
+                                    overflow: 'hidden',
                                     width: '100%',
-                                    maxWidth: 480,
-                                    height: 160,
-                                    marginBottom: 12,
+                                    height: 200,
                                     position: 'relative',
                                     background: '#fff'
                                 }}
@@ -1156,24 +1420,29 @@ const WelcomeWizard: React.FC = () => {
                                     ref={canvasRef}
                                     penColor='black'
                                     canvasProps={{
-                                        width: Math.min(480, window.innerWidth - 64),
-                                        height: 160,
-                                        style: { background: 'white' }
+                                        width: sigPadWidth,
+                                        height: 200,
+                                        style: { display: 'block', width: '100%', height: 200, cursor: 'crosshair' }
                                     }}
                                 />
                             </div>
-                            <Space wrap>
-                                <Button onClick={clearDrawnSignature} block={isMobile}>
-                                    Clear
-                                </Button>
-                                <Button
-                                    type='primary'
-                                    onClick={saveDrawnSignature}
-                                    block={isMobile}
-                                >
-                                    Save Drawn Signature
-                                </Button>
-                            </Space>
+                            {actionRow(
+                                <>
+                                    <Button size='large' block icon={<ClearOutlined />} onClick={clearDrawnSignature}>
+                                        Clear
+                                    </Button>
+                                    <Button
+                                        size='large'
+                                        block
+                                        type='primary'
+                                        icon={<SaveOutlined />}
+                                        onClick={saveDrawnSignature}
+                                    >
+                                        {isMobile ? 'Save' : 'Save Drawn Signature'}
+                                    </Button>
+                                </>,
+                                12
+                            )}
                         </div>
                     )}
 
@@ -1186,7 +1455,7 @@ const WelcomeWizard: React.FC = () => {
                                 message='Upload an image of your signature (PNG/JPG).'
                                 style={{ marginBottom: 12 }}
                             />
-                            <Dragger {...uploadProps} style={{ maxWidth: 560 }}>
+                            <Dragger {...uploadProps}>
                                 <p className='ant-upload-drag-icon'>
                                     <InboxOutlined />
                                 </p>
@@ -1203,40 +1472,32 @@ const WelcomeWizard: React.FC = () => {
 
                     {signatureURL && (
                         <div
+                            className='keep-light'
                             style={{
                                 marginTop: 16,
                                 padding: 12,
-                                background: '#fafafa',
+                                background: '#fff',
                                 borderRadius: 8,
-                                border: '1px dashed #d9d9d9',
-                                display: 'inline-block'
+                                border: `1px dashed ${token.colorBorder}`,
+                                textAlign: 'center'
                             }}
                         >
                             <img
                                 src={signatureURL}
                                 alt='Your signature'
-                                style={{ maxHeight: 80 }}
+                                style={{ maxHeight: 90, maxWidth: '100%' }}
                             />
                         </div>
                     )}
                 </Spin>
             </Card>
 
-            <div style={{ marginTop: 16 }}>
-                <Space style={{ width: '100%' }} wrap>
-                    <Button onClick={goPrev} block={isMobile}>
-                        Back
-                    </Button>
-                    <Button
-                        type='primary'
-                        onClick={goNext}
-                        disabled={!signatureURL}
-                        block={isMobile}
-                    >
-                        Next
-                    </Button>
-                </Space>
-            </div>
+            {actionRow(
+                <>
+                    {backButton()}
+                    {nextButton({ disabled: !signatureURL })}
+                </>
+            )}
         </>
     )
 
@@ -1276,8 +1537,8 @@ const WelcomeWizard: React.FC = () => {
                             marginTop: 12,
                             padding: 12,
                             borderRadius: 8,
-                            border: '1px solid #f0f0f0',
-                            background: '#fafafa'
+                            border: `1px solid ${token.colorBorderSecondary}`,
+                            background: token.colorFillAlter
                         }}
                     >
                         <Text strong>Choose providers you want to enable:</Text>
@@ -1318,7 +1579,7 @@ const WelcomeWizard: React.FC = () => {
                                 >
                                     <div>
                                         <Text strong>Google</Text>
-                                        <div style={{ fontSize: 12, color: '#888' }}>
+                                        <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
                                             {g?.externalAccountEmail || '—'}
                                         </div>
                                     </div>
@@ -1357,7 +1618,7 @@ const WelcomeWizard: React.FC = () => {
                                         )}
                                     </Space>
                                 </Space>
-                                <div style={{ marginTop: 6, fontSize: 12, color: '#999' }}>
+                                <div style={{ marginTop: 6, fontSize: 12, color: token.colorTextTertiary }}>
                                     Last updated:{' '}
                                     {g?.updatedAt ? g.updatedAt.toDate().toLocaleString() : '—'}
                                 </div>
@@ -1369,7 +1630,7 @@ const WelcomeWizard: React.FC = () => {
                                 >
                                     <div>
                                         <Text strong>Microsoft 365 (Outlook & Teams)</Text>
-                                        <div style={{ fontSize: 12, color: '#888' }}>
+                                        <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
                                             {m?.externalAccountEmail || '—'}
                                         </div>
                                     </div>
@@ -1408,7 +1669,7 @@ const WelcomeWizard: React.FC = () => {
                                         )}
                                     </Space>
                                 </Space>
-                                <div style={{ marginTop: 6, fontSize: 12, color: '#999' }}>
+                                <div style={{ marginTop: 6, fontSize: 12, color: token.colorTextTertiary }}>
                                     Last updated:{' '}
                                     {m?.updatedAt ? m.updatedAt.toDate().toLocaleString() : '—'}
                                 </div>
@@ -1420,7 +1681,7 @@ const WelcomeWizard: React.FC = () => {
                                 >
                                     <div>
                                         <Text strong>Zoom</Text>
-                                        <div style={{ fontSize: 12, color: '#888' }}>
+                                        <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
                                             {z?.externalAccountEmail || '—'}
                                         </div>
                                     </div>
@@ -1459,7 +1720,7 @@ const WelcomeWizard: React.FC = () => {
                                         )}
                                     </Space>
                                 </Space>
-                                <div style={{ marginTop: 6, fontSize: 12, color: '#999' }}>
+                                <div style={{ marginTop: 6, fontSize: 12, color: token.colorTextTertiary }}>
                                     Last updated:{' '}
                                     {z?.updatedAt ? z.updatedAt.toDate().toLocaleString() : '—'}
                                 </div>
@@ -1480,7 +1741,7 @@ const WelcomeWizard: React.FC = () => {
                                 Modal.success({
                                     title: 'All set!',
                                     content:
-                                        'Your first-time setup is complete. You can change any of this later from your profile.',
+                                        'Your setup is complete. You can change any of this later from your profile.',
                                     onOk: finish
                                 })
                             }}
@@ -1496,28 +1757,43 @@ const WelcomeWizard: React.FC = () => {
     }
 
     // --- Completed fallback: shown if all steps complete OR an unknown key is selected
-    const renderCompleted = () => (
+    // Names what this visit saved, rather than a generic "first-time setup".
+    const renderCompleted = () => {
+        const saved = plannedTasks.map(key => STEP_SAVED[key]).filter(Boolean) as string[]
+        const description = passwordOnly
+            ? 'Your account is secure. The rest of your setup will appear the next time you sign in.'
+            : saved.length
+                ? `${joinList(saved).replace(/^./, c => c.toUpperCase())} ${saved.length === 1 ? 'is' : 'are'} saved. You can continue to the system now.`
+                : 'Everything on your account is already set up. You can continue to the system now.'
+        return (
         <Card>
             <Alert
                 type='success'
                 showIcon
-                message='Setup complete'
-                description='Your first-time setup appears to be finished. You can continue to the system now.'
+                message={passwordOnly ? 'Password updated' : saved.length ? 'All done' : 'Nothing to set up'}
+                description={description}
                 style={{ marginBottom: 12 }}
             />
-            <Space>
-                <Button type='primary' onClick={finish}>
-                    Continue to the system
-                </Button>
-            </Space>
+            <Button
+                size='large'
+                block
+                type='primary'
+                icon={<ArrowRightOutlined />}
+                iconPosition='end'
+                onClick={finish}
+            >
+                Continue to the system
+            </Button>
         </Card>
-    )
+        )
+    }
 
     // View map + safe lookup
     const viewMap: Record<string, JSX.Element> = {
         welcome: renderWelcome(),
         password: renderPassword(),
         popia: renderPopia(),
+        whatsapp: renderWhatsApp(),
         directorProfile: renderDirectorProfile(),
         signature: renderSignature(),
         consent: renderConsent(), // not reachable while HIDE_CONSENT = true
@@ -1526,10 +1802,13 @@ const WelcomeWizard: React.FC = () => {
 
     // If everything is already done, show the completed fallback
     const allComplete = visibleSteps.every(s => s.isComplete)
+    // The steps that ask for something, without the welcome screen.
+    const taskSteps = visibleSteps.filter(s => s.key !== 'welcome')
 
     return (
         <>
-            {loading ? (
+            {/* Wait for the step list too, or "Nothing to set up" flashes first. */}
+            {loading || !plan ? (
                 <DashboardLoader overlay label='Getting everything ready...' />
             ) : (
                 <div
@@ -1539,7 +1818,7 @@ const WelcomeWizard: React.FC = () => {
                         alignItems: 'center',
                         justifyContent: 'center',
                         padding: isMobile ? 16 : 24,
-                        background: '#f5f7fa'
+                        background: token.colorBgLayout
                     }}
                 >
                     <Card
@@ -1548,46 +1827,60 @@ const WelcomeWizard: React.FC = () => {
                             maxWidth: 880,
                             borderRadius: 12,
                             boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                            margin: 0
+                            margin: 0,
+                            // Keeps the sliding screens from widening the page mid-move.
+                            overflow: 'hidden'
                         }}
+                        styles={{ body: { padding: isMobile ? 16 : 24 } }}
+                        // Phones: the step cards inside drop their own frame and padding,
+                        // so the content gets the whole width.
+                        className='ww-shell'
                     >
-                        <Title level={3} style={{ marginTop: 0, marginBottom: 8 }}>
-                            First-time Setup
-                        </Title>
-
-                        {/* Stepper */}
-                        {!isMobile ? (
-                            <Steps
-                                current={Math.min(
-                                    current,
-                                    Math.max(visibleSteps.length - 1, 0)
+                        {isMobile && (
+                            <style>{`.ww-shell .ant-card { border: 0; background: transparent; box-shadow: none; } .ww-shell .ant-card > .ant-card-body { padding: 0; }`}</style>
+                        )}
+                        {/* Each screen slides in from the side it is moving towards
+                            (a plain fade with reduced motion). */}
+                        <AnimatePresence mode='wait' initial={false} custom={direction}>
+                        <motion.div
+                            key={allComplete ? 'completed' : currentKey ?? 'none'}
+                            custom={direction}
+                            variants={{
+                                enter: (dir: number) => ({ opacity: 0, x: reduceMotion ? 0 : dir * 48 }),
+                                center: { opacity: 1, x: 0 },
+                                exit: (dir: number) => ({ opacity: 0, x: reduceMotion ? 0 : dir * -48 })
+                            }}
+                            initial='enter'
+                            animate='center'
+                            exit='exit'
+                            transition={{ duration: reduceMotion ? 0.12 : 0.28, ease: [0.22, 0.8, 0.2, 1] }}
+                        >
+                        {/* The welcome screen is its own greeting; the other steps get a
+                            title and a quiet "Step x of y" line in place of a step bar. */}
+                        {!allComplete && currentKey !== 'welcome' && (
+                            <>
+                                <Title level={isMobile ? 4 : 3} style={{ marginTop: 0, marginBottom: 4 }}>
+                                    {passwordOnly
+                                        ? 'Secure your account'
+                                        : firstVisit
+                                            ? 'First-time Setup'
+                                            : 'Finish setting up your account'}
+                                </Title>
+                                {taskSteps.length > 1 && (
+                                    <div style={{ marginBottom: 16, color: token.colorTextSecondary }}>
+                                        Step {taskSteps.findIndex(s => s.key === currentKey) + 1} of {taskSteps.length}:{' '}
+                                        <b>{visibleSteps[current]?.title}</b>
+                                    </div>
                                 )}
-                                items={visibleSteps.map(s => ({
-                                    title: s.title,
-                                    icon: s.icon,
-                                    status:
-                                        visibleSteps.indexOf(s) < current
-                                            ? 'finish'
-                                            : visibleSteps.indexOf(s) === current
-                                                ? 'process'
-                                                : s.isComplete
-                                                    ? 'finish'
-                                                    : 'wait'
-                                }))}
-                                style={{ marginBottom: 24 }}
-                            />
-                        ) : (
-                            <div style={{ marginBottom: 12, color: 'rgba(0,0,0,.45)' }}>
-                                Step {Math.min(current + 1, visibleSteps.length)} of{' '}
-                                {visibleSteps.length}:{' '}
-                                <b>{visibleSteps[current]?.title ?? 'Completed'}</b>
-                            </div>
+                            </>
                         )}
 
                         {/* Body with safe fallback */}
                         {allComplete
                             ? viewMap.completed
                             : viewMap[currentKey ?? ''] ?? viewMap.completed}
+                        </motion.div>
+                        </AnimatePresence>
                     </Card>
                 </div>
             )}

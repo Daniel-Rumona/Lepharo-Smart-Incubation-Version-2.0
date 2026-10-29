@@ -7,6 +7,7 @@ import { IdentityProvider } from "./contexts/IdentityContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { ViewAsSafetyBoundary } from "./components/view-as/ViewAsSafetyBoundary";
 import { startFirestoreCacheReconciliation } from "./lib/firestoreCacheBoot";
+import { startMobileDrawerFooters } from "./utils/mobileDrawerFooters";
 
 try {
     const root = ReactDOM.createRoot(document.getElementById("root")!);
@@ -29,6 +30,7 @@ try {
     // whole app on a blank page while Firebase read its persisted session.
     // IdentityContext waits on it instead, immediately before that first read.
     startFirestoreCacheReconciliation();
+    startMobileDrawerFooters();
     render();
 
 } catch (error) {

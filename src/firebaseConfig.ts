@@ -14,3 +14,10 @@ export const firebaseConfig = {
   appId: "1:200270560997:web:2660fc60a892a04f775e0c",
   measurementId: "G-578Y0Q3JEG"
 } as const;
+
+/**
+ * Base URL of this project's HTTP (onRequest) Cloud Functions. Derived from the
+ * config so the endpoints follow the active Firebase project: a URL on another
+ * project rejects this project's ID tokens (401 invalid_id_token).
+ */
+export const functionsBaseUrl = `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net`;

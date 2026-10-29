@@ -36,6 +36,7 @@ import {
 } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import { db } from '@/firebase'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 
 const { Text } = Typography
 
@@ -46,10 +47,8 @@ const tsToDate = (ts: any): Date | null => {
     return null
 }
 
-const pickDepartment = (i: any): string =>
-    i?.department || i?.assignedDepartment || i?.areaOfSupport || 'Unknown'
-
 export default function DirectorDashboard() {
+    const { nameOf } = useDepartmentRoles()
     const [programs, setPrograms] = useState<any[]>([])
     const [incubatees, setIncubatees] = useState<any[]>([])
     const [complianceRecords] = useState<any[]>([])
@@ -208,7 +207,6 @@ export default function DirectorDashboard() {
                         const notDone = i.assigneeCompletionStatus !== 'completed'
                         return belongsToCoordinatorPool && !!due && due < now && notDone
                     })
-                    .map((i: any) => ({ ...i, department: pickDepartment(i) }))
 
                 setOverdueInterventions(overdue)
             } finally {
@@ -376,7 +374,7 @@ export default function DirectorDashboard() {
                                             {item.beneficiaryName && (
                                                 <Tag>{item.beneficiaryName}</Tag>
                                             )}
-                                            <Tag color='geekblue'>{pickDepartment(item)}</Tag>
+                                            <Tag color='geekblue'>{nameOf(item.departmentId, 'Unknown')}</Tag>
                                         </Space>
                                     </List.Item>
                                 )}

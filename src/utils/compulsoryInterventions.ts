@@ -14,7 +14,7 @@ export function mergeCompulsoryInterventions(items: any[], definitions: any[]): 
             ...definition,
             id,
             title: definition.interventionTitle || definition.title || 'Intervention',
-            area: definition.areaOfSupport || definition.area || '',
+            departmentId: definition.departmentId || null,
             source: 'compulsory',
         })
     }

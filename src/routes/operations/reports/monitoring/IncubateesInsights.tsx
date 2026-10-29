@@ -15,9 +15,9 @@ import {
 } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import HighchartsMore from 'highcharts/highcharts-more'
-import VariablePie from 'highcharts/modules/variable-pie'
-import drilldown from 'highcharts/modules/drilldown'
+import 'highcharts/highcharts-more'
+import 'highcharts/modules/variable-pie'
+import 'highcharts/modules/drilldown'
 import dayjs, { Dayjs } from 'dayjs'
 import {
     ExpandAltOutlined,
@@ -43,9 +43,6 @@ import {
 
 const { Text } = Typography
 
-if (typeof HighchartsMore === 'function') HighchartsMore(Highcharts)
-if (typeof drilldown === 'function') drilldown(Highcharts)
-if (typeof VariablePie === 'function') VariablePie(Highcharts)
 
 
 const getAgeFromID = (idNumber?: string | null) => {
@@ -627,7 +624,6 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
             pie: {
                 innerSize: '60%',
                 showInLegend: true,
-                colorByPoint: true,
                 dataLabels: {
                     enabled: true,
                     format: '{point.name}: {point.y}'
@@ -751,7 +747,8 @@ const IncubateesInsights: React.FC<Props> = ({ programId, range }) => {
             title: { text: 'Incubatees' }
         },
         plotOptions: {
-            series: {
+            // A colour per bar: a bar-chart option, not one for every series.
+            bar: {
                 colorByPoint: true,
                 dataLabels: { enabled: true }
             }

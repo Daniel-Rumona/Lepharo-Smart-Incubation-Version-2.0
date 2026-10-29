@@ -630,7 +630,7 @@
 //                                                 size='small'
 //                                                 shape='round'
 //                                                 variant='outlined'
-//                                                 style={{ border: '1px solid dodgerblue' }}
+//
 //                                                 onClick={event => {
 //                                                     event.stopPropagation()
 
@@ -703,9 +703,9 @@ import {
     getAppointmentDate,
     getAppointmentStatus,
     getAppointmentMembers,
-    getConfirmationStatus,
     getAppointmentTitle,
     getDeliveryMethod,
+    getSmeResponseState,
     groupAppointments,
     resolveAppointmentStart,
     type AppointmentRecord
@@ -732,6 +732,23 @@ export type UpcomingAppointment = AppointmentRecord & {
     [key: string]: any
 }
 
+/** Non-appointment items (deadlines, events, tasks) shown alongside appointments. */
+export type UpcomingExtraItem = {
+    id: string
+    kind: 'event' | 'deadline' | 'task'
+    title: string
+    subtitle?: string
+    start: Dayjs
+    /** true when the source carries no time of day. */
+    allDay?: boolean
+}
+
+const EXTRA_KIND: Record<UpcomingExtraItem['kind'], { label: string; color: string; accent: string }> = {
+    event: { label: 'Event', color: 'purple', accent: '#722ed1' },
+    deadline: { label: 'Deadline', color: 'red', accent: '#ff4d4f' },
+    task: { label: 'Task', color: 'gold', accent: '#faad14' }
+}
+
 type Props = {
     departmentId?: string | null
     departmentIds?: string[]
@@ -744,6 +761,13 @@ type Props = {
     onAppointmentClick?: (appointment: UpcomingAppointment) => void
     showAddEvent?: boolean
     onEventCreated?: (event?: any) => void
+    /** Extra items merged into the same day strip and list. */
+    extraItems?: UpcomingExtraItem[]
+    /**
+     * The person line under each appointment title. Defaults to the
+     * participant, which staff need; an SME's own view shows the facilitator.
+     */
+    personLabel?: (appointment: UpcomingAppointment) => string | undefined
 }
 
 const { Text } = Typography
@@ -799,24 +823,31 @@ const hasSmeTimeProposal = (appointment: UpcomingAppointment) =>
     Array.isArray(appointment?.smeRescheduleRequest?.proposals) &&
     appointment.smeRescheduleRequest.proposals.length > 0
 
+const memberResponse = (appointment: UpcomingAppointment, member: any) =>
+    getSmeResponseState(
+        appointment as any,
+        member.userConfirmation ||
+        member.beneficiaryConfirmation ||
+        member.confirmationStatus ||
+        null
+    )
+
 const getGroupedResponseCounts = (appointment: UpcomingAppointment) => {
     const members = getAppointmentMembers(appointment as any)
 
     const counts = {
         confirmed: 0,
         declined: 0,
-        pending: 0
+        pending: 0,
+        noResponse: 0
     }
 
     members.forEach(member => {
-        const status = getConfirmationStatus(
-            member.userConfirmation ||
-            member.beneficiaryConfirmation ||
-            member.confirmationStatus
-        )
+        const status = memberResponse(appointment, member)
 
         if (status === 'confirmed') counts.confirmed += 1
         else if (status === 'declined') counts.declined += 1
+        else if (status === 'no-response') counts.noResponse += 1
         else counts.pending += 1
     })
 
@@ -844,11 +875,7 @@ const getSingleResponse = (appointment: UpcomingAppointment) => {
     if (hasSmeTimeProposal(appointment)) return 'New time proposed'
 
     const statuses = getAppointmentMembers(appointment as any).map(member =>
-        getConfirmationStatus(
-            member.userConfirmation ||
-            member.beneficiaryConfirmation ||
-            member.confirmationStatus
-        )
+        memberResponse(appointment, member)
     )
 
     if (statuses.some(status => status === 'declined')) return 'Declined'
@@ -890,6 +917,12 @@ const responseTag = (appointment: UpcomingAppointment) => {
                 {counts.pending > 0 && (
                     <Tag color="gold" style={{ marginInlineEnd: 0 }}>
                         {counts.pending} pending
+                    </Tag>
+                )}
+
+                {counts.noResponse > 0 && (
+                    <Tag style={{ marginInlineEnd: 0 }}>
+                        {counts.noResponse} no response
                     </Tag>
                 )}
             </Space>
@@ -945,7 +978,9 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
     onViewCalendar,
     onAppointmentClick,
     showAddEvent = false,
-    onEventCreated
+    onEventCreated,
+    extraItems,
+    personLabel
 }) => {
     const { token } = theme.useToken()
     const screens = useBreakpoint()
@@ -962,6 +997,7 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
 
     const weekDays = React.useMemo(() => {
         const today = dayjs().startOf('day')
+
         const daysSinceMonday = (today.day() + 6) % 7
         const monday = today.subtract(daysSinceMonday, 'day')
 
@@ -987,7 +1023,7 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
 
                 const today = dayjs().startOf('day')
                 const workWeekStart = weekDays[0].startOf('day')
-                const workWeekEnd = weekDays[4].endOf('day')
+                const workWeekEnd = weekDays[weekDays.length - 1].endOf('day')
 
                 const upcoming = groupedRows
                     .map(row => ({
@@ -1051,11 +1087,41 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
         weekDays
     ])
 
+    const rowDate = (row: any): Dayjs | null | undefined =>
+        row?._extra ? row._start : getAppointmentDate(row)
+
+    // Appointments plus any extra items that fall inside the visible week.
+    const allRows = React.useMemo<UpcomingAppointment[]>(() => {
+        const windowStart = weekDays[0].startOf('day')
+        const windowEnd = weekDays[weekDays.length - 1].endOf('day')
+
+        const extras = (extraItems || [])
+            .filter(
+                item =>
+                    item.start?.isValid() &&
+                    !item.start.isBefore(windowStart) &&
+                    !item.start.isAfter(windowEnd)
+            )
+            .map(item => ({
+                ...item,
+                id: `extra:${item.id}`,
+                _extra: true,
+                _start: item.start
+            }))
+
+        return [...appointments, ...extras].sort((a: any, b: any) => {
+            const aAllDay = Boolean(a._extra && a.allDay)
+            const bAllDay = Boolean(b._extra && b.allDay)
+            if (aAllDay !== bAllDay) return aAllDay ? -1 : 1
+            return (a._start?.valueOf() || 0) - (b._start?.valueOf() || 0)
+        }) as UpcomingAppointment[]
+    }, [appointments, extraItems, weekDays])
+
     const appointmentsByDate = React.useMemo(() => {
         const map = new Map<string, UpcomingAppointment[]>()
 
-        appointments.forEach(appointment => {
-            const date = getAppointmentDate(appointment)
+        allRows.forEach(appointment => {
+            const date = rowDate(appointment)
             if (!date?.isValid()) return
 
             const key = date.format('YYYY-MM-DD')
@@ -1065,7 +1131,7 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
         })
 
         return map
-    }, [appointments])
+    }, [allRows])
 
     const selectedAppointments = React.useMemo(() => {
         const key = selectedDate.format('YYYY-MM-DD')
@@ -1078,31 +1144,33 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
     const emptyState = React.useMemo(() => {
         const plural = (n: number) => `${n} appointment${n === 1 ? '' : 's'}`
 
-        if (appointments.length === 0) {
+        if (allRows.length === 0) {
             return {
                 title: 'No appointments this week',
-                detail: `Nothing is scheduled from today to ${weekDays[4].format('dddd')}.`
+                detail: `Nothing is scheduled from today to ${weekDays[weekDays.length - 1].format('dddd')}.`
             }
         }
 
         const dayLabel = selectedDate.format('dddd, D MMMM')
-        const others = appointments.filter(
-            row => !getAppointmentDate(row)?.isSame(selectedDate, 'day')
+        const others = allRows.filter(
+            row => !rowDate(row)?.isSame(selectedDate, 'day')
         )
         const next = others.find(row =>
-            getAppointmentDate(row)?.isAfter(selectedDate, 'day')
+            rowDate(row)?.isAfter(selectedDate, 'day')
         ) || others[0]
-        const nextDate = next ? getAppointmentDate(next) : null
+        const nextDate = next ? rowDate(next) : null
 
         return {
             title: `Nothing booked on ${dayLabel}`,
             detail: nextDate?.isValid()
                 ? `${plural(others.length)} elsewhere this week - next is ${nextDate.format('dddd, D MMMM')}.`
-                : `${plural(appointments.length)} scheduled elsewhere this week.`
+                : `${plural(allRows.length)} scheduled elsewhere this week.`
         }
-    }, [appointments, selectedDate, weekDays])
+    }, [allRows, selectedDate, weekDays])
 
     const openAppointment = (row: UpcomingAppointment) => {
+        if ((row as any)._extra) return
+
         if (onAppointmentClick) {
             onAppointmentClick(row)
             return
@@ -1391,12 +1459,70 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
                                             title: 'Appointment',
                                             key: 'appointment',
                                             render: (_: any, row: UpcomingAppointment) => {
+                                                if ((row as any)._extra) {
+                                                    const extra = row as unknown as UpcomingExtraItem
+                                                    const meta = EXTRA_KIND[extra.kind]
+
+                                                    return (
+                                                        <div
+                                                            style={{
+                                                                display: 'grid',
+                                                                gridTemplateColumns: '3px minmax(0, 1fr)',
+                                                                gap: 10,
+                                                                alignItems: 'stretch',
+                                                                paddingBlock: 5
+                                                            }}
+                                                        >
+                                                            <div
+                                                                style={{
+                                                                    width: 3,
+                                                                    minHeight: 46,
+                                                                    borderRadius: 999,
+                                                                    background: meta.accent
+                                                                }}
+                                                            />
+                                                            <div style={{ minWidth: 0 }}>
+                                                                <Space size={[6, 4]} wrap style={{ marginBottom: 3 }}>
+                                                                    <Text
+                                                                        strong
+                                                                        ellipsis={{ tooltip: extra.title }}
+                                                                        style={{
+                                                                            display: 'inline-block',
+                                                                            maxWidth: isMobile ? 180 : 300,
+                                                                            verticalAlign: 'middle'
+                                                                        }}
+                                                                    >
+                                                                        {extra.title}
+                                                                    </Text>
+                                                                    <Tag
+                                                                        color={meta.color}
+                                                                        style={{ marginInlineEnd: 0, borderRadius: 999 }}
+                                                                    >
+                                                                        {meta.label}
+                                                                    </Tag>
+                                                                </Space>
+                                                                {extra.subtitle && (
+                                                                    <Text
+                                                                        type="secondary"
+                                                                        ellipsis={{ tooltip: extra.subtitle }}
+                                                                        style={{ display: 'block', fontSize: 12 }}
+                                                                    >
+                                                                        {extra.subtitle}
+                                                                    </Text>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                }
+
                                                 const titleText = getAppointmentTitle(row)
                                                 const grouped = isGroupedAppointment(row)
                                                 const counts = getGroupedResponseCounts(row)
-                                                const participantLabel = grouped
-                                                    ? `${counts.memberCount} participants`
-                                                    : row.participantName || 'Participant'
+                                                const participantLabel = personLabel
+                                                    ? personLabel(row) || '-'
+                                                    : grouped
+                                                        ? `${counts.memberCount} participants`
+                                                        : row.participantName || 'Participant'
 
                                                 const method = getDeliveryMethod(row)
                                                 const location = getLocationLabel(row)
@@ -1524,7 +1650,13 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
                                                         fontSize: 12
                                                     }}
                                                 >
-                                                    {formatAppointmentTime(row)}
+                                                    {(row as any)._extra
+                                                        ? (row as any).allDay
+                                                            ? (row as any).kind === 'deadline'
+                                                                ? 'Due'
+                                                                : 'All day'
+                                                            : (row as any).start.format('HH:mm')
+                                                        : formatAppointmentTime(row)}
                                                 </Text>
                                             )
                                         },
@@ -1543,7 +1675,7 @@ const UpcomingAppointmentsCard: React.FC<Props> = ({
                                                                 justifyContent: 'flex-end'
                                                             }}
                                                         >
-                                                            {responseTag(row)}
+                                                            {(row as any)._extra ? null : responseTag(row)}
                                                         </div>
                                                     )
                                                 }

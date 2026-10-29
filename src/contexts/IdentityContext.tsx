@@ -26,7 +26,7 @@ type IdentityContextValue = {
 }
 
 const VIEW_AS_STORAGE_KEY = 'developerViewAsUser'
-const VIEW_AS_ROLES = new Set(['admin', 'system_admin'])
+const VIEW_AS_ROLES = new Set(['system_admin'])
 const IdentityContext = createContext<IdentityContextValue | null>(null)
 
 const normalizeRole = (value: unknown) =>
@@ -124,6 +124,27 @@ export const IdentityProvider: React.FC<React.PropsWithChildren> = ({ children }
             setLoading(false)
         }
     }), [])
+
+    useEffect(() => {
+        const handleProfileUpdated = (event: Event) => {
+            const detail = (event as CustomEvent<Record<string, any>>).detail || {}
+            if (!detail.uid) return
+
+            setActor(previous =>
+                previous?.uid === String(detail.uid)
+                    ? { ...previous, ...detail }
+                    : previous
+            )
+            setViewedUser(previous =>
+                previous?.uid === String(detail.uid)
+                    ? { ...previous, ...detail }
+                    : previous
+            )
+        }
+
+        window.addEventListener('user-profile-updated', handleProfileUpdated)
+        return () => window.removeEventListener('user-profile-updated', handleProfileUpdated)
+    }, [])
 
     const canViewAs = !!actor && VIEW_AS_ROLES.has(actor.role)
     const startViewingAs = useCallback((profile: AppIdentity) => {

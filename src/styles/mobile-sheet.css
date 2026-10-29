@@ -1,0 +1,86 @@
+/* Modals tagged wrapClassName="mobile-sheet" become bottom drawers on phones. */
+@media (max-width: 767px) {
+  .mobile-sheet.ant-modal-wrap {
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+  }
+
+  .mobile-sheet .ant-modal {
+    position: relative;
+    top: auto;
+    margin: 0;
+    padding: 0;
+    max-width: 100%;
+    width: 100% !important;
+    transform-origin: bottom center;
+  }
+
+  .mobile-sheet .ant-modal-content {
+    border-radius: 16px 16px 0 0;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-sheet .ant-modal-body {
+    padding-bottom: 8px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* Grab handle */
+  .mobile-sheet .ant-modal-content::before {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(128, 128, 128, 0.45);
+    margin: 8px auto 0;
+    flex-shrink: 0;
+  }
+
+  /* Slide up from the bottom instead of zooming in. */
+  .mobile-sheet .ant-modal.ant-zoom-enter,
+  .mobile-sheet .ant-modal.ant-zoom-appear {
+    animation: mobile-sheet-in 0.25s ease-out both;
+    transform: none;
+    opacity: 1;
+  }
+  .mobile-sheet .ant-modal.ant-zoom-leave {
+    animation: mobile-sheet-out 0.2s ease-in both;
+  }
+}
+
+@keyframes mobile-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes mobile-sheet-out {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+
+/* Action buttons (Assign / Reassign + Close) share a row equally on phones. */
+@media (max-width: 767px) {
+  .mobile-action-row .ant-space {
+    display: flex;
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+  .mobile-action-row .ant-space-item {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .mobile-action-row .ant-btn {
+    width: 100%;
+  }
+}
+
+/* These modals close with the X, so the footer Cancel/Close button is dropped on every screen size. */
+.mobile-sheet .ant-modal-footer .ant-btn-default:has(+ .ant-btn-primary) {
+  display: none;
+}

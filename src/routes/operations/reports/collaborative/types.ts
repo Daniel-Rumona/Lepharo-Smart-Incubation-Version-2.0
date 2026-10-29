@@ -133,7 +133,6 @@ export type ReportDocument = {
   title: string
   periodLabel: string
   frequency: TemplateFrequency
-  frequency: TemplateFrequency
   programId?: string | null
   programName?: string | null
   sourceReportId?: string | null
@@ -155,6 +154,8 @@ export type ReportDocument = {
 
 export type ReportBlock = {
   id: string
+  /** Set when the template no longer has this section: kept (with its content) but left out of the report. */
+  archived?: boolean
   reportId: string
   reportTitle: string
   periodLabel: string
@@ -242,6 +243,7 @@ export type CreateReportInput = {
   templateId: string
   title: string
   periodLabel: string
+  frequency?: TemplateFrequency
   programId?: string | null
   programName?: string | null
   startMode: 'fresh' | 'carry_over'

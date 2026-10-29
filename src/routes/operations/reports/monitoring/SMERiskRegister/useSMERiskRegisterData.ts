@@ -6,6 +6,7 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { canViewControlReportData } from '@/utils/reportVisibility'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 
 import {
     buildRow,
@@ -19,7 +20,6 @@ import {
     getReminderEmails as getReminderEmailsFor,
     getSMEChallenges as getSMEChallengesFor,
     isInternalQuantilytixEmail,
-    normalizeDepartmentName,
     normalizeLower,
     normalizeText,
     toDate,
@@ -29,6 +29,7 @@ import type { AnyDoc, BounceStatus, OperationalChallenge, ReminderEmailLog, SMER
 export function useSMERiskRegisterData(programIdProp?: string) {
     const { message } = App.useApp()
     const { user } = useFullIdentity()
+    const { hasRole } = useDepartmentRoles()
     const { programId: activeProgramId, isAllPrograms } = useActiveProgramId()
 
     const resolvedProgramId =
@@ -55,16 +56,17 @@ export function useSMERiskRegisterData(programIdProp?: string) {
     // Monitoring departments own the consolidated risk view in the same way as
     // the main department. Other departments remain limited to their services.
     const canViewAllDepartments =
-        currentDepartment?.isMain === true || currentDepartment?.isMonitoring === true
+        currentDepartment?.isMain === true ||
+        currentDepartment?.isMonitoring === true ||
+        hasRole(user?.departmentId, 'monitoring')
     const isDepartmentScopedView = !!user?.departmentId && !canViewAllDepartments
     const scopedDepartment = useMemo(() => {
         if (!isDepartmentScopedView || !user?.departmentId) return undefined
 
-        const name = normalizeDepartmentName(
+        const name = normalizeText(
             firstNonEmpty(
                 currentDepartment?.name,
                 currentDepartment?.title,
-                currentDepartment?.departmentName,
                 currentDepartment?.displayName,
                 user?.departmentName
             )
@@ -221,12 +223,9 @@ export function useSMERiskRegisterData(programIdProp?: string) {
         const assignmentsByParticipant = new Map<string, AnyDoc[]>()
 
         const departmentsById: Record<string, AnyDoc> = {}
-        const departmentsByName: Record<string, AnyDoc> = {}
 
         departments.forEach((dep) => {
             departmentsById[String(dep.id)] = dep
-            const depName = normalizeDepartmentName(dep?.name)
-            if (depName) departmentsByName[depName.toLowerCase()] = dep
         })
 
         participants.forEach((participant) => {
@@ -280,7 +279,6 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                     closedInterventionIds: closedByParticipant.get(participantId),
                     sessions,
                     departmentsById,
-                    departmentsByName,
                     scopedDepartment,
                 })
             })

@@ -1,0 +1,214 @@
+/* ============================================================================
+   Metric tiles, icon chips and MotionCard entrance — shared by every
+   dashboard. One stylesheet instead of a <style> block per tile.
+
+   Colours come from the --app-* tokens, so light, dark and the selected
+   accent (crimson by default) all follow without per-call colours.
+   ========================================================================== */
+
+/* --- Tone palettes (icon chips + trend) ---------------------------------- */
+
+/* Light-mode tints are deliberately firm (~16-20%): at ~10% the chips washed
+   out against a white tile and the icon looked like it was floating. */
+.qtx-tone-accent  { --qtx-tone-fg: var(--app-accent); --qtx-tone-bg: color-mix(in srgb, var(--app-accent) 15%, transparent); }
+.qtx-tone-info    { --qtx-tone-fg: #2563eb; --qtx-tone-bg: rgba(37, 99, 235, 0.16); }
+.qtx-tone-success { --qtx-tone-fg: #16a34a; --qtx-tone-bg: rgba(22, 163, 74, 0.17); }
+.qtx-tone-warning { --qtx-tone-fg: #d97706; --qtx-tone-bg: rgba(217, 119, 6, 0.18); }
+.qtx-tone-danger  { --qtx-tone-fg: #dc2626; --qtx-tone-bg: rgba(220, 38, 38, 0.15); }
+.qtx-tone-neutral { --qtx-tone-fg: var(--app-text-muted); --qtx-tone-bg: var(--app-surface-sunken); }
+
+html[data-theme="dark"] .qtx-tone-accent  { --qtx-tone-bg: var(--app-accent-soft); }
+html[data-theme="dark"] .qtx-tone-info    { --qtx-tone-fg: #60a5fa; --qtx-tone-bg: rgba(96, 165, 250, 0.14); }
+html[data-theme="dark"] .qtx-tone-success { --qtx-tone-fg: #4ade80; --qtx-tone-bg: rgba(74, 222, 128, 0.13); }
+html[data-theme="dark"] .qtx-tone-warning { --qtx-tone-fg: #fbbf24; --qtx-tone-bg: rgba(251, 191, 36, 0.13); }
+html[data-theme="dark"] .qtx-tone-danger  { --qtx-tone-fg: #f87171; --qtx-tone-bg: rgba(248, 113, 113, 0.14); }
+
+/* --- Icon chip ----------------------------------------------------------- */
+
+.qtx-chip {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    font-size: 16px;
+}
+/* Toned chips colour the icon too; an icon's own inline colour still wins. */
+.qtx-chip[class*="qtx-tone-"] {
+    background: var(--qtx-tone-bg);
+    color: var(--qtx-tone-fg);
+}
+
+/* --- Metric tile --------------------------------------------------------- */
+
+.qtx-metric-tile {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+    /* Equal heights: a tile without a subtitle is as tall as one with, and a
+       tile fills its column so a row of them lines up. */
+    min-height: 78px;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    outline: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+html[data-theme="dark"] .qtx-metric-tile {
+    box-shadow: none;
+}
+
+/* Inside a card the card is the raised surface — tiles sit flat on it. */
+.ant-card .qtx-metric-tile {
+    box-shadow: none;
+}
+
+.qtx-metric-tile--clickable {
+    cursor: pointer;
+    user-select: none;
+}
+.qtx-metric-tile--clickable:hover {
+    border-color: var(--app-accent-border-strong);
+    box-shadow: 0 10px 24px -14px rgba(15, 23, 42, 0.35);
+    transform: translateY(-1px);
+}
+html[data-theme="dark"] .qtx-metric-tile--clickable:hover {
+    box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.7);
+}
+.qtx-metric-tile--clickable:focus-visible {
+    border-color: var(--app-accent);
+    box-shadow: 0 0 0 3px var(--app-accent-glow-strong);
+}
+.qtx-metric-tile--disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.qtx-metric-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.qtx-metric-title {
+    font-size: 12.5px;
+    line-height: 1.3;
+    color: var(--app-text-muted);
+}
+.qtx-metric-value-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-top: 2px;
+}
+.qtx-metric-value {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+}
+.qtx-metric-subtitle {
+    margin-top: 3px;
+    font-size: 11.5px;
+    line-height: 1.3;
+    color: var(--app-text-muted);
+}
+
+/* Trend: "+12%" with an arrow, coloured by whether the change is good. */
+.qtx-metric-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--qtx-tone-bg);
+    color: var(--qtx-tone-fg);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.6;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.qtx-metric-trend-label {
+    font-weight: 400;
+    opacity: 0.85;
+}
+
+.qtx-metric-chevron {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid var(--app-border);
+    color: var(--app-text-muted);
+    font-size: 10px;
+    transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+.qtx-metric-chevron .anticon {
+    transition: transform 0.2s ease;
+}
+.qtx-metric-tile--clickable:hover .qtx-metric-chevron,
+.qtx-metric-tile--clickable:focus-visible .qtx-metric-chevron {
+    border-color: var(--app-accent-border-strong);
+    background: var(--app-accent-wash);
+    color: var(--app-accent);
+}
+.qtx-metric-tile--clickable:hover .qtx-metric-chevron .anticon {
+    transform: translateX(1px);
+}
+
+/* Compact: phones and dense grids. */
+.qtx-metric-tile--compact {
+    gap: 10px;
+    min-height: 64px;
+    padding: 11px 12px;
+}
+.qtx-metric-tile--compact .qtx-metric-title {
+    font-size: 11.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.qtx-metric-tile--compact .qtx-metric-value {
+    font-size: 19px;
+}
+.qtx-metric-tile--compact .qtx-metric-subtitle {
+    font-size: 11px;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* --- MotionCard ---------------------------------------------------------- */
+
+.qtx-motion-card {
+    animation: qtx-card-enter 0.35s ease both;
+}
+@keyframes qtx-card-enter {
+    from {
+        transform: translateY(10px);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .qtx-motion-card {
+        animation: none;
+    }
+    .qtx-metric-tile,
+    .qtx-metric-chevron .anticon {
+        transition: none;
+    }
+    .qtx-metric-tile--clickable:hover {
+        transform: none;
+    }
+}

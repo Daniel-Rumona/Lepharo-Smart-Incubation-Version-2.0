@@ -290,7 +290,7 @@ const HRDashboard: React.FC = () => {
                             title: 'Departments',
                             value: departmentCount,
                             icon: <ApartmentOutlined />,
-                            iconBg: 'rgba(82,196,26,.12)',
+                            tone: 'success' as const,
                             loading,
                             important: true
                         },
@@ -299,7 +299,7 @@ const HRDashboard: React.FC = () => {
                             title: 'Pending Leave',
                             value: pendingLeave,
                             icon: <FileTextOutlined />,
-                            iconBg: 'rgba(250,173,20,.12)',
+                            tone: 'warning' as const,
                             loading,
                             important: true
                         },
@@ -308,7 +308,7 @@ const HRDashboard: React.FC = () => {
                             title: 'Centers',
                             value: centerCount,
                             icon: <EnvironmentOutlined />,
-                            iconBg: 'rgba(114,46,209,.12)',
+                            tone: 'info' as const,
                             loading,
                             important: true
                         }

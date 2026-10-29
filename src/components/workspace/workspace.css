@@ -1,0 +1,695 @@
+/* ---------------------------------------------------------------------------
+   Review workspace (ws-)
+   ---------------------------------------------------------------------------
+   The list + detail layout shared by the Applications and Participants pages:
+   full-row toolbar, filter popover, list rows with avatars, sort control,
+   sticky detail with its header, segmented sections and pane, contact list,
+   ownership cards and the phone drawer. Colours come from the --app-* tokens
+   and the metric tones, so light, dark and every accent work.
+   ------------------------------------------------------------------------- */
+
+.ws-page {
+    padding: 10px 24px 24px;
+}
+
+/* --- Toolbar -------------------------------------------------------------- */
+/* Every control grows to share the row (search and status take the larger
+   shares), and the row wraps cleanly on narrower screens. */
+.ws-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.ws-toolbar-search {
+    flex: 3 1 260px;
+    min-width: 0;
+}
+
+.ws-toolbar-status.ant-segmented {
+    flex: 3 1 340px;
+    min-width: 0;
+}
+
+.ws-toolbar-button {
+    flex: 1 1 130px;
+}
+
+.ws-toolbar-button.ant-badge {
+    display: block;
+}
+
+/* One height for the row: the segmented track is 40px (34px segments + 3px
+   padding), so the search box and buttons match it. */
+.ws-toolbar-search.ant-input-affix-wrapper {
+    height: 40px;
+    border-radius: 12px;
+}
+
+.ws-toolbar .ant-btn {
+    height: 40px;
+}
+
+/* A month-range reporting period, sized like the search box. */
+.ws-toolbar-period.ant-picker {
+    flex: 2 1 240px;
+    min-width: 0;
+    height: 40px;
+    border-radius: 12px;
+}
+
+/* Long filter lists scroll inside the popover instead of running off-screen. */
+.ws-filter-panel {
+    display: grid;
+    gap: 12px;
+    width: 320px;
+    max-width: calc(100vw - 48px);
+    max-height: min(68vh, 560px);
+    margin-inline-end: -8px;
+    padding-inline-end: 8px;
+    overflow-y: auto;
+}
+
+/* Reset stays reachable at the bottom while the filters scroll. */
+.ws-filter-panel-footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--app-surface-raised);
+}
+
+/* Only the field headings: antd renders each segmented option as a <label>
+   too, so a bare "label" selector leaked a margin into the segments. */
+.ws-filter-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.ws-filter-panel-footer {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* --- Layout --------------------------------------------------------------- */
+.ws-layout {
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+/* Desktop: the detail stays in view while the list scrolls, capped to the
+   viewport. Its tab content scrolls inside, so the header, AI assessment and
+   the decision footer are always visible. */
+@media (min-width: 992px) {
+    .ws-detail-sticky {
+        position: sticky;
+        top: 76px;
+    }
+
+    .ws-detail-sticky .ws-detail > .qtx-motion-card > .ant-card > .ant-card-body {
+        max-height: calc(100vh - 96px);
+    }
+
+    .ws-detail-sticky .ws-detail-tabs {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .ws-detail-sticky .ws-detail-pane {
+        /* The scrollbar runs down the card's right edge; the padding keeps the
+           content lined up with the header and switcher above it. */
+        margin-inline-end: -20px;
+        padding-inline-end: 8px;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+    }
+}
+
+@media (max-width: 991px) {
+    .ws-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 767px) {
+    .ws-page {
+        padding: 8px 12px 16px;
+    }
+
+    .ws-toolbar-search,
+    .ws-toolbar-status.ant-segmented,
+    .ws-toolbar-period.ant-picker {
+        flex-basis: 100%;
+    }
+}
+
+/* --- List ----------------------------------------------------------------- */
+/* Sort: a full-width control on the same grey track as the segmented
+   switches, "Sort by" as a quiet prefix and the choice in the accent. */
+.ws-sort.ant-select {
+    width: 100%;
+    height: 38px;
+    margin-bottom: 12px;
+    background: #f2f4f7;
+    border-radius: 12px;
+    transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+.ws-sort.ant-select:hover {
+    background: #e9edf2;
+}
+
+.ws-sort.ant-select-focused {
+    box-shadow: 0 0 0 2px var(--app-accent-border);
+}
+
+.ws-sort .ant-select-prefix {
+    margin-inline-end: 8px;
+}
+
+.ws-sort-prefix {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding-inline-end: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+    border-inline-end: 1px solid var(--app-border-strong);
+}
+
+.ws-sort .ant-select-selection-item {
+    font-weight: 600;
+    color: var(--app-accent);
+}
+
+.ws-sort-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ws-sort-popup .ant-select-item-option-selected .ws-sort-option {
+    color: var(--app-accent);
+}
+
+html[data-theme="dark"] .ws-sort.ant-select {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .ws-sort.ant-select:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+/* minmax(0, 1fr): a long name ellipsises instead of widening the rows past the card. */
+.ws-rows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+}
+
+.ws-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    text-align: start;
+    font: inherit;
+    color: var(--app-text);
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.ws-row:hover {
+    border-color: var(--app-border-strong);
+    background: var(--app-surface-sunken);
+}
+
+.ws-row:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.ws-row.is-selected {
+    border-color: var(--app-accent-border-strong);
+    background: var(--app-accent-wash);
+    box-shadow: inset 3px 0 0 var(--app-accent);
+}
+
+.ws-row-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ws-row-name {
+    overflow: hidden;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ws-row-meta {
+    overflow: hidden;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ws-row-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    flex: 0 0 auto;
+}
+
+.ws-row-side .ant-tag {
+    margin-inline-end: 0;
+}
+
+/* A row that can't be opened (e.g. nothing uploaded yet). */
+.ws-row:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.ws-row:disabled:hover {
+    border-color: var(--app-border);
+    background: var(--app-surface);
+}
+
+/* A row that carries its own action buttons instead of being one big button. */
+.ws-row.is-static {
+    cursor: default;
+}
+
+.ws-row-side.is-inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+
+@media (max-width: 576px) {
+    .ws-row.is-static {
+        flex-wrap: wrap;
+    }
+
+    .ws-row.is-static .ws-row-side.is-inline {
+        width: 100%;
+        justify-content: space-between;
+        padding-inline-start: 48px;
+    }
+}
+
+.ws-list-empty {
+    padding: 32px 0;
+}
+
+.ws-pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 12px;
+}
+
+/* --- Detail --------------------------------------------------------------- */
+/* Only the detail panel's own card: nested cards (charts, documents) keep
+   their normal padding. */
+.ws-detail > .qtx-motion-card > .ant-card > .ant-card-body {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+}
+
+.ws-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--app-border);
+}
+
+.ws-detail-identity {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ws-detail-head {
+    flex-wrap: wrap;
+}
+
+.ws-detail-tags {
+    align-items: center;
+}
+
+/* Initials on the accent tint; a stored logo or photo replaces them. */
+.ws-avatar.ant-avatar {
+    flex: 0 0 auto;
+    font-weight: 700;
+    color: var(--app-accent);
+    background: color-mix(in srgb, var(--app-accent) 14%, var(--app-surface));
+    border: 1px solid color-mix(in srgb, var(--app-accent) 22%, transparent);
+}
+
+.ws-row.is-selected .ws-avatar.ant-avatar {
+    color: var(--app-accent-contrast);
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+}
+
+.ws-detail-name {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--app-text);
+}
+
+.ws-detail-sub {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.ws-detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.ws-detail-tags .ant-tag {
+    margin-inline-end: 0;
+}
+
+.ws-detail-tabs {
+    padding: 14px 20px 0;
+}
+
+.ws-detail-pane {
+    padding-top: 14px;
+    container-type: inline-size;
+}
+
+.ws-detail-body {
+    display: grid;
+    gap: 16px;
+    padding-bottom: 16px;
+}
+
+.ws-section-title {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ws-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px 16px;
+    margin: 0;
+}
+
+.ws-facts dt {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.ws-facts dd {
+    margin: 2px 0 0;
+    font-weight: 600;
+    color: var(--app-text);
+    overflow-wrap: anywhere;
+}
+
+.ws-prose {
+    margin: 0;
+    line-height: 1.6;
+    color: var(--app-text);
+    white-space: pre-line;
+}
+
+.ws-muted {
+    color: var(--app-text-muted);
+}
+
+/* Contact: one bordered list, a row per detail. Values read as plain text;
+   copy and the direct action (email, call, open) sit at the row's end. */
+.ws-contact-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.ws-contact-row {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 10px 12px;
+    border-top: 1px solid var(--app-border);
+    transition: background 140ms ease;
+}
+
+.ws-contact-row.is-half {
+    grid-column: span 1;
+}
+
+/* The first row (or first pair) has no rule above it; a pair gets a divider between. */
+.ws-contact-row:first-child,
+.ws-contact-row.is-half:first-child + .ws-contact-row.is-half {
+    border-top: 0;
+}
+
+.ws-contact-row.is-half + .ws-contact-row.is-half {
+    border-inline-start: 1px solid var(--app-border);
+}
+
+@container (max-width: 520px) {
+    .ws-contact-row.is-half {
+        grid-column: 1 / -1;
+    }
+
+    .ws-contact-row.is-half:first-child + .ws-contact-row.is-half {
+        border-top: 1px solid var(--app-border);
+    }
+
+    .ws-contact-row.is-half + .ws-contact-row.is-half {
+        border-inline-start: 0;
+    }
+}
+
+.ws-contact-row:hover {
+    background: var(--app-surface-sunken);
+}
+
+.ws-contact-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+    color: var(--app-accent);
+    background: color-mix(in srgb, var(--app-accent) 12%, transparent);
+    border-radius: 10px;
+}
+
+.ws-contact-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ws-contact-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.ws-contact-value {
+    margin-top: 1px;
+    font-weight: 600;
+    color: var(--app-text);
+    overflow-wrap: anywhere;
+}
+
+.ws-contact-value.is-empty {
+    font-weight: 500;
+    color: var(--app-text-subtle);
+}
+
+.ws-contact-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    opacity: 0.7;
+    transition: opacity 140ms ease;
+}
+
+.ws-contact-row:hover .ws-contact-actions,
+.ws-contact-actions:focus-within {
+    opacity: 1;
+}
+
+/* Ownership: three stat cards — the figure first, its label, and a slim bar
+   in the accent. A 0% card is muted rather than an empty-looking bar. */
+.ws-ownership {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ws-ownership-item {
+    padding: 12px 14px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.ws-ownership-value {
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text);
+}
+
+.ws-ownership-value small {
+    margin-inline-start: 1px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--app-text-muted);
+}
+
+.ws-ownership-label {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.ws-ownership-track {
+    height: 6px;
+    margin-top: 10px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--app-text) 8%, transparent);
+    border-radius: 999px;
+}
+
+.ws-ownership-track span {
+    display: block;
+    height: 100%;
+    background: var(--app-accent);
+    border-radius: 999px;
+    transition: width 500ms ease;
+}
+
+.ws-ownership-item.is-zero .ws-ownership-value {
+    color: var(--app-text-subtle);
+}
+
+/* --- Decision actions (detail header) -------------------------------------- */
+.ws-detail-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    margin-inline-start: auto;
+}
+
+.ws-detail-actions .ant-btn {
+    min-width: 104px;
+}
+
+.ws-detail-empty {
+    padding: 56px 20px;
+}
+
+/* Phone: the detail opens in a full-height drawer; the decision bar pins to
+   the bottom of it. */
+.ws-drawer .ant-drawer-body {
+    padding: 0;
+}
+
+.ws-drawer .ws-detail > .qtx-motion-card > .ant-card {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none !important;
+}
+
+/* Close sits at the header's end, where the thumb reaches it. */
+.ws-drawer .ant-drawer-header-title {
+    flex-direction: row-reverse;
+    gap: 8px;
+}
+
+.ws-drawer .ant-drawer-close {
+    margin-inline-end: -6px;
+}
+
+/* Bottom sheet: rounded top corners and a grab handle above the title. */
+.ws-sheet.ant-drawer-content {
+    border-radius: 18px 18px 0 0;
+}
+
+.ws-sheet .ant-drawer-header {
+    position: relative;
+    padding-top: 22px;
+}
+
+.ws-sheet .ant-drawer-header::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 40px;
+    height: 4px;
+    margin-left: -20px;
+    border-radius: 999px;
+    background: var(--app-border-strong);
+}
+
+@media (max-width: 767px) {
+    .ws-ownership {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .ws-ownership-item {
+        padding: 10px;
+    }
+
+    .ws-ownership-value {
+        font-size: 18px;
+    }
+
+    .ws-detail-actions {
+        width: 100%;
+        margin-inline-start: 0;
+    }
+
+    .ws-detail-actions .ant-btn {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+}

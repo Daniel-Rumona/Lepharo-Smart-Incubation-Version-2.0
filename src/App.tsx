@@ -7,6 +7,7 @@ import {
     Routes,
     Outlet,
     useParams,
+    useNavigate,
     Navigate,
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -19,8 +20,8 @@ import { Refine, Authenticated } from "@refinedev/core";
 import routerProvider, {
     CatchAllNavigate,
     UnsavedChangesNotifier,
-    DocumentTitleHandler,
 } from "@refinedev/react-router-v6";
+import { Helmet } from "react-helmet";
 import { useNotificationProvider } from "@refinedev/antd";
 import { DevtoolsProvider } from "@refinedev/devtools";
 
@@ -30,6 +31,11 @@ import { DevtoolsProvider } from "@refinedev/devtools";
 import { ConfigProvider, App as AntdApp } from "antd";
 import "@refinedev/antd/dist/reset.css";
 import "@/styles/modal-footer.css";
+import "@/styles/buttons.css";
+import "@/styles/segmented.css";
+import "@/styles/mobile-sheet.css";
+import "@/styles/pagination.css";
+import "@/styles/modal-backdrop.css";
 // Loaded last so its html[data-theme="dark"] rules win over the light defaults
 // the stylesheets above establish.
 import "@/styles/dark-mode.css";
@@ -41,7 +47,7 @@ import "@/styles/scrollbars.css";
 // ───────────────────────────────────────────────────────────
 // App Providers
 // ───────────────────────────────────────────────────────────
-import { authProvider, dataProvider, liveProvider } from "@/providers";
+import { authProvider } from "@/providers";
 import { GuideProvider } from "@/components/guide-me";
 import { useColorMode } from "@/contexts/ThemeContext";
 import { getAntdTheme } from "@/config/antdTheme";
@@ -116,6 +122,7 @@ import { UpdatePrompt } from "@/components/pwa/UpdatePrompt";
 import { OfflineIndicator } from "@/components/pwa/OfflineIndicator";
 import { IdleSignOut } from "@/components/auth/IdleSignOut";
 import MandatoryMeetingCoverage from "./components/appointments/MandatoryMeetingCoverage";
+import InvoiceRequestPrompt from "./components/shared/InvoiceRequestPrompt";
 
 // ───────────────────────────────────────────────────────────
 // Route components, loaded on demand
@@ -125,12 +132,11 @@ import MandatoryMeetingCoverage from "./components/appointments/MandatoryMeeting
 // anything. These load only when their route is visited. Anything that renders
 // on every page -- providers, layouts, the always-mounted components -- stays
 // eagerly imported above.
-const AdminConsole = lazy(() => import("./routes/admin/backend/console"));
+const AdminDashboard = lazy(() => import("./routes/admin/dashboard"));
 const AdminEmailMonitor = lazy(() => import("./routes/admin/email"));
 const AdminLeaveManagement = lazy(() => import("./routes/operations/hr/leave"));
 const AllocatedInterventions = lazy(() => import("@/routes/shared/allocated"));
 const CheckBacks = lazy(() => import("@/routes/shared/check-backs"));
-const Allocations = lazy(() => import("./routes/resources/allocations/allocations"));
 const ApplicantInquiriesPage = lazy(() => import("./routes/applicant/inquiries"));
 const ApplicantInquirySubmission = lazy(() => import("./routes/applicant/submit-inquiry"));
 const ApplicantLandingPage = lazy(() => import("./routes/applicant"));
@@ -159,6 +165,7 @@ const CoordinatorsPage = lazy(() => import("./routes/operations/coordinators").t
 const DashboardSwitcher = lazy(() => import("./routes/operations/dashboardSwitcher"));
 const DataExportPage = lazy(() => import("./routes/data-export"));
 const DataExportSettingsPage = lazy(() => import("./routes/admin/data-export-settings"));
+const DepartmentRolesPage = lazy(() => import("./routes/admin/department-roles"));
 const DepartmentManagement = lazy(() => import("@/components/department-management/DepartmentManagement").then(m => ({ default: m.DepartmentManagement })));
 const DiagnosticPlanBuilder = lazy(() => import("./routes/operations/plan/diagnostic"));
 const DiagnosticPlanConfirmations = lazy(() => import("./routes/operations/plan"));
@@ -179,7 +186,6 @@ const FollowUpsList = lazy(() => import("@/routes/receptionist/follow-ups"));
 const FunderAnalytics = lazy(() => import("@/routes/funder/analytics/funderAnalytics"));
 const FunderDashboard = lazy(() => import("@/routes/funder/funderDashboard"));
 const GAPAnalysisDetailView = lazy(() => import("./routes/gap/view"));
-const GAPAnalysisForm = lazy(() => import("./routes/gap/new/form"));
 const GAPAnalysisFormWrapper = lazy(() => import("./components/GAPAnalysisFormWrapper"));
 const GAPAnalysisTable = lazy(() => import("./routes/gap"));
 const GroupMovementTimeline = lazy(() => import("./routes/operations/groupHistory"));
@@ -193,6 +199,8 @@ const InquiryDetailPage = lazy(() => import("@/routes/receptionist/inquiries/[id
 const InternalResourceRequestView = lazy(() => import("./routes/resources/internal"));
 const InterventionDatabaseView = lazy(() => import("./routes/interventions"));
 const InterventionsAssignments = lazy(() => import("./routes/operations/assignments"));
+const InterventionDigitalTwin = lazy(() => import("./routes/oversight/digital-twin"));
+const InterventionsControlTower = lazy(() => import("./routes/oversight/interventions"));
 const InterventionsManager = lazy(() => import("./routes/operations/interventions"));
 const InterventionsRequests = lazy(() => import("./routes/operations/requests"));
 const InterventionsTrackingView = lazy(() => import("./routes/incubatee/interventions"));
@@ -216,7 +224,6 @@ const NewInquiry = lazy(() => import("@/routes/receptionist/inquiries/new"));
 const NotFoundPage = lazy(() => import("./routes/not-found"));
 const OperationsInquiriesPage = lazy(() => import("./routes/operations/inquiries"));
 const OperationsOnboardingDashboard = lazy(() => import("./routes/directors/operations"));
-const OperationsResourceManagement = lazy(() => import("@/routes/operations/resources"));
 const ParticipantFormalRegistration = lazy(() => import("./routes/registration/onboarding"));
 const ParticipantOnboardingForm = lazy(() => import("./routes/operations/participants/new/ParticipantOnboardingForm"));
 const ParticipantSuccess = lazy(() => import("./routes/operations/participants/success"));
@@ -225,6 +232,7 @@ const ProgramManager = lazy(() => import("./routes/programs"));
 const ProjectAdminEditInquiryPage = lazy(() => import("./routes/projectadmin/inquiries/[id]/edit"));
 const ProjectAdminInquiryDetailPage = lazy(() => import("./routes/projectadmin/inquiries/[id]"));
 const ProjectAdminReports = lazy(() => import("./routes/projectadmin/reports"));
+const FacilitiesManagementPage = lazy(() => import("./routes/projectadmin/facilities"));
 const ProposalPipeline = lazy(() => import("./routes/shared/proposal-pipeline"));
 const PurchaseRequestProcessor = lazy(() => import("./routes/projectmanager/inhouse/requests"));
 const QualityObjectiveManagement = lazy(() => import("./components/quality-objectives/QualityObjectiveManagement").then(m => ({ default: m.QualityObjectiveManagement })));
@@ -232,7 +240,6 @@ const ReceptionistDashboardPage = lazy(() => import("@/routes/receptionist/dashb
 const ReceptionistReports = lazy(() => import("@/routes/receptionist/reports"));
 const RegisterPage = lazy(() => import("@/routes/registration").then(m => ({ default: m.RegisterPage })));
 const ReportSwitcher = lazy(() => import("./routes/operations/reports/reportsSwitcher"));
-const RequestedResources = lazy(() => import("./routes/resources/requests/RequestedResources"));
 const ResetPasswordPage = lazy(() => import("./routes/reset-password"));
 const ResourceRequestForm = lazy(() => import("./routes/incubatee/resources"));
 const Resources = lazy(() => import("./routes/resources"));
@@ -248,9 +255,15 @@ const SurveyBuilder = lazy(() => import("./components/surveys/index"));
 const CourseBuilder = lazy(() => import("./components/courses/index"));
 const CoursesRepository = lazy(() => import("./components/courses/repository"));
 const LearnerCoursePage = lazy(() => import("./components/courses/CoursePlayer"));
-const AcademyCatalog = lazy(() => import("./components/courses/repository").then(module => ({ default: module.AcademyCatalog })));
+const LearnerCatalog = lazy(() => import("./components/courses/LearnerCatalog"));
+const AcademyRedirect = lazy(() => import("./components/courses/LearnerCatalog").then(module => ({ default: module.AcademyRedirect })));
 const AddTraining = lazy(() => import("./components/trainings/AddTraining"));
+const SmeDashboard = lazy(() => import("./components/trainings/SmeDashboard"));
+const SmePlan = lazy(() => import("./components/trainings/SmePlan"));
+const SmePeople = lazy(() => import("./components/trainings/SmePeople"));
 const EnrollSme = lazy(() => import("./components/trainings/EnrollSme"));
+const TrainingCertificates = lazy(() => import("./components/trainings/TrainingCertificates"));
+const VerifyCertificatePage = lazy(() => import("./components/trainings/VerifyCertificatePage"));
 const SurveysDetailsPage = lazy(() => import("./components/surveys/SurveysDetails"));
 const SystemSetupForm = lazy(() => import("./routes/system"));
 const TasksModule = lazy(() => import("./components/tasks/TaskModule"));
@@ -259,16 +272,18 @@ const TutorialsPage = lazy(() => import("./components/shared/TutorialsPage"));
 const UserAppointments = lazy(() => import("./routes/incubatee/appointments"));
 const UserManagement = lazy(() => import("./components/user-management").then(m => ({ default: m.UserManagement })));
 const WelcomeWizard = lazy(() => import("./components/modals/WelcomeWizard"));
+const WhatsAppConsentPage = lazy(() => import("./routes/incubatee/whatsapp-consent"));
+const PlanReviewPage = lazy(() => import("./routes/incubatee/plan-review"));
 const WellnessResponsesPage = lazy(() => import("./routes/coordinator/interventions/pdswellness"));
 
 
 
-const AdminOnlyRoute = () => {
+const SystemAdminOnlyRoute = () => {
     const { actor, loading } = useIdentity();
     if (loading) return null;
 
     const role = String(actor?.role || "").toLowerCase();
-    return ["admin", "system_admin"].includes(role) ? (
+    return role === "system_admin" ? (
         <Outlet />
     ) : (
         <Navigate to="/operations" replace />
@@ -276,6 +291,20 @@ const AdminOnlyRoute = () => {
 };
 
 const queryClient = new QueryClient();
+
+/** Deep link to one department's plan: open the plan view, and go back to the list on close. */
+const ConfirmedInterventionsWrapper = () => {
+    const { participantId, department } = useParams();
+    const navigate = useNavigate();
+    return (
+        <ConfirmedInterventionsView
+            open
+            participantId={participantId as string}
+            department={decodeURIComponent(department || "")}
+            onClose={() => navigate("/operations/plan")}
+        />
+    );
+};
 
 const App = () => {
     const notificationProvider = useNotificationProvider();
@@ -298,15 +327,6 @@ const App = () => {
             ),
         });
     }, [mode, accent]);
-    const ConfirmedInterventionsWrapper = () => {
-        const { participantId, department } = useParams();
-        return (
-            <ConfirmedInterventionsView
-                participantId={participantId as string}
-                department={department as string}
-            />
-        );
-    };
 
     return (
         <>
@@ -319,6 +339,8 @@ const App = () => {
                                 <AuthSessionTracker />
                                 <MandatoryDailyClockIn />
                                 <MandatoryMeetingCoverage />
+                                {/* HODs: finance has asked for a MOV pack invoice */}
+                                <InvoiceRequestPrompt />
                                 <WhatsNewModal />
                                 <UpdatePrompt />
                                 <OfflineIndicator />
@@ -326,14 +348,13 @@ const App = () => {
                                 <DevtoolsProvider>
                                     <Refine
                                         routerProvider={routerProvider}
-                                        dataProvider={dataProvider}
-                                        liveProvider={liveProvider}
+                                        // No dataProvider: every screen reads Firestore directly.
+                                        // Refine is used for routing, auth and notifications only.
                                         notificationProvider={notificationProvider}
                                         authProvider={authProvider}
                                         options={{
                                             syncWithLocation: true,
                                             warnWhenUnsavedChanges: true,
-                                            liveMode: "auto",
                                             useNewQueryKeys: true,
                                             title: {
                                                 text: "Smart Incubation Platform",
@@ -357,12 +378,13 @@ const App = () => {
                                                             </Authenticated>
                                                         }
                                                     >
-                                                        <Route path="academy" element={<AcademyCatalog />} />
-                                                        <Route path="academy/:id" element={<LearnerCoursePage />} />
+                                                        {/* Legacy learner links; courses now live under /training/courses */}
+                                                        <Route path="academy" element={<Navigate to="/training/courses" replace />} />
+                                                        <Route path="academy/:id" element={<AcademyRedirect />} />
                                                         {/* System Admin Routes */}
-                                                        <Route path="admin" element={<AdminOnlyRoute />}>
-                                                            <Route index element={<UserManagement />} />
-                                                            <Route path="console" element={<AdminConsole />} />
+                                                        <Route path="system_admin" element={<SystemAdminOnlyRoute />}>
+                                                            <Route index element={<AdminDashboard />} />
+                                                            <Route path="users" element={<UserManagement />} />
                                                             <Route path="email" element={<AdminEmailMonitor />} />
                                                             <Route
                                                                 path="features"
@@ -372,6 +394,10 @@ const App = () => {
                                                                 path="data-export-settings"
                                                                 element={<DataExportSettingsPage />}
                                                             />
+                                                            <Route
+                                                                path="department-roles"
+                                                                element={<DepartmentRolesPage />}
+                                                            />
                                                         </Route>
                                                         {/* Project Admin Routes */}
                                                         <Route path="projectadmin">
@@ -379,9 +405,10 @@ const App = () => {
                                                                 index
                                                                 element={<CenterCoordinatorDashboard />}
                                                             />
+                                                            {/* No list page here: a project admin's "Inquiries → All" is the shared receptionist list. */}
                                                             <Route
                                                                 path="inquiries"
-                                                                element={<ProjectAdminInquiryDetailPage />}
+                                                                element={<Navigate to="/receptionist/inquiries" replace />}
                                                             />
                                                             <Route
                                                                 path="inquiries/:id"
@@ -404,8 +431,17 @@ const App = () => {
                                                                 element={<ProjectAdminReports />}
                                                             />
                                                             <Route
+                                                                path="control-tower"
+                                                                element={<InterventionsControlTower />}
+                                                            />
+                                                            <Route path="digital-twin" element={<InterventionDigitalTwin />} />
+                                                            <Route
                                                                 path="success-challenges"
                                                                 element={<SuccessChallengesPage />}
+                                                            />
+                                                            <Route
+                                                                path="facilities"
+                                                                element={<FacilitiesManagementPage />}
                                                             />
                                                         </Route>
                                                         {/* Director Routes */}
@@ -456,6 +492,18 @@ const App = () => {
                                                                 path="inhouse/requests"
                                                                 element={<PurchaseRequestProcessor />}
                                                             />
+                                                        </Route>
+                                                        {/* Training SME portal (role: training_sme). courses/* is the shared
+                                                            learner side of the Academy for every role. */}
+                                                        <Route path="training">
+                                                            <Route index element={<SmeDashboard />} />
+                                                            <Route path="courses" element={<LearnerCatalog />} />
+                                                            <Route path="courses/:id" element={<LearnerCoursePage />} />
+                                                            <Route path="agenda" element={<SmePlan />} />
+                                                            <Route path="people" element={<SmePeople />} />
+                                                            {/* Older portal links: appointments and the plan now live in the agenda */}
+                                                            <Route path="appointments" element={<Navigate to="/training/agenda" replace />} />
+                                                            <Route path="plan" element={<Navigate to="/training/agenda" replace />} />
                                                         </Route>
                                                         {/* Incubatee Routes */}
                                                         <Route path="incubatee">
@@ -630,6 +678,11 @@ const App = () => {
                                                                 element={<ConsolidatedInvoicePacks />}
                                                             />
                                                             <Route
+                                                                path="control-tower"
+                                                                element={<InterventionsControlTower />}
+                                                            />
+                                                            <Route path="digital-twin" element={<InterventionDigitalTwin />} />
+                                                            <Route
                                                                 path="monitoring/movs"
                                                                 element={<MonitoringMOVApprovals />}
                                                             />
@@ -644,8 +697,11 @@ const App = () => {
                                                             <Route path="training/courses/builder" element={<CourseBuilder />} />
                                                             <Route path="training/courses/builder/:id" element={<CourseBuilder />} />
                                                             <Route path="training/courses" element={<CoursesRepository />} />
-                                                            <Route path="training/new" element={<AddTraining />} />
+                                                            <Route path="training/trainings" element={<AddTraining />} />
+                                                            {/* Older links to the trainings list */}
+                                                            <Route path="training/new" element={<Navigate to="/operations/training/trainings" replace />} />
                                                             <Route path="training/enroll" element={<EnrollSme />} />
+                                                            <Route path="training/certificates" element={<TrainingCertificates />} />
                                                             <Route
                                                                 path="requests"
                                                                 element={<InterventionsRequests />}
@@ -686,11 +742,6 @@ const App = () => {
                                                             />
                                                             <Route path="gap">
                                                                 <Route index element={<GAPAnalysisTable />} />
-                                                                {/* This is for adding new */}
-                                                                <Route
-                                                                    path="new"
-                                                                    element={<GAPAnalysisForm mode="rom" />}
-                                                                />
                                                                 <Route
                                                                     path=":id"
                                                                     element={<GAPAnalysisDetailView />}
@@ -703,10 +754,6 @@ const App = () => {
                                                                     element={<CoordinatorPerformance />}
                                                                 />
                                                             </Route>
-                                                            <Route
-                                                                path="resources"
-                                                                element={<OperationsResourceManagement />}
-                                                            />
                                                             <Route path="movs" element={<MOVApprovalsForm />} />
                                                             <Route
                                                                 path="inquiries"
@@ -800,14 +847,9 @@ const App = () => {
                                                         <Route path="resources">
                                                             <Route index element={<Resources />} />
                                                             <Route
-                                                                path="requests"
-                                                                element={<RequestedResources />}
-                                                            />
-                                                            <Route
                                                                 path="internal"
                                                                 element={<InternalResourceRequestView />}
                                                             />
-                                                            <Route path="allocations" element={<Allocations />} />
                                                         </Route>
                                                         <Route path="programs" element={<ProgramManager />} />
                                                         <Route
@@ -883,11 +925,15 @@ const App = () => {
                                                     <Route path="/" element={<LandingPage />} />
                                                     <Route path="/landing/sme" element={<ApplicantLandingPage />} />
                                                     <Route path="/login" element={<LoginPage />} />
+                                                    {/* Public: anyone holding a certificate's code can check it. */}
+                                                    <Route path="/verify-certificate" element={<VerifyCertificatePage />} />
                                                     <Route
                                                         path="/reset-password"
                                                         element={<ResetPasswordPage />}
                                                     />
                                                     <Route path="/welcome" element={<WelcomeWizard />} />
+                                                    <Route path="/whatsapp-consent" element={<WhatsAppConsentPage />} />
+                                                    <Route path="/plan-review" element={<PlanReviewPage />} />
                                                     <Route path="/incubatee/moa" element={<MOAForm />} />
                                                     <Route
                                                         path="/incubatee/gap-analysis"
@@ -915,7 +961,11 @@ const App = () => {
                                             </Suspense>
 
                                             <UnsavedChangesNotifier />
-                                            <DocumentTitleHandler />
+                                            {/* Default tab title for pages that don't set one. Refine's
+                                                DocumentTitleHandler used to fill this role, but with no
+                                                Refine resources defined it wrote "Refine" over every
+                                                page's own Helmet title. */}
+                                            <Helmet defaultTitle="Lepharo Smart Incubation Platform" />
                                         </GuideProvider>
                                     </Refine>
                                 </DevtoolsProvider>

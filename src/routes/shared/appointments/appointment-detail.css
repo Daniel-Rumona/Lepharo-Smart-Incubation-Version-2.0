@@ -1,0 +1,93 @@
+/* Appointment details: icon header, bordered info tiles, status note. */
+.apt-detail {
+    display: grid;
+    gap: 14px;
+    --apt-status: #6d5dfb;
+    --apt-status-soft: rgba(109, 93, 251, 0.14);
+}
+.apt-detail.is-pending { --apt-status: #d99b18; --apt-status-soft: rgba(217, 155, 24, 0.14); }
+.apt-detail.is-accepted { --apt-status: #3b82f6; --apt-status-soft: rgba(59, 130, 246, 0.14); }
+.apt-detail.is-completed { --apt-status: #16a34a; --apt-status-soft: rgba(22, 163, 74, 0.14); }
+.apt-detail.is-cancelled { --apt-status: #dc2626; --apt-status-soft: rgba(220, 38, 38, 0.13); }
+
+.apt-detail-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+}
+.apt-detail-head h3 {
+    margin: 0;
+    overflow: hidden;
+    font-size: 17px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.apt-detail-head small {
+    display: block;
+    overflow: hidden;
+    opacity: 0.65;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.apt-detail-icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 12px;
+    color: var(--apt-status);
+    background: var(--apt-status-soft);
+    font-size: 18px;
+}
+
+.apt-detail-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 0;
+}
+.apt-detail-meta > div {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(128, 128, 128, 0.28);
+    border-radius: 12px;
+}
+.apt-detail-meta > div.is-wide { grid-column: 1 / -1; }
+.apt-detail-meta dt {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    opacity: 0.65;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.apt-detail-meta dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.apt-detail-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--apt-status-soft);
+    font-size: 12px;
+    opacity: 0.95;
+}
+
+@media (max-width: 480px) {
+    .apt-detail-meta { grid-template-columns: 1fr 1fr; gap: 8px; }
+}

@@ -1,0 +1,102 @@
+/* Reach report. Theme tokens, so it reads in light and dark mode. */
+
+.reach-ownership {
+    --reach-black: #2563eb;
+    --reach-female: #db2777;
+    --reach-youth: #16a34a;
+    display: grid;
+    gap: 18px;
+    padding: 8px 4px;
+}
+
+html[data-theme="dark"] .reach-ownership {
+    --reach-black: #60a5fa;
+    --reach-female: #f472b6;
+    --reach-youth: #4ade80;
+}
+
+.reach-ownership-note {
+    font-size: 12.5px;
+    color: var(--app-text-muted);
+}
+
+.reach-ownership-row {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.reach-ownership-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.reach-ownership-label {
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.reach-ownership-value {
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text);
+}
+
+.reach-ownership-bar {
+    display: block;
+    height: 10px;
+    overflow: hidden;
+    background: var(--app-surface);
+    border-radius: 999px;
+}
+
+.reach-ownership-bar i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+}
+
+.reach-ownership-row.is-black .reach-ownership-bar i {
+    background: var(--reach-black);
+}
+
+.reach-ownership-row.is-female .reach-ownership-bar i {
+    background: var(--reach-female);
+}
+
+.reach-ownership-row.is-youth .reach-ownership-bar i {
+    background: var(--reach-youth);
+}
+
+.reach-ownership-basis {
+    font-size: 12px;
+    color: var(--app-text-subtle);
+}
+
+/* The monthly chart's month names are links (they drill into the month). The
+   global dark-mode rule greys every axis label, so restore the link colour. */
+html[data-theme="dark"] .highcharts-axis-labels.reach-month-axis text {
+    fill: #60a5fa !important;
+}
+
+/* Charts-to-show checkboxes inside the Filters popover: two columns. */
+.reach-chart-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 12px;
+}
+
+.reach-chart-picker .ant-checkbox-wrapper {
+    margin-inline-start: 0;
+}
+
+.reach-chart-hint {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 12.5px;
+}

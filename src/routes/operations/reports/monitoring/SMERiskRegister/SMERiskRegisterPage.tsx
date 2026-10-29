@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Card, Col, Row, Skeleton } from 'antd'
 
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import EarlyWarningPanel from '@/components/dashboards/shared/EarlyWarningPanel'
 
 import AnalyticsModal from './components/AnalyticsModal'
 import RegisterFilterBar from './components/RegisterFilterBar'
@@ -268,6 +269,13 @@ export default function SMERiskRegisterPage({
                 metrics={metrics}
                 isDepartmentScopedView={isDepartmentScopedView}
                 departmentScopeLabel={departmentScopeLabel}
+            />
+
+            <div style={{ height: 16 }} />
+
+            <EarlyWarningPanel
+                scope={isDepartmentScopedView ? 'mine' : 'all'}
+                programId={resolvedProgramId}
             />
 
             <div style={{ height: 16 }} />

@@ -4,6 +4,8 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { logger } from 'firebase-functions'
 import { sendEmail } from './mail/mailer'
 import { logBrevoSend, sendViaBrevo } from './brevoClient'
+import { notifyInApp, uidForParticipant } from './inAppNotifications'
+import { BREVO_EGRESS } from './config'
 
 if (!admin.apps.length) admin.initializeApp()
 const db = admin.firestore()
@@ -327,7 +329,7 @@ function assertCampaignValid(c: MailCampaignDoc) {
 
 const ACCOUNT_CREATION_LOGIN_URL = process.env.APP_LOGIN_URL || 'https://lepharosmartinc.co.za/login'
 const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const ADMIN_EMAIL_ROLES = new Set(['admin', 'system_admin', 'system admin', 'superadmin', 'director'])
+const ADMIN_EMAIL_ROLES = new Set(['system_admin', 'system admin', 'superadmin', 'director'])
 const SYSTEM_BROADCAST_EXCLUDED_DOMAIN = '@quantilytix.co.za'
 const SYSTEM_BROADCAST_COPY_RECIPIENTS = ['helperzhou@gmail.com', 'admin@quantilytix.com']
 const CALLABLE_CORS = [
@@ -827,6 +829,18 @@ export const queueSystemStatusBroadcast = onCall(
         await batch.commit()
       }
 
+      // In-app copy for every account (not only email-deliverable ones),
+      // chunked to stay well inside Firestore's per-document index limits.
+      const allUids = usersSnap.docs.map((userDoc) => userDoc.id)
+      for (let index = 0; index < allUids.length; index += 1000) {
+        await notifyInApp({
+          type: `system_${kind}`,
+          message: `${subject}: ${message}`,
+          recipientIds: allUids.slice(index, index + 1000),
+          mailCampaignId: campaignRef.id,
+        })
+      }
+
       await campaignRef.set({ status: 'queued', queuedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
     } catch (err: any) {
       const error = String(err?.message || err)
@@ -902,8 +916,19 @@ export const sendAdminTestEmail = onCall(
 )
 
 export const resendAccountCreationEmails = onCall(
-  { region: 'us-central1', cors: CALLABLE_CORS },
+  { region: 'us-central1', cors: CALLABLE_CORS, timeoutSeconds: 540, memory: '512MiB' },
   async (req) => {
+    try {
+      return await runResendAccountCreationEmails(req)
+    } catch (err: any) {
+      if (err instanceof HttpsError) throw err
+      logger.error('resendAccountCreationEmails.failed', { error: String(err?.message || err), stack: err?.stack })
+      throw new HttpsError('internal', `Account creation emails failed: ${String(err?.message || err)}`)
+    }
+  }
+)
+
+async function runResendAccountCreationEmails(req: any) {
     const actor = await requireEmailAdmin(req)
     const targets = await collectUsersForAccountCreation({
       userIds: req.data?.userIds,
@@ -980,9 +1005,9 @@ export const resendAccountCreationEmails = onCall(
     const sent = results.filter((r) => r.status === 'sent').length
     const failed = results.filter((r) => r.status === 'failed').length
     const skipped = results.filter((r) => r.status === 'skipped').length
+    logger.info('resendAccountCreationEmails.done', { total: results.length, sent, failed, skipped })
     return { ok: true, dryRun, total: results.length, sent, failed, skipped, results }
-  }
-)
+}
 
 export const sendApplicationReceivedEmail = onCall(
   { region: 'us-central1', cors: CALLABLE_CORS },
@@ -1023,7 +1048,7 @@ export const sendApplicationReceivedEmail = onCall(
 )
 
 export const sendComplianceReminderEmail = onCall(
-  { region: 'us-central1', cors: CALLABLE_CORS },
+  { ...BREVO_EGRESS, region: 'us-central1', cors: CALLABLE_CORS },
   async (req) => {
     if (!req.auth) throw new HttpsError('unauthenticated', 'Login required.')
 
@@ -1042,6 +1067,28 @@ export const sendComplianceReminderEmail = onCall(
       throw new HttpsError('invalid-argument', 'At least one outstanding compliance item is required.')
     }
 
+    try {
+      const messageId = await deliverComplianceReminder({ to, name, programName, participantId, programId, issues })
+      return { ok: true, messageId }
+    } catch {
+      throw new HttpsError('internal', 'Compliance reminder email failed.')
+    }
+  }
+)
+
+/**
+ * Emails one SME their outstanding compliance items and posts the matching in-app
+ * notification. Logs the send either way; throws if the email could not be sent.
+ */
+export async function deliverComplianceReminder(input: {
+  to: string
+  name: string
+  programName: string
+  participantId: string | null
+  programId: string | null
+  issues: string[]
+}) {
+    const { to, name, programName, participantId, programId, issues } = input
     const subject = `Action required: outstanding details for ${programName}`
     const issueList = issues.map((issue: string) => `<li>${issue.replace(/[&<>"']/g, (char) => ({
       '&': '&amp;',
@@ -1070,7 +1117,15 @@ export const sendComplianceReminderEmail = onCall(
         participantId,
         programId,
       })
-      return { ok: true, messageId }
+      await notifyInApp({
+        type: 'compliance_details_outstanding',
+        message: `Please complete ${issues.length} outstanding item${issues.length === 1 ? '' : 's'} for ${programName}: ${issues.slice(0, 3).join('; ')}${issues.length > 3 ? ' …' : ''}`,
+        recipientIds: [await uidForParticipant(participantId, to)],
+        participantId,
+        programId,
+        link: '/incubatee/compliance',
+      })
+      return messageId
     } catch (err: any) {
       const error = String(err?.message || err)
       await logBrevoSend({
@@ -1082,7 +1137,6 @@ export const sendComplianceReminderEmail = onCall(
         participantId,
         programId,
       })
-      throw new HttpsError('internal', 'Compliance reminder email failed.')
+      throw err
     }
-  }
-)
+}

@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Button, Card, Col, Empty, Input, Progress, Row, Select, Space, Tag, Typography } from 'antd'
-import { ClockCircleOutlined, FileTextOutlined } from '@ant-design/icons'
+import { Empty, Input, Segmented } from 'antd'
+import { FileTextOutlined, SearchOutlined } from '@ant-design/icons'
 import { db } from '@/firebase'
+import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
+import { StatusPill } from '@/routes/operations/movs/movParts'
 import { listenContributorBlocks } from './services/reportsService'
-import { isCoordinator, isOperations } from './reportPermissions'
+import { canUserManageDepartmentBlock, isOperations } from './reportPermissions'
 import type { ReportBlock, ReportUserContext } from './types'
-import { BlockStatusTag, ContentTypeTag, PageHeader } from './shared'
-
-const { Text, Title } = Typography
+import { PageHeader, sectionStatus } from './shared'
 
 type Props = {
     user: ReportUserContext
@@ -15,89 +15,131 @@ type Props = {
     onOpenContribution: (reportId: string, blockId: string) => void
 }
 
-const statusProgress: Record<ReportBlock['status'], number> = {
-    not_started: 0,
-    draft: 35,
-    changes_requested: 50,
-    submitted: 80,
-    approved: 100
-}
+type Filter = 'todo' | 'waiting' | 'done' | 'all'
 
+/**
+ * My sections: the report sections handed to this person (or their department).
+ * "To do" is what needs them now — including coordinators' work a department head
+ * must check; "Waiting" is with someone else.
+ */
 const ContributorAssignmentsPage: React.FC<Props> = ({ user, onBack, onOpenContribution }) => {
     const [blocks, setBlocks] = useState<ReportBlock[]>([])
+    const [loaded, setLoaded] = useState(false)
     const [search, setSearch] = useState('')
-    const [status, setStatus] = useState('all')
+    const [filter, setFilter] = useState<Filter>('todo')
 
-    useEffect(() => listenContributorBlocks(db, user, setBlocks), [user.uid, user.departmentId])
+    useEffect(
+        () =>
+            listenContributorBlocks(db, user, rows => {
+                setBlocks(rows)
+                setLoaded(true)
+            }),
+        [user.uid, user.departmentId]
+    )
 
-    const rows = useMemo(() => blocks.filter(block => {
-        const q = search.toLowerCase()
-        return `${block.title} ${block.sectionTitle} ${block.reportTitle} ${block.periodLabel}`.toLowerCase().includes(q)
-            && (status === 'all' || block.status === status)
-    }), [blocks, search, status])
+    const stageOf = (block: ReportBlock): Exclude<Filter, 'all'> => {
+        if (block.status === 'approved') return 'done'
+        if (block.status === 'submitted') {
+            // A coordinator's section sent to the department head is the head's to-do.
+            return block.submittedTo === 'department' && canUserManageDepartmentBlock(user, block) ? 'todo' : 'waiting'
+        }
+        return 'todo'
+    }
 
-    const heading = isOperations(user) ? 'Department Report Contributions' : 'My Report Contributions'
-    const subtitle = isOperations(user)
-        ? `${user.departmentName || 'Your department'} · You can manage department-owned blocks and delegate them to coordinators.`
-        : isCoordinator(user)
-            ? 'Only report blocks explicitly delegated to you are loaded here.'
-            : 'Only report blocks assigned directly to your user account are loaded here.'
+    const searched = useMemo(() => {
+        const q = search.trim().toLowerCase()
+        return blocks.filter(b => !q || `${b.title} ${b.sectionTitle} ${b.reportTitle} ${b.periodLabel}`.toLowerCase().includes(q))
+    }, [blocks, search])
+    const counts = useMemo(() => {
+        const c = { todo: 0, waiting: 0, done: 0, all: searched.length }
+        searched.forEach(b => c[stageOf(b)]++)
+        return c
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searched])
+    const rows = filter === 'all' ? searched : searched.filter(b => stageOf(b) === filter)
 
     return (
-        <div className="report-shell">
-            <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <PageHeader eyebrow="REPORT CONTRIBUTIONS" title={heading} subtitle={subtitle} onBack={onBack} />
+        <>
+            <PageHeader
+                title="My report sections"
+                subtitle={
+                    isOperations(user) && user.departmentName
+                        ? `Sections ${user.departmentName} writes, and ones you handed to coordinators.`
+                        : 'Sections you’ve been asked to write.'
+                }
+                onBack={onBack}
+            />
+            <DashboardFilterBar>
+                <div className="ws-toolbar">
+                    <Segmented
+                        className="ws-toolbar-status mv-status-strip"
+                        block
+                        value={filter}
+                        onChange={v => setFilter(v as Filter)}
+                        aria-label="Filter sections"
+                        options={[
+                            { value: 'todo', label: 'To do', tone: 'warning' },
+                            { value: 'waiting', label: 'Waiting', tone: 'info' },
+                            { value: 'done', label: 'Done', tone: 'success' },
+                            { value: 'all', label: 'All', tone: 'neutral' }
+                        ].map(o => ({
+                            value: o.value,
+                            label: (
+                                <span className="mv-seg">
+                                    {o.label}
+                                    {loaded ? <span className={`mv-seg-count qtx-tone-${o.tone}`}>{counts[o.value as Filter]}</span> : null}
+                                </span>
+                            )
+                        }))}
+                    />
+                    <Input
+                        className="ws-toolbar-search"
+                        allowClear
+                        prefix={<SearchOutlined />}
+                        placeholder="Search sections or reports"
+                        aria-label="Search sections"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                    />
+                </div>
+            </DashboardFilterBar>
 
-                <Card className="report-soft-card" styles={{ body: { padding: 14 } }}>
-                    <Row gutter={[10, 10]}>
-                        <Col xs={24} md={18}><Input.Search allowClear placeholder="Search assigned report blocks" value={search} onChange={e => setSearch(e.target.value)} /></Col>
-                        <Col xs={24} md={6}><Select style={{ width: '100%' }} value={status} onChange={setStatus} options={[
-                            { value: 'all', label: 'All statuses' },
-                            { value: 'not_started', label: 'Not started' },
-                            { value: 'draft', label: 'Draft' },
-                            { value: 'changes_requested', label: 'Changes requested' },
-                            { value: 'submitted', label: 'Submitted' },
-                            { value: 'approved', label: 'Approved' }
-                        ]} /></Col>
-                    </Row>
-                </Card>
-
-                {rows.length ? <Space direction="vertical" size={11} style={{ width: '100%' }}>
-                    {rows.map(block => (
-                        <Card key={block.id} className="report-soft-card contribution-card" styles={{ body: { padding: 18 } }}>
-                            <Row gutter={[14, 14]} align="middle">
-                                <Col xs={24} lg={11}>
-                                    <Space align="start" size={12}>
-                                        <div className="report-metric-icon" style={{ background: '#eef5ff', color: '#175b9c' }}><FileTextOutlined /></div>
-                                        <div>
-                                            <Space wrap size={6}>
-                                                <Title level={5} style={{ margin: 0 }}>{block.title}</Title>
-                                                <BlockStatusTag status={block.status} />
-                                                <ContentTypeTag value={block.contentType} />
-                                                {block.status === 'submitted' && block.submittedTo === 'department' ? <Tag color="gold">Awaiting HOD</Tag> : null}
-                                                {block.status === 'submitted' && block.submittedTo === 'report_manager' ? <Tag color="blue">Awaiting Report Manager</Tag> : null}
-                                            </Space>
-                                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>{block.sectionTitle}</Text>
-                                            <Text style={{ fontSize: 12, display: 'block', marginTop: 3 }}>{block.reportTitle} · {block.periodLabel}</Text>
-                                            {block.delegatedUserNames?.length ? <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 3 }}>Delegated: {block.delegatedUserNames.join(', ')}</Text> : null}
-                                            {block.changeRequest?.reason ? <Text type="danger" style={{ display: 'block', marginTop: 6, fontSize: 12 }}>Changes requested: {block.changeRequest.reason}</Text> : null}
+            <MotionCard loading={!loaded}>
+                {rows.length === 0 ? (
+                    <Empty
+                        className="ws-list-empty"
+                        description={blocks.length === 0 ? 'No report sections have been handed to you.' : filter === 'todo' && !search ? 'Nothing needs you right now.' : 'No sections match.'}
+                    />
+                ) : (
+                    <div className="ws-rows" role="list" aria-label="Report sections">
+                        {rows.map(block => {
+                            const st = sectionStatus(block)
+                            return (
+                                <button key={block.id} type="button" role="listitem" className="ws-row" onClick={() => onOpenContribution(block.reportId, block.id)}>
+                                    <span className="cr-row-icon" aria-hidden="true">
+                                        <FileTextOutlined />
+                                    </span>
+                                    <div className="ws-row-main">
+                                        <div className="ws-row-name">{block.title}</div>
+                                        <div className="ws-row-meta">
+                                            {[block.reportTitle, block.periodLabel, block.sectionTitle].filter(Boolean).join(' · ')}
                                         </div>
-                                    </Space>
-                                </Col>
-                                <Col xs={24} lg={6}>
-                                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                        <Space style={{ width: '100%', justifyContent: 'space-between' }}><Text type="secondary" style={{ fontSize: 11 }}>Progress</Text><Text strong>{statusProgress[block.status]}%</Text></Space>
-                                        <Progress percent={statusProgress[block.status]} showInfo={false} strokeWidth={7} />
-                                    </Space>
-                                </Col>
-                                <Col xs={24} lg={4}><Space size={6}><ClockCircleOutlined style={{ color: '#8c8c8c' }} /><Text type="secondary" style={{ fontSize: 12 }}>{block.status === 'approved' ? 'Complete' : 'Action required'}</Text></Space></Col>
-                                <Col xs={24} lg={3} style={{ textAlign: 'right' }}><Button type={block.status === 'submitted' || block.status === 'approved' ? 'default' : 'primary'} onClick={() => onOpenContribution(block.reportId, block.id)}>{block.status === 'changes_requested' ? 'Update' : block.status === 'approved' ? 'View' : isOperations(user) && block.submittedTo === 'department' ? 'Review' : 'Continue'}</Button></Col>
-                            </Row>
-                        </Card>
-                    ))}
-                </Space> : <Card className="report-soft-card"><Empty description="No report blocks are assigned to your reporting scope" /></Card>}
-            </Space>
-        </div>
+                                        {block.changeRequest?.reason ? (
+                                            <div className="mv-row-flags">
+                                                <span className="mv-flag is-danger">Changes asked: {block.changeRequest.reason}</span>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                    <div className="ws-row-side">
+                                        <StatusPill tone={st.tone}>{st.label}</StatusPill>
+                                    </div>
+                                </button>
+                            )
+                        })}
+                    </div>
+                )}
+            </MotionCard>
+        </>
     )
 }
 

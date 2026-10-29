@@ -30,7 +30,9 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { applyKpiDeltas } from '@/lib/kpis'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { toAssignedInterventionView } from '@/services/assignedInterventionService'
 import { resolveAssignmentLifecycle } from '@/services/assignmentLifecycleService'
 import { CloseSupportModal, type CloseSupportTarget } from '@/components/interventions/CloseSupportModal'
@@ -60,9 +62,6 @@ type DeptDoc = {
     parentDepartmentId?: string | null
     parentDeptId?: string | null
     parentId?: string | null
-    parentDepartmentName?: string | null
-    parentDeptName?: string | null
-    parentName?: string | null
 }
 
 type SignatureResolved = {
@@ -95,8 +94,6 @@ const normalize = (s: string) =>
         .trim()
         .toLowerCase()
 
-const SAME = (a?: string, b?: string) => normalize(a || '') === normalize(b || '')
-
 const toDateSafe = (v: any) => {
     if (!v) return null
     if (typeof v?.toDate === 'function') return v.toDate()
@@ -107,8 +104,6 @@ const toDateSafe = (v: any) => {
 
 const resolveParentId = (d: DeptDoc) =>
     (d.parentDepartmentId ?? d.parentDeptId ?? d.parentId ?? null) as string | null
-const resolveParentName = (d: DeptDoc) =>
-    (d.parentDepartmentName ?? d.parentDeptName ?? d.parentName ?? null) as string | null
 
 const pickSignatureUrl = (obj: any): string | null => {
     if (!obj || typeof obj !== 'object') return null
@@ -177,9 +172,8 @@ async function safeFindUserSignatureByUid(uid?: string | null): Promise<string |
 const isConfirmed = (v: any) => v === true || (v && typeof v === 'object' && v.confirmed === true)
 
 const getDeptConfirmMaps = (plan: any) => {
-    const byId = (plan?.confirmedByDeptId || null) as Record<string, any> | null
-    const byName = ((plan?.confirmed || {}) as Record<string, any>) || {}
-    return { byId, byName }
+    const byId = (plan?.confirmedByDeptId || {}) as Record<string, any>
+    return { byId }
 }
 
 const getSmmeConfirmMaps = (plan: any) => {
@@ -192,14 +186,7 @@ const getSmmeConfirmMaps = (plan: any) => {
         ...(plan?.incubateeDepartmentConfirmationsByDeptId || {})
     }
 
-    const byName: Record<string, any> = {
-        ...(plan?.smmeConfirmedMap || {}),
-        ...(plan?.incubateeDepartmentConfirmations || {}),
-        ...(plan?.incubateeConfirmedByDept || {}),
-        ...(plan?.smmeConfirmedByDept || {})
-    }
-
-    return { byId, byName }
+    return { byId }
 }
 
 const getSubmittedDeptIdStrict = (intv: any) => {
@@ -241,6 +228,7 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
     onClose
 }) => {
     const { user } = useFullIdentity()
+    const { activeProgramId } = useActiveProgramId()
     const roleRaw = String((user as any)?.role || (user as any)?.userRole || (user as any)?.position || '')
         .toLowerCase()
         .trim()
@@ -251,7 +239,8 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
         (user as any)?.coordinatorId || (user as any)?.uid || (user as any)?.id || ''
     ).trim()
 
-    const isROM = String(user?.departmentName || '').toLowerCase().includes('rom')
+    const { hasRole } = useDepartmentRoles()
+    const isROM = hasRole(user?.departmentId, 'rom')
 
 
     type SectionKey = 'plan' | 'delivery' | 'signatures'
@@ -291,11 +280,7 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
     const [myParentDeptName, setMyParentDeptName] = useState<string>('')
     const [myChildDeptIds, setMyChildDeptIds] = useState<string[]>([])
 
-    // Parent Dept Adding Interventions
-    const [addOpen, setAddOpen] = useState(false)
-    const [savingAdd, setSavingAdd] = useState(false)
     const [interventionsCatalog, setInterventionsCatalog] = useState<any[]>([])
-    const [selectedInterventionId, setSelectedInterventionId] = useState<string>('')
 
     // Signatures
     const [signRows, setSignRows] = useState<SignRow[]>([])
@@ -332,9 +317,8 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
             try {
                 // Current logged-in dept (authoritative)
                 const myDeptIdFromUser = String((user as any)?.departmentId || '').trim()
-                const myDeptNameFromUser = String((user as any)?.departmentName || department || '').trim()
 
-                if (!myDeptIdFromUser || !myDeptNameFromUser) {
+                if (!myDeptIdFromUser) {
                     message.error('Missing your department details.')
                     return
                 }
@@ -348,7 +332,8 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                     query(collection(db, 'applications'), where('participantId', '==', participantId))
                 )
                 if (!appsSnap.empty) {
-                    appData = appsSnap.docs[0].data()
+                    const appProgram = (d: any) => String(d.data()?.programId || d.data()?.program?.id || '')
+                    appData = (appsSnap.docs.find(d => activeProgramId && appProgram(d) === activeProgramId) || appsSnap.docs[0]).data()
                     if (!cancelled) {
                         setParticipantInfo(appData)
                         setProgramId(String(appData?.programId || appData?.program?.id || ''))
@@ -376,37 +361,17 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                 setTotalDepartments(depts.length)
 
                 // Derive parent + children (NO deriving myDeptId from departments anymore)
-                const myDoc =
-                    depts.find(d => String(d.id) === myDeptIdFromUser) ||
-                    depts.find(d => SAME(d.name, myDeptNameFromUser)) ||
-                    null
+                const myDoc = depts.find(d => String(d.id) === myDeptIdFromUser) || null
 
-                // parent name
                 // Your department itself is the potential parent.
                 // We only consider you a parent if another department explicitly points to you.
-                const ownDeptName = String(myDoc?.name || myDeptNameFromUser).trim()
-
-                setMyParentDeptName(ownDeptName)
+                setMyParentDeptName(String(myDoc?.name || department || '').trim())
 
                 const childIds = depts
                     .filter(d => {
                         // Never treat the current department as its own child
                         if (d.id === myDeptIdFromUser) return false
-
-                        const childParentId = String(resolveParentId(d) || '').trim()
-                        const childParentName = String(resolveParentName(d) || '').trim()
-
-                        // Authoritative relationship: child's parent ID points to my department
-                        if (childParentId) {
-                            return childParentId === myDeptIdFromUser
-                        }
-
-                        // Legacy fallback only where no parent ID exists
-                        if (childParentName) {
-                            return SAME(childParentName, ownDeptName)
-                        }
-
-                        return false
+                        return String(resolveParentId(d) || '').trim() === myDeptIdFromUser
                     })
                     .map(d => d.id)
 
@@ -441,9 +406,28 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                     return
                 }
 
-                let latest = plansSnap.docs[0]
-                let latestMs = toDateSafe(plansSnap.docs[0].data()?.createdAt)?.getTime?.() || 0
-                for (const d of plansSnap.docs) {
+                // This programme's latest plan; a legacy plan without programId only
+                // when the programme has none (the builder picks the same one).
+                const inScope = plansSnap.docs.filter(d => {
+                    const pid = d.data()?.programId
+                    return !activeProgramId || !pid || pid === activeProgramId
+                })
+                const own = inScope.filter(d => activeProgramId && d.data()?.programId === activeProgramId)
+                const candidates = own.length ? own : inScope
+                if (!candidates.length) {
+                    if (!cancelled) {
+                        setIsFinalised(false)
+                        setSubmittedDeptIds([])
+                        setSubmittedDeptNames([])
+                        setConfirmedInterventions([])
+                        setLatestPlanRef(null)
+                        setLatestPlanData(null)
+                    }
+                    return
+                }
+                let latest = candidates[0]
+                let latestMs = toDateSafe(latest.data()?.createdAt)?.getTime?.() || 0
+                for (const d of candidates) {
                     const ms = toDateSafe(d.data()?.createdAt)?.getTime?.() || 0
                     if (ms >= latestMs) {
                         latest = d
@@ -460,24 +444,11 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
 
                 // 5) submitted dept ids
                 const deptIds = depts.map(d => d.id)
-                const deptNames = depts.map(d => String(d.name || ''))
                 const { byId } = getDeptConfirmMaps(plan)
 
-                let submitted: string[] = []
-                if (byId && typeof byId === 'object') {
-                    submitted = Object.entries(byId)
-                        .filter(([deptId, v]: any) => isConfirmed(v) && deptIds.includes(deptId))
-                        .map(([deptId]) => deptId)
-                } else {
-                    const legacy = plan.confirmed || {}
-                    const submittedNames = Object.entries(legacy)
-                        .filter(([name, v]: any) => isConfirmed(v) && deptNames.some(n => SAME(n, name)))
-                        .map(([name]) => name)
-
-                    submitted = submittedNames
-                        .map(nm => depts.find(d => SAME(d.name, nm))?.id)
-                        .filter(Boolean) as string[]
-                }
+                const submitted = Object.entries(byId)
+                    .filter(([deptId, v]: any) => isConfirmed(v) && deptIds.includes(deptId))
+                    .map(([deptId]) => deptId)
 
                 if (!cancelled) {
                     setSubmittedDeptIds(submitted)
@@ -502,10 +473,7 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
 
                     const ddoc = depts.find(d => d.id === submittedDeptId) || null
                     const pid = ddoc ? resolveParentId(ddoc) : null
-                    const pname = ddoc ? resolveParentName(ddoc) : null
-                    const parentDeptName = pid && idToName[pid]
-                        ? idToName[pid]
-                        : (pname || ddoc?.name || String(intv.area || '-') || '-')
+                    const parentDeptName = (pid && idToName[pid]) || ddoc?.name || '-'
 
                     const confirmedAtObj = plan?.confirmedByDeptId?.[submittedDeptId]
                     const confirmedAt =
@@ -563,22 +531,11 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                 if (!cancelled) setSigLoading(true)
 
                 const rows: SignRow[] = []
-                const { byId: deptById, byName: deptByName } = getDeptConfirmMaps(plan)
-                const { byId: smeById, byName: smeByName } = getSmmeConfirmMaps(plan)
+                const { byId: deptById } = getDeptConfirmMaps(plan)
+                const { byId: smeById } = getSmmeConfirmMaps(plan)
 
-                const resolveDeptConfirmObj = (deptId: string) => {
-                    if (deptById && deptById[deptId]) return deptById[deptId]
-                    const deptName = idToName[deptId]
-                    if (deptName && deptByName && deptByName[deptName]) return deptByName[deptName]
-                    return null
-                }
-
-                const resolveSmmeConfirmObj = (deptId: string) => {
-                    if (smeById && smeById[deptId]) return smeById[deptId]
-                    const deptName = idToName[deptId]
-                    if (deptName && smeByName && smeByName[deptName]) return smeByName[deptName]
-                    return null
-                }
+                const resolveDeptConfirmObj = (deptId: string) => deptById[deptId] || null
+                const resolveSmmeConfirmObj = (deptId: string) => smeById[deptId] || null
 
                 const parentView =
                     isHOD &&
@@ -642,7 +599,7 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
         isROM,
         isHOD,
         user?.departmentId,
-        user?.departmentName
+        activeProgramId
     ])
 
     /**
@@ -668,18 +625,9 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                 const deptIds = deptDocs.map(d => d.id)
                 const { byId } = getDeptConfirmMaps(plan)
 
-                let submitted: string[] = []
-                if (byId && typeof byId === 'object') {
-                    submitted = Object.entries(byId)
-                        .filter(([deptId, value]: any) => isConfirmed(value) && deptIds.includes(deptId))
-                        .map(([deptId]) => deptId)
-                } else {
-                    const legacy = plan?.confirmed || {}
-                    submitted = Object.entries(legacy)
-                        .filter(([, value]: any) => isConfirmed(value))
-                        .map(([name]) => deptDocs.find(d => SAME(d.name, name))?.id)
-                        .filter(Boolean) as string[]
-                }
+                const submitted = Object.entries(byId)
+                    .filter(([deptId, value]: any) => isConfirmed(value) && deptIds.includes(deptId))
+                    .map(([deptId]) => deptId)
 
                 setSubmittedDeptIds(submitted)
                 setSubmittedDeptNames(
@@ -839,7 +787,6 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
         if (!submittedDeptIds.length) return null
 
         const { byId } = getSmmeConfirmMaps(latestPlanData)
-        if (!byId || typeof byId !== 'object') return null
 
         const dates: Date[] = []
         for (const deptId of submittedDeptIds) {
@@ -858,15 +805,43 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
         if (!myDeptId) return message.error('Could not resolve your department ID.')
         setUnlockSaving(true)
         try {
+            // A pending coordinator request is answered by this unlock: unlock the
+            // department that asked (not the HOD's own) and close the request, as
+            // approving it from the requests list does.
+            const edit = latestPlanData?.devPlanEdit || {}
+            const requestedDeptId = edit.changeRequested === true ? String(edit.changeRequestedByDeptId || '').trim() : ''
+            const forDeptId = requestedDeptId || myDeptId
+            const forDeptName = requestedDeptId ? String(edit.changeRequestedByDeptName || '') : department
+            const who = user?.email || user?.uid || ''
+
+            if (requestedDeptId) {
+                const pending = await getDocs(
+                    query(
+                        collection(db, 'dpChangeRequests'),
+                        where('diagnosticPlanDocId', '==', (latestPlanRef as any).id),
+                        where('status', '==', 'pending')
+                    )
+                )
+                await Promise.all(
+                    pending.docs.map(d =>
+                        updateDoc(d.ref, {
+                            status: 'approved',
+                            resolvedAt: new Date(),
+                            resolvedBy: who,
+                            resolvedNote: unlockReason.trim() || null
+                        })
+                    )
+                )
+            }
+
             await updateDoc(latestPlanRef, {
                 'devPlanEdit.unlocked': true,
                 'devPlanEdit.unlockedAt': new Date(),
-                'devPlanEdit.unlockedBy': user?.email || user?.uid || '',
+                'devPlanEdit.unlockedBy': who,
                 'devPlanEdit.unlockedReason': unlockReason.trim() || null,
 
-                // unlock FOR THIS dept (subdept/hod edits their own)
-                'devPlanEdit.unlockedForDeptId': myDeptId,
-                'devPlanEdit.unlockedForDeptName': department,
+                'devPlanEdit.unlockedForDeptId': forDeptId,
+                'devPlanEdit.unlockedForDeptName': forDeptName,
 
                 // clear request flags if any
                 'devPlanEdit.changeRequested': false,
@@ -876,7 +851,7 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                 'devPlanEdit.changeRequestedByDeptName': null,
             })
 
-            message.success('Plan unlocked for your department.')
+            message.success(requestedDeptId ? `Plan unlocked for ${forDeptName || 'the requesting department'}.` : 'Plan unlocked for your department.')
             setUnlockOpen(false)
             setUnlockReason('')
         } catch (e) {
@@ -973,25 +948,14 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
         if (!myDeptId || myChildDeptIds.length === 0) return []
 
         const plan = latestPlanData
-        const { byId: deptById, byName: deptByName } = getDeptConfirmMaps(plan)
-        const { byId: smeById, byName: smeByName } = getSmmeConfirmMaps(plan)
+        const { byId: deptById } = getDeptConfirmMaps(plan)
+        const { byId: smeById } = getSmmeConfirmMaps(plan)
 
         // child depts only (exclude the parent dept itself)
         const childIds = myChildDeptIds.filter(id => id && id !== myDeptId)
 
-        const resolveConfirmObj = (deptId: string) => {
-            if (deptById && deptById[deptId]) return deptById[deptId]
-            const name = deptIdToName[deptId]
-            if (name && deptByName && deptByName[name]) return deptByName[name]
-            return null
-        }
-
-        const resolveSmmeObj = (deptId: string) => {
-            if (smeById && smeById[deptId]) return smeById[deptId]
-            const name = deptIdToName[deptId]
-            if (name && smeByName && smeByName[name]) return smeByName[name]
-            return null
-        }
+        const resolveConfirmObj = (deptId: string) => deptById[deptId] || null
+        const resolveSmmeObj = (deptId: string) => smeById[deptId] || null
 
         // interventions per dept (what you already built into confirmedInterventions)
         const perDeptIntvCount: Record<string, number> = {}
@@ -1077,52 +1041,31 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
     const canShowFinalise =
         isROM && !isFinalised && totalDepartments > 0 && submittedDeptNames.length >= totalDepartments
 
-    const parentAddOptions = useMemo(() => {
-        if (!isParentDeptUser) return []
-        const parentDeptName = myParentDeptName || department
-        const parentDeptId = myDeptId
-
-        return interventionsCatalog
-            .filter(i => {
-                const deptId = String(i.departmentId || '').trim()
-                if (deptId && parentDeptId) return deptId === parentDeptId
-                const area = String(i.areaOfSupport || i.area || '').trim()
-                return area ? SAME(area, parentDeptName) : false
-            })
-            .map(i => ({
-                value: String(i.id),
-                label: `${i.interventionTitle || i.title || 'Untitled'} — ${i.areaOfSupport || i.area || ''}`
-            }))
-    }, [interventionsCatalog, isParentDeptUser, myDeptId, myParentDeptName, department])
-
     const handleFinalisePlan = async () => {
         try {
             if (!latestPlanRef) return
             if (!isROM) return message.error('Only ROM can finalise the Developmental Plan.')
 
-            let programId = ''
-            const appsSnap = await getDocs(query(collection(db, 'applications'), where('participantId', '==', participantId)))
-            if (!appsSnap.empty) {
-                const app = appsSnap.docs[0].data() as any
-                programId = app.programId || app.program?.id || ''
-            }
+            const programId = String(latestPlanData?.programId || activeProgramId || '')
 
             await updateDoc(latestPlanRef, { finalConfirmation: true })
             setIsFinalised(true)
             message.success('Developmental Plan finalised')
 
-            const fileRef = doc(db, 'diagnosticPlanReports', participantId)
+            // One report per participant per programme, so a second programme doesn't overwrite the first.
+            const fileRef = doc(db, 'diagnosticPlanReports', programId ? `${participantId}_${programId}` : participantId)
             const finalisedAt = new Date()
-            const interventions = confirmedInterventions.map(({ title, area, addedByDeptName }) => ({
-                title,
-                area,
-                addedByDeptName
+            // Firestore rejects undefined.
+            const interventions = confirmedInterventions.map(({ title, submittedDeptId }) => ({
+                title: title ?? '',
+                departmentId: submittedDeptId || null
             }))
 
             await setDoc(fileRef, {
                 participantId,
-                beneficiaryName: participantInfo?.beneficiaryName,
-                programName: participantInfo?.programName,
+                programId: programId || null,
+                beneficiaryName: participantInfo?.beneficiaryName ?? null,
+                programName: participantInfo?.programName ?? null,
                 interventions,
                 finalisedAt,
                 finalisedBy: user?.email
@@ -1157,7 +1100,7 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                     {
                         participantId,
                         programId: programId || 'unknown',
-                        areaOfSupport: (it as any).area || '',
+                        departmentId: it.departmentId || undefined,
                         quarter: quarterKey
                     },
                     deltas
@@ -1266,7 +1209,7 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
 
                         {!isParentDeptUser && !isHOD && isCoordinator && (
                             <Button
-                                color="cyan"
+                                color="primary"
                                 icon={<EditOutlined />}
                                 variant="filled"
                                 style={roundBtn}
@@ -1680,65 +1623,6 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
 
 
                 </Card>
-
-                <Modal
-                    centered
-                    title="Add Intervention"
-                    open={addOpen}
-                    onCancel={() => setAddOpen(false)}
-                    onOk={async () => {
-                        if (!latestPlanRef || !latestPlanData) return
-                        if (!myDeptId) return message.error('Could not resolve your department ID')
-                        if (!selectedInterventionId) return message.error('Select an intervention')
-
-                        const picked = interventionsCatalog.find(x => String(x.id) === String(selectedInterventionId))
-                        if (!picked) return message.error('Intervention not found')
-
-                        setSavingAdd(true)
-                        try {
-                            const newItem = {
-                                id: picked.id,
-                                title: picked.interventionTitle || picked.title || 'Untitled',
-                                area: picked.areaOfSupport || picked.area || myParentDeptName || department,
-                                source: 'ParentAdded',
-                                departmentId: myDeptId,
-                                addedAt: new Date(),
-                                addedBy: user?.uid || user?.email || ''
-                            }
-
-                            const next = [...(latestPlanData.interventions || []), newItem]
-                            await updateDoc(latestPlanRef, { interventions: next })
-
-                            setLatestPlanData((p: any) => ({ ...p, interventions: next }))
-                            message.success('Intervention added')
-                            setAddOpen(false)
-                            setSelectedInterventionId('')
-                        } catch (e) {
-                            console.error(e)
-                            message.error('Failed to add intervention')
-                        } finally {
-                            setSavingAdd(false)
-                        }
-                    }}
-                    confirmLoading={savingAdd}
-                    okText="Add"
-                    destroyOnClose
-                >
-                    <div style={{ marginBottom: 8 }}>Select from the intervention library:</div>
-
-                    <Select
-                        showSearch
-                        value={selectedInterventionId || undefined}
-                        onChange={v => setSelectedInterventionId(String(v))}
-                        placeholder="Select an intervention"
-                        style={{ width: '100%' }}
-                        options={parentAddOptions}
-                        optionFilterProp="label"
-                        filterOption={(input, option) =>
-                            String(option?.label || '').toLowerCase().includes(String(input || '').toLowerCase())
-                        }
-                    />
-                </Modal>
 
                 {!isParentDeptUser && (
                     <>

@@ -59,7 +59,7 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { Helmet } from 'react-helmet'
 import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { MotionCard } from '../dashboards/metrics/Header'
-
+import { MetricTile } from '../dashboards/metrics/MetricTile'
 const { Search } = Input
 
 interface User {
@@ -111,7 +111,7 @@ const ROLE_DISPLAY_MAP: Record<string, string> = {
     auxiliary: 'Employee'
 }
 const ROLE_BACKEND_MAP: Record<string, string> = {
-    'System Admin': 'admin',
+    'System Admin': 'system_admin',
     'Center Coordinator': 'projectadmin',
     'Head Of Department': 'operations',
     Coordinator: 'coordinator',
@@ -339,7 +339,7 @@ export const UserManagement: React.FC = () => {
 
     const isAdmin = (me: any) => {
         const role = (me?.role || '').toLowerCase()
-        return role === 'admin'
+        return role === 'system_admin'
     }
 
     const shouldHideRow = (me: any, email?: string) => {
@@ -358,7 +358,7 @@ export const UserManagement: React.FC = () => {
 
     const isSuperUser = (me: any) => {
         const role = (me?.role || '').toLowerCase()
-        return role === 'admin'
+        return role === 'system_admin'
     }
 
     const canUseSystemTools = isAdmin(user)
@@ -1850,13 +1850,13 @@ export const UserManagement: React.FC = () => {
                     {/* ====== SCOPED METRICS (role-aware) ====== */}
                     <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                         <Col xs={24} sm={12} md={8}>
-                            <MotionCard><MotionCard.Metric title='Team Members' value={scopedTotals.total} icon={<UserOutlined style={{ color: '#1677ff' }} />} iconBg='rgba(22,119,255,.12)' /></MotionCard>
+                            <MotionCard><MetricTile title='Team Members' value={scopedTotals.total} icon={<UserOutlined />} tone='info' /></MotionCard>
                         </Col>
                         <Col xs={24} sm={12} md={8}>
-                            <MotionCard><MotionCard.Metric title='Active Members' value={scopedTotals.active} icon={<SmileOutlined style={{ color: '#16a34a' }} />} iconBg='rgba(22,163,74,.12)' /></MotionCard>
+                            <MotionCard><MetricTile title='Active Members' value={scopedTotals.active} icon={<SmileOutlined />} tone='success' /></MotionCard>
                         </Col>
                         <Col xs={24} sm={12} md={8}>
-                            <MotionCard><MotionCard.Metric title='Inactive Members' value={scopedTotals.inactive} icon={<FrownOutlined style={{ color: '#dc2626' }} />} iconBg='rgba(220,38,38,.12)' /></MotionCard>
+                            <MotionCard><MetricTile title='Inactive Members' value={scopedTotals.inactive} icon={<FrownOutlined />} tone='danger' /></MotionCard>
                         </Col>
                     </Row>
 

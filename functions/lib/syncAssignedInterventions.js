@@ -26,6 +26,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncAssignedInterventionsDenorm = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
+const syntheticData_1 = require("./syntheticData");
 const firebase_1 = require("./firebase");
 async function getApplicationForParticipant(participantId) {
     const snap = await firebase_1.db.collection("applications").where("participantId", "==", participantId).get();
@@ -132,6 +133,10 @@ exports.syncAssignedInterventionsDenorm = (0, firestore_1.onDocumentWritten)("as
         return;
     }
     const a = afterSnap.data();
+    // Bulk fixture imports include a complete denormalisation. Avoid racing 300
+    // creation events over arrays. Subsequent real workflow edits still sync.
+    if (!beforeSnap?.exists && (0, syntheticData_1.isSyntheticData)(a, assignedInterventionId) && a.seedHydration === true)
+        return;
     if (!beforeSnap?.exists) {
         await repairLinksAfterAssignmentCreation(assignedInterventionId, a);
     }
@@ -164,7 +169,7 @@ exports.syncAssignedInterventionsDenorm = (0, firestore_1.onDocumentWritten)("as
         interventionId: a.interventionId || "",
         databaseInterventionId: a.databaseInterventionId || "",
         title: a.interventionTitle || "",
-        areaOfSupport: a.areaOfSupport || "",
+        departmentId: a.departmentId || "",
         dueDate: a.dueDate ?? null,
     };
     const assignedWithout = assigned.filter((x) => x.assignedInterventionId !== assignedInterventionId);

@@ -18,13 +18,6 @@
       },
       "example": "HSE (Health, Safety & Environment) and Labour Compliance"
     },
-    "code": {
-      "type": "string",
-      "description": "Department code (auto-generated from name)",
-      "required": true,
-      "format": "lowercase-hyphenated",
-      "example": "hse-labour-compliance"
-    },
     "description": {
       "type": "string",
       "description": "Department description and responsibilities",
@@ -129,25 +122,21 @@
   "default_lepharo_departments": [
     {
       "name": "HSE (Health, Safety & Environment) and Labour Compliance",
-      "code": "hse-labour-compliance",
       "description": "Health, Safety, Environment and Labour Compliance management",
       "contactEmail": "hse@lepharo.co.za"
     },
     {
       "name": "ROM (Recruitment, Onboarding and Maintenance)",
-      "code": "rom", 
       "description": "Recruitment, Onboarding and Maintenance of participants",
       "contactEmail": "rom@lepharo.co.za"
     },
     {
       "name": "Financial Compliance",
-      "code": "financial-compliance",
       "description": "Financial compliance and regulatory management", 
       "contactEmail": "finance@lepharo.co.za"
     },
     {
       "name": "Personal Development Services (PDS)",
-      "code": "pds",
       "description": "Personal development and skills training services",
       "contactEmail": "pds@lepharo.co.za"
     }

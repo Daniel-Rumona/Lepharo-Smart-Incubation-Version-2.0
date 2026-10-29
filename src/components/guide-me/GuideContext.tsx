@@ -8,6 +8,7 @@ import {
     useState
 } from 'react'
 import type { PropsWithChildren } from 'react'
+import type { DriveStep } from 'driver.js'
 
 import 'driver.js/dist/driver.css'
 import './guideTheme.css'
@@ -37,6 +38,9 @@ type GuideContextValue = {
      * as the Help Assistant). No-ops if that page never registers.
      */
     startGuideOnPage: (pageId: string, guideId: string) => void
+
+    /** Runs a tour that isn't registered by the page, e.g. one the assistant composed. */
+    runSteps: (title: string, steps: DriveStep[]) => void
 }
 
 const GuideContext = createContext<GuideContextValue | null>(null)
@@ -107,6 +111,20 @@ export const GuideProvider = ({ children }: PropsWithChildren) => {
         [guides]
     )
 
+    const runSteps = useCallback((title: string, steps: DriveStep[]) => {
+        if (!steps.length) return
+        setModalOpen(false)
+        activeDriverRef.current?.destroy()
+        activeDriverRef.current = runGuide(
+            { id: 'assistant-tour', title, steps },
+            {
+                onDestroyed: () => {
+                    activeDriverRef.current = null
+                }
+            }
+        )
+    }, [])
+
     const pendingGuideRef =
         useRef<{ pageId: string; guideId: string } | null>(null)
 
@@ -145,9 +163,11 @@ export const GuideProvider = ({ children }: PropsWithChildren) => {
             unregisterPageGuides,
             startGuide,
             stopGuide,
-            startGuideOnPage
+            startGuideOnPage,
+            runSteps
         }),
         [
+            runSteps,
             registration,
             guides,
             modalOpen,

@@ -8,10 +8,12 @@ import { Timestamp } from 'firebase/firestore'
  * Tracks the lifecycle of MOV documents from generation to completion
  */
 export type MOVStatus =
-  | 'generated'    // MOV document created automatically
-  | 'signed'       // Facilitator and client signatures collected
-  | 'verified'     // Final checker has verified the document
-  | 'complete'     // MOV fully processed and archived
+  | 'draft'          // MOV created but not yet released
+  | 'awaiting_smme'  // Waiting for the SME to confirm delivery
+  | 'awaiting_hod'   // SME confirmed, waiting for HOD approval
+  | 'approved'       // HOD approved
+  | 'queried'        // Query raised against the MOV
+  | 'rejected'       // MOV rejected
 
 /**
  * Group Stage for SMME classification
@@ -231,7 +233,7 @@ export const INTERVENTION_METHOD_LABELS: Record<InterventionMethod, string> = {
  * Type guards for runtime type checking
  */
 export const isValidMOVStatus = (status: string): status is MOVStatus => {
-  return ['generated', 'signed', 'verified', 'complete'].includes(status)
+  return ['draft', 'awaiting_smme', 'awaiting_hod', 'approved', 'queried', 'rejected'].includes(status)
 }
 
 export const isValidGroupStage = (stage: string): stage is GroupStage => {
@@ -246,7 +248,7 @@ export type MovDoc = {
     id: string
 
     departmentName?: string
-    status: 'awaiting_smme' | 'signed' | 'approved' | 'queried' | 'rejected'
+    status: 'awaiting_smme' | 'awaiting_hod' | 'approved' | 'queried' | 'rejected'
     beneficiaryId?: string
     smmeId?: string
     participantId?: string // canonical foreign key going forward - smmeId/beneficiaryId are legacy aliases

@@ -1,22 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import {
-    EyeInvisibleOutlined,
-    EyeTwoTone,
-    GoogleOutlined
-} from '@ant-design/icons'
-import {
-    Button,
-    Form,
-    Input,
-    Typography,
-    Carousel,
-    Grid,
-    Modal,
-    Alert,
-    message,
-    Space,
-    Divider
-} from 'antd'
+import { GoogleOutlined, WarningOutlined } from '@ant-design/icons'
+import { Button, Form, Input, Grid, message } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
     signInWithEmailAndPassword,
@@ -25,7 +9,7 @@ import {
     fetchSignInMethodsForEmail
 } from 'firebase/auth'
 import { httpsCallable } from 'firebase/functions'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
     collection,
     doc,
@@ -36,11 +20,18 @@ import {
 } from 'firebase/firestore'
 import { auth, db, functions } from '@/firebase'
 import { Helmet } from 'react-helmet'
-import { useAuthSurfacePalette } from '@/hooks/useAuthSurfacePalette'
-import { ThemeToggle } from '@/components/layout/theme-toggle'
 import { signOutApp } from '@/lib/firestoreCache'
+import SignInHelpSheet, { type SignInHelp } from './SignInHelpSheet'
+import PickupSheet from './PickupSheet'
+import ResetPasswordSheet from './ResetPasswordSheet'
+import HowToAccessSheet from './HowToAccessSheet'
+import MobileLoginScreen from './MobileLoginScreen'
+import { AuthShell } from '@/components/auth/AuthShell'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
+import { shouldPromptWhatsApp } from '@/services/whatsappConsentPrompt'
+import { needsWelcomeSetup } from '@/services/welcomeSteps'
+import { hasSignedPopia } from '@/services/popiaConsent'
 
-const { Title, Text } = Typography
 const { useBreakpoint } = Grid
 
 // Whether a returning, already-signed-in user should be routed straight into
@@ -103,60 +94,7 @@ const consumeInteractiveSignInFlag = (): boolean => {
     }
 }
 
-interface CarouselSlideProps {
-    title: string
-    description: string
-}
-
-const CarouselSlide: React.FC<CarouselSlideProps> = ({
-    title,
-    description
-}) => {
-    const palette = useAuthSurfacePalette()
-
-    return (
-        <div
-            style={{
-                minHeight: 140,
-                padding: '16px',
-                textAlign: 'center',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center'
-            }}
-        >
-            <h3
-                style={{
-                    marginBottom: 12,
-                    color: palette.slideTitle,
-                    fontSize: '20px',
-                    fontWeight: '700',
-                    letterSpacing: '-0.5px'
-                }}
-            >
-                {title}
-            </h3>
-            <p
-                style={{
-                    fontSize: 16,
-                    margin: 0,
-                    color: palette.slideBody,
-                    lineHeight: 1.5,
-                    fontWeight: '500'
-                }}
-            >
-                {description}
-            </p>
-        </div>
-    )
-}
-
 type ErrorContext = 'signin' | 'google' | 'reset'
-
-type SignInHelp = {
-    email: string
-    googleOnly: boolean
-}
 
 export function formatFirebaseError(
     error: any,
@@ -258,9 +196,11 @@ async function getAppsByEmailAnyField(email?: string) {
     let apps = [...mapDocs(byEmail), ...mapDocs(byApplicantEmail)]
 
     // 2) If still none, fallback: scan and match normalized (handles hidden spaces/casing in stored data)
+    // Only staff may scan applications; a new applicant's scan is denied and
+    // simply finds nothing.
     if (apps.length === 0) {
-        const allSnap = await getDocs(collection(db, 'applications'))
-        const all = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+        const allSnap = await getDocs(collection(db, 'applications')).catch(() => null)
+        const all = (allSnap?.docs || []).map(d => ({ id: d.id, ...d.data() } as any))
         apps = all.filter(a => {
             const aEmail = normEmail(a.email)
             const aApplicantEmail = normEmail(a.applicantEmail)
@@ -291,13 +231,15 @@ async function getParticipantByEmail(email?: string) {
 }
 
 const LoginPageContent: React.FC = () => {
-    const palette = useAuthSurfacePalette()
     const [form] = Form.useForm()
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
     const redirectParam = searchParams.get('redirect')
     const safeRedirect =
         redirectParam && redirectParam.startsWith('/') ? redirectParam : null
+    // Training SMEs land on their portal, except when they signed in from a
+    // session's QR code: then they go back to check in.
+    const isCheckInRedirect = !!safeRedirect && /^\/meeting-checkin(\?|$)/.test(safeRedirect)
     const screens = useBreakpoint()
     const isMobile = !screens.md
     const [tutorialVisible, setTutorialVisible] = useState(false)
@@ -306,6 +248,7 @@ const LoginPageContent: React.FC = () => {
     const [redirecting, setRedirecting] = useState(false)
     const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false)
     const [forgotPasswordEmail, setForgotPasswordEmail] = useState('')
+    const [resetSending, setResetSending] = useState(false)
     const [signInHelp, setSignInHelp] = useState<SignInHelp | null>(null)
     const [isPanelEntering, setIsPanelEntering] = useState(
         searchParams.get('flip') === '1'
@@ -313,15 +256,12 @@ const LoginPageContent: React.FC = () => {
     const [isLeavingForRegistration, setIsLeavingForRegistration] = useState(false)
     const [pickupUser, setPickupUser] = useState<any>(null)
     const [pickupBusy, setPickupBusy] = useState(false)
+    const [capsLockOn, setCapsLockOn] = useState(false)
 
-    // framer-motion helpers
-    const reduceMotion = useReducedMotion()
+    // Caps Lock is the usual culprit behind a "wrong password" that isn't.
+    const syncCapsLock = (e: React.KeyboardEvent) =>
+        setCapsLockOn(e.getModifierState?.('CapsLock') ?? false)
 
-    const overlayVariants = {
-        initial: { opacity: 0 },
-        animate: { opacity: 1, transition: { duration: 0.8 } },
-        exit: { opacity: 0, transition: { duration: 0.6 } }
-    }
 
     useEffect(() => {
         if (!isPanelEntering) return
@@ -407,14 +347,6 @@ const LoginPageContent: React.FC = () => {
         await signOutApp(window.location.pathname + window.location.search)
     }
 
-    const spinnerVariants = {
-        animate: {
-            rotate: [0, 180, 360],
-            scale: [1, 1.03, 1], // was 1.08
-            transition: { duration: 2.0, repeat: Infinity, ease: 'easeInOut' } // was 1.1
-        }
-    }
-
     const toDate = (v: any): Date | null => {
         if (!v) return null
         if (v?.seconds) return new Date(v.seconds * 1000)
@@ -464,7 +396,7 @@ const LoginPageContent: React.FC = () => {
      * below, so both land people in exactly the same place.
      */
     const routeSignedInUser = async (user: any) => {
-        const { error, message: errMsg, role, firstLoginDone } = await checkUser(user as any)
+        const { error, message: errMsg, role, setupNeeded, whatsappPromptNeeded, mustChangePassword } = await checkUser(user as any)
 
         const actor = {
             uid: user.uid,
@@ -479,9 +411,23 @@ const LoginPageContent: React.FC = () => {
             return
         }
 
-        // welcome gate for incubatee only
-        if (role === 'incubatee' && !firstLoginDone) {
-            navigateAfterLogin('/welcome')
+        // Setup comes first: a default password, an SME's first visit, or a missing
+        // signature or POPIA consent. Checking in at a meeting from its QR code is not
+        // held up by it (except to replace a default password).
+        if (setupNeeded) {
+            navigateAfterLogin('/welcome', { allowRedirect: !mustChangePassword && isCheckInRedirect })
+            return
+        }
+
+        // Training SMEs only ever see the /training portal, unless they signed in to check in.
+        if (role === 'training_sme') {
+            navigateAfterLogin('/training', { allowRedirect: isCheckInRedirect })
+            return
+        }
+
+        // SMEs who signed up before WhatsApp updates existed see just that one question.
+        if (role === 'incubatee' && whatsappPromptNeeded) {
+            navigateAfterLogin('/whatsapp-consent')
             return
         }
 
@@ -534,7 +480,8 @@ const LoginPageContent: React.FC = () => {
                     return
                 }
 
-                navigateAfterLogin('/incubatee', {
+                // Through the plan review first; it moves straight on when nothing waits.
+                navigateAfterLogin('/plan-review', {
                     allowRedirect: false
                 })
                 return
@@ -577,7 +524,10 @@ const LoginPageContent: React.FC = () => {
                 error: true,
                 message: 'User not found in the system. Please contact the admin.',
                 role: null,
-                firstLoginDone: false
+                firstLoginDone: false,
+                setupNeeded: false,
+                mustChangePassword: false,
+                whatsappPromptNeeded: false
             }
         }
 
@@ -586,12 +536,27 @@ const LoginPageContent: React.FC = () => {
             role?.toLowerCase()?.replace(/\s+/g, '') || ''
 
         const firstLoginDone = Boolean(data.firstLoginComplete === true)
+        const role = normalizeRole(data.role)
+        const mustChangePassword = data.mustChangePassword === true
+        // Every user needs a saved signature and a signed POPIA notice; missing
+        // either sends them through the setup wizard first.
+        const setupNeeded = needsWelcomeSetup({
+            role,
+            firstLoginDone,
+            mustChangePassword,
+            hasSignature: Boolean(data.signatureURL),
+            popiaSigned: await hasSignedPopia(data, role, user.email)
+        })
 
         return {
             error: false,
             message: null,
-            role: normalizeRole(data.role),
-            firstLoginDone
+            role,
+            firstLoginDone,
+            setupNeeded,
+            mustChangePassword,
+            // Existing SMEs who were never asked are asked once, on this page only.
+            whatsappPromptNeeded: shouldPromptWhatsApp(data)
         }
     }
 
@@ -615,6 +580,12 @@ const LoginPageContent: React.FC = () => {
         if (isLeavingForRegistration) return
         setIsLeavingForRegistration(true)
         window.setTimeout(() => navigate('/registration?flip=1'), 320)
+    }
+
+    // "Forgot password?" from the form: carry over whatever they already typed.
+    const openForgotPassword = () => {
+        setForgotPasswordEmail(form.getFieldValue('email') ?? '')
+        setForgotPasswordVisible(true)
     }
 
     const openPasswordSetup = (email: string) => {
@@ -688,7 +659,7 @@ const LoginPageContent: React.FC = () => {
             const result = await signInWithPopup(auth, new GoogleAuthProvider())
             const user = result.user
 
-            const { error, message: errMsg, role, firstLoginDone } = await checkUser(user as any)
+            const { error, message: errMsg, role, setupNeeded, whatsappPromptNeeded, mustChangePassword } = await checkUser(user as any)
 
             const actor = {
                 uid: user.uid,
@@ -702,8 +673,22 @@ const LoginPageContent: React.FC = () => {
                 return
             }
 
-            if (role === 'incubatee' && !firstLoginDone) {
-                navigateAfterLogin('/welcome')
+            // Setup comes first: a default password, an SME's first visit, or a missing
+            // signature or POPIA consent. Checking in at a meeting from its QR code is not
+            // held up by it (except to replace a default password).
+            if (setupNeeded) {
+                navigateAfterLogin('/welcome', { allowRedirect: !mustChangePassword && isCheckInRedirect })
+                return
+            }
+
+            // Training SMEs only ever see the /training portal, unless they signed in to check in.
+            if (role === 'training_sme') {
+                navigateAfterLogin('/training', { allowRedirect: isCheckInRedirect })
+                return
+            }
+
+            if (role === 'incubatee' && whatsappPromptNeeded) {
+                navigateAfterLogin('/whatsapp-consent')
                 return
             }
 
@@ -756,8 +741,8 @@ const LoginPageContent: React.FC = () => {
                         return
                     }
 
-
-                    navigateAfterLogin('/incubatee', {
+                    // Through the plan review first; it moves straight on when nothing waits.
+                    navigateAfterLogin('/plan-review', {
                         allowRedirect: false
                     })
                     return
@@ -817,6 +802,7 @@ const LoginPageContent: React.FC = () => {
             message.warning('Please enter your email.')
             return
         }
+        setResetSending(true)
         try {
             const sendReset = httpsCallable(
                 functions,
@@ -834,6 +820,8 @@ const LoginPageContent: React.FC = () => {
             } else {
                 message.error(formatFirebaseError(error, 'reset'))
             }
+        } finally {
+            setResetSending(false)
         }
     }
 
@@ -845,194 +833,29 @@ const LoginPageContent: React.FC = () => {
                 <title>Login | Smart Incubation Platform</title>
             </Helmet>
 
-            <div
-                style={{
-                    height: '100vh',
-                    width: '100vw',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    background: palette.pageWash,
-                    position: 'relative',
-                    overflow: 'hidden',
-                    padding: isMobile ? '16px' : '24px'
-                }}
-            >
-                {/* The only colour-mode control reachable before sign-in — the
-                    topbar one lives inside the authenticated shell. */}
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: isMobile ? 12 : 20,
-                        right: isMobile ? 12 : 24,
-                        zIndex: 3
-                    }}
-                >
-                    <ThemeToggle compact={isMobile} />
-                </div>
-
-                {/* Subtle decorative elements */}
-                <motion.div
-                    style={{
-                        position: 'absolute',
-                        top: '-100px',
-                        left: '-120px',
-                        width: 350,
-                        height: 350,
-                        borderRadius: '50%',
-                        background: palette.blobCool,
-                        filter: 'blur(80px)',
-                        zIndex: 0
-                    }}
-                    animate={reduceMotion ? {} : { y: [0, -10, 0] }}
-                    transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+            {isMobile ? (
+                <MobileLoginScreen
+                    form={form}
+                    onFinish={handleLogin}
+                    onGoogle={handleGoogleLogin}
+                    onForgotPassword={openForgotPassword}
+                    onHowTo={() => setTutorialVisible(true)}
+                    onSignUp={() => navigate('/registration')}
+                    onBack={() => navigate('/')}
                 />
-                <motion.div
-                    style={{
-                        position: 'absolute',
-                        bottom: '-150px',
-                        right: '-150px',
-                        width: 450,
-                        height: 450,
-                        borderRadius: '50%',
-                        background: palette.blobWarm,
-                        filter: 'blur(80px)',
-                        zIndex: 0
-                    }}
-                    animate={reduceMotion ? {} : { y: [0, 12, 0] }}
-                    transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-                />
-
-                {/* Card */}
-                <div
-                    style={{
-                        display: 'flex',
-                        flexDirection: isMobile ? 'column' : 'row',
-                        width: isMobile ? '100%' : '900px',
-                        maxWidth: '95%',
-                        height: isMobile ? 'auto' : '560px',
-                        borderRadius: 16,
-                        overflow: 'hidden',
-                        background: '#ffffff',
-                        boxShadow: '0 8px 30px rgba(0,0,0,0.1)',
-                        zIndex: 1,
-                        padding: isMobile ? '16px' : '24px',
-                        boxSizing: 'border-box',
-                        perspective: '1400px'
-                    }}
-                >
-                    {/* Left Panel */}
-                    {!isMobile && (
-                        <div
-                            style={{
-                                flex: 1,
-                                background: `url('/assets/images/welding.jpg') center/cover no-repeat`,
-                                backgroundColor: '#f0f4f8',
-                                borderRadius: 12,
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                padding: '32px',
-                                color: '#333',
-                                position: 'relative',
-                                marginRight: '24px'
-                            }}
-                        >
-                            <div
-                                style={{
-                                    width: 120,
-                                    height: 120,
-                                    borderRadius: '50%',
-                                    overflow: 'hidden',
-                                    marginTop: '24px',
-                                    marginBottom: '16px',
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                                    border: palette.discBorder,
-                                    backgroundColor: palette.discBg
-                                }}
-                            >
-                                <img
-                                    src='/assets/images/swirl-bg.png'
-                                    alt='Swirl'
-                                    style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        objectFit: 'cover',
-                                        opacity: palette.discImageOpacity,
-                                        filter: palette.discImageFilter
-                                    }}
-                                />
-                            </div>
-
-                            <div
-                                style={{
-                                    width: '100%',
-                                    maxWidth: 340,
-                                    textAlign: 'center',
-                                    position: 'absolute',
-                                    bottom: '32px',
-                                    borderRadius: '12px',
-                                    background: palette.slideScrim,
-                                    backdropFilter: palette.slideScrimBlur,
-                                    WebkitBackdropFilter: palette.slideScrimBlur,
-                                    border: palette.slideScrimBorder,
-                                    boxSizing: 'border-box',
-                                    padding: '16px',
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                                }}
-                            >
-                                <Carousel autoplay>
-                                    <CarouselSlide
-                                        title='AI Application Processing'
-                                        description='Streamline submissions with AI-driven processing, reducing delays and errors in evaluation.'
-                                    />
-                                    <CarouselSlide
-                                        title='Intervention Tracking'
-                                        description='Monitor and manage interventions with real-time progress updates and accountability features.'
-                                    />
-                                    <CarouselSlide
-                                        title='Advanced Analytics'
-                                        description='Gain deeper insights with powerful analytics dashboards, enabling better decision-making.'
-                                    />
-                                </Carousel>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Right Panel */}
+            ) : (
+                <AuthShell>
                     <motion.div
+                        className='as-form-inner'
                         initial={false}
                         animate={{
                             rotateY: isPanelEntering ? 90 : isLeavingForRegistration ? 90 : 0
                         }}
                         transition={{ duration: 0.32, ease: 'easeInOut' }}
-                        style={{
-                            flex: 1,
-                            padding: isMobile ? '24px 20px' : '40px 34px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'center',
-                            transformStyle: 'preserve-3d',
-                            backfaceVisibility: 'hidden'
-                        }}
+                        style={{ transformStyle: 'preserve-3d', backfaceVisibility: 'hidden' }}
                     >
-                        <Title
-                            level={3}
-                            style={{ color: '#1c2541', textAlign: 'center', marginBottom: 6 }}
-                        >
-                            Welcome Back
-                        </Title>
-                        <Text
-                            style={{
-                                display: 'block',
-                                textAlign: 'center',
-                                marginBottom: 20,
-                                color: '#666'
-                            }}
-                        >
-                            Sign in to your account
-                        </Text>
+                        <h1 className='as-title'>Welcome back</h1>
+                        <p className='as-sub'>Sign in to continue to Lepharo Smart Incubation.</p>
 
                         <Form
                             layout='vertical'
@@ -1042,389 +865,131 @@ const LoginPageContent: React.FC = () => {
                         >
                             <Form.Item
                                 name='email'
-                                label={<span style={{ color: '#333' }}>Email</span>}
+                                label='Email'
                                 rules={[
                                     { required: true, message: 'Please enter your email' },
                                     { type: 'email', message: 'Enter a valid email' }
                                 ]}
                             >
                                 <Input
+                                    size='large'
                                     placeholder='you@example.com'
-                                    size='large'
-                                    style={{
-                                        borderRadius: 10,
-                                        background: '#fff',
-                                        color: '#333',
-                                        border: '1px solid #d9d9d9'
-                                    }}
+                                    autoComplete='username'
+                                    inputMode='email'
+                                    autoFocus
                                 />
                             </Form.Item>
 
-                            <Form.Item
-                                name='password'
-                                label={<span style={{ color: '#333' }}>Password</span>}
-                                rules={[
-                                    { required: true, message: 'Please enter your password' }
-                                ]}
-                            >
-                                <Input.Password
-                                    placeholder='Enter your password'
-                                    size='large'
-                                    style={{
-                                        borderRadius: 10,
-                                        background: '#fff',
-                                        color: '#333',
-                                        border: '1px solid #d9d9d9'
-                                    }}
-                                    iconRender={visible =>
-                                        visible ? (
-                                            <EyeTwoTone twoToneColor='#666' />
-                                        ) : (
-                                            <EyeInvisibleOutlined />
-                                        )
+                            {/* The reset link sits beside the label but outside it, so
+                                it is not read out as part of the field's name. */}
+                            <div className='as-field-with-link'>
+                                <Form.Item
+                                    name='password'
+                                    label='Password'
+                                    rules={[{ required: true, message: 'Please enter your password' }]}
+                                    extra={
+                                        capsLockOn ? (
+                                            <span className='as-caps' role='status'>
+                                                <WarningOutlined /> Caps Lock is on
+                                            </span>
+                                        ) : undefined
                                     }
-                                />
-                            </Form.Item>
-
-                            <div style={{ textAlign: 'right', marginBottom: 12 }}>
-                                <Space>
-                                    <Button
-                                        type='link'
-                                        shape='round'
-                                        onClick={() => setTutorialVisible(true)}
-                                        style={{ border: '1px solid blue', padding: 12, color: '#1677ff' }}
-                                    >
-                                        How To Access
-                                    </Button>
-
-                                    <Button
-                                        type='link'
-                                        onClick={() => setForgotPasswordVisible(true)}
-                                        style={{ color: '#666' }}
-                                    >
-                                        Forgot password?
-                                    </Button>
-                                </Space>
+                                >
+                                    <Input.Password
+                                        size='large'
+                                        placeholder='Enter your password'
+                                        autoComplete='current-password'
+                                        onKeyDown={syncCapsLock}
+                                        onKeyUp={syncCapsLock}
+                                        onBlur={() => setCapsLockOn(false)}
+                                    />
+                                </Form.Item>
+                                <button
+                                    type='button'
+                                    className='as-link as-field-link'
+                                    onClick={openForgotPassword}
+                                >
+                                    Forgot password?
+                                </button>
                             </div>
 
-                            <Form.Item>
-                                <Button
-                                    type='primary'
-                                    htmlType='submit'
-                                    block
-                                    size='large'
-                                    style={{
-                                        background: palette.accent,
-                                        borderColor: palette.accent,
-                                        borderRadius: 10,
-                                        fontWeight: 600
-                                    }}
-                                >
-                                    Sign In
+                            <Form.Item style={{ marginTop: 4, marginBottom: 18 }}>
+                                <Button type='primary' htmlType='submit' size='large' block>
+                                    Sign in
                                 </Button>
                             </Form.Item>
 
-                            <Divider
-                                style={{
-                                    color: palette.dividerText,
-                                    borderColor: palette.dividerLine,
-                                    fontWeight: 600
-                                }}
-                            >
-                                OR
-                            </Divider>
+                            <div className='as-divider'>or</div>
 
                             <Button
                                 icon={<GoogleOutlined />}
-                                block
                                 size='large'
+                                block
                                 onClick={handleGoogleLogin}
-                                style={{
-                                    borderRadius: 10,
-                                    border: '1px solid #d9d9d9',
-                                    background: '#fff',
-                                    fontWeight: 600,
-                                    color: '#333'
-                                }}
                             >
                                 Continue with Google
                             </Button>
                         </Form>
 
-
-
-                        <div style={{ textAlign: 'center', marginTop: 20 }}>
-                            <Text style={{ color: '#666' }}>
-                                Don't have an account?{' '}
-                                <Button
-                                    type='link'
-                                    style={{ padding: 0, color: palette.accentLink, fontWeight: 600 }}
-                                    onClick={transitionToRegistration}
-                                >
-                                    Create one
-                                </Button>
-                            </Text>
-                        </div>
+                        <p className='as-alt'>
+                            Don't have an account?{' '}
+                            <button type='button' className='as-link' onClick={transitionToRegistration}>
+                                Create one
+                            </button>
+                            <span className='as-alt-sep' aria-hidden='true'>·</span>
+                            <button type='button' className='as-link' onClick={() => setTutorialVisible(true)}>
+                                How to get access
+                            </button>
+                        </p>
                     </motion.div>
-                </div>
+                </AuthShell>
+            )}
 
-                {/* Bottom-right brand with dark container for white logo */}
-                <div
-                    style={{
-                        position: 'fixed',
-                        bottom: 22,
-                        right: 20,
-                        height: 46,
-                        width: 110,
-                        zIndex: 99,
-                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                        borderRadius: '6px',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        padding: '4px'
-                    }}
-                >
-                    <img
-                        src='/assets/images/QuantilytixO.png'
-                        alt='Quantilytix Logo'
-                        style={{
-                            height: '100%',
-                            width: '100%',
-                            objectFit: 'contain'
-                        }}
-                    />
-                </div>
-            </div>
+            <PickupSheet
+                email={pickupUser ? pickupUser.email ?? 'your last account' : null}
+                busy={pickupBusy}
+                onContinue={remember => void handlePickupContinue(remember)}
+                onDifferentAccount={() => void handlePickupDifferentAccount()}
+            />
 
-            <Modal
-                title='Welcome back'
-                open={Boolean(pickupUser)}
-                closable={false}
-                maskClosable={false}
-                footer={null}
-                width={380}
-                centered
-            >
-                <Alert
-                    type='info'
-                    showIcon
-                    message={`Pick up where you left off as ${pickupUser?.email ?? 'your last account'}?`}
-                />
-                <Space direction='vertical' size={10} style={{ width: '100%', marginTop: 18 }}>
-                    <Button
-                        type='primary'
-                        block
-                        loading={pickupBusy}
-                        onClick={() => void handlePickupContinue('always')}
-                    >
-                        Always sign me in automatically
-                    </Button>
-                    <Button
-                        block
-                        loading={pickupBusy}
-                        onClick={() => void handlePickupContinue('ask')}
-                    >
-                        Continue, but ask me every time
-                    </Button>
-                    <Button
-                        block
-                        loading={pickupBusy}
-                        onClick={() => void handlePickupDifferentAccount()}
-                    >
-                        Use a different account
-                    </Button>
-                </Space>
-            </Modal>
+            <SignInHelpSheet
+                help={signInHelp}
+                onClose={() => setSignInHelp(null)}
+                onContinueWithGoogle={() => {
+                    setSignInHelp(null)
+                    void handleGoogleLogin()
+                }}
+                onResetPassword={openPasswordSetup}
+            />
 
-            <Modal
-                title={
-                    signInHelp?.googleOnly
-                        ? 'This account uses Google sign-in'
-                        : 'Having trouble signing in?'
-                }
-                open={Boolean(signInHelp)}
-                onCancel={() => setSignInHelp(null)}
-                footer={null}
-                destroyOnClose
-            >
-                <Alert
-                    type={signInHelp?.googleOnly ? 'info' : 'warning'}
-                    showIcon
-                    message={
-                        signInHelp?.googleOnly
-                            ? 'You previously registered using Google.'
-                            : 'Your email or password could not be verified.'
-                    }
-                    description={
-                        signInHelp?.googleOnly
-                            ? 'Continue with Google to access your account, or send yourself a link to set up a password for future email sign-ins.'
-                            : 'If you originally registered with Google, continue with Google. You can also send a link to set up or reset a password.'
-                    }
-                />
-                <Space direction='vertical' size={10} style={{ width: '100%', marginTop: 18 }}>
-                    <Button
-                        icon={<GoogleOutlined />}
-                        block
-                        onClick={() => {
-                            setSignInHelp(null)
-                            void handleGoogleLogin()
-                        }}
-                    >
-                        Continue with Google
-                    </Button>
-                    <Button
-                        type='primary'
-                        block
-                        onClick={() => openPasswordSetup(signInHelp?.email || '')}
-                    >
-                        Set up or reset password
-                    </Button>
-                    <Button block onClick={() => setSignInHelp(null)}>
-                        Try a different password
-                    </Button>
-                </Space>
-            </Modal>
-
-            {/* Password setup / reset modal */}
-            <Modal
-                title='Set Up or Reset Your Password'
+            <ResetPasswordSheet
                 open={forgotPasswordVisible}
-                onCancel={() => setForgotPasswordVisible(false)}
-                footer={null}
-            >
-                <Alert
-                    message='How it works'
-                    description="Enter your registered email below. We'll email you a secure link to set up or reset your password."
-                    type='info'
-                    showIcon
-                />
-                <Input
-                    placeholder='you@example.com'
-                    type='email'
-                    value={forgotPasswordEmail}
-                    onChange={e => setForgotPasswordEmail(e.target.value)}
-                    style={{ marginBottom: 18, marginTop: 18 }}
-                    autoFocus
-                />
-                <div style={{ textAlign: 'right' }}>
-                    <Button
-                        style={{ marginRight: 8 }}
-                        onClick={() => setForgotPasswordVisible(false)}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        type='primary'
-                        onClick={handleForgotPassword}
-                        loading={loading}
-                    >
-                        Send Setup Link
-                    </Button>
-                </div>
-            </Modal>
+                email={forgotPasswordEmail}
+                sending={resetSending}
+                onEmailChange={setForgotPasswordEmail}
+                onSubmit={handleForgotPassword}
+                onClose={() => setForgotPasswordVisible(false)}
+            />
 
-            <Modal
-                title='How To Tutorial'
+            <HowToAccessSheet
                 open={tutorialVisible}
-                onCancel={() => setTutorialVisible(false)}
-                footer={null}
-                width={900}
-                centered
-                destroyOnClose
-            >
-                <div
-                    style={{
-                        position: 'relative',
-                        width: '100%',
-                        paddingTop: '56.25%',
-                        borderRadius: 12,
-                        overflow: 'hidden',
-                        background: '#000'
-                    }}
-                >
-                    <iframe
-                        src='https://www.youtube.com/embed/AQl59BjWAt0'
-                        title='How To Tutorial Video'
-                        allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
-                        allowFullScreen
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            border: 'none'
-                        }}
-                    />
-                </div>
-            </Modal>
+                onClose={() => setTutorialVisible(false)}
+            />
 
-            {/* 🔥 Animated loading overlay */}
-            <AnimatePresence>
-                {isSubmitting && (
-                    <motion.div
-                        key='loading'
-                        variants={overlayVariants}
-                        initial='initial'
-                        animate='animate'
-                        exit='exit'
-                        style={{
-                            position: 'fixed',
-                            inset: 0,
-                            zIndex: 9999,
-                            backdropFilter: 'blur(3px)',
-                            background: palette.overlayVeil,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'wait'
-                        }}
-                        aria-live='polite'
-                        role='status'
-                        aria-busy='true'
-                    >
-                        <motion.div
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.25 }}
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: 12
-                            }}
-                        >
-                            {/* Spinner ring */}
-                            <motion.div
-                                variants={spinnerVariants}
-                                animate={reduceMotion ? { rotate: 0, scale: 1 } : 'animate'}
-                                style={{
-                                    width: 58,
-                                    height: 58,
-                                    borderRadius: '50%',
-                                    border: '4px solid rgba(245,83,46,0.25)',
-                                    borderTopColor: '#f5532e',
-                                    boxShadow: '0 0 0 2px rgba(245,83,46,0.06) inset'
-                                }}
-                            />
-                            <div
-                                style={{
-                                    fontWeight: 600,
-                                    color: '#1c2541',
-                                    letterSpacing: '0.2px'
-                                }}
-                            >
-                                {googleLoading
-                                    ? 'Signing in with Google…'
-                                    : redirecting
-                                        ? 'Redirecting…'
-                                        : 'Signing you in…'}
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* Same frosted loader the rest of the app uses for blocking waits. */}
+            {isSubmitting && (
+                <DashboardLoader
+                    overlay
+                    backdrop='translucent'
+                    label={
+                        googleLoading
+                            ? 'Signing in with Google…'
+                            : redirecting
+                                ? 'Taking you to your workspace…'
+                                : 'Signing you in…'
+                    }
+                />
+            )}
         </>
     )
 }

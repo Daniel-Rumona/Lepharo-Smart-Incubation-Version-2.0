@@ -47,10 +47,11 @@ import {
 } from 'firebase/firestore'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import HighchartsMore from 'highcharts/highcharts-more'
-import SolidGauge from 'highcharts/modules/solid-gauge'
+import 'highcharts/highcharts-more'
+import 'highcharts/modules/solid-gauge'
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import {
     resolveAttendanceVisibleEmployees,
@@ -78,10 +79,6 @@ import {
 // Same pattern (and the same TS-vs-runtime type gap) already used for the
 // gauge/donut charts in IncubateesInsights.tsx — the modules are callable at
 // runtime even though their .d.ts doesn't declare it.
-// @ts-expect-error — module augments Highcharts, not typed as callable
-if (typeof HighchartsMore === 'function') HighchartsMore(Highcharts)
-// @ts-expect-error — module augments Highcharts, not typed as callable
-if (typeof SolidGauge === 'function') SolidGauge(Highcharts)
 
 dayjs.extend(quarterOfYear)
 
@@ -2112,9 +2109,9 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
 
             <Row data-guide="attendance-metrics" gutter={[16, 16]}>
                 <Col xs={24} sm={12} md={6}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<TeamOutlined />}
-                        iconBg="rgba(22,119,255,.12)"
+                        tone='info'
                         title="Team Members"
                         value={loadingCurrent ? '...' : metrics.teamMembers}
                         subtitle="In your attendance scope"
@@ -2122,11 +2119,11 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
                 </Col>
 
                 <Col xs={24} sm={12} md={6}>
-                    <MotionCard.Metric
+                    <MetricTile
                         clickable
                         onClick={showTodayCheckedIn}
                         icon={<CheckCircleOutlined />}
-                        iconBg="rgba(82,196,26,.12)"
+                        tone='success'
                         title="Checked In Today"
                         value={loadingCurrent ? '...' : metrics.checkedInToday}
                         subtitle={`${notCheckedInToday.length} with no clock-in`}
@@ -2134,11 +2131,11 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
                 </Col>
 
                 <Col xs={24} sm={12} md={6}>
-                    <MotionCard.Metric
+                    <MetricTile
                         clickable
                         onClick={showCurrentlyIn}
                         icon={<ClockCircleOutlined />}
-                        iconBg="rgba(22,119,255,.12)"
+                        tone='info'
                         title="Currently In"
                         value={loadingCurrent ? '...' : metrics.currentlyIn}
                         subtitle="Click to show current team"
@@ -2147,11 +2144,11 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
 
                 <Col xs={24} sm={12} md={6}>
                     <div data-guide="needs-attention-metric">
-                        <MotionCard.Metric
+                        <MetricTile
                             clickable
                             onClick={() => setAttentionOpen(true)}
                             icon={<ExclamationCircleOutlined />}
-                            iconBg="rgba(250,173,20,.12)"
+                            tone='warning'
                             title="Needs Attention"
                             value={loadingCurrent ? '...' : metrics.needsAttention}
                             subtitle={
@@ -2262,28 +2259,28 @@ const EmployeeAttendanceAnalytics: React.FC<Props> = ({
                                 </Col>
                                 <Col xs={24} md={8}>
                                     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<FieldTimeOutlined />}
-                                            iconBg="rgba(22,119,255,.12)"
+                                            tone='info'
                                             title="Avg hours / day"
                                             value={`${avgHoursPerPresentDay.toFixed(1)}h`}
                                         />
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<ExclamationCircleOutlined />}
-                                            iconBg="rgba(255,77,79,.12)"
+                                            tone='danger'
                                             title="Late arrivals"
                                             value={lateArrivalsCount}
                                         />
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<CalendarOutlined />}
-                                            iconBg="rgba(250,173,20,.12)"
+                                            tone='warning'
                                             title="Leave days"
                                             value={leaveDaysInPeriod}
                                         />
                                         {isProjectAdmin ? (
-                                            <MotionCard.Metric
+                                            <MetricTile
                                                 icon={<HomeOutlined />}
-                                                iconBg="rgba(114,46,209,.12)"
+                                                tone='info'
                                                 title="Center rate"
                                                 value={`${attendanceSummary.centerRate}%`}
                                             />

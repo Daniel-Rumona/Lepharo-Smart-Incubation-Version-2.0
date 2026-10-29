@@ -577,6 +577,44 @@ def get_monthly_participants_serviced():
 
 
 # -------------------------
+# Intervention impact
+# -------------------------
+
+_IMPACT_FIELDS = (
+    "interventionTitle", "programId", "status", "liftPercent", "rangeLowPercent", "rangeHighPercent",
+    "treatedChangePercent", "comparisonChangePercent", "treatedCount", "comparisonCount",
+    "overlapShare", "byOutcome", "period", "demo", "headline",
+)
+
+
+def _impact_rows(query) -> dict:
+    """Monthly results from functions/src/interventionImpact.ts, best first. Lift is in
+    percentage points of revenue growth against similar SMEs; it shows a link, not cause."""
+    rows = []
+    for snap in query.stream():
+        data = snap.to_dict() or {}
+        rows.append({field: data.get(field) for field in _IMPACT_FIELDS})
+    order = {"reportable": 0, "early": 1, "insufficient": 2}
+    rows.sort(key=lambda row: (order.get(row.get("status"), 3), -(row.get("liftPercent") or 0)))
+    return {
+        "results": rows,
+        "note": (
+            "Only 'reportable' results (10+ SMEs each side) may be quoted, using their 'headline'. "
+            "'early' results are signals for staff only. Say 'linked to', never 'caused'. "
+            "If 'demo' is true the figures come from seeded test SMEs: say so and never present them as real."
+        ),
+    }
+
+
+def get_intervention_impact_by_program(program_id: str):
+    return _impact_rows(db.collection("interventionImpact").where("programId", "==", program_id))
+
+
+def get_intervention_impact():
+    return _impact_rows(db.collection("interventionImpact"))
+
+
+# -------------------------
 # Diagnostic Plans
 # -------------------------
 
@@ -706,61 +744,88 @@ def _slugify(value: str) -> str:
     return text.strip("-")
 
 
-def _requirement_key(entry: dict) -> str:
-    kind = str(entry.get("type") or entry.get("kind") or "upload")
-    base = (
-        entry.get("agreementId") or entry.get("id") or entry.get("title")
-        if kind == "agreement"
-        else entry.get("presetId") or entry.get("id") or entry.get("title")
-    )
-    return f"{kind}:{_slugify(str(base or ''))}"
+def _program_requirement_rows(program_id) -> list:
+    """
+    The programme's master requirement list, as the app's compliance resolver
+    reads it: programs/{id}.programRequirements, or for older programmes the
+    requiredDocs mirror.
+    """
+    program_ref = db.collection("programs").document(str(program_id))
+    program_snapshot = program_ref.get()
+    program = (program_snapshot.to_dict() or {}) if program_snapshot.exists else {}
+    rows = program.get("programRequirements")
+    if isinstance(rows, list) and rows:
+        return [row for row in rows if isinstance(row, dict)]
 
-
-def _document_key(document: dict) -> str:
-    kind = str(document.get("kind") or "upload")
-    base = (
-        document.get("agreementId") or document.get("documentName")
-        if kind == "agreement"
-        else document.get("slug")
-        or document.get("presetId")
-        or document.get("documentName")
-        # The incubatee self-service upload path
-        # (src/routes/incubatee/documents/compliance/index.tsx) stores a plain
-        # `type` field instead of slug/presetId/documentName — fall back to it.
-        or document.get("type")
-    )
-    return f"{kind}:{_slugify(str(base or ''))}"
+    legacy = []
+    for snapshot in program_ref.collection("requiredDocs").stream():
+        row = snapshot.to_dict() or {}
+        expiry_rule = row.get("expiryRule") or None
+        legacy.append(
+            {
+                "key": snapshot.id,
+                "title": row.get("title") or snapshot.id,
+                "kind": "agreement" if row.get("type") == "agreement" else "upload",
+                "hasExpiry": bool(expiry_rule),
+                "expiryMonths": (expiry_rule or {}).get("months"),
+            }
+        )
+    return legacy
 
 
 def find_required_document(program_id, department_id, document: dict):
     """
-    Mirrors keyForReq()/keyForDoc() matching in
-    src/routes/shared/compliance/index.tsx: finds which deptRequirements entry
-    (programs/{programId}/deptRequirements/{departmentId}.requiredDocuments)
-    an uploaded compliance document is meant to satisfy, so we know its
-    expected title/expiry rule.
+    Finds which programme requirement an uploaded document is meant to satisfy,
+    so we know its expected title and expiry rule. The programme list is the
+    master list (a department's deptRequirements only selects from it), so the
+    department is not consulted. Keys mirror normalizeComplianceRequirement /
+    complianceDocumentKey in src/services/complianceResolver.ts, with a title
+    fallback for older uploads saved with only a title.
     """
-    if not program_id or not department_id:
+    if not program_id:
         return None
 
-    snapshot = (
-        db.collection("programs")
-        .document(str(program_id))
-        .collection("deptRequirements")
-        .document(str(department_id))
-        .get()
+    document_key = _slugify(
+        str(
+            document.get("presetId")
+            or document.get("templateId")
+            or document.get("type")
+            or document.get("title")
+            or document.get("documentName")
+            or ""
+        )
     )
-    if not snapshot.exists:
-        return None
+    document_title = _slugify(
+        str(document.get("type") or document.get("documentName") or document.get("title") or "")
+    )
 
-    required_documents = (snapshot.to_dict() or {}).get("requiredDocuments")
-    if not isinstance(required_documents, list):
-        return None
-
-    target_key = _document_key(document)
-    for entry in required_documents:
-        if isinstance(entry, dict) and _requirement_key(entry) == target_key:
-            return entry
+    for entry in _program_requirement_rows(program_id):
+        kind = str(entry.get("kind") or entry.get("type") or "upload").lower()
+        if kind == "agreement" or entry.get("agreementId"):
+            continue
+        requirement_key = _slugify(
+            str(
+                entry.get("presetId")
+                or entry.get("key")
+                or entry.get("preset")
+                or entry.get("id")
+                or entry.get("title")
+                or ""
+            )
+        )
+        title = _slugify(str(entry.get("title") or ""))
+        if (requirement_key and requirement_key == document_key) or (title and title == document_title):
+            expiry_rule = entry.get("expiryRule") or None
+            has_expiry = bool(entry.get("hasExpiry") or expiry_rule)
+            return {
+                **entry,
+                "hasExpiry": has_expiry,
+                "expiryMonths": (
+                    entry.get("expiryMonths") or (expiry_rule or {}).get("months")
+                    if has_expiry
+                    else None
+                ),
+            }
     return None
 
 
@@ -777,20 +842,20 @@ def update_compliance_document_status(
         .collection("complianceDocuments")
         .document(document_id)
     )
-    snapshot = doc_ref.get()
-    existing = (snapshot.to_dict() or {}) if snapshot.exists else {}
-    history = existing.get("statusHistory")
-    history = list(history) if isinstance(history, list) else []
-    history.append(
+    # ArrayUnion appends server-side, so a staff review written while the AI
+    # check was running is not overwritten by a stale copy of the history.
+    entry = {
+        "status": status,
+        "by": reviewed_by,
+        "atISO": datetime.now(timezone.utc).isoformat(),
+        "note": note,
+    }
+    doc_ref.set(
         {
             "status": status,
-            "by": reviewed_by,
-            "atISO": datetime.now(timezone.utc).isoformat(),
-            "note": note,
-        }
-    )
-    doc_ref.set(
-        {"status": status, "statusHistory": history, "aiVerificationNote": note},
+            "statusHistory": firestore.ArrayUnion([entry]),
+            "aiVerificationNote": note,
+        },
         merge=True,
     )
 
@@ -1209,18 +1274,57 @@ def _resolve_department_name(department_id: str) -> str | None:
 
 def get_kpi_targets_by_department(department_id: str, max_results: int = 200):
     """
-    kpiTargets (src/routes/kpis/index.tsx) are keyed by department NAME, not
-    departmentId like every other *_by_department tool here — resolve the
-    name first so callers keep passing a departmentId consistently. Returns
-    committed targets only: actual performance against them is computed
-    client-side (src/services/kpiCalculationService.ts) from several other
-    collections and isn't reproduced here.
+    Committed kpiTargets for one department, matched on departmentId (the
+    `department` field is only a display copy of the name). Actual performance
+    against them is computed client-side (src/services/kpiCalculationService.ts)
+    from several other collections and isn't reproduced here.
     """
-    department_name = _resolve_department_name(department_id)
-    if not department_name:
+    if not department_id:
         return []
+    return query_collection("kpiTargets", "departmentId", department_id, max_results)
 
-    return query_collection("kpiTargets", "department", department_name, max_results)
+
+# -------------------------
+# Department roles
+# -------------------------
+# Mirror of src/services/departmentRoleLogic.ts. Departments are identified only
+# by doc id; which department is ROM, M&E, HR, ... comes from
+# systemSettings/departmentRoles = { roleKey: departmentId }. Never match names.
+
+DEPARTMENT_ROLE_KEYS = (
+    "rom", "monitoring", "hr", "inhouseFinance", "financialCompliance", "hse",
+    "legal", "training", "nvc", "qms", "pds", "wellness", "marketing", "marketLinkages", "stakeholder",
+)
+
+
+def get_department_roles() -> dict:
+    try:
+        data = db.collection("systemSettings").document("departmentRoles").get().to_dict() or {}
+    except Exception:
+        return {}
+    return {key: str(data[key]).strip() for key in DEPARTMENT_ROLE_KEYS if str(data.get(key) or "").strip()}
+
+
+def department_lineage(department_id: str, departments: list) -> list:
+    by_id = {d.get("id"): d for d in departments}
+    lineage, current = [], str(department_id or "").strip()
+    while current and current not in lineage:
+        lineage.append(current)
+        parent = by_id.get(current) or {}
+        current = str(parent.get("parentDepartmentId") or parent.get("parentDeptId") or "").strip()
+    return lineage
+
+
+def get_department_role(department_id: str, roles: dict, departments: list) -> str | None:
+    role_by_department = {}
+    for key in DEPARTMENT_ROLE_KEYS:
+        dept_id = roles.get(key)
+        if dept_id and dept_id not in role_by_department:
+            role_by_department[dept_id] = key
+    for dept_id in department_lineage(department_id, departments):
+        if dept_id in role_by_department:
+            return role_by_department[dept_id]
+    return None
 
 
 # -------------------------
@@ -1232,6 +1336,18 @@ def get_kpi_targets_by_department(department_id: str, max_results: int = 200):
 # under src/routes/chat/) only ever reads its own rows straight from
 # Firestore — see firestore.rules — and never writes here; only this admin
 # SDK write path does, from app.py's /chat handler.
+
+def chat_session_usable_by(session_id: str, uid: str) -> bool:
+    """A client-supplied session id is only usable if it is new or already the caller's."""
+    if not session_id or not uid:
+        return False
+    try:
+        snapshot = db.collection("chatSessions").document(session_id).get()
+    except Exception as error:
+        print("chat_session_usable_by failed:", type(error).__name__, str(error), flush=True)
+        return False
+    return not snapshot.exists or (snapshot.to_dict() or {}).get("userId") == uid
+
 
 def save_chat_turn(
     session_id: str,
@@ -1247,7 +1363,12 @@ def save_chat_turn(
 
     try:
         session_ref = db.collection("chatSessions").document(session_id)
-        if not session_ref.get().exists:
+        existing = session_ref.get()
+        if existing.exists and (existing.to_dict() or {}).get("userId") != uid:
+            # Never append to someone else's conversation, whatever id the client sent.
+            print("save_chat_turn refused: session belongs to another user", flush=True)
+            return
+        if not existing.exists:
             session_ref.set({
                 "userId": uid,
                 "dateKey": date_key,

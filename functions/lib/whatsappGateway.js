@@ -5,6 +5,7 @@ const https_1 = require("firebase-functions/v2/https");
 const firebase_1 = require("./firebase");
 const whatsappCommon_1 = require("./whatsappCommon");
 const whatsappStaff_1 = require("./whatsappStaff");
+const whatsappCheckBack_1 = require("./whatsappCheckBack");
 const json = (res, status, body) => {
     res.status(status).json(body);
 };
@@ -160,6 +161,18 @@ exports.lphWhatsAppGateway = (0, https_1.onRequest)({
     }
     try {
         const identity = await resolveParticipantByPhone(phoneNumber);
+        // A tap on a check-back button. Works for a facilitator or an SME, so it is
+        // handled before the two paths split; the rules live in whatsappCheckBackLogic.
+        if (action === "record_outcome_follow_up") {
+            const result = await (0, whatsappCheckBack_1.recordCheckBackTap)({
+                phoneNumber,
+                followUpId: (0, whatsappCommon_1.clean)(payload.followUpId),
+                code: (0, whatsappCommon_1.clean)(payload.answerCode),
+                smeParticipantIds: identity?.participantIds ?? [],
+            });
+            json(res, 200, { ok: true, matched: true, recorded: result.recorded, reply: result.reply });
+            return;
+        }
         if (!identity) {
             // Not an SME: this may be a Lepharo staff member with the number on their user profile.
             const staff = await (0, whatsappStaff_1.resolveStaffByPhone)(phoneNumber);

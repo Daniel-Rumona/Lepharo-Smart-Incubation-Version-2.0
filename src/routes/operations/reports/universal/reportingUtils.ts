@@ -3,6 +3,7 @@ import type Highcharts from "highcharts";
 import dayjs, { type Dayjs } from "dayjs";
 
 import type { AssignedIntervention } from "./reportingTypes";
+import type { ChartDataLabels } from '@/lib/highchartsTypes'
 
 export const cardStyle: CSSProperties = {
     boxShadow: "0 12px 32px rgba(0,0,0,0.12)",
@@ -20,17 +21,17 @@ export const REPORT_COLORS = {
     completed: "#16a34a",
 };
 
-export const METRIC_ICON_COLORS = {
-    reach: { bg: "#eff6ff", color: "#60a5fa" },
-    completion: { bg: "#ecfdf5", color: "#34d399" },
-    turnaround: { bg: "#fff7ed", color: "#fb923c" },
-    feedback: { bg: "#f5f3ff", color: "#a78bfa" },
-    overdue: { bg: "#fef2f2", color: "#f87171" },
-};
+export const METRIC_TONES = {
+    reach: "accent",
+    completion: "success",
+    turnaround: "warning",
+    feedback: "info",
+    overdue: "danger",
+} as const;
 
 export const visibleDataLabels = (
     format?: string
-): Highcharts.DataLabelsOptions => ({
+): ChartDataLabels => ({
     enabled: true,
     allowOverlap: true,
     crop: false,

@@ -1,10 +1,11 @@
 import React, { useCallback } from 'react'
 
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import InterventionsDashboard from '../shared/InterventionsDashboard'
 
 /**
- * Legal Advisory Services dashboard.
+ * Legal department dashboard.
  *
  * The metrics row, workflow breakdown and appointments card are the same on
  * every department dashboard, so they live in InterventionsDashboard. Legal has
@@ -22,35 +23,21 @@ import InterventionsDashboard from '../shared/InterventionsDashboard'
 const LegalDashboard: React.FC = () => {
     const { user } = useFullIdentity()
 
+    const { nameOf } = useDepartmentRoles()
     const departmentId = (user as any)?.departmentId
-    // The original defaulted to this when a user carried no department, and
-    // some legal records are only matchable by that literal name.
-    const departmentName = String(
-        (user as any)?.departmentName || 'Legal Advisory Services'
-    )
-        .toLowerCase()
-        .trim()
 
     /**
      * Memoised because InterventionsDashboard refetches whenever this identity
      * changes — an inline arrow would make that every render.
      */
     const matchesDepartment = useCallback(
-        (entry: Record<string, any>) => {
-            if (departmentId && entry?.departmentId === departmentId) return true
-
-            return (
-                String(entry?.areaOfSupport || entry?.area || entry?.departmentName || '')
-                    .toLowerCase()
-                    .trim() === departmentName
-            )
-        },
-        [departmentId, departmentName]
+        (entry: Record<string, any>) => !!departmentId && entry?.departmentId === departmentId,
+        [departmentId]
     )
 
     return (
         <InterventionsDashboard
-            title="Legal Advisory Services"
+            title={nameOf(departmentId, 'Legal')}
             matchesDepartment={matchesDepartment}
         />
     )

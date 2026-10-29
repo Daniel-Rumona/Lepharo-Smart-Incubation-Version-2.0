@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
     Table,
     Button,
@@ -23,6 +23,15 @@ import {
     Card,
     Empty,
     Spin,
+    Descriptions,
+    Grid,
+    List,
+    Avatar,
+    Tooltip,
+    Pagination,
+    App,
+    Drawer,
+    Dropdown,
     Segmented
 } from 'antd'
 import {
@@ -31,34 +40,49 @@ import {
     DollarOutlined,
     TeamOutlined,
     PlusOutlined,
+    SearchOutlined,
+    ApartmentOutlined,
+    FormOutlined,
+    ImportOutlined,
+    PaperClipOutlined,
+    QuestionCircleOutlined,
+    MoreOutlined,
     EditOutlined,
     DeleteOutlined,
     PoweroffOutlined, PictureOutlined,
     DownloadOutlined,
     FileTextOutlined,
     UploadOutlined,
-    RightOutlined
+    RightOutlined,
+    PauseCircleOutlined,
+    FlagOutlined,
+    ClockCircleOutlined,
+    SendOutlined,
+    EyeOutlined,
+    SyncOutlined,
+    CloseCircleOutlined
 } from '@ant-design/icons'
-import CountUp from 'react-countup'
 import {
     collection,
     getDocs,
-    addDoc,
     doc,
     updateDoc,
     deleteDoc,
     query,
     where,
+    limit,
     Timestamp,
     writeBatch,
-    orderBy,
-    serverTimestamp
+    orderBy
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
 import { Helmet } from 'react-helmet'
 import { motion, AnimatePresence } from 'framer-motion'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
+import '@/components/workspace'
+import { StatusPill } from '@/routes/operations/movs/movParts'
+import '@/routes/operations/movs/movs.css'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import {
@@ -69,7 +93,8 @@ import {
 import type { UploadProps } from 'antd'
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import {
-    DEFAULT_PROGRAM_LIMIT
+    DEFAULT_PROGRAM_LIMIT,
+    getProgramLimit
 } from '@/services/systemSettingsService'
 import {
     AgreementTemplate,
@@ -77,109 +102,61 @@ import {
     listAgreementTemplates
 } from '@/services/complianceResolver'
 import { departmentService } from '@/services/departmentService'
+import { SetupSegmented } from '@/components/shared/SetupSegmented'
+import { ChoiceCards } from '@/components/queries/ChoiceCards'
+import './programs.css'
 
 const { Text } = Typography
 
-type ProposalStatus =
-    | 'Draft'
-    | 'Submitted'
-    | 'Under Review'
-    | 'Approved'
-    | 'In Progress'
-    | 'Completed'
-    | 'Rejected'
+const PROGRAM_STATUSES = ['Active', 'Upcoming', 'Completed', 'Inactive']
 
-type ProjectProposal = {
-    id: string
+/**
+ * How SMEs get into a programme:
+ * - applications: they apply, then participants are selected;
+ * - direct: a new programme whose SMEs are already chosen, added as participants (no applications);
+ * - migrated: a programme that ran before the system; its participants are brought in mid-way.
+ */
+type ProgramIntakeMode = 'applications' | 'direct' | 'migrated'
 
-    branchId?: string | null
-    assignedBranch?: { id: string; name: string } | null
-
-    title: string
-    about: string
-    funder: string
-
-    proposedDate: any // Timestamp
-    startDate?: any | null // Timestamp | null
-    cohortYear?: number | string
-
-    status: ProposalStatus
-    rejectionReason?: string | null
-
-    proposalDocUrl?: string | null
-    proposalDocPath?: string | null
-
-    createdAt?: any
-    updatedAt?: any
+const INTAKE_LABELS: Record<ProgramIntakeMode, string> = {
+    applications: 'Applying',
+    direct: 'Added directly (new programme)',
+    migrated: 'Moved from before the system'
 }
 
-type ProposalUpdate = {
-    id: string
-    note: string
-    status?: ProposalStatus | null
-    docUrl?: string | null
-    docPath?: string | null
-    createdAt?: any
-    createdBy?: { email?: string | null; name?: string | null } | null
-}
-
-const PROPOSAL_STATUSES: ProposalStatus[] = [
-    'Draft',
-    'Submitted',
-    'Under Review',
-    'Approved',
-    'In Progress',
-    'Completed',
-    'Rejected'
+/** Upcoming before the start date, Completed after the end date, otherwise Active. */
+const INTAKE_OPTIONS = (): { value: ProgramIntakeMode; label: string; detail: string; icon: React.ReactNode }[] => [
+    { value: 'applications', label: 'They apply', detail: 'Open applications, then select participants', icon: <FormOutlined /> },
+    { value: 'direct', label: 'We add the SMEs', detail: 'A new programme; the SMEs are already chosen, so no applications', icon: <TeamOutlined /> },
+    { value: 'migrated', label: 'Moving an existing programme', detail: 'It ran before the system; bring its participants in where they are', icon: <ImportOutlined /> }
 ]
 
-const statusTag = (s: ProposalStatus) => {
-    const map: Record<ProposalStatus, string> = {
-        Draft: 'default',
-        Submitted: 'blue',
-        'Under Review': 'gold',
-        Approved: 'green',
-        'In Progress': 'processing',
-        Completed: 'cyan',
-        Rejected: 'red'
-    }
-    return <Tag color={map[s] || 'default'}>{s}</Tag>
+const programStatusForDates = (start: any, end: any): 'Upcoming' | 'Active' | 'Completed' => {
+    const today = dayjs().startOf('day')
+    const toDay = (v: any) => (v ? dayjs(v?.toDate ? v.toDate() : v).startOf('day') : null)
+    const s = toDay(start)
+    const e = toDay(end)
+    if (s && today.isBefore(s)) return 'Upcoming'
+    if (e && today.isAfter(e)) return 'Completed'
+    return 'Active'
 }
 
-const safeFileName = (name: string) => name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-
-const uploadProposalFile = async (
-    proposalId: string,
-    file: File,
-    folder: 'proposal' | 'updates'
-) => {
-    const storage = getStorage()
-    const path = `projectProposals/${proposalId}/${folder}/${Date.now()}_${safeFileName(
-        file.name
-    )}`
-    const storageRef = ref(storage, path)
-    const snap = await uploadBytes(storageRef, file, {
-        contentType: file.type || 'application/octet-stream'
-    })
-    const url = await getDownloadURL(snap.ref)
-    return { url, path }
+/**
+ * Some programmes were saved with a lowercase status ("active"). Match it to the
+ * canonical one so filters, counts and pills treat them the same; the next save
+ * writes the canonical value back.
+ */
+const normalizeProgramStatus = (value: any): string => {
+    const raw = String(value || '').trim()
+    if (!raw) return 'Active'
+    return PROGRAM_STATUSES.find(status => status.toLowerCase() === raw.toLowerCase()) || raw
 }
 
-const tryDeleteStoragePath = async (path?: string | null) => {
-    if (!path) return
-    try {
-        const storage = getStorage()
-        await deleteObject(ref(storage, path))
-    } catch {
-        // ignore (file might not exist / permissions)
-    }
-}
-
-const parseAnyToDayjs = (val: any) => {
-    if (!val) return null
-    if (typeof val === 'string') return dayjs(val)
-    if (val?.toDate) return dayjs(val.toDate())
-    return null
+/** A type from the list, matched case-insensitively; otherwise shown with a capital letter. */
+const displayProgramType = (value: any): string => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    return PROGRAM_TYPES.find(type => type.toLowerCase() === raw.toLowerCase()) || raw.charAt(0).toUpperCase() + raw.slice(1)
 }
 
 const PROGRAM_TYPES = [
@@ -237,6 +214,7 @@ type RequiredDocTemplate = {
     departmentOwner: string
     mandatory: boolean
     expiryRule?: { months?: number | null } | null
+    agreementId?: string
 }
 
 const inferDepartmentOwner = (title: string): string => {
@@ -248,32 +226,36 @@ const inferDepartmentOwner = (title: string): string => {
     return 'Operations'
 }
 
+const requirementKey = (r: RequiredDoc) => r.key || toKeyBase(r.title || r.id || '')
+
 const toTemplate = (r: RequiredDoc): RequiredDocTemplate => ({
-    id: r.key,
+    id: requirementKey(r),
     title: r.title,
     type: (r.kind ?? 'upload') === 'agreement' ? 'agreement' : 'compliance',
     isOnboarding: true,
     departmentOwner: inferDepartmentOwner(r.title),
     mandatory: !!r.requiredAtApplication,
-    expiryRule: r.hasExpiry ? { months: r.expiryMonths ?? null } : null
+    expiryRule: r.hasExpiry ? { months: r.expiryMonths ?? null } : null,
+    ...((r.kind ?? 'upload') === 'agreement' && r.agreementId
+        ? { agreementId: r.agreementId }
+        : {})
 })
 
-const upsertProgramRequiredDocs = async (
+// Adds the rewrite of the requiredDocs mirror to `batch`, so it commits in the
+// same write as programs/{id}.programRequirements and the two cannot diverge.
+const queueProgramRequiredDocs = async (
+    batch: ReturnType<typeof writeBatch>,
     programId: string,
     docs: RequiredDoc[]
 ) => {
-    const batch = writeBatch(db)
     const colRef = collection(db, 'programs', programId, 'requiredDocs')
 
     const existing = await getDocs(colRef)
     existing.forEach(d => batch.delete(d.ref))
 
-    const templates = docs.map(toTemplate)
-    templates.forEach(t => {
-        const tRef = doc(db, 'programs', programId, 'requiredDocs', t.id)
-        batch.set(tRef, t)
+    docs.map(toTemplate).forEach(t => {
+        batch.set(doc(db, 'programs', programId, 'requiredDocs', t.id), t)
     })
-    await batch.commit()
 }
 
 const fetchProgramRequiredDocs = async (
@@ -294,7 +276,7 @@ const fetchProgramRequiredDocs = async (
             expiryMonths: t.expiryRule?.months ?? null,
             requiredAtApplication: !!t.mandatory,
             kind: t.type === 'agreement' ? 'agreement' : 'upload',
-            agreementId: t.type === 'agreement' ? d.id.toLowerCase() : undefined
+            agreementId: t.type === 'agreement' ? t.agreementId || d.id.toLowerCase() : undefined
         } as RequiredDoc
     })
 }
@@ -314,7 +296,6 @@ type RequiredDoc = {
 }
 
 // generic helpers
-const formatter = (value: number) => <CountUp end={value} separator=',' />
 
 const isPlainObject = (v: any) =>
     Object.prototype.toString.call(v) === '[object Object]'
@@ -453,87 +434,117 @@ const upsertHubQuestion = (
    QUESTIONS UI
 ────────────────────────────────────────────────────────────────── */
 
-const QuestionTable = ({ questions, onAdd, onEdit, onDelete }) => (
-    <>
-        <Button type='primary' style={{ marginBottom: 16 }} onClick={onAdd}>
-            Add New Question
-        </Button>
-        <Table
-            dataSource={questions}
-            rowKey='id'
-            pagination={false}
-            bordered
-            columns={[
-                {
-                    title: 'Question',
-                    dataIndex: 'label',
-                    render: (t: string, record: any) => (
-                        <span>
-                            <b>{t}</b>{' '}
-                            {record.systemKey === 'nearestHub' && (
-                                <Tag color='geekblue'>Auto (Nearest Hub)</Tag>
-                            )}
-                        </span>
-                    )
-                },
-                {
-                    title: 'Type',
-                    dataIndex: 'type',
-                    render: (type: string) => (
-                        <Tag color={type === 'dropdown' ? 'blue' : 'default'}>
-                            {type?.charAt(0).toUpperCase() + type?.slice(1)}
-                        </Tag>
-                    )
-                },
-                {
-                    title: 'Options',
-                    dataIndex: 'options',
-                    render: (opts: any, record: any) => {
-                        const arr = Array.isArray(opts)
-                            ? opts
-                            : typeof opts === 'string'
-                                ? opts
-                                    .split(',')
-                                    .map((o: string) => o.trim())
-                                    .filter(Boolean)
-                                : []
-                        return arr.length ? (
-                            <Space size='small' wrap>
-                                {arr.map((o: string) => (
-                                    <Tag key={o} color='processing'>
-                                        {o}
+const MAX_VISIBLE_OPTIONS = 6
+
+const normalizeQuestionOptions = (opts: any): string[] =>
+    Array.isArray(opts)
+        ? opts
+        : typeof opts === 'string'
+            ? opts
+                .split(',')
+                .map((o: string) => o.trim())
+                .filter(Boolean)
+            : []
+
+const QuestionTable: React.FC<{
+    questions: any[]
+    onAdd: () => void
+    onEdit: (q: any) => void
+    onDelete: (id: string) => void
+}> = ({ questions, onAdd, onEdit, onDelete }) => (
+    <div>
+        <div
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 16
+            }}
+        >
+            <Space size={8}>
+                <Text strong>Onboarding questions</Text>
+                <Tag style={{ marginInlineEnd: 0 }}>{questions.length}</Tag>
+            </Space>
+            <Button type='primary' shape='round' icon={<PlusOutlined />} onClick={onAdd}>
+                Add Question
+            </Button>
+        </div>
+
+        {questions.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No onboarding questions yet' />
+        ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {questions.map(record => {
+                    const options = normalizeQuestionOptions(record.options)
+                    const visible = options.slice(0, MAX_VISIBLE_OPTIONS)
+                    const hidden = options.slice(MAX_VISIBLE_OPTIONS)
+                    const isSystem = record.systemKey === 'nearestHub'
+
+                    return (
+                        <div
+                            key={record.id}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: 12,
+                                padding: '14px 16px',
+                                borderRadius: 12,
+                                border: '1px solid rgba(128,128,128,.25)'
+                            }}
+                        >
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                                    <Text strong>{record.label}</Text>
+                                    <Tag color={record.type === 'dropdown' ? 'blue' : 'default'} style={{ margin: 0 }}>
+                                        {record.type === 'dropdown' ? 'Dropdown' : 'Text'}
                                     </Tag>
-                                ))}
-                                {record.type === 'dropdown' && record.allowMultiple && (
-                                    <Tag color='purple'>Multi-select</Tag>
+                                    {record.type === 'dropdown' && record.allowMultiple && (
+                                        <Tag color='purple' style={{ margin: 0 }}>
+                                            Multi-select
+                                        </Tag>
+                                    )}
+                                    {isSystem && (
+                                        <Tag color='geekblue' style={{ margin: 0 }}>
+                                            Auto (Nearest Hub)
+                                        </Tag>
+                                    )}
+                                </div>
+
+                                {options.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                                        {visible.map(o => (
+                                            <Tag key={o} color='processing' style={{ margin: 0 }}>
+                                                {o}
+                                            </Tag>
+                                        ))}
+                                        {hidden.length > 0 && (
+                                            <Tooltip title={hidden.join(', ')}>
+                                                <Tag style={{ margin: 0, cursor: 'default' }}>
+                                                    +{hidden.length} more
+                                                </Tag>
+                                            </Tooltip>
+                                        )}
+                                    </div>
                                 )}
+                            </div>
+
+                            <Space size={8} style={{ flexShrink: 0 }}>
+                                <Button shape='circle' icon={<EditOutlined />} onClick={() => onEdit(record)} />
+                                <Button
+                                    shape='circle'
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    disabled={isSystem}
+                                    onClick={() => onDelete(record.id)}
+                                />
                             </Space>
-                        ) : (
-                            <span style={{ color: '#aaa' }}>—</span>
-                        )
-                    }
-                },
-                {
-                    title: 'Actions',
-                    render: (_: any, record: any) => (
-                        <Space>
-                            <Button size='small' onClick={() => onEdit(record)}>
-                                Edit
-                            </Button>
-                            <Button
-                                size='small'
-                                danger
-                                onClick={() => onDelete(record.id)}
-                                disabled={record.systemKey === 'nearestHub'}
-                            >
-                                Delete
-                            </Button>
-                        </Space>
+                        </div>
                     )
-                }
-            ]}
-        />
-    </>
+                })}
+            </div>
+        )}
+    </div>
 )
 
 const QuestionModal = ({ visible, initialValues, onSave, onCancel }) => {
@@ -629,6 +640,8 @@ const QuestionModal = ({ visible, initialValues, onSave, onCancel }) => {
    REQUIRED DOCUMENTS STEP
 ────────────────────────────────────────────────────────────────── */
 
+const REQUIRED_DOCS_PAGE_SIZE = 5
+
 const RequiredDocumentsStep: React.FC<{
     value: RequiredDoc[]
     onChange: (v: RequiredDoc[]) => void
@@ -637,21 +650,35 @@ const RequiredDocumentsStep: React.FC<{
     backLabel?: string
     nextLabel?: string
     nextLoading?: boolean
-}> = ({ value = [], onChange, onBack, onNext, backLabel = 'Back', nextLabel = 'Next', nextLoading = false }) => {
-    const [rows, setRows] = useState<RequiredDoc[]>(value)
+    nextVisible?: boolean
+}> = ({ value = [], onChange, onBack, onNext, backLabel = 'Back', nextLabel = 'Next', nextLoading = false, nextVisible = true }) => {
+    // Normalised up front (not only in the effect below) so the first paint
+    // already shows final values instead of correcting itself a frame later.
+    const normalizeRows = (docs: RequiredDoc[]) =>
+        (docs || []).map(r => ({
+            ...r,
+            isOnboarding: true as const,
+            kind: r.kind ?? 'upload',
+            // A missing flag means optional, as the compliance resolver reads it.
+            // New rows still default to required in openAdd.
+            requiredAtApplication: r.requiredAtApplication ?? false
+        }))
+    const [rows, setRows] = useState<RequiredDoc[]>(() => normalizeRows(value))
+    const [page, setPage] = useState(1)
     const [docModalOpen, setDocModalOpen] = useState(false)
     const [editing, setEditing] = useState<RequiredDoc | null>(null)
     const [agreementTemplates, setAgreementTemplates] = useState<AgreementTemplate[]>([])
     const [form] = Form.useForm()
 
+    const pageCount = Math.max(1, Math.ceil(rows.length / REQUIRED_DOCS_PAGE_SIZE))
+    const currentPage = Math.min(page, pageCount)
+    const pagedRows = rows.slice(
+        (currentPage - 1) * REQUIRED_DOCS_PAGE_SIZE,
+        currentPage * REQUIRED_DOCS_PAGE_SIZE
+    )
+
     useEffect(() => {
-        const normalized = (value || []).map(r => ({
-            ...r,
-            isOnboarding: true as const,
-            kind: r.kind ?? 'upload',
-            requiredAtApplication: r.requiredAtApplication ?? true
-        }))
-        setRows(normalized)
+        setRows(normalizeRows(value))
     }, [value, onChange])
 
     useEffect(() => {
@@ -734,6 +761,7 @@ const RequiredDocumentsStep: React.FC<{
 
         const next = [...rows, item]
         setRows(next)
+        setPage(Math.ceil(next.length / REQUIRED_DOCS_PAGE_SIZE))
         onChange(next)
         setDocModalOpen(false)
     }
@@ -746,69 +774,109 @@ const RequiredDocumentsStep: React.FC<{
 
     return (
         <>
-            <div style={{ marginBottom: 12 }}>
-                <Button data-guide='program-add-required-document' type='primary' onClick={openAdd}>
-                    Add Required Document
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    marginBottom: 16
+                }}
+            >
+                <Space size={8}>
+                    <Text strong>Required documents</Text>
+                    <Tag style={{ marginInlineEnd: 0 }}>{rows.length}</Tag>
+                </Space>
+                <Button
+                    data-guide='program-add-required-document'
+                    type='primary'
+                    shape='round'
+                    icon={<PlusOutlined />}
+                    onClick={openAdd}
+                >
+                    Add Document
                 </Button>
             </div>
 
             <div data-guide='program-required-documents-table'>
-                <Table
-                    dataSource={rows}
-                    rowKey='id'
-                    pagination={false}
-                    bordered
-                    columns={[
-                        {
-                            title: 'Type',
-                            dataIndex: 'kind',
-                            render: (k: 'upload' | 'agreement' | undefined) => (
-                                <Tag color={k === 'agreement' ? 'purple' : 'blue'}>
-                                    {k === 'agreement' ? 'Agreement' : 'Upload'}
-                                </Tag>
-                            )
-                        },
-                        { title: 'Title', dataIndex: 'title' },
-                        {
-                            title: 'Required at application',
-                            dataIndex: 'requiredAtApplication',
-                            render: (b: boolean) =>
-                                b ? <Tag color='green'>Yes</Tag> : <Tag color='gold'>No</Tag>
-                        },
-                        {
-                            title: 'Expires',
-                            dataIndex: 'hasExpiry',
-                            render: (b: boolean) =>
-                                b ? <Tag color='red'>Yes</Tag> : <Tag>No</Tag>
-                        },
-                        {
-                            title: 'Months',
-                            dataIndex: 'expiryMonths',
-                            render: (m: number | null | undefined) =>
-                                m ?? <span style={{ color: '#999' }}>—</span>
-                        },
-                        {
-                            title: 'Actions',
-                            render: (_: any, r: RequiredDoc) => (
-                                <Space>
-                                    <Button size='small' onClick={() => openEdit(r)}>
-                                        Edit
-                                    </Button>
-                                    <Button size='small' danger onClick={() => remove(r.id)}>
-                                        Delete
-                                    </Button>
+                {rows.length === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No required documents yet' />
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {pagedRows.map(r => (
+                            <div
+                                key={r.id}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: 12,
+                                    padding: '14px 16px',
+                                    borderRadius: 12,
+                                    border: '1px solid rgba(128,128,128,.25)'
+                                }}
+                            >
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <Text strong>{r.title}</Text>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                                        <Tag color={r.kind === 'agreement' ? 'purple' : 'blue'} style={{ margin: 0 }}>
+                                            {r.kind === 'agreement' ? 'Agreement' : 'Upload'}
+                                        </Tag>
+                                        <Tag color={r.requiredAtApplication ? 'green' : 'gold'} style={{ margin: 0 }}>
+                                            {r.requiredAtApplication ? 'Required at application' : 'Optional at application'}
+                                        </Tag>
+                                        {r.hasExpiry && !r.expiryMonths ? (
+                                            <Tooltip title='Edit this document and set how many months it stays valid.'>
+                                                <Tag color='orange' style={{ margin: 0 }}>
+                                                    Expiry period not set
+                                                </Tag>
+                                            </Tooltip>
+                                        ) : r.hasExpiry ? (
+                                            <Tag color='red' style={{ margin: 0 }}>
+                                                Expires every {r.expiryMonths} mo
+                                            </Tag>
+                                        ) : (
+                                            <Tag style={{ margin: 0 }}>No expiry</Tag>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <Space size={8} style={{ flexShrink: 0 }}>
+                                    <Button shape='circle' icon={<EditOutlined />} onClick={() => openEdit(r)} />
+                                    <Popconfirm
+                                        title='Remove this document?'
+                                        description='SMEs will no longer be asked for it. Documents already uploaded are kept but stop counting towards compliance.'
+                                        okText='Remove'
+                                        okButtonProps={{ danger: true }}
+                                        onConfirm={() => remove(r.id)}
+                                    >
+                                        <Button shape='circle' danger icon={<DeleteOutlined />} />
+                                    </Popconfirm>
                                 </Space>
-                            )
-                        }
-                    ]}
-                />
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+                    <Pagination
+                        size='small'
+                        current={currentPage}
+                        pageSize={REQUIRED_DOCS_PAGE_SIZE}
+                        total={rows.length}
+                        onChange={setPage}
+                        showSizeChanger={false}
+                        hideOnSinglePage
+                    />
+                </div>
             </div>
 
             <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                 <Button style={{ flex: 1 }} onClick={onBack}>{backLabel}</Button>
-                <Button style={{ flex: 1 }} type='primary' loading={nextLoading} onClick={onNext}>
-                    {nextLabel}
-                </Button>
+                <FadeInSlot show={nextVisible}>
+                    <Button style={{ flex: 1 }} type='primary' loading={nextLoading} onClick={() => onNext()}>
+                        {nextLabel}
+                    </Button>
+                </FadeInSlot>
             </div>
 
             <Modal
@@ -940,7 +1008,7 @@ const RequiredDocumentsStep: React.FC<{
                                         { required: true, message: 'Set months (e.g., 3, 6, 12)' }
                                     ]}
                                 >
-                                    <InputNumber min={1} style={{ width: '100%' }} />
+                                    <InputNumber min={1} precision={0} style={{ width: '100%' }} />
                                 </Form.Item>
                             ) : null
                         }
@@ -962,10 +1030,16 @@ const EligibilityCriteriaStep = ({
     onNext,
     backLabel = 'Back',
     nextLabel = 'Next',
-    nextLoading = false
+    nextLoading = false,
+    nextVisible = true,
+    onDirty = () => { }
 }) => {
     const [form] = Form.useForm()
-    const [selectedCriteria, setSelectedCriteria] = useState<string[]>([])
+    // Seeded from `value` so the cards render already ticked on the first paint
+    // rather than popping in after the effect below runs.
+    const [selectedCriteria, setSelectedCriteria] = useState<string[]>(() =>
+        Object.keys(value || {})
+    )
 
     useEffect(() => {
         if (value) {
@@ -988,7 +1062,9 @@ const EligibilityCriteriaStep = ({
             }
         })
         onChange(result)
-        onNext()
+        // Hand the fresh result to the caller too -- `eligibility` state in the
+        // parent won't have updated yet when a "save" handler runs right away.
+        onNext(result)
     }
 
     const toggleCriterion = (key: string) => {
@@ -997,6 +1073,7 @@ const EligibilityCriteriaStep = ({
             isSelected ? selectedCriteria.filter(c => c !== key) : [...selectedCriteria, key]
         )
         if (isSelected) form.resetFields([key])
+        onDirty()
     }
 
     return (
@@ -1005,6 +1082,7 @@ const EligibilityCriteriaStep = ({
             form={form}
             initialValues={value}
             style={{ marginTop: 8 }}
+            onValuesChange={() => onDirty()}
         >
             <Form.Item label='Select eligibility criteria for this program'>
                 <div
@@ -1029,8 +1107,8 @@ const EligibilityCriteriaStep = ({
                                     gap: 8,
                                     padding: '8px 12px',
                                     borderRadius: 8,
-                                    border: `1px solid ${isSelected ? '#1677ff' : '#e6e6e6'}`,
-                                    background: isSelected ? 'rgba(22,119,255,.06)' : '#fff',
+                                    border: `1px solid ${isSelected ? 'var(--app-accent)' : 'var(--app-border)'}`,
+                                    background: isSelected ? 'var(--app-accent-wash)' : 'var(--app-surface)',
                                     cursor: 'pointer',
                                     fontSize: 13,
                                     lineHeight: '18px',
@@ -1040,14 +1118,14 @@ const EligibilityCriteriaStep = ({
                             >
                                 <span
                                     style={{
-                                        color: isSelected ? '#1677ff' : 'rgba(0,0,0,.85)',
+                                        color: isSelected ? 'var(--app-accent)' : 'var(--app-text)',
                                         fontWeight: isSelected ? 500 : 400
                                     }}
                                 >
                                     {opt.label}
                                 </span>
                                 <CheckCircleOutlined
-                                    style={{ color: isSelected ? '#1677ff' : '#d9d9d9', fontSize: 14 }}
+                                    style={{ color: isSelected ? 'var(--app-accent)' : 'var(--app-border-strong)', fontSize: 14 }}
                                 />
                             </div>
                         )
@@ -1153,9 +1231,11 @@ const EligibilityCriteriaStep = ({
 
             <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                 <Button style={{ flex: 1 }} onClick={onBack}>{backLabel}</Button>
-                <Button style={{ flex: 1 }} type='primary' loading={nextLoading} onClick={handleNext}>
-                    {nextLabel}
-                </Button>
+                <FadeInSlot show={nextVisible}>
+                    <Button style={{ flex: 1 }} type='primary' loading={nextLoading} onClick={() => handleNext()}>
+                        {nextLabel}
+                    </Button>
+                </FadeInSlot>
             </div>
         </Form>
     )
@@ -1171,6 +1251,25 @@ type ProgramCoverageValue = {
     participatingDepartmentIds: string[]
 }
 
+// Fades a flex child in/out; used for the edit wizard's Save button, which only
+// appears once the user has actually changed something.
+const FadeInSlot: React.FC<{ show: boolean; children: React.ReactNode }> = ({ show, children }) => (
+    <AnimatePresence>
+        {show && (
+            <motion.div
+                key='fade-slot'
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                style={{ flex: 1, display: 'flex' }}
+            >
+                {children}
+            </motion.div>
+        )}
+    </AnimatePresence>
+)
+
 const coverageCardStyle = (isSelected: boolean): React.CSSProperties => ({
     display: 'flex',
     alignItems: 'center',
@@ -1178,8 +1277,8 @@ const coverageCardStyle = (isSelected: boolean): React.CSSProperties => ({
     gap: 8,
     padding: '8px 12px',
     borderRadius: 8,
-    border: `1px solid ${isSelected ? '#1677ff' : '#e6e6e6'}`,
-    background: isSelected ? 'rgba(22,119,255,.06)' : '#fff',
+    border: `1px solid ${isSelected ? 'var(--app-accent)' : 'var(--app-border)'}`,
+    background: isSelected ? 'var(--app-accent-wash)' : 'var(--app-surface)',
     cursor: 'pointer',
     fontSize: 13,
     lineHeight: '18px',
@@ -1200,10 +1299,10 @@ const CoverageCard: React.FC<{
             gridColumn: fullWidth ? '1 / -1' : undefined
         }}
     >
-        <span style={{ color: selected ? '#1677ff' : 'rgba(0,0,0,.85)', fontWeight: selected ? 500 : 400 }}>
+        <span style={{ color: selected ? 'var(--app-accent)' : 'var(--app-text)', fontWeight: selected ? 500 : 400 }}>
             {label}
         </span>
-        <CheckCircleOutlined style={{ color: selected ? '#1677ff' : '#d9d9d9', fontSize: 14 }} />
+        <CheckCircleOutlined style={{ color: selected ? 'var(--app-accent)' : 'var(--app-border-strong)', fontSize: 14 }} />
     </div>
 )
 
@@ -1260,6 +1359,7 @@ const CoverageStep: React.FC<{
     backLabel?: string
     nextLabel?: string
     nextLoading?: boolean
+    nextVisible?: boolean
 }> = ({
     value,
     onChange,
@@ -1270,7 +1370,8 @@ const CoverageStep: React.FC<{
     onNext,
     backLabel = 'Back',
     nextLabel = 'Next',
-    nextLoading = false
+    nextLoading = false,
+    nextVisible = true
 }) => {
         const { isMultiBranch, supportedBranchIds, participatingDepartmentIds } = value
 
@@ -1278,7 +1379,14 @@ const CoverageStep: React.FC<{
             .filter(b => !userBranchId || b.id !== userBranchId)
             .map(b => ({ value: b.id, label: b.name || b.title || 'Branch' }))
 
-        const departmentOptions = departments.map(d => ({ value: d.id, label: d.name }))
+        // Only departments that deliver interventions take part in a programme. One an older
+        // programme already has stays listed (marked) so it can be removed, not just hidden.
+        const departmentOptions = departments
+            .filter(d => d.interventionsDepartment === true || participatingDepartmentIds.includes(d.id))
+            .map(d => ({
+                value: d.id,
+                label: d.interventionsDepartment === true ? d.name : `${d.name} (doesn't deliver interventions)`
+            }))
 
         const handleNext = () => {
             if (!participatingDepartmentIds.length) {
@@ -1348,9 +1456,11 @@ const CoverageStep: React.FC<{
 
                 <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                     <Button style={{ flex: 1 }} onClick={onBack}>{backLabel}</Button>
-                    <Button style={{ flex: 1 }} type="primary" loading={nextLoading} onClick={handleNext}>
-                        {nextLabel}
-                    </Button>
+                    <FadeInSlot show={nextVisible}>
+                        <Button style={{ flex: 1 }} type="primary" loading={nextLoading} onClick={handleNext}>
+                            {nextLabel}
+                        </Button>
+                    </FadeInSlot>
                 </div>
             </div>
         )
@@ -1361,68 +1471,41 @@ const CoverageStep: React.FC<{
    instead of walking every step)
 ────────────────────────────────────────────────────────────────── */
 
-const PROGRAM_EDIT_SECTIONS: { step: number; title: string; description: string }[] = [
-    { step: 0, title: 'Program Details', description: 'Name, description, type, status, cohort, dates, funder & capacity' },
-    { step: 1, title: 'Coverage', description: 'Branch scope and participating departments' },
-    { step: 2, title: 'Program Logo', description: 'Upload or replace the program logo' },
-    { step: 3, title: 'Eligibility Criteria', description: 'Who can apply to this program' },
-    { step: 4, title: 'Required Documents', description: 'Documents and agreements SMEs must provide' },
-    { step: 5, title: 'Onboarding Questions', description: 'Custom questions asked during application' }
+const PROGRAM_EDIT_SECTIONS: { step: number; title: string; description: string; icon: React.ReactNode }[] = [
+    { step: 0, title: 'Program details', description: 'Name, description, type, status, dates, funder and capacity', icon: <FileTextOutlined /> },
+    { step: 1, title: 'Coverage', description: 'Branches and participating departments', icon: <ApartmentOutlined /> },
+    { step: 2, title: 'Logo', description: 'Upload or replace the program logo', icon: <PictureOutlined /> },
+    { step: 3, title: 'Eligibility', description: 'Who can apply to this program', icon: <CheckCircleOutlined /> },
+    { step: 4, title: 'Required documents', description: 'Documents and agreements SMEs must provide', icon: <PaperClipOutlined /> },
+    { step: 5, title: 'Onboarding questions', description: 'Questions asked when SMEs apply', icon: <QuestionCircleOutlined /> }
 ]
 
 const SectionPickerStep: React.FC<{
     onSelect: (step: number) => void
     onSaveAndClose: () => void
     saving: boolean
-}> = ({ onSelect, onSaveAndClose, saving }) => (
-    <div style={{ marginTop: 8 }}>
-        <Text strong>What would you like to edit?</Text>
-        <div
-            style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: 12,
-                marginTop: 12
-            }}
-        >
+    showSave: boolean
+}> = ({ onSelect, onSaveAndClose, saving, showSave }) => (
+    <div className='prg-sections'>
+        <span className='prg-sections-title'>What would you like to edit?</span>
+        <div className='prg-section-grid'>
             {PROGRAM_EDIT_SECTIONS.map(section => (
-                <div
-                    key={section.step}
-                    onClick={() => onSelect(section.step)}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 12,
-                        padding: '14px 16px',
-                        borderRadius: 10,
-                        border: '1px solid #e6e6e6',
-                        background: '#fff',
-                        cursor: 'pointer',
-                        transition: 'all .15s ease'
-                    }}
-                >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <span style={{ fontWeight: 500 }}>{section.title}</span>
-                        <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
-                            {section.description}
-                        </span>
-                    </div>
-                    <RightOutlined style={{ color: 'rgba(0,0,0,.35)', fontSize: 14, flexShrink: 0 }} />
-                </div>
+                <button key={section.step} type='button' className='prg-section' onClick={() => onSelect(section.step)}>
+                    <span className='prg-section-icon' aria-hidden='true'>{section.icon}</span>
+                    <span className='prg-section-text'>
+                        <span className='prg-section-name'>{section.title}</span>
+                        <span className='prg-section-desc'>{section.description}</span>
+                    </span>
+                    <RightOutlined className='prg-section-go' />
+                </button>
             ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-            <Button
-                style={{ flex: 1 }}
-                type="primary"
-                loading={saving}
-                onClick={onSaveAndClose}
-            >
-                Save Program
+        {showSave && (
+            <Button block type='primary' shape='round' loading={saving} onClick={() => onSaveAndClose()} style={{ marginTop: 20 }}>
+                Save changes
             </Button>
-        </div>
+        )}
     </div>
 )
 
@@ -1453,7 +1536,8 @@ const ProgramLogoStep: React.FC<{
     backLabel?: string
     nextLabel?: string
     nextLoading?: boolean
-}> = ({ logoPreview, onPick, onBack, onNext, backLabel = 'Back', nextLabel = 'Next', nextLoading = false }) => {
+    nextVisible?: boolean
+}> = ({ logoPreview, onPick, onBack, onNext, backLabel = 'Back', nextLabel = 'Next', nextLoading = false, nextVisible = true }) => {
     const beforeUpload: UploadProps['beforeUpload'] = async file => {
         const isImage =
             file.type === 'image/png' ||
@@ -1563,728 +1647,220 @@ const ProgramLogoStep: React.FC<{
 
             <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                 <Button style={{ flex: 1 }} onClick={onBack}>{backLabel}</Button>
-                <Button style={{ flex: 1 }} type="primary" loading={nextLoading} onClick={handleNext}>
-                    {nextLabel}
-                </Button>
+                <FadeInSlot show={nextVisible}>
+                    <Button style={{ flex: 1 }} type="primary" loading={nextLoading} onClick={handleNext}>
+                        {nextLabel}
+                    </Button>
+                </FadeInSlot>
             </div>
         </div>
     )
 }
 
-type ProgramManagerViewMode = 'programs' | 'proposals'
+const getProgramInitials = (name?: string) => {
+    const words = (name || '').trim().split(/\s+/).filter(Boolean)
+    if (!words.length) return '?'
+    return (words.length === 1 ? words[0].slice(0, 2) : words[0][0] + words[1][0]).toUpperCase()
+}
 
-const ProgramViewToggle: React.FC<{
-    value: ProgramManagerViewMode
-    onChange: (v: ProgramManagerViewMode) => void
-}> = ({ value, onChange }) => (
-    <Segmented
-        value={value}
-        onChange={v => onChange(v as ProgramManagerViewMode)}
-        options={[
-            {
-                label: (
-                    <Space>
-                        <ProjectOutlined />
-                        Programs
-                    </Space>
-                ),
-                value: 'programs'
-            },
-            {
-                label: (
-                    <Space>
-                        <FileTextOutlined />
-                        Proposals
-                    </Space>
-                ),
-                value: 'proposals'
-            }
-        ]}
-    />
+// Logo when the program has one (and it loads), otherwise the name's initials.
+const ProgramAvatar: React.FC<{ program: any; size?: number }> = ({ program, size = 40 }) => (
+    <Avatar
+        size={size}
+        src={program?.logoUrl || undefined}
+        style={{ background: '#e6efff', color: '#1d39c4', fontWeight: 600, flexShrink: 0 }}
+    >
+        {getProgramInitials(program?.name)}
+    </Avatar>
 )
 
-const ProjectProposalsManager: React.FC<{
+type ProgramDetailsSection = 'overview' | 'coverage' | 'eligibility' | 'onboarding'
 
+const PROGRAM_DETAIL_SECTIONS: { value: ProgramDetailsSection; label: string }[] = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'coverage', label: 'Coverage' },
+    { value: 'eligibility', label: 'Eligibility' },
+    { value: 'onboarding', label: 'Onboarding' }
+]
+
+const formatProgramDate = (val: any) =>
+    typeof val === 'string'
+        ? val
+        : val?.toDate
+            ? dayjs(val.toDate()).format('YYYY-MM-DD')
+            : 'N/A'
+
+const ProgramDetailsBody: React.FC<{
+    program: any
+    section: ProgramDetailsSection
     branches: any[]
-    userBranchId: string | null
-    isProjectAdmin: boolean
-    resolveAssignedBranch: (branchId?: string) => { id: string; name: string } | null
-    viewMode: ProgramManagerViewMode
-    onViewModeChange: (v: ProgramManagerViewMode) => void
-}> = ({ branches, userBranchId, isProjectAdmin, resolveAssignedBranch, viewMode, onViewModeChange }) => {
-    const { user } = useFullIdentity()
-    const [loading, setLoading] = useState(false)
-    const [saving, setSaving] = useState(false)
-
-    const [proposals, setProposals] = useState<ProjectProposal[]>([])
-    const [searchText, setSearchText] = useState('')
-    const [statusFilter, setStatusFilter] = useState<ProposalStatus | null>(null)
-
-    // create/edit
-    const [modalOpen, setModalOpen] = useState(false)
-    const [editing, setEditing] = useState<ProjectProposal | null>(null)
-    const [form] = Form.useForm()
-
-    // proposal document file
-    const [proposalFile, setProposalFile] = useState<File | null>(null)
-
-    // progress updates modal
-    const [updatesOpen, setUpdatesOpen] = useState(false)
-    const [updatesLoading, setUpdatesLoading] = useState(false)
-    const [selectedProposal, setSelectedProposal] = useState<ProjectProposal | null>(null)
-    const [updates, setUpdates] = useState<ProposalUpdate[]>([])
-    const [updateForm] = Form.useForm()
-    const [updateFile, setUpdateFile] = useState<File | null>(null)
-
-    const scoped = useMemo(() => {
-        if (!isProjectAdmin || !userBranchId) return proposals
-        return proposals.filter(p => {
-            const bid = p.assignedBranch?.id || p.branchId || null
-            return bid === userBranchId
-        })
-    }, [proposals, isProjectAdmin, userBranchId])
-
-    const filtered = useMemo(() => {
-        const q = searchText.trim().toLowerCase()
-        return scoped.filter(p => {
-            const m1 = (p.title || '').toLowerCase().includes(q)
-            const m2 = (p.funder || '').toLowerCase().includes(q)
-            const ms = statusFilter ? p.status === statusFilter : true
-            return (m1 || m2) && ms
-        })
-    }, [scoped, searchText, statusFilter])
-
-    const fetchProposals = async () => {
-        setLoading(true)
-        try {
-            const snap = await getDocs(
-                query(collection(db, 'projectProposals'))
-            )
-            setProposals(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
-        } catch (e) {
-            message.error('Failed to load project proposals')
-            console.log(e.message || e)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    useEffect(() => {
-        fetchProposals()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
-
-    const resetCreateState = () => {
-        form.resetFields()
-        setProposalFile(null)
-        setEditing(null)
-    }
-
-    const openCreate = () => {
-        resetCreateState()
-        form.setFieldsValue({
-            branchId: userBranchId && branches.some(b => b.id === userBranchId) ? userBranchId : undefined,
-            status: 'Draft',
-            cohortYear: dayjs().year(),
-            proposedDate: dayjs()
-        })
-        setModalOpen(true)
-    }
-
-    const openEdit = (p: ProjectProposal) => {
-        setEditing(p)
-        setProposalFile(null)
-
-        form.setFieldsValue({
-            ...p,
-            branchId: p.assignedBranch?.id || p.branchId || null,
-            proposedDate: parseAnyToDayjs(p.proposedDate),
-            startDate: parseAnyToDayjs(p.startDate),
-            cohortYear: p.cohortYear ?? dayjs().year()
-        })
-        setModalOpen(true)
-    }
-
-    const beforeUploadProposal: UploadProps['beforeUpload'] = file => {
-        setProposalFile(file as File)
-        return false
-    }
-
-    const beforeUploadUpdate: UploadProps['beforeUpload'] = file => {
-        setUpdateFile(file as File)
-        return false
-    }
-
-    const saveProposal = async (values: any) => {
-        setSaving(true)
-        try {
-            const assignedBranch = resolveAssignedBranch(values.branchId)
-            const payloadBase: any = pruneUndefined({
-                branchId: values.branchId || null,
-                assignedBranch: assignedBranch || null,
-                title: values.title,
-                about: values.about,
-                funder: values.funder,
-                proposedDate: toTs(values.proposedDate) || Timestamp.fromDate(new Date()),
-                startDate: toTs(values.startDate),
-                cohortYear: values.cohortYear ?? dayjs().year(),
-                status: (values.status || 'Draft') as ProposalStatus,
-                rejectionReason:
-                    (values.status as ProposalStatus) === 'Rejected' ? values.rejectionReason || null : null,
-                updatedAt: serverTimestamp()
-            })
-
-            if (!editing) {
-                payloadBase.createdAt = serverTimestamp()
-                const docRef = await addDoc(collection(db, 'projectProposals'), payloadBase)
-                await updateDoc(docRef, { id: docRef.id })
-
-                // proposal doc optional
-                if (proposalFile) {
-                    const uploaded = await uploadProposalFile(docRef.id, proposalFile, 'proposal')
-                    await updateDoc(docRef, { proposalDocUrl: uploaded.url, proposalDocPath: uploaded.path })
-                }
-
-                message.success('Proposal created')
-            } else {
-                const refDoc = doc(db, 'projectProposals', editing.id)
-
-                // replace proposal doc if provided
-                if (proposalFile) {
-                    const uploaded = await uploadProposalFile(editing.id, proposalFile, 'proposal')
-                    await updateDoc(refDoc, {
-                        ...payloadBase,
-                        proposalDocUrl: uploaded.url,
-                        proposalDocPath: uploaded.path
-                    })
-                    // cleanup old
-                    await tryDeleteStoragePath(editing.proposalDocPath || null)
-                } else {
-                    await updateDoc(refDoc, payloadBase)
-                }
-
-                message.success('Proposal updated')
-            }
-
-            setModalOpen(false)
-            resetCreateState()
-            fetchProposals()
-        } catch (e: any) {
-            message.error(`Failed to save proposal: ${e?.message || e}`)
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    const deleteProposal = async (p: ProjectProposal) => {
-        setLoading(true)
-        try {
-            // delete proposal doc
-            await tryDeleteStoragePath(p.proposalDocPath || null)
-
-            // delete updates docs (best-effort) + docs
-            try {
-                const updSnap = await getDocs(collection(db, 'projectProposals', p.id, 'updates'))
-                for (const d of updSnap.docs) {
-                    const data = d.data() as any
-                    await tryDeleteStoragePath(data?.docPath || null)
-                    await deleteDoc(d.ref)
-                }
-            } catch {
-                // ignore
-            }
-
-            await deleteDoc(doc(db, 'projectProposals', p.id))
-            message.success('Proposal deleted')
-            fetchProposals()
-        } catch {
-            message.error('Failed to delete proposal')
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const openUpdates = async (p: ProjectProposal) => {
-        setSelectedProposal(p)
-        setUpdates([])
-        setUpdateFile(null)
-        updateForm.resetFields()
-        setUpdatesOpen(true)
-        setUpdatesLoading(true)
-
-        try {
-            const snap = await getDocs(
-                query(collection(db, 'projectProposals', p.id, 'updates'), orderBy('createdAt', 'desc'))
-            )
-            setUpdates(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })))
-        } catch {
-            message.error('Failed to load updates')
-        } finally {
-            setUpdatesLoading(false)
-        }
-    }
-
-    const addUpdate = async () => {
-        if (!selectedProposal) return
-        const v = await updateForm.validateFields()
-        setSaving(true)
-        try {
-            const updatesCol = collection(db, 'projectProposals', selectedProposal.id, 'updates')
-
-            let docUrl: string | null = null
-            let docPath: string | null = null
-
-            if (updateFile) {
-                const uploaded = await uploadProposalFile(
-                    selectedProposal.id,
-                    updateFile,
-                    'updates'
-                )
-                docUrl = uploaded.url
-                docPath = uploaded.path
-            }
-
-            const createdBy = {
-                email: user?.email || null,
-                name: (user as any)?.fullName || (user as any)?.name || null
-            }
-
-            await addDoc(
-                updatesCol,
-                pruneUndefined({
-                    note: v.note,
-                    status: v.status || null,
-                    docUrl,
-                    docPath,
-                    createdBy,
-                    createdAt: serverTimestamp()
-                })
-            )
-
-            // optionally update main proposal status / rejection reason
-            if (v.status) {
-                const patch: any = { status: v.status, updatedAt: serverTimestamp() }
-                if ((v.status as ProposalStatus) === 'Rejected') {
-                    patch.rejectionReason = v.rejectionReason || null
-                } else {
-                    patch.rejectionReason = null
-                }
-                await updateDoc(doc(db, 'projectProposals', selectedProposal.id), patch)
-            }
-
-            message.success('Update added')
-            setUpdateFile(null)
-            updateForm.resetFields()
-
-            // refresh both proposal list + updates
-            await fetchProposals()
-            await openUpdates({ ...selectedProposal } as any)
-        } catch (e: any) {
-            message.error(`Failed to add update: ${e?.message || e}`)
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    // metrics
-    const metrics = useMemo(() => {
-        const total = scoped.length
-        const by = (s: ProposalStatus) => scoped.filter(p => p.status === s).length
-        return {
-            total,
-            active: by('Under Review') + by('Submitted') + by('In Progress'),
-            approved: by('Approved'),
-            rejected: by('Rejected')
-        }
-    }, [scoped])
-
-    return (
-        <>
-            {/* Metrics row */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-                <Col xs={24} sm={12} md={6}>
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-                        <MotionCard.Metric
-                            title='Total Proposals'
-                            value={formatter(metrics.total)}
-                            icon={<ProjectOutlined style={{ fontSize: 18, color: '#1677ff' }} />}
-                            iconBg='rgba(22,119,255,.12)'
-                        />
-                    </motion.div>
-                </Col>
-
-                <Col xs={24} sm={12} md={6}>
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
-                        <MotionCard.Metric
-                            title='Active Pipeline'
-                            value={
-                                <span style={{ color: '#52c41a' }}>
-                                    {formatter(metrics.active)}
-                                </span>
-                            }
-                            icon={<CheckCircleOutlined style={{ fontSize: 18, color: '#52c41a' }} />}
-                            iconBg='rgba(82,196,26,.12)'
-                        />
-                    </motion.div>
-                </Col>
-
-                <Col xs={24} sm={12} md={6}>
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }}>
-                        <MotionCard.Metric
-                            title='Approved'
-                            value={
-                                <span style={{ color: '#faad14' }}>
-                                    {formatter(metrics.approved)}
-                                </span>
-                            }
-                            icon={<DollarOutlined style={{ fontSize: 18, color: '#faad14' }} />}
-                            iconBg='rgba(250,173,20,.14)'
-                        />
-                    </motion.div>
-                </Col>
-
-                <Col xs={24} sm={12} md={6}>
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.15 }}>
-                        <MotionCard.Metric
-                            title='Rejected'
-                            value={
-                                <span style={{ color: '#ff4d4f' }}>
-                                    {formatter(metrics.rejected)}
-                                </span>
-                            }
-                            icon={<PoweroffOutlined style={{ fontSize: 18, color: '#ff4d4f' }} />}
-                            iconBg='rgba(255,77,79,.12)'
-                        />
-                    </motion.div>
-                </Col>
-            </Row>
-
-            <MotionCard
-                loading={loading}
-                filterBarProps={{ marginBottom: 0 }}
-                filterBar={
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, width: '100%' }}>
-                        <div style={{ flex: '0 1 220px' }}>
-                            <ProgramViewToggle value={viewMode} onChange={onViewModeChange} />
-                        </div>
-                        <div style={{ flex: '1 1 220px' }}>
-                            <Input
-                                allowClear
-                                placeholder="Search title / funder"
-                                value={searchText}
-                                onChange={e => setSearchText(e.target.value)}
-                            />
-                        </div>
-                        <div style={{ flex: '1 1 220px' }}>
-                            <Select
-                                allowClear
-                                style={{ width: '100%' }}
-                                placeholder="Filter by status"
-                                value={statusFilter}
-                                onChange={v => setStatusFilter(v as any)}
-                                options={PROPOSAL_STATUSES.map(s => ({ label: s, value: s }))}
-                            />
-                        </div>
-                        <div style={{ flex: '0 1 180px', display: 'flex', justifyContent: 'flex-end' }}>
-                            <Button shape="round" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-                                Add Proposal
-                            </Button>
-                        </div>
-                    </div>
-                }
-            />
-
-            <MotionCard style={{ marginTop: 15 }} loading={loading}>
-                <Table
-                    dataSource={filtered}
-                    rowKey="id"
-                    pagination={{ pageSize: 8, showSizeChanger: false, position: ['bottomCenter'] }}
-                    scroll={{ x: 1100 }}
-                >
-                    <Table.Column title="Title" dataIndex="title" key="title" />
-                    <Table.Column title="Funder" dataIndex="funder" key="funder" />
-                    <Table.Column
-                        title="Proposed"
-                        dataIndex="proposedDate"
-                        render={(val: any) => (parseAnyToDayjs(val) ? parseAnyToDayjs(val)!.format('YYYY-MM-DD') : '—')}
-                    />
-                    <Table.Column
-                        title="Start"
-                        dataIndex="startDate"
-                        render={(val: any) => (parseAnyToDayjs(val) ? parseAnyToDayjs(val)!.format('YYYY-MM-DD') : '—')}
-                    />
-                    <Table.Column title="Cohort" dataIndex="cohortYear" render={(v: any) => v ?? '—'} />
-                    <Table.Column
-                        title="Status"
-                        dataIndex="status"
-                        render={(s: ProposalStatus) => statusTag(s)}
-                    />
-                    <Table.Column
-                        title="Proposal Doc"
-                        render={(_: any, r: ProjectProposal) =>
-                            r.proposalDocUrl ? (
-                                <Button
-                                    size="small"
-                                    icon={<DownloadOutlined />}
-                                    onClick={() => window.open(r.proposalDocUrl as string, '_blank')}
-                                >
-                                    View
-                                </Button>
-                            ) : (
-                                <Text type="secondary">—</Text>
-                            )
-                        }
-                    />
-                    <Table.Column
-                        title="Actions"
-                        render={(_: any, r: ProjectProposal) => (
-                            <Space>
-                                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-                                <Button
-                                    size="small"
-                                    icon={<FileTextOutlined />}
-                                    onClick={() => openUpdates(r)}
-                                >
-                                    Progress
-                                </Button>
-                                <Popconfirm
-                                    title="Delete this proposal?"
-                                    description="This will also delete its progress updates."
-                                    okText="Yes, delete"
-                                    cancelText="Cancel"
-                                    okType="danger"
-                                    onConfirm={() => deleteProposal(r)}
-                                >
-                                    <Button size="small" danger icon={<DeleteOutlined />} />
-                                </Popconfirm>
-                            </Space>
-                        )}
-                    />
-                </Table>
-            </MotionCard>
-
-            {/* Create/Edit modal */}
-            <Modal
-                centered
-                open={modalOpen}
-                title={editing ? 'Edit Project Proposal' : 'Add Project Proposal'}
-                onCancel={() => {
-                    setModalOpen(false)
-                    resetCreateState()
-                }}
-                onOk={() => form.submit()}
-                okText={editing ? 'Save' : 'Create'}
-                confirmLoading={saving}
-                width={900}
-            >
-                <Form form={form} layout="vertical" onFinish={saveProposal}>
-                    <Row gutter={16}>
-                        <Col xs={24} md={12}>
-                            <Form.Item name="branchId" label="Branch" rules={[{ required: true }]}>
-                                <Select
-                                    disabled={!!userBranchId}
-                                    placeholder="Select branch"
-                                    options={branches.map(b => ({ value: b.id, label: b.name || b.title || 'Branch' }))}
-                                />
-                            </Form.Item>
-                        </Col>
-                        <Col xs={24} md={12}>
-                            <Form.Item name="status" label="Status" rules={[{ required: true }]}>
-                                <Select options={PROPOSAL_STATUSES.map(s => ({ value: s, label: s }))} />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Form.Item name="title" label="Proposal Title" rules={[{ required: true }]}>
-                        <Input placeholder="e.g., Tharisa SMME Cohort Expansion 2026" />
-                    </Form.Item>
-
-                    <Form.Item name="about" label="What the program will be about" rules={[{ required: true }]}>
-                        <Input.TextArea autoSize={{ minRows: 3, maxRows: 7 }} placeholder="Short description of the proposed programme." />
-                    </Form.Item>
-
-                    <Row gutter={16}>
-                        <Col xs={24} md={12}>
-                            <Form.Item name="funder" label="Funder" rules={[{ required: true }]}>
-                                <Input placeholder="e.g., Tharisa / SEDA / Corporate CSI" />
-                            </Form.Item>
-                        </Col>
-                        <Col xs={24} md={6}>
-                            <Form.Item name="cohortYear" label="Cohort Year">
-                                <InputNumber style={{ width: '100%' }} min={2000} max={2100} />
-                            </Form.Item>
-                        </Col>
-                        <Col xs={24} md={6}>
-                            <Form.Item name="proposedDate" label="Date Proposed" rules={[{ required: true }]}>
-                                <DatePicker style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col xs={24} md={12}>
-                            <Form.Item name="startDate" label="Optional Start Date">
-                                <DatePicker style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-
-                        <Col xs={24} md={12}>
-                            <Form.Item label="Optional Proposal Document">
-                                <Upload
-                                    beforeUpload={beforeUploadProposal}
-                                    maxCount={1}
-                                    showUploadList
-                                >
-                                    <Button icon={<UploadOutlined />}>Choose File</Button>
-                                </Upload>
-                                <Text type="secondary">
-                                    {editing?.proposalDocUrl ? 'Existing document will remain unless you upload a new one.' : ''}
-                                </Text>
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Form.Item noStyle shouldUpdate>
-                        {({ getFieldValue }) => {
-                            const s = getFieldValue('status') as ProposalStatus
-                            if (s !== 'Rejected') return null
-                            return (
-                                <Form.Item name="rejectionReason" label="Optional Rejection Reason">
-                                    <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
-                                </Form.Item>
-                            )
-                        }}
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* Progress updates modal */}
-            <Modal
-                centered
-                open={updatesOpen}
-                title={
-                    selectedProposal ? (
-                        <span>
-                            Progress Updates: <b>{selectedProposal.title}</b>
-                        </span>
+    departments: any[]
+}> = ({ program, section, branches, departments }) => {
+    if (section === 'overview') {
+        return (
+            <Descriptions bordered size='small' column={{ xs: 1, sm: 2 }}>
+                <Descriptions.Item label='Description' span={2}>
+                    {program.description || 'N/A'}
+                </Descriptions.Item>
+                <Descriptions.Item label='Type'>{displayProgramType(program.type) || 'N/A'}</Descriptions.Item>
+                <Descriptions.Item label='SMEs join by'>
+                    {INTAKE_LABELS[program.intakeMode as ProgramIntakeMode] || 'Not set'}
+                </Descriptions.Item>
+                <Descriptions.Item label='Status'>
+                    <Tag color={program.status === 'Active' ? 'green' : 'red'}>{program.status || 'N/A'}</Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label='Cohort Year'>{program.cohortYear ?? 'N/A'}</Descriptions.Item>
+                <Descriptions.Item label='Max Capacity'>{program.maxCapacity || 'N/A'}</Descriptions.Item>
+                <Descriptions.Item label='Start Date'>{formatProgramDate(program.startDate)}</Descriptions.Item>
+                <Descriptions.Item label='End Date'>{formatProgramDate(program.endDate)}</Descriptions.Item>
+                <Descriptions.Item label='Funder'>{program.assignedFunder || 'N/A'}</Descriptions.Item>
+                <Descriptions.Item label='Registration Link'>
+                    {program.registrationLink ? (
+                        <Text copyable={{ text: window.location.origin + program.registrationLink }}>
+                            Copy link
+                        </Text>
                     ) : (
-                        'Progress Updates'
-                    )
-                }
-                onCancel={() => {
-                    setUpdatesOpen(false)
-                    setSelectedProposal(null)
-                    setUpdates([])
-                    setUpdateFile(null)
-                    updateForm.resetFields()
-                }}
-                footer={null}
-                width={1000}
-            >
-                <Alert
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: 12 }}
-                    message="Add mini progress notes and optionally attach a document. You can also move the proposal status forward here."
-                />
+                        'N/A'
+                    )}
+                </Descriptions.Item>
+            </Descriptions>
+        )
+    }
 
-                <Row gutter={16}>
-                    <Col xs={24} md={10}>
-                        <Form form={updateForm} layout="vertical">
-                            <Form.Item name="note" label="Progress note" rules={[{ required: true, message: 'Add a note' }]}>
-                                <Input.TextArea autoSize={{ minRows: 3, maxRows: 7 }} />
-                            </Form.Item>
+    if (section === 'coverage') {
+        const branchNames: string[] = (program.supportedBranchIds || []).map(
+            (id: string) => branches.find(b => b.id === id)?.name || id
+        )
+        const departmentNames: string[] = (program.participatingDepartmentIds || []).map(
+            (id: string) => departments.find(d => d.id === id)?.name || id
+        )
+        return (
+            <Descriptions bordered size='small' column={1}>
+                <Descriptions.Item label='Scope'>
+                    {program.isMultiBranch ? <Tag color='blue'>Multi-branch</Tag> : <Tag>Single branch</Tag>}
+                </Descriptions.Item>
+                <Descriptions.Item label='Assigned Branch'>
+                    {program.assignedBranch?.name ? (
+                        <>
+                            <b>{program.assignedBranch.name}</b>
+                            {program.assignedBranch.email ? (
+                                <div style={{ color: 'var(--app-text-muted)', fontSize: 13 }}>{program.assignedBranch.email}</div>
+                            ) : null}
+                        </>
+                    ) : (
+                        <Tag color='orange'>Not Assigned</Tag>
+                    )}
+                </Descriptions.Item>
+                {program.isMultiBranch && (
+                    <Descriptions.Item label='Supported Branches'>
+                        {branchNames.length ? (
+                            <Space size={[4, 4]} wrap>
+                                {branchNames.map(n => (
+                                    <Tag key={n}>{n}</Tag>
+                                ))}
+                            </Space>
+                        ) : (
+                            '—'
+                        )}
+                    </Descriptions.Item>
+                )}
+                <Descriptions.Item label='Participating Departments'>
+                    {departmentNames.length ? (
+                        <Space size={[4, 4]} wrap>
+                            {departmentNames.map(n => (
+                                <Tag key={n} color='geekblue'>
+                                    {n}
+                                </Tag>
+                            ))}
+                        </Space>
+                    ) : (
+                        'Not specified'
+                    )}
+                </Descriptions.Item>
+            </Descriptions>
+        )
+    }
 
-                            <Form.Item name="status" label="Optional status update">
-                                <Select
-                                    allowClear
-                                    options={PROPOSAL_STATUSES.map(s => ({ value: s, label: s }))}
-                                    placeholder="Keep current status"
-                                />
-                            </Form.Item>
+    if (section === 'eligibility') {
+        const entries = Array.isArray(program.eligibilityCriteria)
+            ? []
+            : Object.entries(program.eligibilityCriteria || {})
+        if (!entries.length) {
+            return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No eligibility criteria set' />
+        }
+        return (
+            <Descriptions bordered size='small' column={1}>
+                {entries.map(([key, val]) => (
+                    <Descriptions.Item key={key} label={CRITERIA_OPTIONS.find(o => o.value === key)?.label ?? key}>
+                        {Array.isArray(val)
+                            ? val.join(', ')
+                            : OWNERSHIP_FIELDS.includes(key)
+                                ? `${val}%`
+                                : String(val)}
+                    </Descriptions.Item>
+                ))}
+            </Descriptions>
+        )
+    }
 
-                            <Form.Item noStyle shouldUpdate>
-                                {({ getFieldValue }) => {
-                                    const s = getFieldValue('status') as ProposalStatus
-                                    if (s !== 'Rejected') return null
-                                    return (
-                                        <Form.Item name="rejectionReason" label="Optional rejection reason">
-                                            <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
-                                        </Form.Item>
-                                    )
-                                }}
-                            </Form.Item>
-
-                            <Form.Item label="Optional document">
-                                <Upload beforeUpload={beforeUploadUpdate} maxCount={1} showUploadList>
-                                    <Button icon={<UploadOutlined />}>Attach File</Button>
-                                </Upload>
-                            </Form.Item>
-
-                            <Button type="primary" icon={<PlusOutlined />} loading={saving} onClick={addUpdate} block>
-                                Add Update
-                            </Button>
-                        </Form>
-                    </Col>
-
-                    <Col xs={24} md={14}>
-                        <Card
-                            title="Update History"
-                            bordered
-                            style={{ borderRadius: 12 }}
-                            bodyStyle={{ maxHeight: 520, overflow: 'auto' }}
-                        >
-                            {updatesLoading ? (
-                                <Spin />
-                            ) : updates.length === 0 ? (
-                                <Empty description="No updates yet" />
-                            ) : (
-                                <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                                    {updates.map(u => (
-                                        <Card key={u.id} size="small" bordered style={{ borderRadius: 12 }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ marginBottom: 6 }}>
-                                                        <Text strong>
-                                                            {u.createdAt?.toDate
-                                                                ? dayjs(u.createdAt.toDate()).format('YYYY-MM-DD HH:mm')
-                                                                : '—'}
-                                                        </Text>
-                                                        {u.status ? <span style={{ marginLeft: 8 }}>{statusTag(u.status as any)}</span> : null}
-                                                    </div>
-                                                    <Text>{u.note}</Text>
-                                                    {u.createdBy?.email ? (
-                                                        <div style={{ marginTop: 8 }}>
-                                                            <Text type="secondary">By: {u.createdBy?.name || u.createdBy?.email}</Text>
-                                                        </div>
-                                                    ) : null}
-                                                </div>
-                                                <div>
-                                                    {u.docUrl ? (
-                                                        <Button
-                                                            size="small"
-                                                            icon={<DownloadOutlined />}
-                                                            onClick={() => window.open(u.docUrl as string, '_blank')}
-                                                        >
-                                                            View Doc
-                                                        </Button>
-                                                    ) : null}
-                                                </div>
-                                            </div>
-                                        </Card>
-                                    ))}
-                                </Space>
-                            )}
-                        </Card>
-                    </Col>
-                </Row>
-            </Modal>
-        </>
+    const docs: any[] = program.programRequirements || []
+    const questions: any[] = program.onboardingQuestions || []
+    const rowStyle: React.CSSProperties = {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        padding: '8px 0',
+        borderBottom: '1px solid rgba(128,128,128,.18)'
+    }
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div>
+                <Text strong>Required documents</Text>
+                {docs.length ? (
+                    docs.map(d => (
+                        <div key={d.id || d.key || d.title} style={rowStyle}>
+                            <span>{d.title}</span>
+                            <Space size={4} wrap style={{ justifyContent: 'flex-end' }}>
+                                <Tag color={d.kind === 'agreement' ? 'purple' : 'blue'}>
+                                    {d.kind === 'agreement' ? 'Agreement' : 'Upload'}
+                                </Tag>
+                                <Tag color={d.requiredAtApplication ? 'green' : 'gold'}>
+                                    {d.requiredAtApplication ? 'Required' : 'Optional'}
+                                </Tag>
+                                {d.hasExpiry && d.expiryMonths ? <Tag>{d.expiryMonths} mo</Tag> : null}
+                            </Space>
+                        </div>
+                    ))
+                ) : (
+                    <div style={{ marginTop: 8 }}>
+                        <Text type='secondary'>No required documents.</Text>
+                    </div>
+                )}
+            </div>
+            <div>
+                <Text strong>Onboarding questions</Text>
+                {questions.length ? (
+                    questions.map(q => (
+                        <div key={q.id || q.label} style={rowStyle}>
+                            <span>{q.label}</span>
+                            <Tag color={q.type === 'dropdown' ? 'blue' : 'default'}>
+                                {q.type === 'dropdown' ? 'Dropdown' : 'Text'}
+                            </Tag>
+                        </div>
+                    ))
+                ) : (
+                    <div style={{ marginTop: 8 }}>
+                        <Text type='secondary'>No onboarding questions.</Text>
+                    </div>
+                )}
+            </div>
+        </div>
     )
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   MAIN PROGRAM MANAGER
+   PROPOSAL DETAILS (opened by clicking a row / card)
 ────────────────────────────────────────────────────────────────── */
 
 const ProgramManager: React.FC = () => {
@@ -2300,15 +1876,6 @@ const ProgramManager: React.FC = () => {
                     kind: 'page',
                     order: 1,
                     steps: [
-                        {
-                            element: guideTarget('program-manager-header'),
-                            popover: {
-                                title: 'Programs and proposals',
-                                description: 'Switch between live incubation programmes and the proposal pipeline from this control.',
-                                side: 'bottom',
-                                align: 'start'
-                            }
-                        },
                         {
                             element: guideTarget('program-metrics'),
                             popover: {
@@ -2467,7 +2034,6 @@ const ProgramManager: React.FC = () => {
     const [logoFile, setLogoFile] = useState<File | null>(null)
     const [logoPreview, setLogoPreview] = useState<string | null>(null)
 
-    const [viewMode, setViewMode] = useState<'programs' | 'proposals'>('programs')
 
     const [modalVisible, setModalVisible] = useState(false)
     const [form] = Form.useForm()
@@ -2479,26 +2045,45 @@ const ProgramManager: React.FC = () => {
         participatingDepartmentIds: []
     })
     const [departments, setDepartments] = useState<any[]>([])
+    // Edit wizard: true once the user changes anything, which reveals "Save Program".
+    const [editDirty, setEditDirty] = useState(false)
+    const markEditDirty = useCallback(() => setEditDirty(true), [])
+    const handleEditRequiredDocsChange = useCallback((docs: RequiredDoc[]) => {
+        setRequiredDocs(docs)
+        setEditDirty(true)
+    }, [])
 
     const [togglingProgramId, setTogglingProgramId] = useState<string | null>(
         null
     )
     const [saving, setSaving] = useState(false)
     const [searchText, setSearchText] = useState('')
-    const [filteredStatus, setFilteredStatus] = useState<string | null>(null)
+    const [filteredStatus, setFilteredStatus] = useState<string>('Active')
+    const [listPage, setListPage] = useState(1)
     const [editModalVisible, setEditModalVisible] = useState(false)
     const [selectedProgram, setSelectedProgram] = useState<any>(null)
     const [editForm] = Form.useForm()
     const [currentStep, setCurrentStep] = useState(0)
     const [basicDetails, setBasicDetails] = useState<any>({})
     const [questions, setQuestions] = useState<any[]>([])
+    /** True while an opened programme's required documents are still loading; saving waits for it. */
+    const [docsLoading, setDocsLoading] = useState(false)
+    const editingIdRef = React.useRef<string | null>(null)
     const [questionModalOpen, setQuestionModalOpen] = useState(false)
     const [editingQuestion, setEditingQuestion] = useState<any>(null)
     const [branches, setBranches] = useState<any[]>([])
     const [userBranchId, setUserBranchId] = useState<string | null>(null)
     const { user } = useFullIdentity()
+    const { modal } = App.useApp()
+    const isMobile = !Grid.useBreakpoint().md
+    const [detailsProgramId, setDetailsProgramId] = useState<string | null>(null)
+    const [detailsSection, setDetailsSection] = useState<ProgramDetailsSection>('overview')
 
     const isProjectAdmin = user?.role === 'projectadmin'
+    // Mirrors canManagePrograms() in firestore.rules; everyone else only reads.
+    const canManagePrograms = ['projectadmin', 'operations', 'system_admin', 'superadmin'].includes(
+        String(user?.role || '')
+    )
 
     const scopedPrograms =
         isProjectAdmin && userBranchId
@@ -2578,7 +2163,12 @@ const ProgramManager: React.FC = () => {
 
                 )
             )
-            setPrograms(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+            setPrograms(
+                snap.docs.map(d => {
+                    const data = d.data() as any
+                    return { id: d.id, ...data, status: normalizeProgramStatus(data.status) }
+                })
+            )
         } catch {
             message.error('Failed to load programs')
         } finally {
@@ -2589,6 +2179,10 @@ const ProgramManager: React.FC = () => {
 
     useEffect(() => {
         fetchPrograms()
+        // The admin's limit (System settings); the default only until it loads.
+        getProgramLimit()
+            .then(setProgramLimit)
+            .catch(() => setProgramLimit(DEFAULT_PROGRAM_LIMIT))
     }, [])
 
     useEffect(() => {
@@ -2607,11 +2201,40 @@ const ProgramManager: React.FC = () => {
         if (prefId) form.setFieldsValue({ branchId: prefId })
     }, [modalVisible, userBranchId, branches, form, booting])
 
+    const EMPTY_COVERAGE: ProgramCoverageValue = { isMultiBranch: false, supportedBranchIds: [], participatingDepartmentIds: [] }
+
+    /** Everything the create/edit wizards hold, back to empty, so nothing leaks between programmes. */
+    const resetWizard = () => {
+        form.resetFields()
+        editForm.resetFields()
+        setBasicDetails({})
+        setCurrentStep(0)
+        setEligibility({})
+        setRequiredDocs([])
+        setQuestions([])
+        setEditingQuestion(null)
+        setCoverage(EMPTY_COVERAGE)
+        setLogoFile(null)
+        if (logoPreview && logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview)
+        setLogoPreview(null)
+        setEditDirty(false)
+        setDocsLoading(false)
+    }
+
+    /** The programme's own branch: it is implied, so the coverage step only offers the others. */
+    const homeBranchId = (): string | null =>
+        (editModalVisible
+            ? selectedProgram?.assignedBranch?.id || selectedProgram?.branchId
+            : form.getFieldValue('branchId') || basicDetails?.branchId) || userBranchId || null
+
     const handleCoverageChange = (next: ProgramCoverageValue) => {
         setCoverage(next)
+        setEditDirty(true)
+        // The nearest-hub question lists the home hub too, not only the extra ones.
+        const home = homeBranchId()
         const synced = upsertHubQuestion(
             questions,
-            next.isMultiBranch ? next.supportedBranchIds : [],
+            next.isMultiBranch ? Array.from(new Set([...(home ? [home] : []), ...next.supportedBranchIds])) : [],
             branches
         )
         setQuestions(synced)
@@ -2620,7 +2243,13 @@ const ProgramManager: React.FC = () => {
     const normalizeProgramRequirements = (docs: RequiredDoc[] = []) =>
         docs.map(d => ({
             id: d.id,
-            key: d.key,
+            key: requirementKey(d),
+            // Older rows may be identified by a preset id; uploaded documents are
+            // matched on it, so it must survive a save.
+            ...(['presetId', 'preset', 'templateId'] as const).reduce<Record<string, string>>(
+                (kept, field) => ((d as any)[field] ? { ...kept, [field]: (d as any)[field] } : kept),
+                {}
+            ),
             title: d.title,
             isOnboarding: true,
             hasExpiry: !!d.hasExpiry,
@@ -2667,8 +2296,11 @@ const ProgramManager: React.FC = () => {
             const assignedBranch = resolveAssignedBranch(values.branchId)
             const rawPayload = {
                 ...values,
+                // A new programme's status comes from its dates: Upcoming until it starts.
+                status: programStatusForDates(values.startDate, values.endDate),
+                intakeMode: values.intakeMode || 'applications',
+                // The layout hides programmes with isActive === false; Upcoming ones stay visible.
                 isActive: true,
-                status: values.status || 'Active',
                 startDate: toTs(values.startDate),
                 endDate: toTs(values.endDate),
                 assignedBranch,
@@ -2682,11 +2314,15 @@ const ProgramManager: React.FC = () => {
             delete (rawPayload as any).branchId
 
             const payload = pruneUndefined(rawPayload)
-            const docRef = await addDoc(collection(db, 'programs'), payload)
-            await updateDoc(docRef, {
+            const docRef = doc(collection(db, 'programs'))
+            const batch = writeBatch(db)
+            batch.set(docRef, {
+                ...payload,
                 id: docRef.id,
                 registrationLink: `/registration?programId=${docRef.id}&role=sme`
             })
+            await queueProgramRequiredDocs(batch, docRef.id, requiredDocs)
+            await batch.commit()
 
             // upload logo AFTER we have a programId
             if (logoFile) {
@@ -2694,18 +2330,9 @@ const ProgramManager: React.FC = () => {
                 await updateDoc(docRef, uploaded)
             }
 
-            await upsertProgramRequiredDocs(docRef.id, requiredDocs)
-
             message.success('Program added successfully')
             setModalVisible(false)
-            setLogoFile(null)
-            if (logoPreview && logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview)
-            setLogoPreview(null)
-
-            form.resetFields()
-            setRequiredDocs([])
-            setQuestions([])
-            setCoverage({ isMultiBranch: false, supportedBranchIds: [], participatingDepartmentIds: [] })
+            resetWizard()
             fetchPrograms()
         } catch (err: any) {
             message.error('Failed to add program: ' + (err.message || err))
@@ -2721,21 +2348,54 @@ const ProgramManager: React.FC = () => {
                 message.error('No program selected')
                 return
             }
-            const assignedBranch = resolveAssignedBranch(values.branchId)
+            if (!(values.participatingDepartmentIds || []).length) {
+                message.error('Choose at least one participating department under Coverage.')
+                setCurrentStep(1)
+                return
+            }
+            if (docsLoading || editingIdRef.current !== selectedProgram.id) {
+                message.info('Still loading this programme. Try again in a moment.')
+                return
+            }
+            // Keep the existing branch if the form somehow has none (never null it).
+            const assignedBranch = resolveAssignedBranch(values.branchId) || selectedProgram.assignedBranch || null
+            const status = values.status || selectedProgram.status || 'Active'
+            // The coverage step leaves out the home branch; keep it if the programme listed it.
+            const home = selectedProgram.assignedBranch?.id || selectedProgram.branchId
+            const supportedBranchIds =
+                home && (selectedProgram.supportedBranchIds || []).includes(home) && Array.isArray(values.supportedBranchIds)
+                    ? Array.from(new Set([home, ...values.supportedBranchIds]))
+                    : values.supportedBranchIds
+            const logoRemoved = !logoFile && !logoPreview && !!selectedProgram.logoUrl
             const rawPayload = {
                 ...selectedProgram,
                 ...values,
-                startDate: toTs(values.startDate),
-                endDate: toTs(values.endDate),
+                status,
+                isActive: status !== 'Inactive',
+                supportedBranchIds,
+                startDate: toTs(values.startDate) ?? selectedProgram.startDate ?? null,
+                endDate: toTs(values.endDate) ?? selectedProgram.endDate ?? null,
                 assignedBranch,
-                eligibilityCriteria: eligibility,
-                programRequirements: normalizeProgramRequirements(requiredDocs)
+                eligibilityCriteria: values.eligibilityCriteria ?? eligibility,
+                programRequirements: normalizeProgramRequirements(requiredDocs),
+                ...(logoRemoved ? { logoUrl: null, logoPath: null } : {})
             }
             delete (rawPayload as any).branchId
 
             const payload = pruneUndefined(rawPayload)
 
-            await updateDoc(doc(db, 'programs', selectedProgram.id), payload)
+            const batch = writeBatch(db)
+            batch.update(doc(db, 'programs', selectedProgram.id), payload)
+            await queueProgramRequiredDocs(batch, selectedProgram.id, requiredDocs)
+            await batch.commit()
+
+            if (logoRemoved && selectedProgram.logoPath) {
+                try {
+                    await deleteObject(ref(getStorage(), selectedProgram.logoPath))
+                } catch {
+                    // the file may already be gone
+                }
+            }
 
             if (logoFile) {
                 const uploaded = await uploadProgramLogo(
@@ -2746,12 +2406,10 @@ const ProgramManager: React.FC = () => {
                 await updateDoc(doc(db, 'programs', selectedProgram.id), uploaded)
             }
 
-            await upsertProgramRequiredDocs(selectedProgram.id, requiredDocs)
-
             message.success('Program updated successfully')
             setEditModalVisible(false)
-            setQuestions([])
-            setCoverage({ isMultiBranch: false, supportedBranchIds: [], participatingDepartmentIds: [] })
+            resetWizard()
+            setCurrentStep(-1)
             fetchPrograms()
         } catch (err: any) {
             message.error('Failed to update program')
@@ -2765,18 +2423,33 @@ const ProgramManager: React.FC = () => {
     // clicked (editForm, coverage, eligibility, requiredDocs, questions, logo all
     // load from the record right away), so any single section can save the whole
     // program on its own -- the user never has to walk through the rest.
-    const saveEditedProgram = async () => {
+    const saveEditedProgram = async (overrides: Record<string, any> = {}) => {
         await handleUpdateProgram({
-            ...basicDetails,
-            ...editForm.getFieldsValue(),
+            ...editForm.getFieldsValue(true),
             ...coverage,
             onboardingQuestions: questions,
-            eligibilityCriteria: eligibility
+            eligibilityCriteria: eligibility,
+            ...overrides
         })
     }
 
     const handleDeleteProgram = async (id: string) => {
         try {
+            const linked = await getDocs(query(collection(db, 'applications'), where('programId', '==', id), limit(1)))
+            if (!linked.empty) {
+                message.warning('This program has applications or participants. Deactivate it instead of deleting it.')
+                return
+            }
+            const program = programs.find(p => p.id === id)
+            const docsSnap = await getDocs(collection(db, 'programs', id, 'requiredDocs'))
+            await Promise.all(docsSnap.docs.map(d => deleteDoc(d.ref)))
+            if (program?.logoPath) {
+                try {
+                    await deleteObject(ref(getStorage(), program.logoPath))
+                } catch {
+                    // the file may already be gone
+                }
+            }
             await deleteDoc(doc(db, 'programs', id))
             message.success('Program deleted successfully')
             fetchPrograms()
@@ -2786,450 +2459,363 @@ const ProgramManager: React.FC = () => {
         }
     }
 
-    const filteredPrograms = scopedPrograms.filter(program => {
-        const matchesSearch = (program.name || '')
-            .toLowerCase()
-            .includes(searchText.toLowerCase())
-        const matchesStatus = filteredStatus
-            ? program.status === filteredStatus
-            : true
-        return matchesSearch && matchesStatus
-    })
+    const openEditProgram = (record: any) => {
+        resetWizard()
+        editingIdRef.current = record.id
+        setSelectedProgram(record)
+        setLogoFile(null)
+        setLogoPreview(record.logoUrl || null)
 
-    const totalPrograms = scopedPrograms.length
-    const activePrograms = scopedPrograms.filter(
-        p => p.status === 'Active'
-    ).length
-    // const totalBudget = scopedPrograms.reduce(
-    //     (sum, p) => sum + (p.budget || 0),
-    //     0
-    // )
-    const totalCapacity = scopedPrograms.reduce(
-        (sum, p) => sum + (p.maxCapacity || 0),
-        0
+        editForm.setFieldsValue({
+            ...record,
+            branchId: record.assignedBranch?.id || record.branchId || null,
+            startDate: record.startDate
+                ? typeof record.startDate === 'string'
+                    ? dayjs(record.startDate)
+                    : record.startDate?.toDate
+                        ? dayjs(record.startDate.toDate())
+                        : null
+                : null,
+            endDate: record.endDate
+                ? typeof record.endDate === 'string'
+                    ? dayjs(record.endDate)
+                    : record.endDate?.toDate
+                        ? dayjs(record.endDate.toDate())
+                        : null
+                : null
+        })
+        // The coverage step only offers other branches; the home branch is added back on save.
+        const home = record.assignedBranch?.id || record.branchId
+        const recordSupportedBranchIds = (record.supportedBranchIds || []).filter(
+            (id: string) => id !== home && (!userBranchId || id !== userBranchId)
+        )
+        setCoverage({
+            isMultiBranch: !!record.isMultiBranch,
+            supportedBranchIds: recordSupportedBranchIds,
+            participatingDepartmentIds: record.participatingDepartmentIds || []
+        })
+        const syncedQuestions = upsertHubQuestion(
+            record.onboardingQuestions || [],
+            record.supportedBranchIds || [],
+            branches
+        )
+        setQuestions(syncedQuestions)
+        setEligibility(record.eligibilityCriteria || [])
+        // Saving rewrites the requiredDocs subcollection from this list, so a save before it
+        // arrives (or with another programme's list) would wipe or mix them. Guard both.
+        const fallbackDocs = (record.programRequirements || []).map((r: any) => ({
+            ...r,
+            isOnboarding: true,
+            kind: r.kind ?? 'upload'
+        }))
+        setRequiredDocs(fallbackDocs)
+        // programRequirements is the source of truth. The requiredDocs mirror is
+        // only read for older programmes that never had the array.
+        setDocsLoading(!fallbackDocs.length)
+        if (!fallbackDocs.length) fetchProgramRequiredDocs(record.id)
+            .then(fromSub => {
+                if (editingIdRef.current !== record.id) return
+                if (fromSub.length) setRequiredDocs(fromSub)
+            })
+            .catch(err => console.error('Failed to load required documents', err))
+            .finally(() => {
+                if (editingIdRef.current === record.id) setDocsLoading(false)
+            })
+        setEditDirty(false)
+        setEditModalVisible(true)
+        setCurrentStep(-1)
+    }
+
+    /**
+     * Deactivate (from Active / Upcoming / Completed) or reactivate (from Inactive).
+     * isActive follows, because that's what the rest of the app filters on.
+     */
+    const toggleProgramStatus = (record: any) => {
+        const deactivating = record.status !== 'Inactive'
+        const newStatus = deactivating ? 'Inactive' : 'Active'
+        setTogglingProgramId(record.id)
+        updateDoc(doc(db, 'programs', record.id), { status: newStatus, isActive: !deactivating })
+            .then(() => {
+                message.success(deactivating ? 'Program deactivated' : 'Program reactivated')
+                fetchPrograms()
+            })
+            .catch(err => {
+                console.error(err)
+                message.error(deactivating ? 'Could not deactivate the program' : 'Could not reactivate the program')
+            })
+            .finally(() => setTogglingProgramId(null))
+    }
+
+    const openProgramDetails = (record: any) => {
+        setDetailsSection('overview')
+        setDetailsProgramId(record.id)
+    }
+
+    const confirmDelete = (record: any) =>
+        modal.confirm({
+            title: `Delete ${record.name || 'this program'}?`,
+            content: 'This cannot be undone. A program with applications or participants can only be deactivated.',
+            okText: 'Delete',
+            okButtonProps: { danger: true },
+            cancelText: 'Cancel',
+            centered: true,
+            onOk: async () => {
+                await handleDeleteProgram(record.id)
+                setDetailsProgramId(current => (current === record.id ? null : current))
+            }
+        })
+
+    /** Edit is the action; deactivating and deleting are rarer, so they sit in a menu. */
+    const renderProgramActions = (record: any) => canManagePrograms && (
+        <div className='prg-actions'>
+            <Button type='primary' shape='round' icon={<EditOutlined />} onClick={() => openEditProgram(record)}>
+                Edit
+            </Button>
+            <Dropdown
+                trigger={['click']}
+                menu={{
+                    items: [
+                        {
+                            key: 'status',
+                            icon: <PoweroffOutlined />,
+                            label: record.status === 'Inactive' ? 'Reactivate' : 'Deactivate',
+                            disabled: togglingProgramId === record.id
+                        },
+                        { type: 'divider' },
+                        { key: 'delete', icon: <DeleteOutlined />, label: 'Delete', danger: true }
+                    ],
+                    onClick: ({ key }) => (key === 'status' ? toggleProgramStatus(record) : confirmDelete(record))
+                }}
+            >
+                <Button shape='circle' icon={<MoreOutlined />} aria-label='More actions' loading={togglingProgramId === record.id} />
+            </Dropdown>
+        </div>
+    )
+
+    const detailsProgram = programs.find(p => p.id === detailsProgramId) ?? null
+
+    const STATUS_SEGMENTS = [
+        { value: 'Active', label: 'Active', tone: 'success' },
+        { value: 'Upcoming', label: 'Upcoming', tone: 'info' },
+        { value: 'Completed', label: 'Completed', tone: 'neutral' },
+        { value: 'Inactive', label: 'Inactive', tone: 'warning' },
+        { value: 'all', label: 'All', tone: 'neutral' }
+    ]
+    const STATUS_PILL: Record<string, string> = { Active: 'success', Upcoming: 'info', Completed: 'neutral', Inactive: 'warning' }
+
+    const searchedPrograms = scopedPrograms.filter(program =>
+        `${program.name || ''} ${program.type || ''} ${program.assignedFunder || ''}`
+            .toLowerCase()
+            .includes(searchText.trim().toLowerCase())
+    )
+    const statusCounts = STATUS_SEGMENTS.reduce<Record<string, number>>((acc, segment) => {
+        acc[segment.value] =
+            segment.value === 'all'
+                ? searchedPrograms.length
+                : searchedPrograms.filter(p => (p.status || 'Active') === segment.value).length
+        return acc
+    }, {})
+    const filteredPrograms = searchedPrograms
+        .filter(p => filteredStatus === 'all' || (p.status || 'Active') === filteredStatus)
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+
+    const LIST_PAGE_SIZE = 12
+    const pageRows = filteredPrograms.slice((listPage - 1) * LIST_PAGE_SIZE, listPage * LIST_PAGE_SIZE)
+    const atLimit = programs.length >= programLimit
+
+    const selectProgram = (record: any) => {
+        setDetailsSection('overview')
+        setDetailsProgramId(record.id)
+    }
+
+    const programMeta = (p: any) =>
+        [displayProgramType(p.type), p.assignedBranch?.name, `${formatProgramDate(p.startDate)} – ${formatProgramDate(p.endDate)}`]
+            .filter(Boolean)
+            .join(' · ')
+
+    const renderDetailPanel = (p: any) => (
+        <MotionCard>
+            <div className='prg-detail'>
+                <header className='prg-detail-head'>
+                    <ProgramAvatar program={p} size={52} />
+                    <div className='prg-detail-identity'>
+                        <h2 className='prg-detail-name'>{p.name}</h2>
+                        <div className='prg-detail-sub'>
+                            <StatusPill tone={STATUS_PILL[p.status || 'Active'] || 'neutral'}>{p.status || 'Active'}</StatusPill>
+                            {p.isMultiBranch && <StatusPill tone='info'>Multi-branch</StatusPill>}
+                        </div>
+                    </div>
+                </header>
+                {renderProgramActions(p)}
+                {p.registrationLink && (
+                    <div className='prg-link'>
+                        <span className='prg-link-label'>Registration link</span>
+                        <Text
+                            className='prg-link-text'
+                            ellipsis
+                            copyable={{ text: window.location.origin + p.registrationLink, tooltips: ['Copy link', 'Copied'] }}
+                        >
+                            {window.location.origin + p.registrationLink}
+                        </Text>
+                    </div>
+                )}
+                <SetupSegmented<ProgramDetailsSection>
+                    fullWidth
+                    options={PROGRAM_DETAIL_SECTIONS}
+                    value={detailsSection}
+                    onChange={setDetailsSection}
+                />
+                <div className='prg-detail-body'>
+                    <ProgramDetailsBody program={p} section={detailsSection} branches={branches} departments={departments} />
+                </div>
+            </div>
+        </MotionCard>
     )
 
     return (
-        <>
+        <div className='ws-page'>
             <Helmet>
                 <title>Incubation Programs | Smart Incubation Platform</title>
             </Helmet>
 
-            <div style={{ padding: 24, height: '100vh' }}>
-                {!userResolved ? (
-                    <DashboardLoader label='Getting your programs ready' />
-                ) : (
-                    <>
-                        {viewMode === 'programs' ? (
-                            <>
-                                {/* metrics */}
-                                <Row data-guide='program-metrics' gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                                    <Col xs={24} sm={12} md={8}>
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ duration: 0.4 }}
-                                        >
-                                            <MotionCard.Metric
-                                                loading={dataLoading}
-                                                title='Total Programs'
-                                                value={formatter(totalPrograms)}
-                                                icon={
-                                                    <ProjectOutlined
-                                                        style={{ fontSize: 18, color: '#1d39c4' }}
-                                                    />
-                                                }
-                                                iconBg='rgba(29,57,196,.12)'
-                                            />
-                                        </motion.div>
-                                    </Col>
-
-                                    <Col xs={24} sm={12} md={8}>
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ duration: 0.4, delay: 0.1 }}
-                                        >
-                                            <MotionCard.Metric
-                                                loading={dataLoading}
-                                                title='Active Programs'
-                                                value={
-                                                    <span style={{ color: '#52c41a' }}>
-                                                        {formatter(activePrograms)}
-                                                    </span>
-                                                }
-                                                icon={
-                                                    <CheckCircleOutlined
-                                                        style={{ fontSize: 18, color: '#52c41a' }}
-                                                    />
-                                                }
-                                                iconBg='rgba(82,196,26,.12)'
-                                            />
-                                        </motion.div>
-                                    </Col>
-
-                                    {/* <Col xs={24} sm={12} md={6}>
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ duration: 0.4, delay: 0.2 }}
-                                        >
-                                            <MotionCard.Metric
-                                                loading={dataLoading}
-                                                title='Total Budget'
-                                                value={
-                                                    <span style={{ color: '#1890ff' }}>
-                                                        {formatter(totalBudget)}
-                                                    </span>
-                                                }
-                                                icon={
-                                                    <DollarOutlined
-                                                        style={{ fontSize: 18, color: '#1890ff' }}
-                                                    />
-                                                }
-                                                iconBg='rgba(24,144,255,.12)'
-                                            />
-                                        </motion.div>
-                                    </Col> */}
-
-                                    <Col xs={24} sm={12} md={8}>
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ duration: 0.4, delay: 0.3 }}
-                                        >
-                                            <MotionCard.Metric
-                                                loading={dataLoading}
-                                                title='Total Capacity'
-                                                value={formatter(totalCapacity)}
-                                                icon={
-                                                    <TeamOutlined
-                                                        style={{ fontSize: 18, color: '#eb2f96' }}
-                                                    />
-                                                }
-                                                iconBg='rgba(235,47,150,.12)'
-                                            />
-                                        </motion.div>
-                                    </Col>
-                                </Row>
-
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ duration: 0.4 }}
+            {!userResolved ? (
+                <DashboardLoader label='Getting your programs ready' />
+            ) : (
+                <>
+                    <DashboardFilterBar>
+                        <div className='ws-toolbar' data-guide='program-filters'>
+                            <Segmented
+                                data-guide='program-metrics'
+                                className='ws-toolbar-status mv-status-strip'
+                                block
+                                value={filteredStatus}
+                                onChange={value => {
+                                    setFilteredStatus(String(value))
+                                    setListPage(1)
+                                }}
+                                aria-label='Filter by status'
+                                options={STATUS_SEGMENTS.map(segment => ({
+                                    value: segment.value,
+                                    label: (
+                                        <span className='mv-seg'>
+                                            {segment.label}
+                                            {!dataLoading && (
+                                                <span className={`mv-seg-count qtx-tone-${segment.tone}`}>{statusCounts[segment.value]}</span>
+                                            )}
+                                        </span>
+                                    )
+                                }))}
+                            />
+                            <Input
+                                className='ws-toolbar-search'
+                                allowClear
+                                prefix={<SearchOutlined />}
+                                placeholder='Search name, type or funder'
+                                aria-label='Search programs'
+                                value={searchText}
+                                onChange={e => {
+                                    setSearchText(e.target.value)
+                                    setListPage(1)
+                                }}
+                            />
+                            {canManagePrograms && <Tooltip
+                                title={atLimit ? `Your organisation can have ${programLimit} program${programLimit === 1 ? '' : 's'}. Ask a system administrator to raise the limit.` : undefined}
+                            >
+                                <Button
+                                    className='ws-toolbar-button'
+                                    data-guide='add-program-action'
+                                    type='primary'
+                                    icon={<PlusOutlined />}
+                                    disabled={atLimit}
+                                    onClick={() => {
+                                        resetWizard()
+                                        setModalVisible(true)
+                                    }}
                                 >
-                                    <MotionCard
-                                        filterBarProps={{ marginBottom: 0 }}
-                                        filterBar={
-                                            <div
-                                                data-guide='program-filters'
-                                                style={{ display: 'flex', flexWrap: 'wrap', gap: 16, width: '100%' }}
-                                            >
-                                                <div data-guide='program-manager-header' style={{ flex: '0 1 220px' }}>
-                                                    <ProgramViewToggle value={viewMode} onChange={setViewMode} />
-                                                </div>
-                                                <div style={{ flex: '1 1 220px' }}>
-                                                    <Input
-                                                        placeholder='Search Program Name'
-                                                        value={searchText}
-                                                        onChange={e => setSearchText(e.target.value)}
-                                                        allowClear
-                                                    />
-                                                </div>
-                                                <div style={{ flex: '1 1 220px' }}>
-                                                    <Select
-                                                        placeholder='Filter by Status'
-                                                        onChange={value => setFilteredStatus(value)}
-                                                        value={filteredStatus}
-                                                        allowClear
-                                                        style={{ width: '100%' }}
-                                                    >
-                                                        <Select.Option value='Active'>Active</Select.Option>
-                                                        <Select.Option value='Inactive'>Inactive</Select.Option>
-                                                        <Select.Option value='Completed'>Completed</Select.Option>
-                                                        <Select.Option value='Upcoming'>Upcoming</Select.Option>
-                                                    </Select>
-                                                </div>
-                                                {programs.length < programLimit && (
-                                                    <div style={{ flex: '0 1 180px', display: 'flex', justifyContent: 'flex-end' }}>
-                                                        <Button
-                                                            shape='round'
-                                                            data-guide='add-program-action'
-                                                            type='primary'
-                                                            icon={<PlusOutlined />}
-                                                            onClick={() => {
-                                                                if (programs.length >= programLimit) {
-                                                                    message.warning(
-                                                                        `Only ${programLimit} program${programLimit === 1 ? ' is' : 's are'} allowed. Contact the system administrator to add more.`
-                                                                    )
-                                                                } else {
-                                                                    setCoverage({
-                                                                        isMultiBranch: false,
-                                                                        supportedBranchIds: [],
-                                                                        participatingDepartmentIds: []
-                                                                    })
-                                                                    setModalVisible(true)
-                                                                }
-                                                            }}
-                                                        >
-                                                            Add Program
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        }
+                                    New program
+                                </Button>
+                            </Tooltip>}
+                        </div>
+                    </DashboardFilterBar>
+
+                    <div className='ws-layout'>
+                        <div data-guide='program-table'>
+                            <MotionCard loading={dataLoading || programsLoading}>
+                                {isProjectAdmin && scopedPrograms.length === 0 ? (
+                                    <Empty
+                                        className='ws-list-empty'
+                                        description='No programs are set up for your branch yet. Ask head office or M&E to assign one.'
                                     />
-                                </motion.div>
-
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ duration: 0.4 }}
-                                >
-                                    <MotionCard
-                                        style={{ marginTop: 15 }}
-                                        loading={dataLoading || programsLoading}
-                                        skeleton='table'
-                                        skeletonRows={6}
-                                        skeletonColumns={5}
-                                    >
-                                        {isProjectAdmin && scopedPrograms.length === 0 ? (
-                                            <Result
-                                                status='500'
-                                                title='No programs set up yet'
-                                                subTitle='There are no incubation programs configured for your branch yet. Please contact head office or M&E to assign a program to your branch.'
-                                            />
-                                        ) : (
-                                            <div data-guide='program-table'>
-                                                <Table
-                                                    dataSource={filteredPrograms}
-                                                    rowKey='id'
-                                                    pagination={{ pageSize: 6, showSizeChanger: false, position: ['bottomCenter'] }}
-                                                    expandable={{
-                                                        expandedRowRender: record => (
-                                                            <div>
-                                                                <p>
-                                                                    <strong>Description:</strong>
-                                                                    {record.description || 'N/A'}
-                                                                </p>
-                                                                {/* <p>
-                                                                <strong>Budget:</strong> R
-                                                                {record.budget?.toLocaleString() || 0}
-                                                            </p> */}
-                                                                <p>
-                                                                    <strong>Max Capacity:</strong>
-                                                                    {record.maxCapacity || 'N/A'}
-                                                                </p>
-                                                            </div>
-                                                        )
-                                                    }}
+                                ) : filteredPrograms.length === 0 ? (
+                                    <Empty
+                                        className='ws-list-empty'
+                                        description={searchText ? 'No programs match.' : `No ${filteredStatus === 'all' ? '' : filteredStatus.toLowerCase() + ' '}programs.`}
+                                    />
+                                ) : (
+                                    <>
+                                        <div className='ws-rows' role='listbox' aria-label='Programs'>
+                                            {pageRows.map(p => (
+                                                <button
+                                                    key={p.id}
+                                                    type='button'
+                                                    role='option'
+                                                    aria-selected={p.id === detailsProgramId}
+                                                    className={`ws-row${p.id === detailsProgramId ? ' is-selected' : ''}`}
+                                                    onClick={() => selectProgram(p)}
                                                 >
-                                                    <Table.Column
-                                                        title='Program Name'
-                                                        dataIndex='name'
-                                                        key='name'
-                                                    />
-                                                    <Table.Column
-                                                        title='Assigned Branch'
-                                                        key='assignedBranch'
-                                                        render={(record: any) =>
-                                                            record.assignedBranch ? (
-                                                                <span>
-                                                                    <b>{record.assignedBranch.name}</b>
-                                                                    <br />
-                                                                    {record.assignedBranch.email ? (
-                                                                        <span style={{ color: '#888', fontSize: 13 }}>
-                                                                            {record.assignedBranch.email}
-                                                                        </span>
-                                                                    ) : null}
-                                                                </span>
-                                                            ) : (
-                                                                <Tag color='orange'>Not Assigned</Tag>
-                                                            )
-                                                        }
-                                                    />
-                                                    <Table.Column
-                                                        title='Scope'
-                                                        dataIndex='isMultiBranch'
-                                                        render={(val: boolean | undefined) =>
-                                                            val ? (
-                                                                <Tag color='blue'>Multi-branch</Tag>
-                                                            ) : (
-                                                                <Tag>Single branch</Tag>
-                                                            )
-                                                        }
-                                                    />
-                                                    <Table.Column title='Type' dataIndex='type' />
-                                                    <Table.Column
-                                                        title='Status'
-                                                        dataIndex='status'
-                                                        render={(s: string) => (
-                                                            <Tag color={s === 'Active' ? 'green' : 'red'}>{s}</Tag>
-                                                        )}
-                                                    />
-                                                    <Table.Column
-                                                        title='Start Date'
-                                                        dataIndex='startDate'
-                                                        render={(val: any) =>
-                                                            typeof val === 'string'
-                                                                ? val
-                                                                : val?.toDate
-                                                                    ? dayjs(val.toDate()).format('YYYY-MM-DD')
-                                                                    : 'N/A'
-                                                        }
-                                                    />
-                                                    <Table.Column
-                                                        title='End Date'
-                                                        dataIndex='endDate'
-                                                        render={(val: any) =>
-                                                            typeof val === 'string'
-                                                                ? val
-                                                                : val?.toDate
-                                                                    ? dayjs(val.toDate()).format('YYYY-MM-DD')
-                                                                    : 'N/A'
-                                                        }
-                                                    />
-                                                    <Table.Column
-                                                        title='Registration Link'
-                                                        dataIndex='registrationLink'
-                                                        render={(link: string) => (
-                                                            <Text
-                                                                copyable={{
-                                                                    text: window.location.origin + link,
-                                                                    tooltips: ['Copy link', 'Copied!']
-                                                                }}
-                                                            />
-                                                        )}
-                                                    />
-                                                    <Table.Column
-                                                        title='Actions'
-                                                        key='actions'
-                                                        render={(_: any, record: any) => (
-                                                            <Space size='middle'>
-                                                                <Button
-                                                                    icon={<EditOutlined />}
-                                                                    size='small'
-                                                                    style={{ border: 'none' }}
-                                                                    onClick={() => {
-                                                                        setSelectedProgram(record)
-                                                                        setLogoFile(null)
-                                                                        setLogoPreview(record.logoUrl || null)
-
-                                                                        editForm.setFieldsValue({
-                                                                            ...record,
-                                                                            branchId:
-                                                                                record.assignedBranch?.id ||
-                                                                                record.branchId ||
-                                                                                null,
-                                                                            startDate: record.startDate
-                                                                                ? typeof record.startDate === 'string'
-                                                                                    ? dayjs(record.startDate)
-                                                                                    : record.startDate?.toDate
-                                                                                        ? dayjs(record.startDate.toDate())
-                                                                                        : null
-                                                                                : null,
-                                                                            endDate: record.endDate
-                                                                                ? typeof record.endDate === 'string'
-                                                                                    ? dayjs(record.endDate)
-                                                                                    : record.endDate?.toDate
-                                                                                        ? dayjs(record.endDate.toDate())
-                                                                                        : null
-                                                                                : null
-                                                                        })
-                                                                        const recordSupportedBranchIds = (
-                                                                            record.supportedBranchIds || []
-                                                                        ).filter(
-                                                                            (id: string) =>
-                                                                                !userBranchId || id !== userBranchId // strip my own branch
-                                                                        )
-                                                                        setCoverage({
-                                                                            isMultiBranch: !!record.isMultiBranch,
-                                                                            supportedBranchIds: recordSupportedBranchIds,
-                                                                            participatingDepartmentIds:
-                                                                                record.participatingDepartmentIds || []
-                                                                        })
-                                                                        const baseQuestions =
-                                                                            record.onboardingQuestions || []
-                                                                        const syncedQuestions = upsertHubQuestion(
-                                                                            baseQuestions,
-                                                                            record.supportedBranchIds || [],
-                                                                            branches
-                                                                        )
-                                                                        setQuestions(syncedQuestions)
-                                                                        setEligibility(record.eligibilityCriteria || [])
-                                                                            ; (async () => {
-                                                                                const fromSub = await fetchProgramRequiredDocs(
-                                                                                    record.id
-                                                                                )
-                                                                                if (fromSub.length) {
-                                                                                    setRequiredDocs(fromSub)
-                                                                                } else {
-                                                                                    setRequiredDocs(
-                                                                                        (record.programRequirements || []).map(
-                                                                                            (r: any) => ({
-                                                                                                ...r,
-                                                                                                isOnboarding: true,
-                                                                                                kind: r.kind ?? 'upload'
-                                                                                            })
-                                                                                        )
-                                                                                    )
-                                                                                }
-                                                                            })()
-                                                                        setEditModalVisible(true)
-                                                                        setCurrentStep(-1)
-                                                                    }}
-                                                                />
-
-                                                                {/* ✅ Confirmation before delete */}
-                                                                <Popconfirm
-                                                                    title='Delete this program?'
-                                                                    description='This action cannot be undone.'
-                                                                    okText='Yes, delete'
-                                                                    cancelText='Cancel'
-                                                                    okType='danger'
-                                                                    onConfirm={() => handleDeleteProgram(record.id)}
-                                                                >
-                                                                    <Button
-                                                                        icon={<DeleteOutlined />}
-                                                                        size='small'
-                                                                        danger
-                                                                    />
-                                                                </Popconfirm>
-
-                                                                <Button
-                                                                    size='small'
-                                                                    icon={<PoweroffOutlined />}
-                                                                    onClick={() => {
-                                                                        const newStatus =
-                                                                            record.status === 'Active'
-                                                                                ? 'Inactive'
-                                                                                : 'Active'
-                                                                        setTogglingProgramId(record.id)
-                                                                        updateDoc(doc(db, 'programs', record.id), {
-                                                                            status: newStatus
-                                                                        })
-                                                                            .then(() => {
-                                                                                message.success(
-                                                                                    `Program ${newStatus.toLowerCase()}d`
-                                                                                )
-                                                                                fetchPrograms()
-                                                                            })
-                                                                            .finally(() => setTogglingProgramId(null))
-                                                                    }}
-                                                                    loading={togglingProgramId === record.id}
-                                                                >
-                                                                    {record.status === 'Active'
-                                                                        ? 'Deactivate'
-                                                                        : 'Activate'}
-                                                                </Button>
-                                                            </Space>
-                                                        )}
-                                                    />
-                                                </Table>
+                                                    <ProgramAvatar program={p} size={36} />
+                                                    <div className='ws-row-main'>
+                                                        <div className='ws-row-name'>{p.name || 'Untitled program'}</div>
+                                                        <div className='ws-row-meta'>{programMeta(p)}</div>
+                                                    </div>
+                                                    <div className='ws-row-side'>
+                                                        <StatusPill tone={STATUS_PILL[p.status || 'Active'] || 'neutral'}>{p.status || 'Active'}</StatusPill>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {filteredPrograms.length > LIST_PAGE_SIZE && (
+                                            <div className='ws-pagination'>
+                                                <Pagination
+                                                    size='small'
+                                                    current={listPage}
+                                                    pageSize={LIST_PAGE_SIZE}
+                                                    total={filteredPrograms.length}
+                                                    onChange={setListPage}
+                                                    showSizeChanger={false}
+                                                    showLessItems
+                                                />
                                             </div>
                                         )}
+                                    </>
+                                )}
+                            </MotionCard>
+                        </div>
+                        {!isMobile && (
+                            <div className='ws-detail-sticky'>
+                                {detailsProgram ? (
+                                    renderDetailPanel(detailsProgram)
+                                ) : (
+                                    <MotionCard>
+                                        <Empty className='ws-detail-empty' description='Select a program to see it here.' />
                                     </MotionCard>
-                                </motion.div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {isMobile && (
+                        <Drawer
+                            className='ws-drawer ws-sheet'
+                            open={!!detailsProgram}
+                            onClose={() => setDetailsProgramId(null)}
+                            placement='bottom'
+                            height='92vh'
+                            title={detailsProgram?.name || 'Program'}
+                        >
+                            {detailsProgram && renderDetailPanel(detailsProgram)}
+                        </Drawer>
+                    )}
 
                                 {/* CREATE */}
                                 <Modal
@@ -3239,16 +2825,7 @@ const ProgramManager: React.FC = () => {
                                     title='Add New Program'
                                     onCancel={() => {
                                         setModalVisible(false)
-                                        setQuestions([])
-                                        setEditingQuestion(null)
-                                        setCurrentStep(0)
-                                        setEligibility({})
-                                        setRequiredDocs([])
-                                        setCoverage({
-                                            isMultiBranch: false,
-                                            supportedBranchIds: [],
-                                            participatingDepartmentIds: []
-                                        })
+                                        resetWizard()
                                     }}
                                     footer={null}
                                     confirmLoading={saving}
@@ -3265,13 +2842,12 @@ const ProgramManager: React.FC = () => {
                                         </Steps>
                                     </div>
 
-                                    <AnimatePresence mode='wait'>
+                                    <>
                                         <motion.div
                                             key={currentStep}
-                                            initial={{ opacity: 0 }}
-                                            animate={{ opacity: 1 }}
-                                            exit={{ opacity: 0 }}
-                                            transition={{ duration: 0.25 }}
+                                            initial={{ y: 8 }}
+                                            animate={{ y: 0 }}
+                                            transition={{ duration: 0.2 }}
                                         >
                                             {currentStep === 0 && (
                                                 <Form data-guide='program-basic-details'
@@ -3348,7 +2924,7 @@ const ProgramManager: React.FC = () => {
                                                                     <span
                                                                         style={{
                                                                             color:
-                                                                                words >= 100 ? '#ff4d4f' : 'rgba(0,0,0,.45)'
+                                                                                words >= 100 ? '#ff4d4f' : 'var(--app-text-muted)'
                                                                         }}
                                                                     >
                                                                         {words}/99 words
@@ -3375,22 +2951,38 @@ const ProgramManager: React.FC = () => {
                                                             </Form.Item>
                                                         </Col>
                                                         <Col span={12}>
-                                                            <Form.Item name='status' label='Status'>
-                                                                <Select>
-                                                                    <Select.Option value='Active'>Active</Select.Option>
-                                                                    <Select.Option value='Inactive'>
-                                                                        Inactive
-                                                                    </Select.Option>
-                                                                    <Select.Option value='Completed'>
-                                                                        Completed
-                                                                    </Select.Option>
-                                                                    <Select.Option value='Upcoming'>
-                                                                        Upcoming
-                                                                    </Select.Option>
-                                                                </Select>
+                                                            {/* A new programme's status follows its dates (Upcoming before it starts). */}
+                                                            <Form.Item noStyle shouldUpdate={(prev, next) => prev.startDate !== next.startDate || prev.endDate !== next.endDate}>
+                                                                {({ getFieldValue }) => {
+                                                                    const status = programStatusForDates(getFieldValue('startDate'), getFieldValue('endDate'))
+                                                                    return (
+                                                                        <Form.Item label='Status' tooltip='Set from the start and end dates. You can change it later.'>
+                                                                            <div className='prg-status-auto'>
+                                                                                <StatusPill tone={status === 'Upcoming' ? 'info' : status === 'Completed' ? 'neutral' : 'success'}>
+                                                                                    {status}
+                                                                                </StatusPill>
+                                                                                <span>{status === 'Upcoming' ? 'until the start date' : 'from the dates'}</span>
+                                                                            </div>
+                                                                        </Form.Item>
+                                                                    )
+                                                                }}
                                                             </Form.Item>
                                                         </Col>
                                                     </Row>
+
+                                                    <Form.Item
+                                                        name='intakeMode'
+                                                        label='How will SMEs join?'
+                                                        initialValue='applications'
+                                                        rules={[{ required: true, message: 'Choose how SMEs join' }]}
+                                                    >
+                                                        <ChoiceCards<ProgramIntakeMode>
+                                                            compact
+                                                            label='How will SMEs join?'
+                                                            columns={3}
+                                                            options={INTAKE_OPTIONS()}
+                                                        />
+                                                    </Form.Item>
 
                                                     <Row gutter={16}>
                                                         <Col span={8}>
@@ -3415,7 +3007,18 @@ const ProgramManager: React.FC = () => {
                                                             <Form.Item
                                                                 name='endDate'
                                                                 label='End Date'
-                                                                rules={[{ required: true, message: 'Please select an end date' }]}
+                                                                dependencies={['startDate']}
+                                                                rules={[
+                                                                    { required: true, message: 'Please select an end date' },
+                                                                    ({ getFieldValue }) => ({
+                                                                        validator: (_, value) => {
+                                                                            const start = getFieldValue('startDate')
+                                                                            return !value || !start || dayjs(value).isAfter(dayjs(start))
+                                                                                ? Promise.resolve()
+                                                                                : Promise.reject(new Error('The end date must be after the start date'))
+                                                                        }
+                                                                    })
+                                                                ]}
                                                             >
                                                                 <DatePicker style={{ width: '100%' }} />
                                                             </Form.Item>
@@ -3579,7 +3182,7 @@ const ProgramManager: React.FC = () => {
                                                 </>
                                             )}
                                         </motion.div>
-                                    </AnimatePresence>
+                                    </>
                                 </Modal>
 
                                 {/* EDIT */}
@@ -3590,16 +3193,9 @@ const ProgramManager: React.FC = () => {
                                     title='Edit Program'
                                     onCancel={() => {
                                         setEditModalVisible(false)
-                                        setQuestions([])
-                                        setEditingQuestion(null)
-                                        setRequiredDocs([])
+                                        editingIdRef.current = null
+                                        resetWizard()
                                         setCurrentStep(-1)
-                                        setEligibility({})
-                                        setCoverage({
-                                            isMultiBranch: false,
-                                            supportedBranchIds: [],
-                                            participatingDepartmentIds: []
-                                        })
                                     }}
                                     footer={null}
                                     confirmLoading={saving}
@@ -3616,29 +3212,27 @@ const ProgramManager: React.FC = () => {
                                         </Steps>
                                     </div>
 
-                                    <AnimatePresence mode='wait'>
+                                    <>
                                         <motion.div
                                             key={currentStep}
-                                            initial={{ opacity: 0 }}
-                                            animate={{ opacity: 1 }}
-                                            exit={{ opacity: 0 }}
-                                            transition={{ duration: 0.25 }}
+                                            initial={{ y: 8 }}
+                                            animate={{ y: 0 }}
+                                            transition={{ duration: 0.2 }}
                                         >
                                             {currentStep === -1 && (
                                                 <SectionPickerStep
                                                     onSelect={setCurrentStep}
-                                                    onSaveAndClose={saveEditedProgram}
+                                                    onSaveAndClose={() => saveEditedProgram()}
                                                     saving={saving}
+                                                    showSave={editDirty}
                                                 />
                                             )}
                                             {currentStep === 0 && (
                                                 <Form data-guide='program-basic-details'
                                                     layout='vertical'
                                                     form={editForm}
-                                                    onFinish={values => {
-                                                        setBasicDetails(values)
-                                                        saveEditedProgram()
-                                                    }}
+                                                    onValuesChange={() => setEditDirty(true)}
+                                                    onFinish={() => saveEditedProgram()}
                                                 >
                                                     <Form.Item
                                                         name='branchId'
@@ -3667,9 +3261,19 @@ const ProgramManager: React.FC = () => {
                                                     <Form.Item
                                                         name='description'
                                                         label='Program Description'
-                                                        rules={[{ required: true }]}
+                                                        rules={[
+                                                            { required: true, message: 'Please enter a description' },
+                                                            {
+                                                                validator: (_, value) => {
+                                                                    const words = (value || '').trim().split(/\s+/).filter(Boolean).length
+                                                                    return words < 100
+                                                                        ? Promise.resolve()
+                                                                        : Promise.reject(new Error(`Please keep it under 100 words (currently ${words}).`))
+                                                                }
+                                                            }
+                                                        ]}
                                                     >
-                                                        <Input />
+                                                        <Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} />
                                                     </Form.Item>
                                                     <Row gutter={16}>
                                                         <Col span={12}>
@@ -3694,6 +3298,15 @@ const ProgramManager: React.FC = () => {
                                                             </Form.Item>
                                                         </Col>
                                                     </Row>
+
+                                                    <Form.Item name='intakeMode' label='How will SMEs join?'>
+                                                        <ChoiceCards<ProgramIntakeMode>
+                                                            compact
+                                                            label='How will SMEs join?'
+                                                            columns={3}
+                                                            options={INTAKE_OPTIONS()}
+                                                        />
+                                                    </Form.Item>
 
                                                     <Row gutter={16}>
                                                         <Col span={8}>
@@ -3723,7 +3336,18 @@ const ProgramManager: React.FC = () => {
                                                             <Form.Item
                                                                 name='endDate'
                                                                 label='End Date'
-                                                                rules={[{ required: true, message: 'Please select an end date' }]}
+                                                                dependencies={['startDate']}
+                                                                rules={[
+                                                                    { required: true, message: 'Please select an end date' },
+                                                                    ({ getFieldValue }) => ({
+                                                                        validator: (_, value) => {
+                                                                            const start = getFieldValue('startDate')
+                                                                            return !value || !start || dayjs(value).isAfter(dayjs(start))
+                                                                                ? Promise.resolve()
+                                                                                : Promise.reject(new Error('The end date must be after the start date'))
+                                                                        }
+                                                                    })
+                                                                ]}
                                                             >
                                                                 <DatePicker style={{ width: '100%' }} />
                                                             </Form.Item>
@@ -3741,7 +3365,7 @@ const ProgramManager: React.FC = () => {
                                                         </Col>
                                                         <Col span={12}>
                                                             <Form.Item name='maxCapacity' label='Max Capacity'>
-                                                                <InputNumber style={{ width: '100%' }} min={1} />
+                                                                <InputNumber style={{ width: '100%' }} min={0} step={1} precision={0} />
                                                             </Form.Item>
                                                         </Col>
                                                     </Row>
@@ -3754,14 +3378,16 @@ const ProgramManager: React.FC = () => {
                                                         >
                                                             Back to Sections
                                                         </Button>
-                                                        <Button
-                                                            style={{ flex: 1 }}
-                                                            type='primary'
-                                                            htmlType='submit'
-                                                            loading={saving}
-                                                        >
-                                                            Save Program
-                                                        </Button>
+                                                        <FadeInSlot show={editDirty}>
+                                                            <Button
+                                                                style={{ flex: 1 }}
+                                                                type='primary'
+                                                                htmlType='submit'
+                                                                loading={saving}
+                                                            >
+                                                                Save Program
+                                                            </Button>
+                                                        </FadeInSlot>
                                                     </div>
                                                 </Form>
                                             )}
@@ -3773,10 +3399,11 @@ const ProgramManager: React.FC = () => {
                                                     departments={departments}
                                                     userBranchId={userBranchId}
                                                     onBack={() => setCurrentStep(-1)}
-                                                    onNext={saveEditedProgram}
+                                                    onNext={() => saveEditedProgram()}
                                                     backLabel='Back to Sections'
                                                     nextLabel='Save Program'
                                                     nextLoading={saving}
+                                                    nextVisible={editDirty}
                                                 />
                                             )}
 
@@ -3787,12 +3414,14 @@ const ProgramManager: React.FC = () => {
                                                         if (logoPreview && logoPreview.startsWith('blob:')) URL.revokeObjectURL(logoPreview)
                                                         setLogoFile(file)
                                                         setLogoPreview(preview)
+                                                        setEditDirty(true)
                                                     }}
                                                     onBack={() => setCurrentStep(-1)}
-                                                    onNext={saveEditedProgram}
+                                                    onNext={() => saveEditedProgram()}
                                                     backLabel='Back to Sections'
                                                     nextLabel='Save Program'
                                                     nextLoading={saving}
+                                                    nextVisible={editDirty}
                                                 />
                                             )}
 
@@ -3801,22 +3430,27 @@ const ProgramManager: React.FC = () => {
                                                     value={eligibility}
                                                     onChange={setEligibility}
                                                     onBack={() => setCurrentStep(-1)}
-                                                    onNext={saveEditedProgram}
+                                                    onNext={(result: Record<string, any>) =>
+                                                        saveEditedProgram({ eligibilityCriteria: result })
+                                                    }
+                                                    onDirty={markEditDirty}
                                                     backLabel='Back to Sections'
                                                     nextLabel='Save Program'
                                                     nextLoading={saving}
+                                                    nextVisible={editDirty}
                                                 />
                                             )}
                                             {currentStep === 4 && (
                                                 <div data-guide='program-required-documents-step'>
                                                     <RequiredDocumentsStep
                                                         value={requiredDocs}
-                                                        onChange={setRequiredDocs}
+                                                        onChange={handleEditRequiredDocsChange}
                                                         onBack={() => setCurrentStep(-1)}
-                                                        onNext={saveEditedProgram}
+                                                        onNext={() => saveEditedProgram()}
                                                         backLabel='Back to Sections'
                                                         nextLabel='Save Program'
                                                         nextLoading={saving}
+                                                        nextVisible={editDirty}
                                                     />
                                                 </div>
                                             )}
@@ -3832,13 +3466,14 @@ const ProgramManager: React.FC = () => {
                                                             setEditingQuestion(q)
                                                             setQuestionModalOpen(true)
                                                         }}
-                                                        onDelete={(id: string) =>
+                                                        onDelete={(id: string) => {
                                                             setQuestions(
                                                                 questions.filter(
                                                                     q => q.id !== id || q.systemKey === 'nearestHub'
                                                                 )
                                                             )
-                                                        }
+                                                            setEditDirty(true)
+                                                        }}
                                                     />
                                                     <QuestionModal
                                                         visible={questionModalOpen}
@@ -3879,40 +3514,31 @@ const ProgramManager: React.FC = () => {
                                                                 message.success('Question added')
                                                             }
                                                             setQuestionModalOpen(false)
+                                                            setEditDirty(true)
                                                         }}
                                                         onCancel={() => setQuestionModalOpen(false)}
                                                     />
                                                     <div style={{ marginTop: 32, display: 'flex', gap: 12 }}>
                                                         <Button style={{ flex: 1 }} onClick={() => setCurrentStep(-1)}>Back to Sections</Button>
-                                                        <Button
-                                                            style={{ flex: 1 }}
-                                                            type='primary'
-                                                            loading={saving}
-                                                            onClick={saveEditedProgram}
-                                                        >
-                                                            Save Program
-                                                        </Button>
+                                                        <FadeInSlot show={editDirty}>
+                                                            <Button
+                                                                style={{ flex: 1 }}
+                                                                type='primary'
+                                                                loading={saving}
+                                                                onClick={() => saveEditedProgram()}
+                                                            >
+                                                                Save Program
+                                                            </Button>
+                                                        </FadeInSlot>
                                                     </div>
                                                 </>
                                             )}
                                         </motion.div>
-                                    </AnimatePresence>
+                                    </>
                                 </Modal>
-                            </>
-                        ) : (
-                            <ProjectProposalsManager
-                                branches={branches}
-                                userBranchId={userBranchId}
-                                isProjectAdmin={isProjectAdmin}
-                                resolveAssignedBranch={resolveAssignedBranch}
-                                viewMode={viewMode}
-                                onViewModeChange={setViewMode}
-                            />
-                        )}
-                    </>
-                )}
-            </div>
-        </>
+                </>
+            )}
+        </div>
     )
 }
 

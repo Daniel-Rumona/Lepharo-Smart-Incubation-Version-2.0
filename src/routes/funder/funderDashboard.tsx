@@ -41,9 +41,11 @@ import {
     MotionCard
 } from '@/components/dashboards/metrics/Header'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
+import WhatsWorkingCard from '@/components/dashboards/shared/WhatsWorkingCard'
 import dayjs, { Dayjs } from 'dayjs'
 import { Helmet } from 'react-helmet'
 
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 const { RangePicker } = DatePicker
 const { Text } = Typography
 
@@ -126,39 +128,6 @@ type AssignedIntervention = {
     status?: string | null
 }
 type ProfileRow = { value: string; count: number }
-
-const MetricCard: React.FC<{
-    title: string
-    value: React.ReactNode
-    icon: React.ReactNode
-    iconBg?: string
-}> = ({ title, value, icon, iconBg = '#e6f4ff' }) => (
-    <MotionCard>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div
-                style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 12,
-                    background: iconBg,
-                    display: 'grid',
-                    placeItems: 'center',
-                    flex: '0 0 auto'
-                }}
-            >
-                {icon}
-            </div>
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)' }}>
-                    {title}
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>
-                    {value}
-                </div>
-            </div>
-        </div>
-    </MotionCard>
-)
 
 // ---------- component ----------
 const FunderDashboard: React.FC = () => {
@@ -773,28 +742,32 @@ const FunderDashboard: React.FC = () => {
                         }
                     />
 
+                    <div style={{ marginBottom: 16 }}>
+                        <WhatsWorkingCard programId={activeProgramId} />
+                    </div>
+
                     {/* Metrics */}
                     <Row gutter={[16, 16]}>
                         <Col xs={24} sm={12} lg={6}>
-                            <MetricCard
+                            <MetricTile
                                 title='Total SMEs'
                                 value={Object.keys(participants).length}
                                 icon={<TeamOutlined style={{ fontSize: 22 }} />}
-                                iconBg='#f6ffed'
+                                tone='success'
                             />
                         </Col>
 
                         <Col xs={24} sm={12} lg={6}>
-                            <MetricCard
+                            <MetricTile
                                 title='Total Applied'
                                 value={filteredApps.length}
                                 icon={<FileDoneOutlined style={{ fontSize: 22 }} />}
-                                iconBg='#e6f4ff'
+                                tone='accent'
                             />
                         </Col>
 
                         <Col xs={24} sm={12} lg={6}>
-                            <MetricCard
+                            <MetricTile
                                 title='Total Accepted'
                                 value={
                                     filteredApps.filter(
@@ -802,12 +775,12 @@ const FunderDashboard: React.FC = () => {
                                     ).length
                                 }
                                 icon={<SafetyCertificateOutlined style={{ fontSize: 22 }} />}
-                                iconBg='#f6ffed'
+                                tone='success'
                             />
                         </Col>
 
                         <Col xs={24} sm={12} lg={6}>
-                            <MetricCard
+                            <MetricTile
                                 title='Total Declined'
                                 value={
                                     filteredApps.filter(a =>
@@ -817,7 +790,7 @@ const FunderDashboard: React.FC = () => {
                                     ).length
                                 }
                                 icon={<SafetyCertificateOutlined style={{ fontSize: 22 }} />}
-                                iconBg='#fff1f0'
+                                tone='danger'
                             />
                         </Col>
                     </Row>

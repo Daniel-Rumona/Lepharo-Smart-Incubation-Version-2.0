@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { Timestamp } from 'firebase/firestore'
 import dayjs from 'dayjs'
+import { computeRiskScore as sharedComputeRiskScore } from '../../../../../../functions/src/smeRiskLogic'
 
 import type {
     AnyDoc,
@@ -182,98 +183,24 @@ export function getInterventionParticipantId(doc: AnyDoc): string {
     )
 }
 
-export function normalizeDepartmentName(value: any): string {
-    const raw = normalizeText(value)
-    if (!raw) return ''
-
-    const lower = raw.toLowerCase()
-
-    if (lower === 'rom' || lower.includes('recruitment') || lower.includes('onboarding')) {
-        return 'ROM'
-    }
-
-    if (lower.includes('hse') || lower.includes('labour')) {
-        return 'HSE & Labour Compliance'
-    }
-
-    if (lower.includes('financial')) {
-        return 'Financial Compliance'
-    }
-
-    if (lower === 'pds' || lower.includes('personal development')) {
-        return 'PDS'
-    }
-
-    /*
-     * IMPORTANT:
-     * Marketing must be checked before Market Linkages.
-     *
-     * `marketing` contains the substring `market`, so the previous
-     * `lower.includes('market')` check incorrectly normalised
-     * "Marketing and Communication" to "Market Linkages".
-     */
-    if (
-        lower.includes('marketing') ||
-        lower.includes('marketing and communication') ||
-        lower.includes('marketing & communication') ||
-        lower === 'communication' ||
-        lower === 'communications'
-    ) {
-        return 'Marketing and Communication'
-    }
-
-    if (
-        lower === 'market' ||
-        lower === 'market linkage' ||
-        lower === 'market linkages' ||
-        lower.includes('market linkage')
-    ) {
-        return 'Market Linkages'
-    }
-
-    if (lower.includes('legal')) {
-        return 'Legal Advisory Services'
-    }
-
-    if (lower.includes('wellness')) {
-        return 'Wellness Services'
-    }
-
-    if (lower.includes('training') || lower.includes('academy')) {
-        return 'Training Academy'
-    }
-
-    return raw
-}
-
 export function getInterventionDepartmentKey(
     iv: AnyDoc,
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
+    departmentsById: Record<string, AnyDoc>
 ) {
     const rawDepartmentId = normalizeText(iv?.departmentId)
-    const rawArea = normalizeDepartmentName(firstNonEmpty(iv?.area, iv?.areaOfSupport, iv?.departmentName, iv?.department))
 
     if (rawDepartmentId && departmentsById[rawDepartmentId]) {
         const dep = departmentsById[rawDepartmentId]
         return {
             departmentId: String(dep.id),
-            departmentName: normalizeDepartmentName(dep.name || rawArea || 'Unknown Department')
+            departmentName: normalizeText(dep.name) || 'Unknown Department'
         }
     }
 
-    if (rawArea) {
-        const dep = departmentsByName[rawArea.toLowerCase()]
-        if (dep) {
-            return {
-                departmentId: String(dep.id),
-                departmentName: normalizeDepartmentName(dep.name || rawArea)
-            }
-        }
-
+    if (rawDepartmentId) {
         return {
-            departmentId: rawArea,
-            departmentName: rawArea
+            departmentId: rawDepartmentId,
+            departmentName: 'Unknown Department'
         }
     }
 
@@ -504,33 +431,17 @@ export function isConfirmedValue(v: any): boolean {
     return false
 }
 
-export function isDeptConfirmedForDp(dp: AnyDoc, deptId?: string, deptName?: string): boolean {
+export function isDeptConfirmedForDp(dp: AnyDoc, deptId?: string): boolean {
     const id = String(deptId || '').trim()
-    const name = String(deptName || '').trim()
-
-    const deptValById = id ? dp?.confirmedByDeptId?.[id] : undefined
-    const deptValByName = name ? dp?.confirmed?.[name] : undefined
-
-    return isConfirmedValue(deptValById) || isConfirmedValue(deptValByName)
+    return !!id && isConfirmedValue(dp?.confirmedByDeptId?.[id])
 }
 
-export function isSmmeConfirmedForDp(dp: AnyDoc, deptId?: string, deptName?: string): boolean {
+export function isSmmeConfirmedForDp(dp: AnyDoc, deptId?: string): boolean {
     const id = String(deptId || '').trim()
-    const name = String(deptName || '').trim()
-
-    const smmeConfirmed =
-        (!!id && isConfirmedValue(firstNonEmpty(
-            dp?.smmeConfirmedByDeptId?.[id],
-            dp?.incubateeDepartmentConfirmationsByDeptId?.[id]
-        ))) ||
-        (!!name && isConfirmedValue(firstNonEmpty(
-            dp?.smmeConfirmedByDept?.[name],
-            dp?.incubateeConfirmedByDept?.[name],
-            dp?.incubateeDepartmentConfirmations?.[name],
-            dp?.smmeConfirmedMap?.[name]
-        )))
-
-    return smmeConfirmed
+    return !!id && isConfirmedValue(firstNonEmpty(
+        dp?.smmeConfirmedByDeptId?.[id],
+        dp?.incubateeDepartmentConfirmationsByDeptId?.[id]
+    ))
 }
 
 export function parseComplianceDocuments(application: AnyDoc): {
@@ -715,11 +626,10 @@ export function getSystemAccessInfo(application?: AnyDoc, participant?: AnyDoc, 
 }
 
 export function getDepartmentDocForKey(
-    dep: { departmentId: string; departmentName: string },
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
+    dep: { departmentId: string },
+    departmentsById: Record<string, AnyDoc>
 ): AnyDoc | undefined {
-    return departmentsById[dep.departmentId] || departmentsByName[dep.departmentName.toLowerCase()]
+    return departmentsById[dep.departmentId]
 }
 
 export function isInterventionsDepartment(depDoc?: AnyDoc): boolean {
@@ -728,33 +638,26 @@ export function isInterventionsDepartment(depDoc?: AnyDoc): boolean {
 
 export function isDpInterventionDepartment(
     iv: AnyDoc,
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
+    departmentsById: Record<string, AnyDoc>
 ): boolean {
-    const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
-    return isInterventionsDepartment(getDepartmentDocForKey(dep, departmentsById, departmentsByName))
+    const dep = getInterventionDepartmentKey(iv, departmentsById)
+    return isInterventionsDepartment(getDepartmentDocForKey(dep, departmentsById))
 }
 
 export function getEligibleDpInterventions(
     interventions: AnyDoc[],
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
+    departmentsById: Record<string, AnyDoc>
 ) {
-    return interventions.filter(iv => isDpInterventionDepartment(iv, departmentsById, departmentsByName))
+    return interventions.filter(iv => isDpInterventionDepartment(iv, departmentsById))
 }
 
 export function departmentMatchesScope(
-    dep: { departmentId: string; departmentName: string },
-    scope?: { departmentId?: string; departmentName?: string }
+    dep: { departmentId: string },
+    scope?: { departmentId?: string }
 ) {
-    if (!scope?.departmentId && !scope?.departmentName) return true
-
-    const depId = normalizeLower(dep.departmentId)
-    const depName = normalizeLower(dep.departmentName)
-    const scopeId = normalizeLower(scope.departmentId)
-    const scopeName = normalizeLower(scope.departmentName)
-
-    return (!!scopeId && depId === scopeId) || (!!scopeName && depName === scopeName)
+    const scopeId = normalizeText(scope?.departmentId)
+    if (!scopeId) return true
+    return normalizeText(dep.departmentId) === scopeId
 }
 
 export function hasActiveWarnings(row: SMERow) {
@@ -850,104 +753,11 @@ export function getBounceStatus(emailSuppressions: BounceStatus[], participantId
     return emailSuppressions.find(entry => String(entry.participantId || '') === String(participantId))
 }
 
-// Named weights for the risk formula (previously inline magic numbers). Values are
-// unchanged from the original implementation -- this is a rename/extraction, not a
-// re-tuning. Exported so computeRiskScore can also be driven by a hypothetical
-// (what-if) RiskScoreInputs object for the simulation panel.
-const RISK_SCORE_WEIGHTS = {
-    neverReceivedService: 85,
-    unknownLastService: 70,
-    inactive6Months: 80,
-    inactive3Months: 65,
-    inactive1Month: 45,
-    recentlyServiced: 15,
-    missingDocPerItem: 4,
-    missingDocCap: 12,
-    queriedDocPerItem: 3,
-    queriedDocCap: 9,
-    rejectedDocPerItem: 4,
-    rejectedDocCap: 12,
-    missingDeptPerItem: 5,
-    missingDeptCap: 15,
-    unresponsivePerItem: 8,
-    unresponsiveCap: 24,
-    unresponsiveThresholdCount: 3,
-    unresponsiveThresholdFloor: 85,
-    repeatDeclinePenalty: 8,
-    repeatDeclineThreshold: 2
-} as const
-
+// The formula itself lives in functions/src/smeRiskLogic.ts so the nightly early-warning
+// job scores SMEs exactly as this register does. Without early-warning inputs the score
+// is the register's original one.
 export function computeRiskScore(input: RiskScoreInputs): RiskScoreResult {
-    const breakdown: { label: string; delta: number }[] = []
-    let score: number
-
-    if (input.hasNeverReceivedService) {
-        score = RISK_SCORE_WEIGHTS.neverReceivedService
-        breakdown.push({ label: 'Never received an expected service', delta: score })
-    } else if (input.daysSinceLastService === null) {
-        score = RISK_SCORE_WEIGHTS.unknownLastService
-        breakdown.push({ label: 'Last service date unknown', delta: score })
-    } else if (input.daysSinceLastService >= 180) {
-        score = RISK_SCORE_WEIGHTS.inactive6Months
-        breakdown.push({ label: 'No service in 6+ months', delta: score })
-    } else if (input.daysSinceLastService >= 90) {
-        score = RISK_SCORE_WEIGHTS.inactive3Months
-        breakdown.push({ label: 'No service in 3+ months', delta: score })
-    } else if (input.daysSinceLastService >= 30) {
-        score = RISK_SCORE_WEIGHTS.inactive1Month
-        breakdown.push({ label: 'No service in 1+ month', delta: score })
-    } else {
-        score = RISK_SCORE_WEIGHTS.recentlyServiced
-        breakdown.push({ label: 'Recently serviced', delta: score })
-    }
-
-    const missingDocsDelta = Math.min(input.docsMissing * RISK_SCORE_WEIGHTS.missingDocPerItem, RISK_SCORE_WEIGHTS.missingDocCap)
-    if (missingDocsDelta > 0) {
-        score += missingDocsDelta
-        breakdown.push({ label: `${input.docsMissing} missing document(s)`, delta: missingDocsDelta })
-    }
-
-    const queriedDocsDelta = Math.min(input.docsQueried * RISK_SCORE_WEIGHTS.queriedDocPerItem, RISK_SCORE_WEIGHTS.queriedDocCap)
-    if (queriedDocsDelta > 0) {
-        score += queriedDocsDelta
-        breakdown.push({ label: `${input.docsQueried} queried document(s)`, delta: queriedDocsDelta })
-    }
-
-    const rejectedDocsDelta = Math.min(input.docsRejected * RISK_SCORE_WEIGHTS.rejectedDocPerItem, RISK_SCORE_WEIGHTS.rejectedDocCap)
-    if (rejectedDocsDelta > 0) {
-        score += rejectedDocsDelta
-        breakdown.push({ label: `${input.docsRejected} rejected document(s)`, delta: rejectedDocsDelta })
-    }
-
-    const missingDeptDelta = Math.min(input.missingDepartmentsCount * RISK_SCORE_WEIGHTS.missingDeptPerItem, RISK_SCORE_WEIGHTS.missingDeptCap)
-    if (missingDeptDelta > 0) {
-        score += missingDeptDelta
-        breakdown.push({ label: `${input.missingDepartmentsCount} department(s) needing follow-up`, delta: missingDeptDelta })
-    }
-
-    const unresponsiveCount = input.smePendingAcceptanceCount + input.smePendingConfirmationCount
-    const unresponsiveDelta = Math.min(unresponsiveCount * RISK_SCORE_WEIGHTS.unresponsivePerItem, RISK_SCORE_WEIGHTS.unresponsiveCap)
-    if (unresponsiveDelta > 0) {
-        score += unresponsiveDelta
-        breakdown.push({ label: `${unresponsiveCount} intervention(s) awaiting SME response`, delta: unresponsiveDelta })
-    }
-
-    if (unresponsiveCount >= RISK_SCORE_WEIGHTS.unresponsiveThresholdCount && score < RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor) {
-        breakdown.push({ label: 'SME responsiveness threshold reached', delta: RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor - score })
-        score = RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor
-    }
-
-    if (input.declinedTouches >= RISK_SCORE_WEIGHTS.repeatDeclineThreshold) {
-        score += RISK_SCORE_WEIGHTS.repeatDeclinePenalty
-        breakdown.push({ label: `${input.declinedTouches} declined intervention(s)`, delta: RISK_SCORE_WEIGHTS.repeatDeclinePenalty })
-    }
-
-    if (score > 100) {
-        breakdown.push({ label: 'Capped at 100', delta: 100 - score })
-        score = 100
-    }
-
-    return { score, level: getRiskLevel(score), breakdown }
+    return sharedComputeRiskScore(input)
 }
 
 
@@ -990,13 +800,12 @@ export function buildRow(args: {
     closedInterventionIds?: Set<string>
     sessions: AnyDoc[]
     departmentsById: Record<string, AnyDoc>
-    departmentsByName: Record<string, AnyDoc>
     scopedDepartment?: {
         departmentId?: string
         departmentName?: string
     }
 }): SMERow {
-    const { participant, application, diagnosticPlan, assignments, sessions, departmentsById, departmentsByName, scopedDepartment } = args
+    const { participant, application, diagnosticPlan, assignments, sessions, departmentsById, scopedDepartment } = args
     const participantId = getParticipantId(application ?? participant ?? {})
     const applicationId = getApplicationId(application ?? participant ?? {})
     const docs = parseComplianceDocuments(application ?? {})
@@ -1006,9 +815,9 @@ export function buildRow(args: {
     const dpInterventions = Array.isArray(diagnosticPlanDoc.interventions)
         ? diagnosticPlanDoc.interventions
         : []
-    const eligibleDpInterventions = getEligibleDpInterventions(dpInterventions, departmentsById, departmentsByName)
+    const eligibleDpInterventions = getEligibleDpInterventions(dpInterventions, departmentsById)
         .filter((iv: AnyDoc) => {
-            const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
+            const dep = getInterventionDepartmentKey(iv, departmentsById)
             return departmentMatchesScope(dep, scopedDepartment)
         })
     const accessInfo = getSystemAccessInfo(application, participant, sessions)
@@ -1030,9 +839,9 @@ export function buildRow(args: {
 
     eligibleDpInterventions.forEach((iv: AnyDoc) => {
         if (closedInterventionIds.has(normalizeText(iv?.id))) return
-        const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
-        const deptConfirmed = isDeptConfirmedForDp(diagnosticPlanDoc, dep.departmentId, dep.departmentName)
-        const smmeConfirmed = isSmmeConfirmedForDp(diagnosticPlanDoc, dep.departmentId, dep.departmentName)
+        const dep = getInterventionDepartmentKey(iv, departmentsById)
+        const deptConfirmed = isDeptConfirmedForDp(diagnosticPlanDoc, dep.departmentId)
+        const smmeConfirmed = isSmmeConfirmedForDp(diagnosticPlanDoc, dep.departmentId)
 
         if (!expectedMap.has(dep.departmentId)) {
             expectedMap.set(dep.departmentId, {
@@ -1067,7 +876,7 @@ export function buildRow(args: {
 
     assignments.forEach((assignment: AnyDoc) => {
         if (assignment?.supportClosedAt) return
-        const dep = getInterventionDepartmentKey(assignment, departmentsById, departmentsByName)
+        const dep = getInterventionDepartmentKey(assignment, departmentsById)
         if (!departmentMatchesScope(dep, scopedDepartment)) return
 
         const entry = expectedMap.get(dep.departmentId)

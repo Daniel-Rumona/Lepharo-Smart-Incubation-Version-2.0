@@ -5,7 +5,6 @@ import {
     Col,
     Empty,
     Modal,
-    Progress,
     Row,
     Select,
     Skeleton,
@@ -18,14 +17,18 @@ import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { FilterPanel } from '@/components/workspace'
 import {
     REPORT_CHART_COLORS,
     REPORT_CHART_PALETTE
 } from '@/components/reports/reportChartTheme'
+import type { ChartDataLabels } from '@/lib/highchartsTypes'
+import './reach.css'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 
 const { Text, Title } = Typography
 
-const MONTHLY_DATA_LABELS: Highcharts.DataLabelsOptions = {
+const MONTHLY_DATA_LABELS: ChartDataLabels = {
     enabled: true,
     allowOverlap: true,
     crop: false,
@@ -34,8 +37,8 @@ const MONTHLY_DATA_LABELS: Highcharts.DataLabelsOptions = {
     inside: false,
     y: -6,
     format: '{point.y}',
+    // Text colour comes from the app's light/dark chart theme (lib/highchartsTheme.ts).
     style: {
-        color: '#111827',
         textOutline: 'none',
         fontWeight: '700',
         fontSize: '12px'
@@ -150,7 +153,24 @@ interface ReachAnalyticsProps {
     isMain?: boolean
     departmentId: string
     departmentOptions?: ReachDepartmentOption[]
+
+    /**
+     * When given, the Department / Intervention / charts pickers are handed to the
+     * host (to show behind its own Filters button) instead of rendered in a card
+     * above the charts. Called with null on unmount.
+     */
+    onControls?: (controls: ReachControls | null) => void
 }
+
+export type ReachControls = {
+    panel: React.ReactNode
+    /** Pickers changed from their defaults. */
+    activeCount: number
+    /** What each picker is set to, for a one-line summary; onClear is set when it is not the default. */
+    summary: Array<{ label: string; value: string; onClear?: () => void }>
+}
+
+const ALL_DEMOGRAPHICS: DemographicKey[] = ['gender', 'age', 'beeLevel', 'ward', 'sector', 'ownership']
 
 interface ReachItem {
     row: ReachAssignedIntervention
@@ -267,11 +287,6 @@ const AGE_BUCKETS = [
     { label: '65+', min: 65, max: 200 }
 ]
 
-const OWNERSHIP_COLORS = {
-    black: '#2563eb',
-    female: '#db2777',
-    youth: '#16a34a'
-}
 
 const normalizeText = (
     value?: unknown,
@@ -572,7 +587,7 @@ const escapeDataLabelHtml = (value: unknown): string =>
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;')
 
-const PIE_DATA_LABELS: Highcharts.DataLabelsOptions = {
+const PIE_DATA_LABELS: Highcharts.SeriesPieDataLabelsOptionsObject & Highcharts.DataLabelsOptions = {
     enabled: true,
     useHTML: true,
     allowOverlap: true,
@@ -583,7 +598,9 @@ const PIE_DATA_LABELS: Highcharts.DataLabelsOptions = {
     connectorWidth: 1,
     padding: 2,
     formatter: function () {
-        const point = this.point as Highcharts.Point & {
+        // Highcharts 12+ passes the point itself as `this`; older versions
+        // passed a wrapper with `.point`. Accept either.
+        const point = ((this as unknown as { point?: Highcharts.Point }).point ?? this) as Highcharts.Point & {
             name?: string
             avgInterventions?: number
         }
@@ -600,10 +617,9 @@ const PIE_DATA_LABELS: Highcharts.DataLabelsOptions = {
             ? ` <span style="font-weight:500;opacity:.75">· ${avg} avg</span>`
             : ''
 
-        return `<span style="color:#111827;font-size:12px;font-weight:700;white-space:nowrap">${name}: ${value}${avgSuffix}</span>`
+        return `<span style="font-size:12px;font-weight:700;white-space:nowrap">${name}: ${value}${avgSuffix}</span>`
     },
     style: {
-        color: '#111827',
         fontSize: '12px',
         fontWeight: '700',
         textOutline: 'none'
@@ -648,7 +664,6 @@ const simplePieOptions = (
         pie: {
             innerSize: '60%',
             showInLegend: true,
-            colorByPoint: true,
             size: '70%',
             dataLabels: PIE_DATA_LABELS
         }
@@ -704,74 +719,56 @@ const ReachLoadingSkeleton: React.FC = () => (
     </Row>
 )
 
+type OwnershipMeasure = {
+    /** Average share, 0–100, across SMEs with a value. */
+    value: number | null
+    /** SMEs with a value recorded. */
+    known: number
+}
+
+/** Average ownership shares, each with how many SMEs it is based on. Colours: reach.css. */
 const OwnershipProfile: React.FC<{
-    black: number | null
-    female: number | null
-    youth: number | null
-}> = ({ black, female, youth }) => {
+    black: OwnershipMeasure
+    female: OwnershipMeasure
+    youth: OwnershipMeasure
+    total: number
+}> = ({ black, female, youth, total }) => {
     const items = [
-        {
-            label: 'Black Owned Average',
-            value: black,
-            strokeColor: OWNERSHIP_COLORS.black
-        },
-        {
-            label: 'Female Owned Average',
-            value: female,
-            strokeColor: OWNERSHIP_COLORS.female
-        },
-        {
-            label: 'Youth Owned Average',
-            value: youth,
-            strokeColor: OWNERSHIP_COLORS.youth
-        }
+        { key: 'black', label: 'Black owned', measure: black },
+        { key: 'female', label: 'Female owned', measure: female },
+        { key: 'youth', label: 'Youth owned', measure: youth }
     ]
 
-    if (!items.some(item => item.value != null)) {
+    if (!items.some(item => item.measure.value != null)) {
         return <Empty description='No ownership information available' />
     }
 
     return (
-        <Space
-            direction='vertical'
-            size={22}
-            style={{ width: '100%', padding: '12px 4px' }}
-        >
+        <div className='reach-ownership'>
+            <span className='reach-ownership-note'>Average ownership share across reached SMEs</span>
             {items.map(item => (
-                <div
-                    key={item.label}
-                    style={{
-                        width: '100%',
-                        padding: 14,
-                        borderRadius: 14,
-                        border: '1px solid #e5e7eb',
-                        background: 'linear-gradient(180deg,#ffffff,#f8fafc)'
-                    }}
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 12,
-                            marginBottom: 8
-                        }}
-                    >
-                        <Text strong>{item.label}</Text>
-                        <Text strong style={{ fontSize: 18 }}>
-                            {item.value != null ? `${item.value}%` : '—'}
-                        </Text>
+                <div key={item.key} className={`reach-ownership-row is-${item.key}`}>
+                    <div className='reach-ownership-head'>
+                        <span className='reach-ownership-label'>{item.label}</span>
+                        <strong className='reach-ownership-value'>
+                            {item.measure.value != null ? `${item.measure.value}%` : '—'}
+                        </strong>
                     </div>
-
-                    <Progress
-                        percent={item.value || 0}
-                        strokeColor={item.strokeColor}
-                        trailColor='#e5e7eb'
-                        showInfo={false}
-                    />
+                    <span
+                        className='reach-ownership-bar'
+                        role='img'
+                        aria-label={`${item.label}: ${item.measure.value ?? 'no data'}%`}
+                    >
+                        <i style={{ width: `${Math.min(100, item.measure.value || 0)}%` }} />
+                    </span>
+                    <span className='reach-ownership-basis'>
+                        {item.measure.known
+                            ? `Based on ${item.measure.known} of ${total} SMEs`
+                            : 'No SMEs have this recorded'}
+                    </span>
                 </div>
             ))}
-        </Space>
+        </div>
     )
 }
 
@@ -922,12 +919,7 @@ const ReachMonthlyDrilldownChart = React.memo(
                 title: {
                     text: 'Count'
                 },
-                gridLineColor: '#f1f5f9',
-                labels: {
-                    style: {
-                        color: '#111827'
-                    }
-                }
+                labels: {}
             }
 
             const baseColumnOptions: Highcharts.PlotColumnOptions = {
@@ -1103,12 +1095,8 @@ const ReachMonthlyDrilldownChart = React.memo(
                     xAxis: {
                         categories:
                             interventionNames,
-                        lineColor: '#e5e7eb',
                         labels: {
-                            autoRotation: [-35, -60],
-                            style: {
-                                color: '#111827'
-                            }
+                            autoRotation: [-35, -60]
                         }
                     },
                     yAxis: baseYAxis,
@@ -1243,10 +1231,12 @@ const ReachMonthlyDrilldownChart = React.memo(
                 },
                 xAxis: {
                     categories: monthLabels,
-                    lineColor: '#e5e7eb',
+                    // Clickable month names; reach.css keeps them link-coloured in dark mode.
+                    className: 'reach-month-axis',
                     labels: {
                         style: {
-                            color: '#1677ff',
+                            // A link colour that reads on light and dark cards.
+                            color: '#3b82f6',
                             cursor: 'pointer',
                             fontWeight: '600',
                             textDecoration:
@@ -1405,15 +1395,17 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
     loading = false,
     isMain = false,
     departmentId,
-    departmentOptions = []
+    departmentOptions = [],
+    onControls
 }) => {
+    const { nameOf } = useDepartmentRoles()
     const [selectedIntervention, setSelectedIntervention] = useState('all')
     const [selectedDepartmentId, setSelectedDepartmentId] = useState(
         isMain ? 'all' : departmentId
     )
     const [selectedDemographics, setSelectedDemographics] = useState<
         DemographicKey[]
-    >(['gender', 'age', 'beeLevel', 'ward', 'sector', 'ownership'])
+    >(ALL_DEMOGRAPHICS)
     const [whatToDoOpen, setWhatToDoOpen] = useState(false)
     const [reachDrillSelection, setReachDrillSelection] =
         useState<ReachDrillSelection | null>(null)
@@ -1439,9 +1431,9 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
             const id = String(row.departmentId || '').trim()
             if (!id) return
 
-            const name = normalizeText(
-                row.departmentName || row.snapshot?.departmentName,
-                optionsMap.get(id) || 'Unspecified Department'
+            const name = nameOf(
+                id,
+                normalizeText(row.departmentName || row.snapshot?.departmentName, 'Unspecified Department')
             )
 
             if (!optionsMap.has(id)) optionsMap.set(id, name)
@@ -1450,7 +1442,7 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
         return Array.from(optionsMap.entries())
             .map(([value, label]) => ({ value, label }))
             .sort((a, b) => a.label.localeCompare(b.label))
-    }, [departmentOptions, rows])
+    }, [departmentOptions, rows, nameOf])
 
     const departmentNameById = useMemo(() => {
         return new Map(
@@ -1464,9 +1456,9 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
         const id = String(row.departmentId || '').trim()
 
         return normalizeText(
+            departmentNameById.get(id) ||
             row.departmentName ||
-            row.snapshot?.departmentName ||
-            departmentNameById.get(id),
+            row.snapshot?.departmentName,
             'Unspecified Department'
         )
     }
@@ -1529,6 +1521,90 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
 
         if (!stillAvailable) setSelectedIntervention('all')
     }, [interventionOptions, selectedIntervention])
+
+    // The pickers, for a host that shows them behind its own Filters button.
+    useEffect(() => {
+        if (!onControls) return
+        const departmentChanged = isMain && selectedDepartmentId !== 'all'
+        const interventionChanged = selectedIntervention !== 'all'
+        const chartsChanged = selectedDemographics.length !== ALL_DEMOGRAPHICS.length
+        const activeCount = [departmentChanged, interventionChanged, chartsChanged].filter(Boolean).length
+        const departmentLabel =
+            resolvedDepartmentOptions.find(option => option.value === selectedDepartmentId)?.label || 'All'
+        onControls({
+            activeCount,
+            summary: [
+                ...(isMain
+                    ? [{
+                        label: 'Department',
+                        value: departmentChanged ? departmentLabel : 'All',
+                        onClear: departmentChanged ? () => setSelectedDepartmentId('all') : undefined
+                    }]
+                    : []),
+                {
+                    label: 'Intervention',
+                    value: interventionChanged ? selectedIntervention : 'All',
+                    onClear: interventionChanged ? () => setSelectedIntervention('all') : undefined
+                },
+                ...(chartsChanged
+                    ? [{
+                        label: 'Charts',
+                        value: `${selectedDemographics.length} of ${ALL_DEMOGRAPHICS.length}`,
+                        onClear: () => setSelectedDemographics(ALL_DEMOGRAPHICS)
+                    }]
+                    : [])
+            ],
+            panel: (
+                <FilterPanel
+                    canReset={activeCount > 0}
+                    onReset={() => {
+                        if (isMain) setSelectedDepartmentId('all')
+                        setSelectedIntervention('all')
+                        setSelectedDemographics(ALL_DEMOGRAPHICS)
+                    }}
+                >
+                    {isMain && (
+                        <div>
+                            <label className='ws-filter-label' htmlFor='reach-department'>Department</label>
+                            <Select
+                                id='reach-department'
+                                value={selectedDepartmentId}
+                                onChange={setSelectedDepartmentId}
+                                style={{ width: '100%' }}
+                                showSearch
+                                optionFilterProp='label'
+                                options={[{ label: 'All departments', value: 'all' }, ...resolvedDepartmentOptions]}
+                            />
+                        </div>
+                    )}
+                    <div>
+                        <label className='ws-filter-label' htmlFor='reach-intervention'>Intervention</label>
+                        <Select
+                            id='reach-intervention'
+                            value={selectedIntervention}
+                            onChange={setSelectedIntervention}
+                            options={interventionOptions}
+                            style={{ width: '100%' }}
+                            showSearch
+                            optionFilterProp='label'
+                        />
+                    </div>
+                    <div>
+                        <span className='ws-filter-label' id='reach-charts-label'>Charts to show</span>
+                        <Checkbox.Group
+                            aria-labelledby='reach-charts-label'
+                            className='reach-chart-picker'
+                            value={selectedDemographics}
+                            onChange={values => setSelectedDemographics(values as DemographicKey[])}
+                            options={DEMOGRAPHIC_OPTIONS.map(option => ({ label: option.label, value: option.value }))}
+                        />
+                    </div>
+                </FilterPanel>
+            )
+        })
+    }, [onControls, isMain, selectedDepartmentId, selectedIntervention, selectedDemographics, resolvedDepartmentOptions, interventionOptions])
+
+    useEffect(() => () => onControls?.(null), [onControls])
 
     const scopedRows = useMemo(() => {
         if (selectedIntervention === 'all') {
@@ -1728,20 +1804,17 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
         }
     }, [uniqueSmeRows])
 
-    const ownershipAverages = useMemo(
-        () => ({
-            black: averageKnownValues(
-                uniqueSmeRows.map(item => item.blackOwnedPercent)
-            ),
-            female: averageKnownValues(
-                uniqueSmeRows.map(item => item.femaleOwnedPercent)
-            ),
-            youth: averageKnownValues(
-                uniqueSmeRows.map(item => item.youthOwnedPercent)
-            )
-        }),
-        [uniqueSmeRows]
-    )
+    const ownershipAverages = useMemo(() => {
+        const measure = (values: Array<number | null>) => ({
+            value: averageKnownValues(values),
+            known: values.filter(value => typeof value === 'number' && Number.isFinite(value)).length
+        })
+        return {
+            black: measure(uniqueSmeRows.map(item => item.blackOwnedPercent)),
+            female: measure(uniqueSmeRows.map(item => item.femaleOwnedPercent)),
+            youth: measure(uniqueSmeRows.map(item => item.youthOwnedPercent))
+        }
+    }, [uniqueSmeRows])
 
     const genderOptions = useMemo(
         () => simplePieOptions(genderCounts, 'SMEs'),
@@ -1789,7 +1862,7 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
                 }
             ],
             yAxis: {
-                title: { text: null },
+                title: { text: '' }, // empty hides the axis title
                 labels: {
                     formatter: function () {
                         return Math.abs(Number(this.value)).toString()
@@ -1815,7 +1888,6 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
                             return value > 0 ? String(value) : null
                         },
                         style: {
-                            color: '#111827',
                             textOutline: 'none',
                             fontWeight: '700'
                         }
@@ -2033,14 +2105,14 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
         }
 
         const ownershipText = [
-            ownershipAverages.black != null
-                ? `black ownership averages ${ownershipAverages.black}%`
+            ownershipAverages.black.value != null
+                ? `black ownership averages ${ownershipAverages.black.value}%`
                 : null,
-            ownershipAverages.female != null
-                ? `female ownership averages ${ownershipAverages.female}%`
+            ownershipAverages.female.value != null
+                ? `female ownership averages ${ownershipAverages.female.value}%`
                 : null,
-            ownershipAverages.youth != null
-                ? `youth ownership averages ${ownershipAverages.youth}%`
+            ownershipAverages.youth.value != null
+                ? `youth ownership averages ${ownershipAverages.youth.value}%`
                 : null
         ].filter(Boolean)
 
@@ -2241,6 +2313,7 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
                 black={ownershipAverages.black}
                 female={ownershipAverages.female}
                 youth={ownershipAverages.youth}
+                total={uniqueSmeRows.length}
             />
         )
     }
@@ -2262,6 +2335,7 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
     return (
         <>
             <Row gutter={[16, 16]}>
+                {!onControls && (
                 <Col xs={24}>
                     <MotionCard
                         filterBar={
@@ -2334,7 +2408,7 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
                                             icon={<BulbOutlined />}
                                             onClick={() => setWhatToDoOpen(true)}
                                         >
-                                            What To Do
+                                            What to do
                                         </Button>
                                     </Col>
                                 </Row>
@@ -2345,7 +2419,7 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
                                         type='secondary'
                                         style={{ display: 'block', marginBottom: 8 }}
                                     >
-                                        Demographics to display
+                                        Charts to show
                                     </Text>
 
                                     <Checkbox.Group
@@ -2387,19 +2461,33 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
                                     </Checkbox.Group>
                                 </div>
 
-                                <Text type='secondary'>
-                                    Demographic charts count each SME once across the
-                                    active scope. Drill into a month to recalculate all
-                                    demographics for that month only.
+                                <Text type='secondary' style={{ fontSize: 12.5 }}>
+                                    Each SME is counted once. Click a month in the chart
+                                    below to see the demographics for that month only.
                                 </Text>
                             </Space>
                         }
                         filterBarProps={{ marginBottom: 0 }}
                     />
                 </Col>
+                )}
 
                 <Col xs={24}>
-                    <MotionCard title='SMEs Reached vs Interventions Delivered — click a month to drill down'>
+                    <MotionCard
+                        title='SMEs reached and interventions delivered'
+                        extra={
+                            onControls ? (
+                                <Button icon={<BulbOutlined />} onClick={() => setWhatToDoOpen(true)}>
+                                    What to do
+                                </Button>
+                            ) : undefined
+                        }
+                    >
+                        {onControls ? (
+                            <Text type='secondary' className='reach-chart-hint'>
+                                Each SME is counted once. Click a month to see the demographics for that month only.
+                            </Text>
+                        ) : null}
                         {hasMonthlyData ? (
                             <ReachMonthlyDrilldownChart
                                 rows={reachRows}
@@ -2417,7 +2505,7 @@ const ReachAnalytics: React.FC<ReachAnalyticsProps> = ({
                 {!visibleDemographics.length && (
                     <Col xs={24}>
                         <MotionCard>
-                            <Empty description='Select at least one demographic chart' />
+                            <Empty description='Select at least one chart to show' />
                         </MotionCard>
                     </Col>
                 )}

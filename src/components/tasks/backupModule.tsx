@@ -62,6 +62,7 @@ import {
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { MotionCard } from '../dashboards/metrics/Header'
+import { MetricTile } from '../dashboards/metrics/MetricTile'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 
 /** ───────────────────────────────────────────────────────────
@@ -1116,9 +1117,9 @@ export default function TasksModule() {
                     }}
                 >
                     {statusCounts.todo > 0 ? (
-                        <MotionCard.Metric
-                            icon={<TableOutlined style={{ color: token.colorTextSecondary }} />}
-                            iconBg={token.colorFillSecondary}
+                        <MetricTile
+                            icon={<TableOutlined />}
+                            tone='neutral'
                             title="To Do"
                             value={statusCounts.todo}
                             subtitle="Tasks not started"
@@ -1127,9 +1128,9 @@ export default function TasksModule() {
                         />
                     ) : null}
                     {statusCounts.in_progress > 0 ? (
-                        <MotionCard.Metric
-                            icon={<ClockCircleOutlined style={{ color: token.colorPrimary }} />}
-                            iconBg={token.colorPrimaryBg}
+                        <MetricTile
+                            icon={<ClockCircleOutlined />}
+                            tone='accent'
                             title="In Progress"
                             value={statusCounts.in_progress}
                             subtitle="Tasks currently underway"
@@ -1138,9 +1139,9 @@ export default function TasksModule() {
                         />
                     ) : null}
                     {statusCounts.done > 0 ? (
-                        <MotionCard.Metric
-                            icon={<CheckCircleOutlined style={{ color: token.colorSuccess }} />}
-                            iconBg={token.colorSuccessBg}
+                        <MetricTile
+                            icon={<CheckCircleOutlined />}
+                            tone='success'
                             title="Done"
                             value={statusCounts.done}
                             subtitle="Completed tasks"
@@ -1149,9 +1150,9 @@ export default function TasksModule() {
                         />
                     ) : null}
                     {statusCounts.overdue > 0 ? (
-                        <MotionCard.Metric
-                            icon={<ExclamationCircleOutlined style={{ color: token.colorError }} />}
-                            iconBg={token.colorErrorBg}
+                        <MetricTile
+                            icon={<ExclamationCircleOutlined />}
+                            tone='danger'
                             title="Overdue"
                             value={statusCounts.overdue}
                             subtitle="Past their deadline"
@@ -1160,9 +1161,9 @@ export default function TasksModule() {
                         />
                     ) : null}
                     {statusCounts.cancelled > 0 ? (
-                        <MotionCard.Metric
-                            icon={<StopOutlined style={{ color: token.colorError }} />}
-                            iconBg={token.colorErrorBg}
+                        <MetricTile
+                            icon={<StopOutlined />}
+                            tone='danger'
                             title="Cancelled"
                             value={statusCounts.cancelled}
                             subtitle="Cancelled tasks"
@@ -1171,9 +1172,9 @@ export default function TasksModule() {
                         />
                     ) : null}
                     {archivedTasks.length > 0 ? (
-                        <MotionCard.Metric
-                            icon={<InboxOutlined style={{ color: token.colorWarning }} />}
-                            iconBg={token.colorWarningBg}
+                        <MetricTile
+                            icon={<InboxOutlined />}
+                            tone='warning'
                             title="Archived"
                             value={archivedTasks.length}
                             subtitle="View archived tasks"

@@ -27,9 +27,11 @@ exports.onNotificationCreatedEmail = void 0;
 const crypto = __importStar(require("crypto"));
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
+const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
 const brevoClient_1 = require("./brevoClient");
 const notificationEmailRegistry_1 = require("./notificationEmailRegistry");
+const config_1 = require("./config");
 const REGION = "us-central1";
 const ACTION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // Same fallback pattern as functions/src/utils/crypto.ts's OAUTH_BASE_URL.
@@ -82,11 +84,13 @@ async function mintActionLinks(notificationId, after, recipientEmail) {
  * `type` so any notification type can opt into an email by adding a registry
  * entry, without a new Cloud Function trigger.
  */
-exports.onNotificationCreatedEmail = (0, firestore_1.onDocumentWritten)({ region: REGION, document: "notifications/{notificationId}" }, async (event) => {
+exports.onNotificationCreatedEmail = (0, firestore_1.onDocumentWritten)({ ...config_1.BREVO_EGRESS, region: REGION, document: "notifications/{notificationId}" }, async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
     if (before || !after)
         return; // only brand-new notifications
+    if ((0, syntheticData_1.suppressRecordNotifications)(after, event.params.notificationId))
+        return;
     const type = String(after.type || "");
     const config = notificationEmailRegistry_1.NOTIFICATION_REGISTRY[type]?.email;
     if (!config)

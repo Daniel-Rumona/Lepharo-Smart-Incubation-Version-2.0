@@ -37,7 +37,7 @@ const { Text } = Typography
 const { useBreakpoint } = Grid
 
 type Props = {
-    departmentName: string
+    departmentId?: string | null
     matchesDepartment?: (entry: Record<string, any>) => boolean
     programId?: string
     pageSize?: number
@@ -122,7 +122,7 @@ type Row = {
     updatedAt?: any
     startDate?: any
 
-    areaOfSupport?: string
+    departmentId?: string
     departmentName?: string
     programId?: string
 
@@ -497,7 +497,7 @@ const renderWaitingOn = (record: Row) => {
 }
 
 const DepartmentInterventionsStatus: React.FC<Props> = ({
-    departmentName,
+    departmentId,
     matchesDepartment,
     programId,
     pageSize = 4,
@@ -534,8 +534,8 @@ const DepartmentInterventionsStatus: React.FC<Props> = ({
         try {
             const clauses: QueryConstraint[] = []
 
-            if (departmentName && !matchesDepartment) {
-                clauses.push(where('areaOfSupport', '==', departmentName))
+            if (departmentId && !matchesDepartment) {
+                clauses.push(where('departmentId', '==', departmentId))
             }
 
             if (programId) {
@@ -559,7 +559,7 @@ const DepartmentInterventionsStatus: React.FC<Props> = ({
         } finally {
             setLoading(false)
         }
-    }, [departmentName, programId, matchesDepartment])
+    }, [departmentId, programId, matchesDepartment])
 
     useEffect(() => {
         setActiveBucket(null)

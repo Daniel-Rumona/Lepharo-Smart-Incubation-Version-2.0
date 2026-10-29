@@ -9,27 +9,34 @@ import {
     Row,
     Col,
     Button,
-    Modal,
     Empty,
     Segmented,
-    DatePicker,
     Alert,
-    Select,
+    Badge,
+    Dropdown,
+    Popover,
     Space,
     Typography,
+    Select,
 } from "antd";
 import {
     BarChartOutlined,
-    ExpandOutlined,
+    CalendarOutlined,
+    CloseOutlined,
+    FilterOutlined,
+    TableOutlined,
     FileProtectOutlined,
     GlobalOutlined,
     LineChartOutlined,
+    PlayCircleOutlined,
+    DownOutlined,
+    FilePptOutlined,
     TeamOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
-import DrilldownModule from "highcharts/modules/drilldown";
+import "highcharts/modules/drilldown";
 import { Helmet } from "react-helmet";
 import {
     collection,
@@ -40,12 +47,16 @@ import {
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
+import { useDepartmentRoles, type DepartmentRoleKey } from "@/services/departmentRoles";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
+import { useDashboardDateRange } from "@/lib/useDashboardDateRange";
 import { DashboardFilterBar, MotionCard } from "@/components/dashboards/metrics/Header";
+import CentreReportModal from "@/routes/projectadmin/facilities/CentreReportModal";
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
-import ReachAnalytics from "@/components/reports/ReachAnalytics";
+import ReachAnalytics, { type ReachControls } from "@/components/reports/ReachAnalytics";
 import ProjectAdminPerformance from "@/components/dashboards/projectadmin/ProjectAdminPerformance";
-import DeferredLegacyReportPanels from "./DeferredLegacyReportPanels";
+import ProjectAdminReportPlayer from "@/components/reports/ProjectAdminReportPlayer";
+import { useColorMode } from "@/contexts/ThemeContext";
 import { getCanonicalInterventionStatus } from "@/routes/operations/reports/monitoring/interventionStatus";
 import { rollupReportAssignments } from "@/utils/reportGroupAssignments";
 import {
@@ -62,34 +73,19 @@ import {
     type PageGuideRegistration,
 } from "@/components/guide-me";
 import isBetween from "dayjs/plugin/isBetween";
-import "@/styles/nav-segmented.css";
+import { FilterPanel } from "@/components/workspace";
+import ChartDetailsModal from "./ChartDetailsModal";
+import DepartmentSnapshot from "./DepartmentSnapshot";
+import "./projectReports.css";
+import ComplianceSnapshot from "./ComplianceSnapshot";
+import { buildComplianceModel } from "./complianceModel";
+import { loadComplianceSource, type ComplianceSource } from "./complianceData";
+import EngagementSnapshot from "./EngagementSnapshot";
+import { buildEngagementModel } from "./engagementModel";
 
 dayjs.extend(isBetween);
 
-// --- default range
-const DEFAULT_RANGE: [Dayjs, Dayjs] = [
-    dayjs().startOf("year"),
-    dayjs().endOf("year"),
-];
-
-if (typeof DrilldownModule === "function") DrilldownModule(Highcharts);
-
-const { RangePicker } = DatePicker;
 const { Text } = Typography;
-
-const fiscalQuarterRange = (base = dayjs()): [Dayjs, Dayjs] => {
-    const fiscalMonth = (base.month() - 3 + 12) % 12;
-    const quarterStartMonth = 3 + Math.floor(fiscalMonth / 3) * 3;
-    const start = base.startOf("year").month(quarterStartMonth === 12 ? 0 : quarterStartMonth);
-    return [start.startOf("month"), start.add(2, "month").endOf("month")];
-};
-
-const fiscalYtdRange = (base = dayjs()): [Dayjs, Dayjs] => {
-    const start = base.month() >= 3
-        ? base.startOf("year").month(3).startOf("month")
-        : base.subtract(1, "year").startOf("year").month(3).startOf("month");
-    return [start, base.endOf("day")];
-};
 
 // ---------------- utils ----------------
 const normalize = (s?: string) => (s || "").toString().trim().toLowerCase();
@@ -151,6 +147,16 @@ const getAgeFromID = (id?: string): number | null => {
     return age;
 };
 
+/** Age from the ID number, else the date of birth, else a stored age. */
+const participantAge = (person: { idNumber?: string; dateOfBirth?: any; age?: number | string }): number | null => {
+    const fromId = getAgeFromID(person.idNumber);
+    if (fromId != null) return fromId;
+    const dob = toDate(person.dateOfBirth);
+    if (dob) return dayjs().diff(dob, "year");
+    const stored = Number(person.age);
+    return Number.isFinite(stored) && stored > 0 ? stored : null;
+};
+
 const AGE_BUCKETS = [
     { label: "15-24", min: 15, max: 24 },
     { label: "25-34", min: 25, max: 34 },
@@ -167,6 +173,7 @@ type AppDoc = {
     branchId?: string;
     programId?: string;
     programName?: string;
+    beneficiaryName?: string;
     submittedAt?: any;
     applicationStatus?: string;
     gender?: string;
@@ -174,7 +181,7 @@ type AppDoc = {
     profile?: any;
     departmentId?: string;
     departmentName?: string;
-    interventions?: { required?: Array<{ area?: string; departmentId?: string; departmentName?: string }> };
+    interventions?: { required?: Array<{ departmentId?: string }> };
 };
 
 type InterventionDefinition = {
@@ -185,6 +192,9 @@ type InterventionDefinition = {
 
 type ParticipantDoc = {
     id: string;
+    beneficiaryName?: string;
+    dateOfBirth?: any;
+    age?: number | string;
     sector?: string;
     beeLevel?: string;
     youthOwnedPercent?: number;
@@ -203,7 +213,6 @@ type AssignedIntervention = {
     updatedAt?: any;
     acceptedAt?: any;
     completedAt?: any;
-    areaOfSupport?: string;
     interventionTitle?: string;
     interventionId?: string;
     subInterventionId?: string;
@@ -227,7 +236,7 @@ type AssignedIntervention = {
     departmentName?: string;
 };
 
-type ViewMode = "interventions" | "applications" | "compliance" | "reach" | "performance";
+type ViewMode = "interventions" | "applications" | "compliance" | "engagement" | "reach" | "performance";
 
 const INTERVENTION_STATUS_META = {
     assigned: { label: "Assigned", color: REPORT_CHART_COLORS.primary },
@@ -241,13 +250,20 @@ const INTERVENTION_STATUS_META = {
 const ProjectAdminReports: React.FC = () => {
     const { user } = useFullIdentity();
     const { activeProgramId } = useActiveProgramId();
+    const { isDark } = useColorMode();
+    const [playerOpen, setPlayerOpen] = useState(false);
+    const [executiveReportOpen, setExecutiveReportOpen] = useState(false);
 
     const [loading, setLoading] = useState(false);
     const [expandedChart, setExpandedChart] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<ViewMode>("interventions");
     const [drilledDepartmentName, setDrilledDepartmentName] = useState<string | null>(null);
     const drilledDepartmentRef = useRef<string | null>(null);
-    const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>(DEFAULT_RANGE);
+    // The period comes from the topbar, shared with the dashboard. "All time" (null)
+    // runs from the earliest application to today.
+    const { range: sharedRange, label: periodLabel } = useDashboardDateRange();
+    // Reach's Department / Intervention / charts pickers, shown behind Filters.
+    const [reachControls, setReachControls] = useState<ReachControls | null>(null);
     const [selectedDepartment, setSelectedDepartment] = useState<string>("all");
     const [applicantScope, setApplicantScope] = useState<"all" | "incubatees">("all");
 
@@ -266,38 +282,51 @@ const ProjectAdminReports: React.FC = () => {
     const assignedBranch = user?.assignedBranch;
 
 
-    const [deptNames, setDeptNames] = useState<string[]>([]);
-    const [reachDepartmentOptions, setReachDepartmentOptions] = useState<
-        Array<{ label: string; value: string }>
-    >([]);
-    const [interventionDepartmentOptions, setInterventionDepartmentOptions] = useState<
-        Array<{ label: string; value: string }>
-    >([]);
+    const { departments, roleOf } = useDepartmentRoles();
 
-    // 🔁 move from refs → state so component re-renders when data arrives
-    const [latestPlanByPid, setLatestPlanByPid] = useState<Map<string, any>>(
-        () => new Map()
-    );
+    // Participants whose GAP Analysis ROM has confirmed (Compliance tab).
     const [romConfirmed, setRomConfirmed] = useState<Set<string>>(
         () => new Set()
     );
 
-    // debug flags for logging
-    const gapDebugLoggedRef = useRef(false);
-    const dpDebugLoggedRef = useRef(false);
+    // Departments left out of the department reports, with their sub-departments.
+    const reportDepartments = useMemo(() => {
+        const excluded: DepartmentRoleKey[] = ["inhouseFinance", "monitoring", "stakeholder", "hr", "rom"];
+        return departments
+            .map((department) => ({
+                value: department.id,
+                label: String(department.name || department.id).trim(),
+                interventionsDepartment: department.interventionsDepartment === true,
+                role: roleOf(department.id),
+            }))
+            .filter((option) => option.label && !(option.role && excluded.includes(option.role)))
+            .sort((a, b) => a.label.localeCompare(b.label));
+    }, [departments, roleOf]);
+    const reachDepartmentOptions = useMemo(
+        () => reportDepartments.map(({ label, value }) => ({ label, value })),
+        [reportDepartments]
+    );
+    const interventionDepartmentOptions = useMemo(
+        () =>
+            reportDepartments
+                .filter((option) => option.interventionsDepartment)
+                .map(({ label, value }) => ({ label, value })),
+        [reportDepartments]
+    );
+    const departmentLabelOf = useCallback(
+        (departmentId?: string) =>
+            reachDepartmentOptions.find((option) => option.value === String(departmentId || ""))?.label || "Other",
+        [reachDepartmentOptions]
+    );
 
-    const [gapByApp, setGapByApp] = useState<Record<string, boolean>>({});
-    const [preByApp, setPreByApp] = useState<Record<string, boolean>>({});
-
-    // Exclude these departments in DPs
-    const EXCLUDED_SUBSTR = ["ihf", "m&e", "stakeholder", "hrm", "rom"];
-    const isExcludedDept = (name?: string) =>
-        !!name && EXCLUDED_SUBSTR.some((s) => name.toLowerCase().includes(s));
-
-    const hasAgreement = (app: any, slug: string) => {
-        const m = app?.signedAgreements || {};
-        return Object.keys(m).some((k) => k.toLowerCase() === slug);
-    };
+    const dateRange = useMemo<[Dayjs, Dayjs]>(() => {
+        if (sharedRange) return sharedRange;
+        const earliest = apps.reduce<Date | null>((min, app) => {
+            const d = toDate(app.submittedAt);
+            return d && (!min || d < min) ? d : min;
+        }, null);
+        return [dayjs(earliest || undefined).startOf("month"), dayjs().endOf("day")];
+    }, [sharedRange, apps]);
 
     // helpers
     const inRange = useCallback(
@@ -373,7 +402,7 @@ const ProjectAdminReports: React.FC = () => {
                                 .map((item: any) => {
                                     const id = String(item.subId || item.id || "").trim();
                                     const title = String(item.title || item.name || id).trim();
-                                    return [id, title];
+                                    return [id, title] as [string, string];
                                 })
                                 .filter(([id]) => !!id)
                         ),
@@ -392,43 +421,12 @@ const ProjectAdminReports: React.FC = () => {
         };
     }, []);
 
-    // -------- departments (once per company) ----------
-    useEffect(() => {
-        (async () => {
-            try {
-                const qs = await getDocs(
-                    query(
-                        collection(db, "departments"),
-                    )
-                );
-                const options = qs.docs
-                    .map((d) => ({
-                        value: d.id,
-                        label: String((d.data() as any).name || (d.data() as any).departmentName || d.id).trim(),
-                        interventionsDepartment: (d.data() as any).interventionsDepartment === true,
-                    }))
-                    .filter((option) => option.label && !isExcludedDept(option.label));
-                setDeptNames(options.map((option) => option.label));
-                setReachDepartmentOptions(options.map(({ label, value }) => ({ label, value })));
-                setInterventionDepartmentOptions(
-                    options
-                        .filter((option) => option.interventionsDepartment)
-                        .map(({ label, value }) => ({ label, value }))
-                );
-            } catch (e) {
-                console.error("[Reports] failed to load departments", e);
-            }
-        })();
-    }, []);
-
     // -------- applications, participants, assignedInterventions, agreements ----------
     useEffect(() => {
         if (!assignedBranch) return;
         setTopError(null);
 
         let cancelled = false;
-        gapDebugLoggedRef.current = false;
-        dpDebugLoggedRef.current = false;
         (async () => {
             try {
                 setLoading(true);
@@ -500,17 +498,6 @@ const ProjectAdminReports: React.FC = () => {
                     filterReportRecords(assignedRows, user?.email, visibility) as AssignedIntervention[]
                 );
 
-                const onboarded = _apps.filter(
-                    (a) => normalize(a.applicationStatus) === "accepted"
-                );
-                const gapByAppObj: Record<string, boolean> = {};
-                const preByAppObj: Record<string, boolean> = {};
-                for (const a of onboarded) {
-                    gapByAppObj[a.id] = hasAgreement(a, "gap-analysis");
-                    preByAppObj[a.id] = hasAgreement(a, "pre-incubation-contract");
-                }
-                setGapByApp(gapByAppObj);
-                setPreByApp(preByAppObj);
             } catch (e) {
                 console.error(e);
                 if (!cancelled) setTopError("Failed to load analytics data.");
@@ -524,70 +511,23 @@ const ProjectAdminReports: React.FC = () => {
         };
     }, [assignedBranch, activeProgramId, user?.email]);
 
-    // -------- GAP + Diagnostic Plans (ROM + manual) ----------
+    // -------- GAP Analyses confirmed by ROM ----------
     useEffect(() => {
         let cancelled = false;
-        gapDebugLoggedRef.current = false;
-        dpDebugLoggedRef.current = false;
         (async () => {
-            const acceptedApps = apps.filter(
-                (a) => normalize(a.applicationStatus) === "accepted"
-            );
-
             const pids = Array.from(
                 new Set(
-                    acceptedApps
+                    apps
+                        .filter((a) => normalize(a.applicationStatus) === "accepted")
                         .map((a) => a.participantId)
                         .filter(Boolean)
                         .map(String)
                 )
             );
-
-            console.log("[DP DEBUG] total apps:", apps.length);
-            console.log(
-                "[DP DEBUG] acceptedApps:",
-                acceptedApps.map((a) => ({
-                    id: a.id,
-                    participantId: a.participantId,
-                    manuallyCreated: (a as any).manuallyCreated,
-                    submittedAt: a.submittedAt,
-                }))
-            );
-            console.log("[DP DEBUG] accepted participantIds:", pids);
-
-            if (!pids.length) {
-                console.log("[DP DEBUG] no accepted participantIds found");
-                if (!cancelled) {
-                    setLatestPlanByPid(new Map());
-                    setRomConfirmed(new Set());
-                }
-                return;
-            }
-
-            const manualPids = new Set<string>();
-            acceptedApps.forEach((a) => {
-                const isManual =
-                    (a as any).manuallyCreated === true
-
-
-                if (isManual && a.participantId) {
-                    manualPids.add(String(a.participantId));
-                }
-            });
-
-            console.log(
-                "[DP DEBUG] manualPids from acceptedApps:",
-                Array.from(manualPids)
-            );
-
             const romConf = new Set<string>();
             for (const ids of chunk(pids, 10)) {
-                if (!ids.length) continue;
                 const gs = await getDocs(
-                    query(
-                        collection(db, "gapAnalysis"),
-                        where("participantId", "in", ids)
-                    )
+                    query(collection(db, "gapAnalysis"), where("participantId", "in", ids))
                 );
                 if (cancelled) return;
                 gs.forEach((s) => {
@@ -600,72 +540,8 @@ const ProjectAdminReports: React.FC = () => {
                     }
                 });
             }
-
-            console.log(
-                "[DP DEBUG] romConfirmed participants from gapAnalysis:",
-                Array.from(romConf)
-            );
-
-            const planPids = Array.from(
-                new Set<string>([...Array.from(romConf), ...Array.from(manualPids)])
-            );
-
-            console.log(
-                "[DP DEBUG] planPids for diagnosticPlans (ROM + manual):",
-                planPids
-            );
-
-            if (!planPids.length) {
-                console.log("[DP DEBUG] no planPids; clearing latestPlanByPid");
-                if (!cancelled) {
-                    setLatestPlanByPid(new Map());
-                    setRomConfirmed(romConf);
-                }
-                return;
-            }
-
-            const latest = new Map<string, any>();
-            const toMillisInner = (v: any) =>
-                v?.toMillis?.() ??
-                (v?._seconds
-                    ? v._seconds * 1000
-                    : v instanceof Date
-                        ? v.getTime()
-                        : Number(v) || 0);
-
-            for (const ids of chunk(planPids, 10)) {
-                if (!ids.length) continue;
-                const ds = await getDocs(
-                    query(
-                        collection(db, "diagnosticPlans"),
-                        where("participantId", "in", ids)
-                    )
-                );
-                if (cancelled) return;
-
-                ds.forEach((s) => {
-                    const d: any = s.data();
-                    const pid = String(d?.participantId || "");
-                    const prev = latest.get(pid);
-                    if (
-                        !prev ||
-                        toMillisInner(d?.createdAt) > toMillisInner(prev?.createdAt)
-                    ) {
-                        latest.set(pid, d);
-                    }
-                });
-            }
-
-            console.log(
-                "[DP DEBUG] latestPlanByPid size (diagnosticPlans loaded):",
-                latest.size
-            );
-
-            if (!cancelled) {
-                setLatestPlanByPid(latest);
-                setRomConfirmed(romConf);
-            }
-        })();
+            if (!cancelled) setRomConfirmed(romConf);
+        })().catch((error) => console.error("GAP confirmations could not be loaded.", error));
 
         return () => {
             cancelled = true;
@@ -674,12 +550,8 @@ const ProjectAdminReports: React.FC = () => {
 
     // -------- scoped subsets ----------
     const matchesDepartment = useCallback(
-        (record: { departmentId?: string; departmentName?: string; areaOfSupport?: string }) => {
-            if (selectedDepartment === "all") return true;
-            return normalize(record.departmentId) === normalize(selectedDepartment)
-                || normalize(record.departmentName) === normalize(selectedDepartment)
-                || normalize(record.areaOfSupport) === normalize(selectedDepartment);
-        },
+        (record: { departmentId?: string }) =>
+            selectedDepartment === "all" || String(record.departmentId || "") === selectedDepartment,
         [selectedDepartment]
     );
 
@@ -708,10 +580,15 @@ const ProjectAdminReports: React.FC = () => {
         [appsInRange]
     );
 
+    // Reach filters by department itself, so it gets the period's rows unfiltered.
+    const assignedInPeriod = useMemo(
+        () => assigned.filter((r) => inRange(r.createdAt) || inRange(r.completedAt)),
+        [assigned, inRange]
+    );
+
     const assignedInRange = useMemo(
-        () =>
-            assigned.filter((r) => (inRange(r.createdAt) || inRange(r.completedAt)) && matchesDepartment(r)),
-        [assigned, inRange, matchesDepartment]
+        () => assignedInPeriod.filter((r) => matchesDepartment(r)),
+        [assignedInPeriod, matchesDepartment]
     );
 
     const reportAssignmentRollups = useMemo(
@@ -724,21 +601,7 @@ const ProjectAdminReports: React.FC = () => {
             string,
             { department: string; required: number; assigned: number; active: number; completed: number }
         >();
-        const departmentLabel = (record: {
-            departmentId?: string;
-            departmentName?: string;
-            areaOfSupport?: string;
-            area?: string;
-        }) => {
-            const id = String(record.departmentId || "");
-            return (
-                reachDepartmentOptions.find((option) => option.value === id)?.label ||
-                record.departmentName ||
-                record.areaOfSupport ||
-                record.area ||
-                "Other"
-            );
-        };
+        const departmentLabel = (record: { departmentId?: string }) => departmentLabelOf(record.departmentId);
         const ensure = (department: string) => {
             if (!byDepartment.has(department)) {
                 byDepartment.set(department, {
@@ -751,21 +614,10 @@ const ProjectAdminReports: React.FC = () => {
             }
             return byDepartment.get(department)!;
         };
-        const isInterventionDepartment = (record: {
-            departmentId?: string;
-            departmentName?: string;
-            areaOfSupport?: string;
-            area?: string;
-        }) => {
-            const id = normalize(record.departmentId);
-            const name = normalize(
-                record.departmentName || record.areaOfSupport || record.area
+        const isInterventionDepartment = (record: { departmentId?: string }) =>
+            interventionDepartmentOptions.some(
+                (department) => department.value === String(record.departmentId || "")
             );
-            return interventionDepartmentOptions.some(
-                (department) =>
-                    normalize(department.value) === id || normalize(department.label) === name
-            );
-        };
 
         // Required interventions come from the accepted application plan. They are
         // intentionally not inferred from assignment rows, which can be incomplete.
@@ -779,11 +631,7 @@ const ProjectAdminReports: React.FC = () => {
                     : [];
                 required.forEach((item) => {
                     if (!isInterventionDepartment(item)) return;
-                    if (!matchesDepartment({
-                        departmentId: item.departmentId,
-                        departmentName: item.departmentName,
-                        areaOfSupport: item.area,
-                    })) return;
+                    if (!matchesDepartment(item)) return;
                     ensure(departmentLabel(item)).required += 1;
                 });
             });
@@ -810,246 +658,153 @@ const ProjectAdminReports: React.FC = () => {
         inRange,
         interventionDepartmentOptions,
         matchesDepartment,
-        reachDepartmentOptions,
+        departmentLabelOf,
         reportAssignmentRollups,
     ]);
 
-    // -------- participantsWithGap ----------
-    const participantsWithGap = useMemo(() => {
-        const set = new Set<string>();
-
-        const manualPidsInRange = new Set<string>();
-
-        onboardedAppsInRange.forEach((a) => {
-            if (!a.participantId) return;
-            const pid = String(a.participantId);
-
-            const isManual =
-                (a as any).manuallyCreated === true
-
-            if (isManual) {
-                manualPidsInRange.add(pid);
-                set.add(pid);
-                return;
-            }
-
-            if (romConfirmed.has(pid)) {
-                set.add(pid);
-            }
-        });
-
-        if (!gapDebugLoggedRef.current) {
-            gapDebugLoggedRef.current = true;
-            console.log("=== [DP DEBUG] participantsWithGap snapshot ===");
-            console.log(
-                "[DP DEBUG] onboardedAppsInRange (accepted in dateRange):",
-                onboardedAppsInRange.map((a) => ({
-                    id: a.id,
-                    participantId: a.participantId,
-                    manuallyCreated: (a as any).manuallyCreated,
-                    submittedAt: a.submittedAt,
-                }))
-            );
-            console.log(
-                "[DP DEBUG] manualPidsInRange (manual + in dateRange):",
-                Array.from(manualPidsInRange)
-            );
-            console.log(
-                "[DP DEBUG] romConfirmed (from gapAnalysis, any date):",
-                Array.from(romConfirmed)
-            );
-            console.log("[DP DEBUG] participantsWithGap final set:", Array.from(set));
-            console.log(
-                "[DP DEBUG] participantsWithGap size (totalNeeded basis):",
-                set.size
-            );
-        }
-
-        return set;
-    }, [onboardedAppsInRange, romConfirmed]);
-
-    // -------- DPs Needed vs Confirmed ----------
-    const paDPModel = useMemo(() => {
-        const latest = latestPlanByPid;
-
-        const confirmedByDept = new Map<string, Set<string>>();
-
-        const norm = (s: string) =>
-            s
-                .toLowerCase()
-                .replace(/\(.*?\)|and|&/gi, "")
-                .trim();
-
-        latest.forEach((plan, pidRaw) => {
-            const pid = String(pidRaw);
-
-            if (!participantsWithGap.has(pid)) return;
-
-            const conf = (plan?.confirmed || {}) as Record<string, boolean>;
-
-            Object.entries(conf).forEach(([k, v]) => {
-                if (!v) return;
-
-                const nk = norm(k);
-
-                const match = deptNames.find(
-                    (d) =>
-                        !isExcludedDept(d) && (norm(d).includes(nk) || nk.includes(norm(d)))
-                );
-
-                if (!match) return;
-
-                const set = confirmedByDept.get(match) || new Set<string>();
-                set.add(pid);
-                confirmedByDept.set(match, set);
+    // Compliance documents are only read when the Compliance tab is opened.
+    const [complianceSource, setComplianceSource] = useState<ComplianceSource | null>(null);
+    const [complianceLoading, setComplianceLoading] = useState(false);
+    const acceptedApps = useMemo(
+        () => apps.filter((a) => normalize(a.applicationStatus) === "accepted"),
+        [apps]
+    );
+    const complianceLoadedFor = useRef<unknown>(null);
+    useEffect(() => {
+        if (viewMode !== "compliance" || loading) return;
+        if (complianceLoadedFor.current === acceptedApps) return;
+        complianceLoadedFor.current = acceptedApps;
+        let cancelled = false;
+        setComplianceLoading(true);
+        loadComplianceSource(acceptedApps, participantById)
+            .then((source) => {
+                if (!cancelled) setComplianceSource(source);
+            })
+            .catch((error) => {
+                console.error("Compliance documents could not be loaded.", error);
+                complianceLoadedFor.current = null;
+                if (!cancelled) setComplianceSource({ records: [], requirementsByProgram: {}, templates: [] });
+            })
+            .finally(() => {
+                if (!cancelled) setComplianceLoading(false);
             });
-        });
-
-        const cats = deptNames
-            .filter((d) => !isExcludedDept(d))
-            .filter((d) => selectedDepartment === "all" || normalize(d) === normalize(selectedDepartment))
-            .filter(Boolean)
-            .sort();
-
-        const totalNeeded = participantsWithGap.size;
-
-        const needed: number[] = [];
-        const confirmed: number[] = [];
-
-        cats.forEach((dept) => {
-            const confSet = confirmedByDept.get(dept) || new Set<string>();
-            needed.push(totalNeeded);
-            confirmed.push(confSet.size);
-        });
-
-        if (!dpDebugLoggedRef.current) {
-            dpDebugLoggedRef.current = true;
-            console.log("=== [DP DEBUG] paDPModel snapshot ===");
-            console.log("[DP DEBUG] categories (departments):", cats);
-            console.log(
-                "[DP DEBUG] Needed per dept (should all equal participantsWithGap.size):",
-                needed
-            );
-            console.log("[DP DEBUG] Confirmed per dept:", confirmed);
-        }
-
-        return { cats, needed, confirmed };
-    }, [deptNames, participantsWithGap, latestPlanByPid, selectedDepartment]);
-
-    const paDPHasData =
-        paDPModel.cats.length &&
-        (paDPModel.needed.some((v) => v > 0) ||
-            paDPModel.confirmed.some((v) => v > 0));
-
-    const paDPOptions: Highcharts.Options = {
-        chart: { type: "bar", height: 380 },
-        title: { text: "" },
-        credits: { enabled: false },
-        xAxis: { categories: paDPModel.cats },
-        yAxis: { min: 0, allowDecimals: false, title: { text: "Participants" } },
-        legend: { reversed: false },
-        tooltip: { shared: true },
-        plotOptions: { bar: { dataLabels: { enabled: true }, borderRadius: 4 } },
-        series: [
-            { type: "bar", name: "Confirmed", data: paDPModel.confirmed },
-            { type: "bar", name: "Needed", data: paDPModel.needed },
-        ],
-    };
-
-    // -------- Onboarded vs Signed docs ----------
-    const onboardedVsSigned = useMemo(() => {
-        const onboardedMap: Record<string, number> = {};
-        const gapMap: Record<string, number> = {};
-        const preMap: Record<string, number> = {};
-
-        const monthsKeys = months.length
-            ? months
-            : Array.from(
-                new Set(
-                    onboardedAppsInRange
-                        .map((a) => toDate(a.submittedAt))
-                        .filter(Boolean)
-                        .map((d) => fmtMonth(d as Date))
-                )
-            ).sort();
-
-        onboardedAppsInRange.forEach((a) => {
-            const d = toDate(a.submittedAt);
-            if (!d) return;
-            const k = fmtMonth(d);
-            onboardedMap[k] = (onboardedMap[k] || 0) + 1;
-            if (gapByApp[a.id]) gapMap[k] = (gapMap[k] || 0) + 1;
-            if (preByApp[a.id]) preMap[k] = (preMap[k] || 0) + 1;
-        });
-
-        return {
-            categories: monthsKeys.map(monthLabel),
-            onboarded: monthsKeys.map((m) => onboardedMap[m] || 0),
-            gapSigned: monthsKeys.map((m) => gapMap[m] || 0),
-            preSigned: monthsKeys.map((m) => preMap[m] || 0),
+        return () => {
+            cancelled = true;
+            // Unmounted or the data changed mid-load: allow the next run to load again.
+            if (complianceLoadedFor.current === acceptedApps) complianceLoadedFor.current = null;
         };
-    }, [months, onboardedAppsInRange, gapByApp, preByApp]);
+    }, [viewMode, loading, acceptedApps, participantById]);
 
-    const onboardedVsSignedHasData =
-        onboardedVsSigned.onboarded.some((v) => v > 0) ||
-        onboardedVsSigned.gapSigned.some((v) => v > 0) ||
-        onboardedVsSigned.preSigned.some((v) => v > 0);
-
-    const onboardedVsSignedOptions: Highcharts.Options = {
-        chart: { type: "column", height: 340 },
-        title: { text: "" },
-        credits: { enabled: false },
-        xAxis: { categories: onboardedVsSigned.categories },
-        yAxis: { min: 0, allowDecimals: false, title: { text: "Count" } },
-        plotOptions: { column: { borderRadius: 4, dataLabels: { enabled: true } } },
-        series: [
-            { type: "column", name: "Onboarded", data: onboardedVsSigned.onboarded },
-            { type: "column", name: "GAP Signed", data: onboardedVsSigned.gapSigned },
-            {
-                type: "column",
-                name: "Pre-Incubation Signed",
-                data: onboardedVsSigned.preSigned,
+    const complianceModel = useMemo(() => {
+        if (!complianceSource) return null;
+        const inRangeIds = new Set(onboardedAppsInRange.map((a) => a.id));
+        return buildComplianceModel({
+            records: complianceSource.records.filter((r) => inRangeIds.has(r.appId)),
+            requirementsByProgram: complianceSource.requirementsByProgram,
+            templates: complianceSource.templates,
+            romConfirmed,
+            monthKeys: months,
+            monthKeyOf: (record) => {
+                const d = toDate(record.application?.submittedAt);
+                return d ? fmtMonth(d) : null;
             },
-        ],
-    };
+            monthLabel,
+        });
+    }, [complianceSource, onboardedAppsInRange, romConfirmed, months]);
 
-    // -------- Outstanding Docs pie ----------
-    const outstandingPieData = useMemo(() => {
-        const onboardedTotal = onboardedAppsInRange.length;
-        const gapSignedTotal = onboardedAppsInRange.reduce(
-            (s, a) => s + (gapByApp[a.id] ? 1 : 0),
-            0
-        );
-        const preSignedTotal = onboardedAppsInRange.reduce(
-            (s, a) => s + (preByApp[a.id] ? 1 : 0),
-            0
-        );
-        return [
-            {
-                name: "GAP Analysis Pending",
-                y: Math.max(0, onboardedTotal - gapSignedTotal),
-            },
-            {
-                name: "Pre-Incubation Pending",
-                y: Math.max(0, onboardedTotal - preSignedTotal),
-            },
-        ];
-    }, [onboardedAppsInRange, gapByApp, preByApp]);
+    const complianceTrendOptions: Highcharts.Options | null = complianceModel
+        ? {
+            chart: { type: "column", height: 240 },
+            title: { text: "" },
+            credits: { enabled: false },
+            xAxis: { categories: complianceModel.trend.categories },
+            yAxis: { min: 0, allowDecimals: false, title: { text: undefined } },
+            tooltip: { shared: true },
+            plotOptions: { column: { borderRadius: 3, dataLabels: { enabled: true } } },
+            series: [
+                { type: "column", name: "Onboarded", data: complianceModel.trend.onboarded },
+                { type: "column", name: "GAP Analysis signed", data: complianceModel.trend.gap },
+                { type: "column", name: "Pre-incubation signed", data: complianceModel.trend.pre },
+                { type: "column", name: "MOA signed", data: complianceModel.trend.moa },
+            ],
+        }
+        : null;
 
-    const outstandingPieHasData = outstandingPieData.some((p) => p.y > 0);
+    // Appointment sessions and walk-ins are only read when the Engagement tab is opened.
+    // Scoped like the Play report: sessions by programme, walk-ins by branch and programme.
+    const [engagementSource, setEngagementSource] = useState<{ sessions: any[]; inquiries: any[] } | null>(null);
+    const [engagementLoading, setEngagementLoading] = useState(false);
+    const engagementLoadedFor = useRef<string | null>(null);
+    useEffect(() => {
+        if (viewMode !== "engagement" || !assignedBranch) return;
+        const key = `${assignedBranch}|${activeProgramId || ""}`;
+        if (engagementLoadedFor.current === key) return;
+        engagementLoadedFor.current = key;
+        let cancelled = false;
+        setEngagementLoading(true);
+        Promise.all([
+            getDocs(
+                activeProgramId
+                    ? query(collection(db, "appointmentSessions"), where("programId", "==", activeProgramId))
+                    : collection(db, "appointmentSessions")
+            )
+                .then((snap) => snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+                .catch((error) => {
+                    console.error("Appointment sessions could not be loaded.", error);
+                    return [] as any[];
+                }),
+            getDocs(query(collection(db, "inquiries"), where("branchId", "==", assignedBranch)))
+                .then((snap) => snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })))
+                .catch((error) => {
+                    console.error("Walk-ins could not be loaded.", error);
+                    return [] as any[];
+                }),
+        ])
+            .then(([sessions, inquiries]) => {
+                if (!cancelled) setEngagementSource({ sessions, inquiries });
+            })
+            .finally(() => {
+                if (!cancelled) setEngagementLoading(false);
+            });
+        return () => {
+            cancelled = true;
+            if (engagementLoadedFor.current === key) engagementLoadedFor.current = null;
+        };
+    }, [viewMode, assignedBranch, activeProgramId]);
 
-    const outstandingDocsPieOptions: Highcharts.Options = {
-        chart: { type: "pie", height: 320 },
-        title: { text: "" },
-        credits: { enabled: false },
-        plotOptions: {
-            pie: {
-                innerSize: "55%",
-                dataLabels: { enabled: true, format: "{point.name}: {point.y}" },
-            },
-        },
-        series: [{ type: "pie", name: "Outstanding", data: outstandingPieData }],
-    };
+    const engagementModel = useMemo(() => {
+        if (!engagementSource) return null;
+        const labelOf = (id: string) =>
+            reachDepartmentOptions.find((option) => option.value === id)?.label ||
+            "Other department";
+        return buildEngagementModel({
+            sessions: engagementSource.sessions,
+            inquiries: engagementSource.inquiries,
+            inRange,
+            programId: activeProgramId,
+            departmentLabel: labelOf,
+            matchesDepartment: (id) => selectedDepartment === "all" || id === selectedDepartment,
+            monthKeys: months,
+            monthKeyOf: fmtMonth,
+            monthLabel,
+        });
+    }, [engagementSource, inRange, activeProgramId, reachDepartmentOptions, selectedDepartment, months]);
+
+    const engagementTrendOptions: Highcharts.Options | null = engagementModel
+        ? {
+            chart: { type: "column", height: 240 },
+            title: { text: "" },
+            credits: { enabled: false },
+            xAxis: { categories: engagementModel.trend.categories },
+            yAxis: { min: 0, allowDecimals: false, title: { text: undefined } },
+            tooltip: { shared: true },
+            plotOptions: { column: { borderRadius: 3, dataLabels: { enabled: true } } },
+            series: [
+                { type: "column", name: "Sessions held", data: engagementModel.trend.held },
+                { type: "column", name: "Walk-ins", data: engagementModel.trend.walkIns },
+            ],
+        }
+        : null;
 
     // -------- Interventions Breakdown ----------
     const breakdown = useMemo(() => {
@@ -1061,13 +816,13 @@ const ProjectAdminReports: React.FC = () => {
             )
             .forEach((rollup) => {
                 const r = rollup.record;
-                const dept = r.departmentName || r.areaOfSupport || "Other";
+                const dept = departmentLabelOf(r.departmentId);
                 if (!perDept[dept]) perDept[dept] = [];
                 perDept[dept].push(rollup);
             });
 
         const topData: Highcharts.PointOptionsObject[] = [];
-        const drillSeries: Highcharts.DrilldownSeriesOptions[] = [];
+        const drillSeries: Highcharts.SeriesOptionsType[] = [];
 
         Object.entries(perDept).forEach(([dept, rows]) => {
             const perStatus: Record<string, typeof reportAssignmentRollups> = {};
@@ -1166,7 +921,7 @@ const ProjectAdminReports: React.FC = () => {
         });
 
         return { topData, drillSeries };
-    }, [inRange, interventionsById, matchesDepartment, reportAssignmentRollups]);
+    }, [departmentLabelOf, inRange, interventionsById, matchesDepartment, reportAssignmentRollups]);
 
     const breakdownHasData = breakdown.topData.some((p) => (p as any).y > 0);
     const snapshotHasData = departmentSnapshots.some(
@@ -1229,7 +984,8 @@ const ProjectAdminReports: React.FC = () => {
                     },
                 } as any,
             },
-            title: { text: `${drilledDepartmentName} intervention status` },
+            // The snapshot panel names the department above the chart.
+            title: { text: undefined },
             credits: { enabled: false },
             xAxis: { type: "category" },
             yAxis: { min: 0, allowDecimals: false, title: { text: "Unique interventions" } },
@@ -1271,14 +1027,11 @@ const ProjectAdminReports: React.FC = () => {
         reportAssignmentRollups.filter(({ record, members }) => {
             if (!matchesDepartment(record)) return false;
             const isInterventionDepartment = interventionDepartmentOptions.some(
-                (department) =>
-                    normalize(department.value) === normalize(record.departmentId) ||
-                    normalize(department.label) ===
-                    normalize(record.departmentName || record.areaOfSupport)
+                (department) => department.value === String(record.departmentId || "")
             );
             if (!isInterventionDepartment) return false;
             if (!drilledDepartmentName) return true;
-            return normalize(record.departmentName || record.areaOfSupport) === normalize(drilledDepartmentName) && members.length > 0;
+            return departmentLabelOf(record.departmentId) === drilledDepartmentName && members.length > 0;
         }).forEach((rollup) => {
             const recordId = rollup.key;
             const status = rollup.status;
@@ -1311,6 +1064,7 @@ const ProjectAdminReports: React.FC = () => {
             inProgress: keys.map((key) => buckets.get(key)?.inProgress.size || 0),
         };
     }, [
+        departmentLabelOf,
         drilledDepartmentName,
         inRange,
         interventionDepartmentOptions,
@@ -1476,7 +1230,7 @@ const ProjectAdminReports: React.FC = () => {
             .filter(Boolean) as ParticipantDoc[];
         const count = (gender: string, bucket: (typeof AGE_BUCKETS)[number]) =>
             people.filter((person) => {
-                const age = getAgeFromID(person.idNumber);
+                const age = participantAge(person);
                 return (
                     age != null &&
                     age >= bucket.min &&
@@ -1511,7 +1265,7 @@ const ProjectAdminReports: React.FC = () => {
             },
         ],
         yAxis: {
-            title: { text: null },
+            title: { text: '' },
             labels: {
                 formatter: function () {
                     return Math.abs(Number(this.value)).toString();
@@ -1665,12 +1419,15 @@ const ProjectAdminReports: React.FC = () => {
     const wardCounts = useMemo(() => {
         const m: Record<string, number> = {};
         applicantsInRange.forEach((a) => {
-            const w = (firstMapValue(a.profile) || "Unknown") as string;
+            // The SME's own ward/hub first; older applications keep it in profile.
+            const p = a.participantId ? participantById.get(a.participantId) : undefined;
+            const fromProfile = firstMapValue(a.profile);
+            const w = (p?.ward || p?.hub || (typeof fromProfile === "string" ? fromProfile : "") || "Unknown") as string;
             const label = (w || "Unknown").toString();
             m[label] = (m[label] || 0) + 1;
         });
         return m;
-    }, [applicantsInRange]);
+    }, [applicantsInRange, participantById]);
 
     const wardHasData = Object.values(wardCounts).some((v) => v > 0);
 
@@ -1744,7 +1501,7 @@ const ProjectAdminReports: React.FC = () => {
                             popover: {
                                 title: "Report filters",
                                 description:
-                                    "The period always controls the report. Department applies to Interventions, Compliance and Reach. In Applicants, it becomes Audience: All Applicants includes every application; Incubatees includes accepted applicants only.",
+                                    "The period is set with the calendar button in the top bar and is shared with your dashboard. Filters holds the rest for the open tab: Department for Interventions and Engagement, and Applicants (All or Accepted only) for Applicants. On Reach, Filters holds Department, Intervention and the demographic charts to show.",
                                 side: "bottom",
                                 align: "start",
                             },
@@ -1814,7 +1571,7 @@ const ProjectAdminReports: React.FC = () => {
                             popover: {
                                 title: "Applicant audience",
                                 description:
-                                    "Choose Applicants, then use Audience to switch between All Applicants and Incubatees (Accepted). Applicant charts intentionally ignore Department so they show the full programme population.",
+                                    "Choose Applicants, then open Filters to switch between all applicants and accepted applicants only. Applicant charts intentionally ignore Department so they show the full programme population.",
                                 side: "bottom",
                                 align: "end",
                             },
@@ -1826,7 +1583,7 @@ const ProjectAdminReports: React.FC = () => {
                             popover: {
                                 title: "Compliance checks",
                                 description:
-                                    "Choose Compliance to review Developmental Plans needed versus confirmed, GAP and onboarding-document progress, and outstanding documents. These charts retain the selected department and period.",
+                                    "Choose Compliance to see onboarding documents (GAP Analysis, pre-incubation contract and MOA) and each programme's required documents by status, for SMEs onboarded in the selected period.",
                                 side: "bottom",
                                 align: "start",
                             },
@@ -1840,86 +1597,175 @@ const ProjectAdminReports: React.FC = () => {
 
     usePageGuides(guideRegistration);
 
+    // Filters that apply to the open tab; the period lives in the topbar. Reach
+    // supplies its own pickers (Department, Intervention, charts to show).
+    const departmentFilter = ["interventions", "engagement"].includes(viewMode);
+    const activeFilterCount =
+        (departmentFilter && selectedDepartment !== "all" ? 1 : 0) +
+        (viewMode === "applications" && applicantScope !== "all" ? 1 : 0) +
+        (viewMode === "reach" ? reachControls?.activeCount || 0 : 0);
+    // One line beside the period saying what the open tab is filtered by.
+    const filterSummary: Array<{ label: string; value: string; onClear?: () => void }> =
+        viewMode === "reach"
+            ? reachControls?.summary || []
+            : departmentFilter
+                ? [{
+                    label: "Department",
+                    value: selectedDepartment === "all" ? "All" : departmentLabelOf(selectedDepartment),
+                    onClear: selectedDepartment === "all" ? undefined : () => setSelectedDepartment("all"),
+                }]
+                : viewMode === "applications"
+                    ? [{
+                        label: "Applicants",
+                        value: applicantScope === "all" ? "All" : "Accepted only",
+                        onClear: applicantScope === "all" ? undefined : () => setApplicantScope("all"),
+                    }]
+                    : [];
+
+    // Charts with a Details view: the chart large, its figures and a CSV download.
+    const detailCharts: Record<string, { title: string; options: Highcharts.Options; hasData: boolean }> = {
+        interventionTimeSeries: {
+            title: "Intervention activity over time",
+            options: interventionTimeSeriesOptions,
+            hasData: interventionTimeSeriesHasData,
+        },
+        appsSubmittedVsAccepted: {
+            title:
+                applicantScope === "incubatees"
+                    ? "Incubatees (Accepted) — Monthly"
+                    : "Applicants — Submitted vs Accepted (Monthly)",
+            options: appsSubmittedVsAcceptedOptions,
+            hasData: appsSubmittedVsAcceptedHasData,
+        },
+        appGender: { title: "Applicants by Gender", options: appGenderOptions, hasData: appGenderHasData },
+        appAge: { title: "Applicants by Age Group", options: appAgeOptions, hasData: appAgeHasData },
+        appSector: { title: "Applicants by Sector", options: appSectorOptions, hasData: appSectorHasData },
+        ownership: { title: "Ownership Breakdown (Average %)", options: ownershipOptions, hasData: ownershipHasData },
+        bee: { title: "B-BBEE / Education Breakdown", options: beeOptions, hasData: beeHasData },
+        ward: { title: "Ward / Locality Distribution", options: wardOptions, hasData: wardHasData },
+    };
+    const openDetail = expandedChart ? detailCharts[expandedChart] : undefined;
+
+    const filterPanel = viewMode === "reach" ? (
+        reachControls?.panel ?? null
+    ) : departmentFilter ? (
+        <FilterPanel canReset={selectedDepartment !== "all"} onReset={() => setSelectedDepartment("all")}>
+            {reachDepartmentOptions.length > 0 && (
+                <div>
+                    <label className="ws-filter-label" id="pr-department-label" htmlFor="pr-department">
+                        Department
+                    </label>
+                    <Select
+                        id="pr-department"
+                        style={{ width: "100%" }}
+                        value={selectedDepartment}
+                        onChange={setSelectedDepartment}
+                        options={[{ value: "all", label: "All departments" }, ...reachDepartmentOptions]}
+                        showSearch
+                        optionFilterProp="label"
+                    />
+                </div>
+            )}
+        </FilterPanel>
+    ) : viewMode === "applications" ? (
+        <FilterPanel canReset={applicantScope !== "all"} onReset={() => setApplicantScope("all")}>
+            <div>
+                <label className="ws-filter-label" id="pr-audience-label">
+                    Applicants
+                </label>
+                <Segmented
+                    block
+                    aria-labelledby="pr-audience-label"
+                    value={applicantScope}
+                    onChange={(v) => setApplicantScope(v as "all" | "incubatees")}
+                    options={[
+                        { value: "all", label: "All" },
+                        { value: "incubatees", label: "Accepted only" },
+                    ]}
+                />
+            </div>
+        </FilterPanel>
+    ) : null;
+
     return (
         <div style={{ padding: 24, minHeight: "100vh" }}>
             <Helmet>
                 <title>Project Reports & Analytics</title>
             </Helmet>
 
-            <DashboardFilterBar>  <div
-                style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    width: "100%",
-                    minWidth: 0,
-                    overflowX: "auto",
-                }}
-            >
-                {viewMode === "performance" ? null : viewMode === "applications" ? (
-                    <div style={{ flex: "1 1 0", minWidth: 170 }}>
-                        <Select
-                            size="large"
-                            value={applicantScope}
-                            onChange={setApplicantScope}
-                            style={{ width: "100%" }}
-                            options={[
-                                { value: "all", label: "All Applicants" },
-                                { value: "incubatees", label: "Incubatees (Accepted)" },
-                            ]}
-                        />
-                    </div>
-                ) : (
-                    <div style={{ flex: "1 1 0", minWidth: 170 }}>
-                        <Select
-                            size="large"
-                            value={selectedDepartment}
-                            onChange={setSelectedDepartment}
-                            style={{ width: "100%" }}
-                            options={[
-                                { value: "all", label: "All Departments" },
-                                ...deptNames.slice().sort().map((name) => ({ value: name, label: name }))
-                            ]}
-                        />
-                    </div>
-                )}
-                <div style={{ flex: "1.4 1 0", minWidth: 280 }}>
-                    <RangePicker
-                        size="large"
-                        allowClear={false}
-                        value={dateRange}
-                        presets={[
-                            { label: "This Month", value: [dayjs().startOf("month"), dayjs().endOf("month")] },
-                            { label: "This Quarter", value: fiscalQuarterRange() },
-                            { label: "Year To Date", value: fiscalYtdRange() }
-                        ]}
-                        style={{ width: "100%" }}
-                        onChange={(vals) => {
-                            if (!vals || !vals[0] || !vals[1]) {
-                                setDateRange(DEFAULT_RANGE);
-                                return;
-                            }
-                            setDateRange([vals[0], vals[1]]);
-                        }}
-                    />
-                </div>
-                <div style={{ flex: "0 0 auto" }}>
+            <DashboardFilterBar>
+                <div className="pr-bar" data-guide="project-report-filters">
                     <Segmented<ViewMode>
                         data-guide="project-report-segments"
-                        className="nav-pill-segmented"
+                        className="pr-tabs"
                         value={viewMode}
                         onChange={(v) => setViewMode(v as ViewMode)}
                         options={[
-                            { label: "Interventions", value: "interventions", icon: <BarChartOutlined /> },
+                            // The SME's journey: intake, onboarding, support, contact, who it reached, results.
                             { label: "Applicants", value: "applications", icon: <TeamOutlined /> },
                             { label: "Compliance", value: "compliance", icon: <FileProtectOutlined /> },
+                            { label: "Interventions", value: "interventions", icon: <BarChartOutlined /> },
+                            { label: "Engagement", value: "engagement", icon: <CalendarOutlined /> },
                             { label: "Reach", value: "reach", icon: <GlobalOutlined /> },
                             { label: "Performance", value: "performance", icon: <LineChartOutlined /> },
                         ]}
                     />
+                    <div className="pr-scope" aria-label="Showing">
+                        <span className="pr-scope-item" title="Change the period from the calendar button in the top bar">
+                            <span className="pr-scope-label">Period:</span> {periodLabel}
+                        </span>
+                        {filterSummary.map((item) => (
+                            <span key={item.label} className={`pr-scope-item${item.onClear ? " is-active" : ""}`}>
+                                <span className="pr-scope-label">{item.label}:</span> {item.value}
+                                {item.onClear ? (
+                                    <button
+                                        type="button"
+                                        className="pr-scope-clear"
+                                        aria-label={`Clear ${item.label.toLowerCase()} filter`}
+                                        onClick={item.onClear}
+                                    >
+                                        <CloseOutlined />
+                                    </button>
+                                ) : null}
+                            </span>
+                        ))}
+                    </div>
+                    {filterPanel ? (
+                        <Popover content={filterPanel} trigger="click" placement="bottomRight" title="Filters">
+                            <Badge count={activeFilterCount} size="small" offset={[-6, 4]}>
+                                <Button size="large" icon={<FilterOutlined />}>
+                                    Filters
+                                </Button>
+                            </Badge>
+                        </Popover>
+                    ) : null}
+                    <Dropdown
+                        trigger={["click"]}
+                        placement="bottomRight"
+                        menu={{
+                            items: [
+                                { key: "play", icon: <PlayCircleOutlined />, label: "Play" },
+                                { key: "executive", icon: <FilePptOutlined />, label: "Executive report" },
+                            ],
+                            onClick: ({ key }) => (key === "play" ? setPlayerOpen(true) : setExecutiveReportOpen(true)),
+                        }}
+                    >
+                        <Button size="large" shape="round" type="primary">
+                            Report <DownOutlined />
+                        </Button>
+                    </Dropdown>
+                    <CentreReportModal open={executiveReportOpen} onClose={() => setExecutiveReportOpen(false)} />
                 </div>
-            </div>
             </DashboardFilterBar>
+
+            <ProjectAdminReportPlayer
+                dark={isDark}
+                open={playerOpen}
+                onClose={() => setPlayerOpen(false)}
+                programId={activeProgramId}
+                branchId={assignedBranch}
+                range={dateRange}
+            />
 
             {topError && (
                 <Alert
@@ -1942,92 +1788,20 @@ const ProjectAdminReports: React.FC = () => {
                             <MotionCard
                                 title="Department intervention snapshot"
                             >
-                                {
-                                    drilledDepartmentName ? (
-                                        <>
-                                            <div style={{ marginBottom: 12 }}>
-                                                <Button
-                                                    size="small"
-                                                    onClick={() => {
-                                                        drilledDepartmentRef.current = null;
-                                                        setDrilledDepartmentName(null);
-                                                    }}
-                                                >
-                                                    Back to department snapshot
-                                                </Button>
-                                                <Text type="secondary" style={{ marginLeft: 10 }}>
-                                                    Department: {drilledDepartmentName}
-                                                </Text>
-                                            </div>
-                                            <ChartOrEmpty
-                                                hasData={!!selectedDepartmentBreakdownOptions}
-                                                options={selectedDepartmentBreakdownOptions || breakdownOptions}
-                                            />
-                                        </>
-                                    ) : snapshotHasData ? (
-                                        <>
-                                            <Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
-                                                Required is the number of planned interventions. Select a department to view its unique assigned interventions by status.
-                                            </Text>
-                                            <Row gutter={[12, 12]}>
-                                                {departmentSnapshots.map((item) => (
-                                                    <Col xs={24} sm={12} lg={8} xl={6} key={item.department}>
-                                                        <div
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            onClick={() => {
-                                                                drilledDepartmentRef.current = item.department;
-                                                                setDrilledDepartmentName(item.department);
-                                                            }}
-                                                            onKeyDown={(event) => {
-                                                                if (event.key === "Enter" || event.key === " ") {
-                                                                    drilledDepartmentRef.current = item.department;
-                                                                    setDrilledDepartmentName(item.department);
-                                                                }
-                                                            }}
-                                                            style={{
-                                                                height: "100%",
-                                                                cursor: "pointer",
-                                                                padding: "10px 12px",
-                                                                border: "1px solid #dbe4f0",
-                                                                borderRadius: 10,
-                                                                boxShadow: "0 4px 14px rgba(15, 23, 42, 0.10)",
-                                                                background: "#fff",
-                                                            }}
-                                                        >
-                                                            <Text
-                                                                strong
-                                                                ellipsis={{ tooltip: item.department }}
-                                                                style={{ display: "block", marginBottom: 8 }}
-                                                            >
-                                                                {item.department}
-                                                            </Text>
-                                                            <Row gutter={4}>
-                                                                {[
-                                                                    ["Required", item.required, "#1f2937"],
-                                                                    ["Assigned", item.assigned, REPORT_CHART_COLORS.primary],
-                                                                    ["Active", item.active, "#d48806"],
-                                                                    ["Completed", item.completed, REPORT_CHART_COLORS.success],
-                                                                ].map(([label, value, color]) => (
-                                                                    <Col span={6} key={label as string}>
-                                                                        <div style={{ fontSize: 10, color: "#8c8c8c", lineHeight: 1.1 }}>
-                                                                            {label}
-                                                                        </div>
-                                                                        <div style={{ fontSize: 17, fontWeight: 700, color: color as string }}>
-                                                                            {value as number}
-                                                                        </div>
-                                                                    </Col>
-                                                                ))}
-                                                            </Row>
-                                                        </div>
-                                                    </Col>
-                                                ))}
-                                            </Row>
-                                        </>
-                                    ) : (
-                                        <Empty description="No required interventions or assignments for the selected filters." />
-                                    )
-                                }
+                                <DepartmentSnapshot
+                                    items={snapshotHasData ? departmentSnapshots : []}
+                                    selected={drilledDepartmentName}
+                                    onSelect={(department) => {
+                                        drilledDepartmentRef.current = department;
+                                        setDrilledDepartmentName(department);
+                                    }}
+                                    detail={
+                                        <ChartOrEmpty
+                                            hasData={!!selectedDepartmentBreakdownOptions}
+                                            options={selectedDepartmentBreakdownOptions || breakdownOptions}
+                                        />
+                                    }
+                                />
                             </MotionCard>
                         </Col>
                         <Col xs={24} data-guide="project-report-intervention-activity">
@@ -2036,11 +1810,12 @@ const ProjectAdminReports: React.FC = () => {
                                 extra={
                                     <Button
                                         size="small"
-                                        icon={<ExpandOutlined />}
+                                        type="text"
+                                        icon={<TableOutlined />}
                                         onClick={() => setExpandedChart("interventionTimeSeries")}
-                                    >
-                                        Expand
-                                    </Button>
+                                        >
+                                            Details
+                                        </Button>
                                 }
                             >
                                 <ChartOrEmpty
@@ -2065,11 +1840,12 @@ const ProjectAdminReports: React.FC = () => {
                                 extra={
                                     <Button
                                         size="small"
-                                        icon={<ExpandOutlined />}
+                                        type="text"
+                                        icon={<TableOutlined />}
                                         onClick={() => setExpandedChart("appsSubmittedVsAccepted")}
-                                    >
-                                        Expand
-                                    </Button>
+                                        >
+                                            Details
+                                        </Button>
                                 }
                             >
                                 <ChartOrEmpty
@@ -2085,11 +1861,12 @@ const ProjectAdminReports: React.FC = () => {
                                 extra={
                                     <Button
                                         size="small"
-                                        icon={<ExpandOutlined />}
+                                        type="text"
+                                        icon={<TableOutlined />}
                                         onClick={() => setExpandedChart("appGender")}
-                                    >
-                                        Expand
-                                    </Button>
+                                        >
+                                            Details
+                                        </Button>
                                 }
                             >
                                 <ChartOrEmpty
@@ -2105,11 +1882,12 @@ const ProjectAdminReports: React.FC = () => {
                                 extra={
                                     <Button
                                         size="small"
-                                        icon={<ExpandOutlined />}
+                                        type="text"
+                                        icon={<TableOutlined />}
                                         onClick={() => setExpandedChart("appAge")}
-                                    >
-                                        Expand
-                                    </Button>
+                                        >
+                                            Details
+                                        </Button>
                                 }
                             >
                                 <ChartOrEmpty hasData={appAgeHasData} options={appAgeOptions} />
@@ -2122,11 +1900,12 @@ const ProjectAdminReports: React.FC = () => {
                                 extra={
                                     <Button
                                         size="small"
-                                        icon={<ExpandOutlined />}
+                                        type="text"
+                                        icon={<TableOutlined />}
                                         onClick={() => setExpandedChart("appSector")}
-                                    >
-                                        Expand
-                                    </Button>
+                                        >
+                                            Details
+                                        </Button>
                                 }
                             >
                                 <ChartOrEmpty
@@ -2142,11 +1921,12 @@ const ProjectAdminReports: React.FC = () => {
                                 extra={
                                     <Button
                                         size="small"
-                                        icon={<ExpandOutlined />}
+                                        type="text"
+                                        icon={<TableOutlined />}
                                         onClick={() => setExpandedChart("ownership")}
-                                    >
-                                        Expand
-                                    </Button>
+                                        >
+                                            Details
+                                        </Button>
                                 }
                             >
                                 <ChartOrEmpty
@@ -2162,11 +1942,12 @@ const ProjectAdminReports: React.FC = () => {
                                 extra={
                                     <Button
                                         size="small"
-                                        icon={<ExpandOutlined />}
+                                        type="text"
+                                        icon={<TableOutlined />}
                                         onClick={() => setExpandedChart("bee")}
-                                    >
-                                        Expand
-                                    </Button>
+                                        >
+                                            Details
+                                        </Button>
                                 }
                             >
                                 <ChartOrEmpty hasData={beeHasData} options={beeOptions} />
@@ -2179,11 +1960,12 @@ const ProjectAdminReports: React.FC = () => {
                                 extra={
                                     <Button
                                         size="small"
-                                        icon={<ExpandOutlined />}
+                                        type="text"
+                                        icon={<TableOutlined />}
                                         onClick={() => setExpandedChart("ward")}
-                                    >
-                                        Expand
-                                    </Button>
+                                        >
+                                            Details
+                                        </Button>
                                 }
                             >
                                 <ChartOrEmpty hasData={wardHasData} options={wardOptions} />
@@ -2193,98 +1975,54 @@ const ProjectAdminReports: React.FC = () => {
                 </>
             ) : viewMode === "compliance" ? (
                 <div data-guide="project-report-compliance-content">
-                    <DeferredLegacyReportPanels
-                        panels={[
-                            {
-                                key: "dps",
-                                title: "Developmental Plans — Needed vs Confirmed",
-                                hasData: !!paDPHasData,
-                                options: paDPOptions,
-                            },
-                            {
-                                key: "onboardedVsSigned",
-                                title: "GAP and onboarding documents — monthly progress",
-                                hasData: onboardedVsSignedHasData,
-                                options: onboardedVsSignedOptions,
-                            },
-                            {
-                                key: "outstandingDocs",
-                                title: "Outstanding documents",
-                                hasData: outstandingPieHasData,
-                                options: outstandingDocsPieOptions,
-                            },
-                        ]}
-                        onExpand={(key) => setExpandedChart(key)}
+                    <ComplianceSnapshot
+                        model={complianceModel}
+                        loading={complianceLoading && !complianceModel}
+                        trend={
+                            complianceTrendOptions ? (
+                                <ChartOrEmpty
+                                    hasData={complianceModel!.trend.onboarded.some((v) => v > 0)}
+                                    options={complianceTrendOptions}
+                                />
+                            ) : null
+                        }
+                    />
+                </div>
+            ) : viewMode === "engagement" ? (
+                <div data-guide="project-report-engagement-content">
+                    <EngagementSnapshot
+                        model={engagementModel}
+                        loading={engagementLoading && !engagementModel}
+                        trend={
+                            engagementTrendOptions ? (
+                                <ChartOrEmpty
+                                    hasData={engagementModel!.trend.held.some((v) => v > 0) || engagementModel!.trend.walkIns.some((v) => v > 0)}
+                                    options={engagementTrendOptions}
+                                />
+                            ) : null
+                        }
                     />
                 </div>
             ) : (
                 <ReachAnalytics
-                    rows={assignedInRange}
+                    rows={assignedInPeriod}
                     participants={reachParticipants}
                     loading={loading}
                     isMain
                     departmentId=""
                     departmentOptions={reachDepartmentOptions}
+                    onControls={setReachControls}
                 />
             )}
 
-            <Modal
-                open={!!expandedChart}
-                footer={null}
-                onCancel={() => setExpandedChart(null)}
-                width={1000}
-                title={`Expanded View — ${expandedChart}`}
-            >
-                {expandedChart === "breakdown" && (
-                    <ChartOrEmpty hasData={breakdownHasData} options={breakdownOptions} />
-                )}
-                {expandedChart === "interventionTimeSeries" && (
-                    <ChartOrEmpty
-                        hasData={interventionTimeSeriesHasData}
-                        options={interventionTimeSeriesOptions}
-                    />
-                )}
-                {expandedChart === "dps" && (
-                    <ChartOrEmpty hasData={!!paDPHasData} options={paDPOptions} />
-                )}
-                {expandedChart === "onboardedVsSigned" && (
-                    <ChartOrEmpty
-                        hasData={onboardedVsSignedHasData}
-                        options={onboardedVsSignedOptions}
-                    />
-                )}
-                {expandedChart === "outstandingDocs" && (
-                    <ChartOrEmpty
-                        hasData={outstandingPieHasData}
-                        options={outstandingDocsPieOptions}
-                    />
-                )}
-
-                {expandedChart === "appsSubmittedVsAccepted" && (
-                    <ChartOrEmpty
-                        hasData={appsSubmittedVsAcceptedHasData}
-                        options={appsSubmittedVsAcceptedOptions}
-                    />
-                )}
-                {expandedChart === "appGender" && (
-                    <ChartOrEmpty hasData={appGenderHasData} options={appGenderOptions} />
-                )}
-                {expandedChart === "appAge" && (
-                    <ChartOrEmpty hasData={appAgeHasData} options={appAgeOptions} />
-                )}
-                {expandedChart === "appSector" && (
-                    <ChartOrEmpty hasData={appSectorHasData} options={appSectorOptions} />
-                )}
-                {expandedChart === "ownership" && (
-                    <ChartOrEmpty hasData={ownershipHasData} options={ownershipOptions} />
-                )}
-                {expandedChart === "bee" && (
-                    <ChartOrEmpty hasData={beeHasData} options={beeOptions} />
-                )}
-                {expandedChart === "ward" && (
-                    <ChartOrEmpty hasData={wardHasData} options={wardOptions} />
-                )}
-            </Modal>
+            <ChartDetailsModal
+                open={!!openDetail}
+                title={openDetail?.title || ""}
+                context={[`Period: ${periodLabel}`, ...filterSummary.map((item) => `${item.label}: ${item.value}`)].join(" · ")}
+                options={openDetail?.options}
+                hasData={openDetail?.hasData}
+                onClose={() => setExpandedChart(null)}
+            />
         </div>
     );
 };

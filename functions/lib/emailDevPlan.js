@@ -28,12 +28,17 @@ const logger = __importStar(require("firebase-functions/logger"));
 const https_1 = require("firebase-functions/v2/https");
 const firestore_1 = require("firebase-functions/v2/firestore");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
+const syntheticData_1 = require("./syntheticData");
 const emailHelpers_1 = require("./emailHelpers");
 const emailShared_1 = require("./emailShared");
 const brevoClient_1 = require("./brevoClient");
+const inAppNotifications_1 = require("./inAppNotifications");
+const movRecipients_1 = require("./movRecipients");
+const config_1 = require("./config");
+const departmentRoles_1 = require("./departmentRoles");
 const normalizeEmail = (v) => (typeof v === "string" ? v.trim().toLowerCase() : "");
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
-exports.remindSmmeDpConfirmation = (0, https_1.onRequest)({ region: "us-central1", cors: true }, (req, res) => {
+exports.remindSmmeDpConfirmation = (0, https_1.onRequest)({ ...config_1.BREVO_EGRESS, region: "us-central1", cors: true }, (req, res) => {
     (async () => {
         let programId;
         let participantId;
@@ -57,6 +62,9 @@ exports.remindSmmeDpConfirmation = (0, https_1.onRequest)({ region: "us-central1
                 .limit(1)
                 .get();
             const appDoc = !q1.empty ? q1.docs[0].data() : null;
+            if ((0, syntheticData_1.suppressRecordNotifications)(appDoc) || (0, syntheticData_1.suppressRecordNotifications)({ programId, participantId })) {
+                return res.status(200).json({ ok: true, suppressed: true });
+            }
             const rawEmail = appDoc?.email || appDoc?.applicantEmail || appDoc?.participantEmail || "";
             email = normalizeEmail(rawEmail);
             if (!email || !isValidEmail(email)) {
@@ -81,6 +89,14 @@ exports.remindSmmeDpConfirmation = (0, https_1.onRequest)({ region: "us-central1
                 reminderFromDeptName,
             });
             const { messageId } = await (0, brevoClient_1.sendViaBrevo)({ to: email, subject, html, text, tags: ["dev-plan-sme-reminder"] });
+            await (0, inAppNotifications_1.notifyInApp)({
+                type: "dev_plan_confirmation_reminder",
+                message: `${reminderFromDeptName} is waiting for you to confirm your development plan (${submittedCount}/${totalCount} departments confirmed).`,
+                recipientIds: [await (0, inAppNotifications_1.uidForParticipant)(participantId, email)],
+                participantId,
+                programId,
+                link: confirmUrl.slice(emailShared_1.APP_BASE_URL.length),
+            });
             await (0, brevoClient_1.logBrevoSend)({
                 type: "DEV_PLAN_SME_REMINDER",
                 to: email,
@@ -122,35 +138,16 @@ exports.remindSmmeDpConfirmation = (0, https_1.onRequest)({ region: "us-central1
         }
     })();
 });
-const SKIP_DEPTS = [
-    'M&E (Monitoring and Evaluation)',
-    'IHF (InHouse Finance)',
-    'ROM (Recruitment, Onboarding and Maintenance)',
-    'HRM (Human Resources Management)',
-    'HRM (Human Resources Management',
-    'Stakeholder Engagement',
-];
-function normalizeDeptName(s) {
-    return String(s ?? '')
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
-function isSkippedDepartment(name) {
-    const norm = normalizeDeptName(name);
-    return SKIP_DEPTS.some((d) => normalizeDeptName(d) === norm);
-}
+const SKIP_DEPT_ROLES = ['monitoring', 'inhouseFinance', 'rom', 'hr', 'stakeholder'];
 async function loadAllDepartments() {
-    let q = emailShared_1.db.collection('departments');
-    const snap = await q.get();
+    const { roles, departments } = await (0, departmentRoles_1.loadDepartmentRoles)();
     const out = [];
-    snap.forEach((docSnap) => {
-        const data = docSnap.data();
-        const rawName = (data.departmentName || data.name || '').toString().trim();
-        if (!rawName)
-            return;
-        if (isSkippedDepartment(rawName))
-            return;
+    for (const data of departments) {
+        const name = String(data.name || '').trim();
+        if (!name)
+            continue;
+        if (SKIP_DEPT_ROLES.some((role) => (0, departmentRoles_1.departmentHasRole)(data.id, role, roles, departments)))
+            continue;
         const emailsSet = new Set();
         const candidates = [data.email, data.primaryEmail, data.secondaryEmail].filter((v) => typeof v === 'string');
         candidates.forEach((e) => {
@@ -158,8 +155,8 @@ async function loadAllDepartments() {
             if (trimmed.includes('@'))
                 emailsSet.add(trimmed);
         });
-        out.push({ name: rawName, emails: Array.from(emailsSet) });
-    });
+        out.push({ id: data.id, name, emails: Array.from(emailsSet) });
+    }
     return out;
 }
 async function getParticipantMetaCached(participantId, cache) {
@@ -177,31 +174,8 @@ async function getParticipantMetaCached(participantId, cache) {
     return meta;
 }
 function getPendingDepartmentsForPlan(plan, departments) {
-    const confirmedMap = plan.confirmed || {};
-    const confirmedKeys = Object.keys(confirmedMap);
-    const pending = [];
-    for (const dept of departments) {
-        const deptNorm = normalizeDeptName(dept.name);
-        const isConfirmed = confirmedKeys.some(k => normalizeDeptName(k) === deptNorm);
-        if (!isConfirmed)
-            pending.push(dept.name);
-    }
-    return pending;
-}
-function getDeptInfoLookup(departments) {
-    const map = new Map();
-    departments.forEach(d => map.set(normalizeDeptName(d.name), d));
-    return map;
-}
-function buildDeptRecipients(deptName, info) {
-    const recipientsSet = new Set();
-    (info?.emails || []).forEach(e => recipientsSet.add(e));
-    const norm = normalizeDeptName(deptName);
-    if (norm.includes('monitoring') || norm.includes('m e'))
-        recipientsSet.add('egar@lepharo.co.za');
-    if (norm.includes('rom') || norm.includes('recruitment'))
-        recipientsSet.add('mel@lepharo.co.za');
-    return Array.from(recipientsSet).map(email => ({ email }));
+    const confirmedMap = plan.confirmedByDeptId || {};
+    return departments.filter((dept) => !confirmedMap[dept.id]);
 }
 async function runDevPlanReminderOnce(triggerLabel, opts) {
     const transporter = (0, emailShared_1.getTransporter)();
@@ -210,7 +184,6 @@ async function runDevPlanReminderOnce(triggerLabel, opts) {
     const departments = await loadAllDepartments();
     if (!departments.length)
         return { departmentsWithPending: 0, totalDeptEmails: 0, totalPendingAssignments: 0 };
-    const deptLookup = getDeptInfoLookup(departments);
     let plansQuery = emailShared_1.db.collection('diagnosticPlans');
     if (programId)
         plansQuery = plansQuery.where('programId', '==', programId);
@@ -221,15 +194,17 @@ async function runDevPlanReminderOnce(triggerLabel, opts) {
     const pendingByDept = new Map();
     for (const planDoc of plansSnap.docs) {
         const data = planDoc.data();
+        if ((0, syntheticData_1.suppressRecordNotifications)(data, planDoc.id))
+            continue;
         const participantId = String(data.participantId || planDoc.id);
         const meta = await getParticipantMetaCached(participantId, participantCache);
         const pendingDepartments = getPendingDepartmentsForPlan(data, departments);
         if (!pendingDepartments.length)
             continue;
-        for (const deptName of pendingDepartments) {
-            if (!pendingByDept.has(deptName))
-                pendingByDept.set(deptName, []);
-            pendingByDept.get(deptName).push({ participantId, beneficiaryName: meta.beneficiaryName, programName: meta.programName });
+        for (const dept of pendingDepartments) {
+            if (!pendingByDept.has(dept.id))
+                pendingByDept.set(dept.id, { dept, items: [] });
+            pendingByDept.get(dept.id).items.push({ participantId, beneficiaryName: meta.beneficiaryName, programName: meta.programName });
         }
     }
     if (!pendingByDept.size)
@@ -237,10 +212,10 @@ async function runDevPlanReminderOnce(triggerLabel, opts) {
     const planUrl = `${emailShared_1.APP_BASE_URL.replace(/\/$/, '')}/operations/plan`;
     let totalDeptEmails = 0;
     let totalPendingAssignments = 0;
-    for (const [deptName, items] of pendingByDept.entries()) {
+    for (const { dept, items } of pendingByDept.values()) {
+        const deptName = dept.name;
         totalPendingAssignments += items.length;
-        const info = deptLookup.get(normalizeDeptName(deptName));
-        const recipients = buildDeptRecipients(deptName, info);
+        const recipients = dept.emails.map(email => ({ email }));
         if (!recipients.length)
             continue;
         const subject = `Pending Developmental Plan confirmations – ${deptName}`;
@@ -270,7 +245,7 @@ async function runDevPlanReminderOnce(triggerLabel, opts) {
             totalDeptEmails++;
         }
     }
-    const summaryRowsHtml = [...pendingByDept.entries()].map(([deptName, items]) => `
+    const summaryRowsHtml = [...pendingByDept.values()].map(({ dept: { name: deptName }, items }) => `
 <tr>
 <td style="padding:4px 8px;border-bottom:1px solid #eee">${deptName}</td>
 <td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${items.length}</td>
@@ -291,7 +266,7 @@ async function runDevPlanReminderOnce(triggerLabel, opts) {
 </div>
 `;
     const summaryText = 'Pending Developmental Plan confirmations by department:\n' +
-        [...pendingByDept.entries()].map(([deptName, items]) => `- ${deptName}: ${items.length}`).join('\n') +
+        [...pendingByDept.values()].map(({ dept: { name: deptName }, items }) => `- ${deptName}: ${items.length}`).join('\n') +
         `\nTotal SME–department assignments pending: ${totalPendingAssignments}\nRegards,\nLepharo Smart Inc AI`;
     const summaryRecipients = ['mel@lepharo.co.za', 'daniel@quantilytix.co.za', 'egar@lepharo.co.za'];
     await transporter.sendMail({
@@ -354,6 +329,15 @@ exports.onDevPlanEditRequestEmail = (0, firestore_1.onDocumentWritten)({ region:
                         updatedAt: emailShared_1.admin.firestore.FieldValue.serverTimestamp(),
                     }, { merge: true });
                     logger.info("onDevPlanEditRequestEmail.created_sent", { reqId, sentTo: meRecipients.length });
+                    await (0, inAppNotifications_1.notifyInApp)({
+                        type: "dev_plan_edit_requested",
+                        message: `${(0, emailShared_1.safeStr)(after.requesterName, "A department")} requested to edit the development plan for ${(0, emailShared_1.safeStr)(participantName, "an SME")}.`,
+                        recipientIds: await (0, movRecipients_1.uidsForEmails)(meRecipients),
+                        devPlanEditRequestId: reqId,
+                        participantId: after.participantId,
+                        programId: after.programId,
+                        link: "/operations/inquiries",
+                    });
                 }
             }
         }
@@ -384,6 +368,14 @@ exports.onDevPlanEditRequestEmail = (0, firestore_1.onDocumentWritten)({ region:
                 requestId: reqId,
             });
             await transporter.sendMail({ from, to, subject: email.subject, html: email.html, text: email.text });
+            await (0, inAppNotifications_1.notifyInApp)({
+                type: `dev_plan_edit_${decision}`,
+                message: `Your development plan edit request for ${(0, emailShared_1.safeStr)(participantName, "the SME")} was ${decision}.`,
+                recipientIds: [after.requesterUid || await (0, movRecipients_1.uidsForEmails)([to]).then((u) => u[0])],
+                devPlanEditRequestId: reqId,
+                participantId: after.participantId,
+                programId: after.programId,
+            });
             await event.data.after.ref.set({
                 notifications: {
                     editRequestEmail: {

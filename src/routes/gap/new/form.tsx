@@ -34,6 +34,7 @@ import Step2WellnessLegal from './steps/Step2WellnessLegal'
 import Step3MarketQuality from './steps/Step3MarketQuality'
 import Step4TrainingNeeds from './steps/Step4TrainingNeeds'
 import StepReview from './steps/StepReview'
+import { useSigningCeremony } from '@/components/shared/SignatureAnimation'
 
 const { Text } = Typography
 
@@ -54,6 +55,7 @@ const GAPAnalysisForm: React.FC = () => {
     const email: string | undefined = user?.email || ''
     const smmeName: string = user?.name || ''
     const smmeSignatureUrl: string = user?.signatureURL || ''
+    const signingCeremony = useSigningCeremony()
 
     const [step, setStep] = useState(0)
     const [direction, setDirection] = useState<FlowDirection>('forward')
@@ -245,82 +247,85 @@ const GAPAnalysisForm: React.FC = () => {
                 )
             }
             setSubmitting(true)
-            const values = form.getFieldsValue(true)
-            const submittedAt = Timestamp.now()
+            // Submitting signs the GAP with the saved signature: show it being written.
+            await signingCeremony.sign(smmeSignatureUrl, async () => {
+                const values = form.getFieldsValue(true)
+                const submittedAt = Timestamp.now()
 
-            const appSnap = await getDocs(
-                query(
-                    collection(db, 'applications'),
-                    where('participantId', '==', participantId)
-                )
-            )
-            const eligibleApplications = appSnap.docs.filter(snapshot =>
-                ['accepted', 'active'].includes(
-                    String(snapshot.data()?.applicationStatus || '').toLowerCase()
-                )
-            )
-            const selectedApplication = (
-                activeProgramId
-                    ? eligibleApplications.find(snapshot =>
-                        String(snapshot.data()?.programId || '') === String(activeProgramId)
+                const appSnap = await getDocs(
+                    query(
+                        collection(db, 'applications'),
+                        where('participantId', '==', participantId)
                     )
-                    : null
-            ) || eligibleApplications[0] || appSnap.docs[0]
-            const selectedApplicationData = selectedApplication?.data() as any
-
-            const cleanPayload = buildGapAnalysisPayload(values, {
-                participantId,
-                submittedAt,
-                selectedApplicationId: selectedApplication?.id,
-                programId: selectedApplicationData?.programId || activeProgramId || undefined,
-                userName: user?.name || '',
-                smmeSignatureUrl,
-                appCryptoSignature
-            })
-
-            await addDoc(collection(db, 'gapAnalysis'), cleanPayload)
-
-            if (selectedApplication) {
-                const appRef = doc(db, 'applications', selectedApplication.id)
-
-                await setDoc(
-                    doc(appRef, 'agreements', 'gap-analysis'),
-                    {
-                        agreementId: 'gap-analysis',
-                        title: 'Gap Analysis (Signed)',
-                        signed: true,
-                        acceptedAt: submittedAt,
-                        signatureURL: smmeSignatureUrl || null,
-                        digitalSignature: appCryptoSignature || null,
-                        signerName: user?.name || null,
-                        signerEmail: user?.email || null,
-                        updatedAt: submittedAt
-                    },
-                    { merge: true }
                 )
+                const eligibleApplications = appSnap.docs.filter(snapshot =>
+                    ['accepted', 'active'].includes(
+                        String(snapshot.data()?.applicationStatus || '').toLowerCase()
+                    )
+                )
+                const selectedApplication = (
+                    activeProgramId
+                        ? eligibleApplications.find(snapshot =>
+                            String(snapshot.data()?.programId || '') === String(activeProgramId)
+                        )
+                        : null
+                ) || eligibleApplications[0] || appSnap.docs[0]
+                const selectedApplicationData = selectedApplication?.data() as any
 
-                await updateDoc(appRef, {
-                    [`signedAgreements.gap-analysis`]: {
-                        acceptedAt: submittedAt.toDate().toISOString(),
-                        signer: {
-                            email: user?.email || '',
-                            name: user?.name || '',
-                            signatureURL: smmeSignatureUrl || '',
-                            uid: user?.uid || ''
+                const cleanPayload = buildGapAnalysisPayload(values, {
+                    participantId,
+                    submittedAt,
+                    selectedApplicationId: selectedApplication?.id,
+                    programId: selectedApplicationData?.programId || activeProgramId || undefined,
+                    userName: user?.name || '',
+                    smmeSignatureUrl,
+                    appCryptoSignature
+                })
+
+                await addDoc(collection(db, 'gapAnalysis'), cleanPayload)
+
+                if (selectedApplication) {
+                    const appRef = doc(db, 'applications', selectedApplication.id)
+
+                    await setDoc(
+                        doc(appRef, 'agreements', 'gap-analysis'),
+                        {
+                            agreementId: 'gap-analysis',
+                            title: 'Gap Analysis (Signed)',
+                            signed: true,
+                            acceptedAt: submittedAt,
+                            signatureURL: smmeSignatureUrl || null,
+                            digitalSignature: appCryptoSignature || null,
+                            signerName: user?.name || null,
+                            signerEmail: user?.email || null,
+                            updatedAt: submittedAt
                         },
-                        digitalSignature: appCryptoSignature || '',
-                        version: 1
-                    },
-                    'complianceSummary.completed': arrayUnion('gap-analysis'),
+                        { merge: true }
+                    )
+
+                    await updateDoc(appRef, {
+                        [`signedAgreements.gap-analysis`]: {
+                            acceptedAt: submittedAt.toDate().toISOString(),
+                            signer: {
+                                email: user?.email || '',
+                                name: user?.name || '',
+                                signatureURL: smmeSignatureUrl || '',
+                                uid: user?.uid || ''
+                            },
+                            digitalSignature: appCryptoSignature || '',
+                            version: 1
+                        },
+                        'complianceSummary.completed': arrayUnion('gap-analysis'),
+                        gapAnalysisStatus: 'Completed',
+                        gapSubmittedAt: submittedAt
+                    })
+                }
+
+                await updateDoc(doc(db, 'participants', participantId), {
                     gapAnalysisStatus: 'Completed',
                     gapSubmittedAt: submittedAt
                 })
-            }
-
-            await updateDoc(doc(db, 'participants', participantId), {
-                gapAnalysisStatus: 'Completed',
-                gapSubmittedAt: submittedAt
-            })
+            }, 'Signing your GAP Analysis')
 
             // Allow exit after successful submit.
             setDirty(false)
@@ -440,6 +445,7 @@ const GAPAnalysisForm: React.FC = () => {
                 padding: '20px 16px'
             }}
         >
+            {signingCeremony.element}
             <div
                 style={{
                     width: '100%',

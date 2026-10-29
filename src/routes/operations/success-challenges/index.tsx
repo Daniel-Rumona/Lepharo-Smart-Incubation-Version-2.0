@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
     Alert,
     Button,
@@ -26,18 +27,26 @@ import {
 } from 'antd'
 import './success-story.css'
 import { listEvents, type EventRecord } from '@/services/eventService'
+import { departmentNameOf, loadDepartmentRoles } from '@/services/departmentRoles'
 import { getStoryInvitees } from './storyEvent'
 import type { ColumnsType } from 'antd/es/table'
 import {
-    AppstoreOutlined,
-    BarsOutlined,
     BankOutlined,
     CalendarOutlined,
     CheckCircleOutlined,
+    ArrowLeftOutlined,
+    ArrowRightOutlined,
     ClearOutlined,
+    CloseOutlined,
+    ExclamationCircleOutlined,
+    LockOutlined,
+    SyncOutlined,
+    EyeOutlined,
     FilePdfOutlined,
     PictureOutlined,
     PlusOutlined,
+    ProfileOutlined,
+    TeamOutlined,
     RobotOutlined,
     SearchOutlined,
     TrophyOutlined,
@@ -52,6 +61,7 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import {
     addDoc,
+    arrayUnion,
     collection,
     doc,
     getDoc,
@@ -62,8 +72,14 @@ import {
     where
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import EventNatureCards, { natureFromFormat, type EventNature } from './EventNatureCards'
+import ChallengeCheckInModal, { type CheckInValues } from './ChallengeCheckInModal'
+import ChallengeFormModal from './ChallengeFormModal'
+import StoryReaderModal from './StoryReaderModal'
+import './story-reader.css'
+import { previewEventStory } from './previewStory'
 import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
-
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 const { Paragraph } = Typography
 const { TextArea } = Input
 
@@ -118,9 +134,10 @@ type SuccessStory = {
     attendees?: string
     attendeeCount?: number
     attendeeCountBasis?: 'invited'
-    eventId?: string
+    eventId?: string | null
     eventTitle?: string
     eventBenefits?: string
+    eventNature?: EventNature | null
     smeComment?: string
     attachments?: Attachment[]
     createdAt?: any
@@ -137,9 +154,23 @@ type Challenge = {
     communicationAttempts?: CommunicationAttempt[]
     mitigationSteps?: string[]
     dueDate?: any
+    checkIns?: ChallengeCheckIn[]
+    lastCheckInAt?: any
     status?: string
     departmentName?: string
     createdAt?: any
+}
+
+type ChallengeCheckIn = {
+    answeredAt?: any
+    answeredByName?: string | null
+    outcome: 'mitigated' | 'in_progress' | 'not_mitigated'
+    resolutionNote?: string | null
+    reasonCategory?: string | null
+    reason?: string | null
+    supportNeeded?: string | null
+    previousDueDate?: any
+    newDueDate?: any
 }
 
 type ChallengeStatus = 'Open' | 'In Progress' | 'Resolved' | 'Closed'
@@ -163,11 +194,17 @@ const communicationItemOptions = [
     'Outstanding documents or information',
     'Other'
 ]
+const newChallengeValues = () => ({
+    challengeType: 'General',
+    mitigationSteps: [],
+    communicationAttempts: [{ channel: undefined, attemptedAt: dayjs(), items: [], notes: '' }],
+    status: 'Open'
+})
 const communicationChannelOptions = ['Phone call', 'Email', 'WhatsApp', 'SMS', 'In person', 'Other']
 
 const formatDateTime = (value: any) => {
-    const date = value?.toDate?.() ? value.toDate() : value
-    return date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'
+    const date = value?.toDate?.() ? value.toDate() : value?.seconds ? new Date(value.seconds * 1000) : value
+    return date && dayjs(date).isValid() ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'
 }
 
 const getCompanyName = (row: any) =>
@@ -182,7 +219,6 @@ const getCompanyName = (row: any) =>
 
 const clean = (value: any) => String(value || '').trim()
 const norm = (value: any) => clean(value).toLowerCase().replace(/\s+/g, ' ')
-const sameText = (a: any, b: any) => !!clean(a) && !!clean(b) && norm(a) === norm(b)
 const isClosedStatus = (value: any) => ['closed', 'resolved'].includes(norm(value))
 const isCompletedIntervention = (row: any) => {
     const participantStatus = norm(row?.participantCompletionStatus || row?.beneficiaryCompletionStatus)
@@ -239,7 +275,7 @@ const buildStoryPrefill = (sme: SmeOption, participant: any, completedRows: any[
 
     const onboardedAt = getOnboardedDate(app)
     const completedTitles = Array.from(new Set(completedRows.map(row => firstText(row.interventionTitle, row.title, row.name)).filter(Boolean)))
-    const departmentNames = Array.from(new Set(completedRows.map(row => firstText(row.departmentName, row.department, row.areaOfSupport)).filter(Boolean)))
+    const departmentNames = Array.from(new Set(completedRows.map(row => firstText(row.departmentName)).filter(Boolean)))
     const journeyParts = [
         onboardedAt
             ? `${company} joined the Lepharo incubation programme in ${onboardedAt.format('MMMM YYYY')}.`
@@ -293,12 +329,13 @@ const resolveStoryDepartmentScope = async (user: any) => {
     )
     const role = norm(user?.role)
     const isMainDepartment = departmentData?.isMain === true || departmentData?.is_main === true || departmentData?.isPrimary === true || departmentData?.primary === true
-    const elevatedRole = ['projectadmin', 'project_admin', 'admin', 'superadmin', 'director', 'projectmanager'].includes(role)
+    const elevatedRole = ['projectadmin', 'project_admin', 'system_admin', 'superadmin', 'director', 'projectmanager'].includes(role)
     const canSeeAll = elevatedRole || (role === 'operations' && isMainDepartment)
     const belongsToDepartment = (row: any) => {
         if (canSeeAll) return true
-        if (departmentId && clean(row?.departmentId)) return clean(row.departmentId) === departmentId
-        return !!departmentName && sameText(row?.departmentName || row?.department || row?.areaOfSupport, departmentName)
+        const userIds = [user?.id, user?.uid].map(clean).filter(Boolean)
+        if (userIds.length && (userIds.includes(clean(row?.createdById)) || userIds.includes(clean(row?.createdBy)))) return true
+        return !!departmentId && clean(row?.departmentId) === departmentId
     }
     return { departmentId, departmentName, isMainDepartment, canSeeAll, belongsToDepartment }
 }
@@ -395,8 +432,6 @@ const SuccessChallengesPage: React.FC = () => {
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
 
     const [successForm] = Form.useForm()
-    const [challengeForm] = Form.useForm()
-    const challengeType = Form.useWatch('challengeType', challengeForm) as ChallengeType | undefined
     const storyKind = Form.useWatch('storyKind', successForm) as 'SMME' | 'Event' | undefined
     const storyFormValues = Form.useWatch([], { form: successForm, preserve: true }) || {}
 
@@ -418,10 +453,15 @@ const SuccessChallengesPage: React.FC = () => {
     const [savingChallenge, setSavingChallenge] = useState(false)
     const [storyModalOpen, setStoryModalOpen] = useState(false)
     const [storyStep, setStoryStep] = useState(-1)
-    const [storyView, setStoryView] = useState<'cards' | 'table'>('cards')
     const [selectedStory, setSelectedStory] = useState<SuccessStory | null>(null)
     const [challengeModalOpen, setChallengeModalOpen] = useState(false)
     const [editingChallenge, setEditingChallenge] = useState<Challenge | null>(null)
+    const [challengeInitial, setChallengeInitial] = useState<Record<string, any>>(newChallengeValues)
+    const [viewChallenge, setViewChallenge] = useState<Challenge | null>(null)
+    const [checkInChallenge, setCheckInChallenge] = useState<Challenge | null>(null)
+    const [savingCheckIn, setSavingCheckIn] = useState(false)
+    const [searchParams, setSearchParams] = useSearchParams()
+    const deepLinkHandled = useRef(false)
     const [segment, setSegment] = useState<PageSegment>('stories')
     const [storySearchText, setStorySearchText] = useState('')
     const [challengeSearchText, setChallengeSearchText] = useState('')
@@ -441,7 +481,6 @@ const SuccessChallengesPage: React.FC = () => {
                 setCrossDepartmentStoryView(scope.canSeeAll)
                 setStoryDepartmentLabel(scope.departmentName || 'My department')
                 const deptId = scope.departmentId
-                const deptName = scope.departmentName
                 const assignedConstraints: any[] = []
                 if (!isAllPrograms && activeProgramId) {
                     assignedConstraints.push(where('programId', '==', activeProgramId))
@@ -507,6 +546,7 @@ const SuccessChallengesPage: React.FC = () => {
                     [...storyRows, ...smeStoryRows]
                         .filter((row: any) => isAllPrograms || !activeProgramId || !clean(row.programId) || clean(row.programId) === clean(activeProgramId))
                         .filter(scope.belongsToDepartment)
+                        .concat(import.meta.env.DEV ? [previewEventStory] : [])
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
                 )
 
@@ -517,8 +557,7 @@ const SuccessChallengesPage: React.FC = () => {
                     challengeRows
                         .filter((row: any) => {
                             if (!isAllPrograms && activeProgramId && clean(row.programId) && clean(row.programId) !== clean(activeProgramId)) return false
-                            if (deptId && clean(row.departmentId)) return clean(row.departmentId) === deptId
-                            return !deptName || sameText(row.departmentName, deptName)
+                            return scope.canSeeAll || (!!deptId && clean(row.departmentId) === deptId)
                         })
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
                 )
@@ -543,14 +582,18 @@ const SuccessChallengesPage: React.FC = () => {
 
             try {
                 const scope = await resolveStoryDepartmentScope(user)
-                const snap = await getDocs(
-                    query(
-                        collection(db, 'assignedInterventions'),
-                        where('participantId', '==', selectedParticipantId)
-                    )
-                )
+                const [snap, { departments }] = await Promise.all([
+                    getDocs(
+                        query(
+                            collection(db, 'assignedInterventions'),
+                            where('participantId', '==', selectedParticipantId)
+                        )
+                    ),
+                    loadDepartmentRoles()
+                ])
                 const allCompletedRows = snap.docs
                     .map(d => ({ id: d.id, ...(d.data() as any) }))
+                    .map(row => ({ ...row, departmentName: departmentNameOf(row.departmentId, departments, '') }))
                     .filter(row => isAllPrograms || !activeProgramId || !clean(row.programId) || clean(row.programId) === clean(activeProgramId))
                     .filter(isCompletedIntervention)
                 const scopedCompletedRows = allCompletedRows.filter(scope.belongsToDepartment)
@@ -558,7 +601,7 @@ const SuccessChallengesPage: React.FC = () => {
                     .map(row => ({
                         ...row,
                         interventionTitle: String(row.interventionTitle || row.title || row.name || 'Untitled intervention'),
-                        departmentName: row.departmentName || row.department || row.areaOfSupport
+                        departmentName: row.departmentName
                     }))
                     .sort((a, b) => a.interventionTitle.localeCompare(b.interventionTitle))
 
@@ -651,7 +694,7 @@ const SuccessChallengesPage: React.FC = () => {
         setSelectedParticipantId(undefined)
         setInterventions([])
         setStorySourceContext(null)
-        setStoryStep(storyEvents.length ? -1 : 0)
+        setStoryStep(-1)
         setStoryModalOpen(true)
     }
 
@@ -672,7 +715,7 @@ const SuccessChallengesPage: React.FC = () => {
                 onboardedAt: getOnboardedDate(selectedSme.application)?.format('MMMM YYYY') || '',
                 completedInterventions: storySourceContext.completedRows.map(row => ({
                     title: firstText(row.interventionTitle, row.title, row.name),
-                    department: firstText(row.departmentName, row.department, row.areaOfSupport),
+                    department: firstText(row.departmentName),
                     completedAt: formatDateTime(row.completedAt || row.updatedAt || row.createdAt)
                 }))
             }
@@ -716,23 +759,23 @@ const SuccessChallengesPage: React.FC = () => {
         if (storyStep !== 3 || savingStory) return
         const isEvent = values.storyKind === 'Event'
         if (!user || (!isEvent && !selectedSme)) return
-        const event = isEvent ? storyEvents.find(item => item.id === values.eventId) : undefined
-        if (isEvent && !event) {
-            message.error('Select an available event before publishing.')
+        const event = isEvent && values.eventId ? storyEvents.find(item => item.id === values.eventId) : undefined
+        if (isEvent && !event && !clean(values.eventTitle)) {
+            message.error('Enter the event name before publishing.')
             setStoryStep(0)
             return
         }
         const invitees = getStoryInvitees(event)
         const eventFields = isEvent ? {
-            eventId: event!.id,
-            eventTitle: event!.title,
-            eventDate: event!.date || null,
+            eventId: event?.id || null,
+            eventTitle: event?.title || clean(values.eventTitle),
+            eventDate: event?.date || (values.eventDate ? dayjs(values.eventDate).format('YYYY-MM-DD') : null),
             invitedParticipants: invitees,
             attendees: invitees.map(person => person.label).join(', '),
             attendeeCount: invitees.length,
             attendeeCountBasis: 'invited' as const
         } : {}
-        const departmentId = event?.departmentId || null
+        const departmentId = event?.departmentId || clean(user?.departmentId) || null
         const departmentName = firstText(event?.departmentName, event?.department, !crossDepartmentStoryView ? storyDepartmentLabel : '')
         setSavingStory(true)
         try {
@@ -761,6 +804,7 @@ const SuccessChallengesPage: React.FC = () => {
                 achievement: values.achievement || '',
                 lepharoRole: values.lepharoRole || '',
                 eventBackground: values.eventBackground || '',
+                eventNature: isEvent ? values.eventNature || null : null,
                 attendees: values.attendees || '',
                 attendeeCount: values.attendeeCount ? Number(values.attendeeCount) : null,
                 eventBenefits: values.eventBenefits || '',
@@ -806,6 +850,7 @@ const SuccessChallengesPage: React.FC = () => {
                 achievement: values.achievement || '',
                 lepharoRole: values.lepharoRole || '',
                 eventBackground: values.eventBackground || '',
+                eventNature: isEvent ? values.eventNature || null : null,
                 attendees: values.attendees || '',
                 attendeeCount: values.attendeeCount ? Number(values.attendeeCount) : undefined,
                 eventBenefits: values.eventBenefits || '',
@@ -889,7 +934,6 @@ const SuccessChallengesPage: React.FC = () => {
                 message.success('Challenge captured.')
             }
 
-            challengeForm.resetFields()
             setChallengeModalOpen(false)
             setEditingChallenge(null)
         } catch (error) {
@@ -902,37 +946,77 @@ const SuccessChallengesPage: React.FC = () => {
 
     const openChallengeModal = (record?: Challenge) => {
         setEditingChallenge(record || null)
+        setChallengeInitial(record ? {
+            challengeType: record.challengeType || 'General',
+            title: record.title,
+            details: record.details,
+            smeIds: record.smeIds || [],
+            communicationItems: record.communicationItems || [],
+            communicationAttempts: record.communicationAttempts?.length
+                ? record.communicationAttempts.map(attempt => ({
+                    ...attempt,
+                    items: attempt.items?.length ? attempt.items : (record.communicationItems || []),
+                    attemptedAt: dateLikeToDayjs(attempt.attemptedAt)
+                }))
+                : [{ channel: undefined, attemptedAt: dayjs(), items: [], notes: '' }],
+            mitigationSteps: record.mitigationSteps?.length
+                ? record.mitigationSteps.map(text => ({ text }))
+                : [],
+            dueDate: record.dueDate?.toDate?.() ? dayjs(record.dueDate.toDate()) : null,
+            status: record.status || 'Open'
+        } : newChallengeValues())
         setChallengeModalOpen(true)
-        if (record) {
-            challengeForm.setFieldsValue({
-                challengeType: record.challengeType || 'General',
-                title: record.title,
-                details: record.details,
-                smeIds: record.smeIds || [],
-                communicationItems: record.communicationItems || [],
-                communicationAttempts: record.communicationAttempts?.length
-                    ? record.communicationAttempts.map(attempt => ({
-                        ...attempt,
-                        items: attempt.items?.length ? attempt.items : (record.communicationItems || []),
-                        attemptedAt: dateLikeToDayjs(attempt.attemptedAt)
-                    }))
-                    : [{ channel: undefined, attemptedAt: dayjs(), items: [], notes: '' }],
-                mitigationSteps: record.mitigationSteps?.length
-                    ? record.mitigationSteps.map(text => ({ text }))
-                    : [{ text: '' }],
-                dueDate: record.dueDate?.toDate?.() ? dayjs(record.dueDate.toDate()) : null,
-                status: record.status || 'Open'
-            })
-        } else {
-            challengeForm.resetFields()
-            challengeForm.setFieldsValue({
-                challengeType: 'General',
-                mitigationSteps: [{ text: '' }],
-                communicationAttempts: [{ channel: undefined, attemptedAt: dayjs(), items: [], notes: '' }],
-                status: 'Open'
-            })
+    }
+
+    const handleCheckInSubmit = async (values: CheckInValues) => {
+        if (!user || !checkInChallenge) return
+        setSavingCheckIn(true)
+        try {
+            const mitigated = values.outcome === 'mitigated'
+            const nextDue = !mitigated && values.newDueDate ? Timestamp.fromDate(values.newDueDate.toDate()) : checkInChallenge.dueDate || null
+            const entry: ChallengeCheckIn = {
+                answeredAt: Timestamp.now(),
+                answeredByName: user.name || user.email || null,
+                outcome: values.outcome,
+                resolutionNote: mitigated ? clean(values.resolutionNote) || null : null,
+                reasonCategory: mitigated ? null : values.reasonCategory || null,
+                reason: mitigated ? null : clean(values.reason) || null,
+                supportNeeded: mitigated ? null : clean(values.supportNeeded) || null,
+                previousDueDate: checkInChallenge.dueDate || null,
+                newDueDate: mitigated ? null : nextDue
+            }
+            const update = {
+                status: mitigated ? 'Resolved' : 'In Progress',
+                dueDate: nextDue,
+                lastCheckInAt: Timestamp.now(),
+                updatedAt: Timestamp.now(),
+                updatedById: user.id || user.uid || null,
+                updatedByName: user.name || user.email || null
+            }
+            await updateDoc(doc(db, 'operationalChallenges', checkInChallenge.id), { ...update, checkIns: arrayUnion(entry) })
+            setChallenges(prev => prev.map(item => item.id === checkInChallenge.id ? { ...item, ...update, checkIns: [...(item.checkIns || []), entry] } : item))
+            message.success(mitigated ? 'Marked as mitigated.' : 'Check-in saved and target date updated.')
+            setCheckInChallenge(null)
+        } catch (error) {
+            console.error(error)
+            message.error('Failed to save the check-in.')
+        } finally {
+            setSavingCheckIn(false)
         }
     }
+
+    // Reminder emails link here: ?challenge=<id>&checkin=1 opens that challenge's check-in.
+    useEffect(() => {
+        const challengeId = searchParams.get('challenge')
+        if (!challengeId || loading || deepLinkHandled.current) return
+        deepLinkHandled.current = true
+        setSegment('challenges')
+        const target = challenges.find(item => item.id === challengeId)
+        if (!target) message.info('That challenge is not available in your current view.')
+        else if (searchParams.get('checkin')) setCheckInChallenge(target)
+        else setViewChallenge(target)
+        setSearchParams({}, { replace: true })
+    }, [challenges, loading, searchParams, setSearchParams])
 
     const closeStoryModal = () => {
         setStoryModalOpen(false)
@@ -946,36 +1030,39 @@ const SuccessChallengesPage: React.FC = () => {
     const closeChallengeModal = () => {
         setChallengeModalOpen(false)
         setEditingChallenge(null)
-        challengeForm.resetFields()
     }
 
-    const storyColumns: ColumnsType<SuccessStory> = [
-        {
-            title: 'Story',
-            render: (_, record) => (
-                <Space direction='vertical' size={2}>
-                    <strong>{record.title || record.smeName || 'Success story'}</strong>
-                    <Space size={4} wrap>
-                        <Tag color={record.storyKind === 'Event' ? 'purple' : 'blue'}>{record.storyKind || 'SMME'}</Tag>
-                        <Tag color={record.source === 'SME' ? 'cyan' : 'gold'}>{record.source || 'Department'} submitted</Tag>
-                    </Space>
-                </Space>
-            )
-        },
-        { title: 'SMME / Event', dataIndex: 'smeName' },
-        { title: 'Intervention', dataIndex: 'interventionTitle', render: value => value || '-' },
-        {
-            title: 'Documents',
-            render: (_, record) => {
-                const count = record.attachments?.length || 0
-                return count ? <Tag icon={<FilePdfOutlined />}>{count}</Tag> : <Tag>None</Tag>
-            }
-        },
-        { title: 'Captured', dataIndex: 'createdAt', render: formatDateTime }
-    ]
+    const getChallengeSections = (record: Challenge): Array<[string, string]> => {
+        const attempts = (record.communicationAttempts || []).map((attempt, index) => [
+            `${index + 1}. ${attempt.channel}`,
+            attempt.attemptedAt ? dateLikeToDayjs(attempt.attemptedAt)?.format('YYYY-MM-DD HH:mm') : '',
+            attempt.items?.length ? attempt.items.join(', ') : '',
+            attempt.notes
+        ].filter(Boolean).join(' - ')).join('\n')
+        const mitigation = (record.mitigationSteps || []).map((step, index) => `${index + 1}. ${step}`).join('\n')
+        const due = record.dueDate?.toDate?.() ? dayjs(record.dueDate.toDate()).format('YYYY-MM-DD') : ''
+        const outcomeLabel = { mitigated: 'Mitigated', in_progress: 'Partly mitigated', not_mitigated: 'Not mitigated' }
+        const checkIns = (record.checkIns || []).map(entry => [
+            formatDateTime(entry.answeredAt),
+            outcomeLabel[entry.outcome] || entry.outcome,
+            entry.reasonCategory,
+            entry.reason || entry.resolutionNote,
+            entry.supportNeeded ? `Support needed: ${entry.supportNeeded}` : '',
+            entry.newDueDate?.toDate?.() ? `New target ${dayjs(entry.newDueDate.toDate()).format('YYYY-MM-DD')}` : ''
+        ].filter(Boolean).join(' - ')).join('\n')
+        return ([
+            ['What happened', clean(record.details)],
+            ['SMEs involved', record.smeNames?.join(', ') || ''],
+            ['Awaiting response on', record.communicationItems?.join(', ') || ''],
+            ['Communication attempts', attempts],
+            ['Proposed mitigation', mitigation],
+            ['Check-ins', checkIns],
+            ['Status and timeline', [record.status || 'Open', due ? `Due ${due}` : ''].filter(Boolean).join(' - ')]
+        ] as Array<[string, string]>).filter(([, value]) => !!clean(value))
+    }
 
-    const storyDetails = (record: SuccessStory) => {
-        const sections = record.storyKind === 'Event'
+    const getStorySections = (record: SuccessStory) => {
+        return record.storyKind === 'Event'
             ? [
                 ['Event background', record.eventBackground || record.background],
                 [record.attendeeCountBasis === 'invited' ? 'Invited participants' : 'Attendees', record.attendees],
@@ -989,29 +1076,6 @@ const SuccessChallengesPage: React.FC = () => {
                 ["Lepharo's contribution", record.lepharoRole],
                 ['SMME comment / testimonial', record.smeComment]
             ]
-        return (
-            <div className='story-reader-sections'>
-                {sections.filter(([, value]) => clean(value)).map(([label, value]) => {
-                    const isOutcome = label === 'Achievement' || label === 'Benefits and long-term outcomes'
-                    return <Card key={label} size='small' className={isOutcome ? 'story-reader-section story-reader-outcome' : 'story-reader-section'} style={isOutcome ? { background: token.colorPrimaryBg, borderColor: token.colorPrimaryBorder } : undefined}>
-                        <Typography.Title level={5} style={{ margin: '0 0 10px' }}>{label}</Typography.Title>
-                        <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{value}</Paragraph>
-                    </Card>
-                })}
-                {!!record.attachments?.length && <section className='story-reader-gallery'>
-                    <Typography.Title level={5} style={{ margin: '0 0 12px' }}>Images and supporting files</Typography.Title>
-                    <Image.PreviewGroup>
-                        <div className='story-image-row'>
-                            {record.attachments.map(file => file.type?.startsWith('image/') ? (
-                                <Image key={file.url} src={file.url} alt={file.name} width={120} height={90} style={{ objectFit: 'cover', borderRadius: 8 }} />
-                            ) : (
-                                <Button key={file.url} href={file.url} target='_blank' icon={<FilePdfOutlined />}>{file.name}</Button>
-                            ))}
-                        </div>
-                    </Image.PreviewGroup>
-                </section>}
-            </div>
-        )
     }
 
     const challengeColumns: ColumnsType<Challenge> = [
@@ -1033,7 +1097,22 @@ const SuccessChallengesPage: React.FC = () => {
             title: 'Mitigation Steps',
             render: (_, record) => record.mitigationSteps?.length || 0
         },
-        { title: 'Due Date', dataIndex: 'dueDate', render: (value: any) => value?.toDate?.() ? dayjs(value.toDate()).format('YYYY-MM-DD') : '-' },
+        {
+            title: 'Due Date',
+            dataIndex: 'dueDate',
+            render: (value: any, record) => {
+                if (!value?.toDate?.()) return '-'
+                const due = dayjs(value.toDate())
+                const open = !isClosedStatus(record.status)
+                return (
+                    <Space direction='vertical' size={2}>
+                        <span>{due.format('YYYY-MM-DD')}</span>
+                        {open && due.isBefore(dayjs(), 'day') && <Tag color='red'>Overdue</Tag>}
+                        {open && due.isSame(dayjs(), 'day') && <Tag color='orange'>Due today</Tag>}
+                    </Space>
+                )
+            }
+        },
         {
             title: 'Status',
             dataIndex: 'status',
@@ -1042,15 +1121,16 @@ const SuccessChallengesPage: React.FC = () => {
         {
             title: 'Action',
             render: (_, record) => (
-                <Button size='small' onClick={() => openChallengeModal(record)}>
-                    Update
-                </Button>
+                <Space size={6}>
+                    <Button size='small' icon={<EyeOutlined />} onClick={() => setViewChallenge(record)}>View</Button>
+                    {!isClosedStatus(record.status) && <Button size='small' icon={<CheckCircleOutlined />} onClick={() => setCheckInChallenge(record)}>Check in</Button>}
+                    <Button size='small' onClick={() => openChallengeModal(record)}>Update</Button>
+                </Space>
             )
         }
     ]
 
-    const openChallenges = challenges.filter(item => !isClosedStatus(item.status)).length
-    const closedChallenges = challenges.filter(item => isClosedStatus(item.status)).length
+    const statusCount = (status: ChallengeStatus) => challenges.filter(item => clean(item.status || 'Open') === status).length
     const totalChallenges = challenges.length
 
     const filteredStories = useMemo(() => {
@@ -1111,7 +1191,7 @@ const SuccessChallengesPage: React.FC = () => {
     const storyCover = (record: SuccessStory) =>
         record.coverImageUrl || record.attachments?.find(file => file.type?.startsWith('image/'))?.url || ''
     const requiredStoryFields = storyKind === 'Event'
-        ? ['storyKind', 'eventId', 'title', 'eventBackground', 'eventBenefits']
+        ? ['storyKind', storyFormValues.eventId ? 'eventId' : 'eventTitle', 'eventNature', 'title', 'eventBackground', 'eventBenefits']
         : ['storyKind', 'title', 'participantId', 'interventionId', 'background', 'lepharoJourney', 'achievement', 'lepharoRole']
     const completedStoryFields = requiredStoryFields.filter(field => {
         const value = storyFormValues[field]
@@ -1121,7 +1201,7 @@ const SuccessChallengesPage: React.FC = () => {
 
     const storyStepFields = () => {
         if (storyStep === 0) return storyKind === 'Event'
-            ? ['storyKind', 'eventId', 'title']
+            ? ['storyKind', ...(storyFormValues.eventId ? [] : ['eventTitle']), 'eventNature', 'title']
             : ['storyKind', 'title', 'participantId', 'interventionId']
         if (storyStep === 1) return storyKind === 'Event'
             ? ['eventBackground', 'eventBenefits']
@@ -1146,24 +1226,27 @@ const SuccessChallengesPage: React.FC = () => {
         return (
             <Card
                 hoverable
+                size='small'
+                className='story-card-slim'
                 style={{ height: '100%', overflow: 'hidden', borderRadius: 16 }}
                 cover={cover ? (
-                    <img src={cover} alt={`${record.title || record.smeName} cover`} style={{ height: 210, objectFit: 'cover' }} />
+                    <img src={cover} alt={`${record.title || record.smeName} cover`} style={{ height: 130, width: '100%', objectFit: 'cover' }} />
                 ) : (
-                    <div style={{ height: 210, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #e6f4ff, #f6ffed)' }}>
-                        <PictureOutlined style={{ fontSize: 42, color: '#1677ff' }} />
+                    <div style={{ height: 130, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #e6f4ff, #f6ffed)' }}>
+                        <PictureOutlined style={{ fontSize: 32, color: '#1677ff' }} />
                     </div>
                 )}
                 actions={[<Button type='link' key='read' onClick={() => setSelectedStory(record)}>Read full story</Button>]}
             >
-                <Space direction='vertical' size={10} style={{ width: '100%' }}>
+                <Space direction='vertical' size={6} style={{ width: '100%' }}>
                     <Space size={4} wrap>
                         <Tag color={record.storyKind === 'Event' ? 'purple' : 'blue'}>{record.storyKind || 'SMME'}</Tag>
                         <Tag color={record.source === 'SME' ? 'cyan' : 'gold'}>{record.source || 'Department'} submitted</Tag>
+                        {record.eventNature && <Tag color='geekblue'>{record.eventNature}</Tag>}
                     </Space>
-                    <Typography.Title level={4} style={{ margin: 0 }}>{record.title || record.smeName || 'Success story'}</Typography.Title>
-                    <Typography.Text type='secondary'>{record.smeName || 'Lepharo event'}</Typography.Text>
-                    <Paragraph ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>{excerpt || 'Open this story to read the full case study.'}</Paragraph>
+                    <Typography.Title level={5} ellipsis={{ rows: 2 }} style={{ margin: 0 }}>{record.title || record.smeName || 'Success story'}</Typography.Title>
+                    <Typography.Text type='secondary' style={{ fontSize: 12 }}>{record.smeName || 'Lepharo event'}</Typography.Text>
+                    <Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>{excerpt || 'Open this story to read the full case study.'}</Paragraph>
                     <Space size={4} wrap>
                         {record.departmentName && <Tag>{record.departmentName}</Tag>}
                         <Typography.Text type='secondary' style={{ fontSize: 12 }}>{formatDateTime(record.createdAt)}</Typography.Text>
@@ -1174,7 +1257,7 @@ const SuccessChallengesPage: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
+        <div className='success-challenges-page' style={{ padding: 24, minHeight: '100vh' }}>
             <Helmet>
                 <title>Success Stories & Challenges</title>
             </Helmet>
@@ -1182,16 +1265,18 @@ const SuccessChallengesPage: React.FC = () => {
             <Space direction='vertical' size={16} style={{ width: '100%' }}>
                 <Row gutter={[16, 16]} style={{ marginBottom: 0 }}>
                     {(segment === 'stories' ? [
-                        { icon: <TrophyOutlined style={{ color: '#1677ff' }} />, bg: 'rgba(22,119,255,0.12)', title: 'Published Stories', value: stories.length },
-                        { icon: <CheckCircleOutlined style={{ color: '#13c2c2' }} />, bg: 'rgba(19,194,194,0.12)', title: 'SME Submitted', value: stories.filter(item => item.source === 'SME').length },
-                        { icon: <PictureOutlined style={{ color: '#722ed1' }} />, bg: 'rgba(114,46,209,0.12)', title: 'Event Stories', value: stories.filter(item => item.storyKind === 'Event').length }
+                        { icon: <TrophyOutlined />, tone: 'accent' as const, title: 'Published Stories', value: stories.length, active: storyKindFilter === 'all' && storySourceFilter === 'all', onClick: () => { setStoryKindFilter('all'); setStorySourceFilter('all') } },
+                        { icon: <BankOutlined />, tone: 'info' as const, title: 'SMME Stories', value: stories.filter(item => (item.storyKind || 'SMME') === 'SMME').length, active: storyKindFilter === 'SMME', onClick: () => setStoryKindFilter(storyKindFilter === 'SMME' ? 'all' : 'SMME') },
+                        { icon: <CalendarOutlined />, tone: 'info' as const, title: 'Event Stories', value: stories.filter(item => item.storyKind === 'Event').length, active: storyKindFilter === 'Event', onClick: () => setStoryKindFilter(storyKindFilter === 'Event' ? 'all' : 'Event') }
                     ] : [
-                        { icon: <WarningOutlined style={{ color: '#fa8c16' }} />, bg: 'rgba(250,140,22,0.14)', title: 'Open Challenges', value: openChallenges },
-                        { icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />, bg: 'rgba(82,140,22,0.14)', title: 'Resolved Challenges', value: closedChallenges },
-                        { icon: <TrophyOutlined style={{ color: '#1677ff' }} />, bg: 'rgba(22,119,255,0.12)', title: 'SMEs in Programme', value: challengeSmes.length }
+                        { icon: <ProfileOutlined />, tone: 'accent' as const, title: 'Total Challenges', value: challenges.length, active: statusFilter === 'all', onClick: () => setStatusFilter('all') },
+                        { icon: <ExclamationCircleOutlined />, tone: 'warning' as const, title: 'Open', value: statusCount('Open'), active: statusFilter === 'Open', onClick: () => setStatusFilter(statusFilter === 'Open' ? 'all' : 'Open') },
+                        { icon: <SyncOutlined />, tone: 'info' as const, title: 'In Progress', value: statusCount('In Progress'), active: statusFilter === 'In Progress', onClick: () => setStatusFilter(statusFilter === 'In Progress' ? 'all' : 'In Progress') },
+                        { icon: <CheckCircleOutlined />, tone: 'success' as const, title: 'Resolved', value: statusCount('Resolved'), active: statusFilter === 'Resolved', onClick: () => setStatusFilter(statusFilter === 'Resolved' ? 'all' : 'Resolved') },
+                        { icon: <LockOutlined />, tone: 'neutral' as const, title: 'Closed', value: statusCount('Closed'), active: statusFilter === 'Closed', onClick: () => setStatusFilter(statusFilter === 'Closed' ? 'all' : 'Closed') }
                     ]).map(metric => (
-                        <Col xs={24} md={8} key={metric.title}>
-                            <MotionCard.Metric icon={metric.icon} iconBg={metric.bg} title={metric.title} value={metric.value} />
+                        <Col xs={24} sm={12} xl={segment === 'stories' ? 8 : undefined} className={segment === 'stories' ? undefined : 'metric-col-5'} key={metric.title}>
+                            <MetricTile icon={metric.icon} tone={metric.tone} title={metric.title} value={metric.value} onClick={metric.onClick} wrapperStyle={metric.active ? { border: '1px solid var(--app-accent, #1677ff)', boxShadow: '0 4px 14px rgba(22,119,255,0.15)' } : undefined} />
                         </Col>
                     ))}
                 </Row>
@@ -1202,8 +1287,8 @@ const SuccessChallengesPage: React.FC = () => {
                         value={segment}
                         onChange={value => setSegment(value as PageSegment)}
                         options={[
-                            { label: 'Success Stories', value: 'stories' },
-                            { label: 'Challenges', value: 'challenges' }
+                            { label: 'Success Stories', value: 'stories', icon: <TrophyOutlined /> },
+                            { label: 'Challenges', value: 'challenges', icon: <WarningOutlined /> }
                         ]}
                     />
                 </DashboardFilterBar>
@@ -1214,22 +1299,18 @@ const SuccessChallengesPage: React.FC = () => {
                             filterBar={
                                 <div className='success-page-filters story-library-filters'>
                                     <Input aria-label='Search success stories' allowClear prefix={<SearchOutlined />} placeholder='Search stories...' value={storySearchText} onChange={event => setStorySearchText(event.target.value)} />
-                                    <Select aria-label='Story type' value={storyKindFilter} onChange={setStoryKindFilter} options={[{ value: 'all', label: 'All story types' }, { value: 'SMME', label: 'SMME stories' }, { value: 'Event', label: 'Event stories' }]} />
                                     <Select aria-label='Story source' value={storySourceFilter} onChange={setStorySourceFilter} options={[{ value: 'all', label: 'All sources' }, { value: 'SME', label: 'SME submitted' }, { value: 'Department', label: 'Department submitted' }]} />
-                                    <Segmented block value={storyView} onChange={value => setStoryView(value as 'cards' | 'table')} options={[{ value: 'cards', icon: <AppstoreOutlined />, label: 'Cards' }, { value: 'table', icon: <BarsOutlined />, label: 'Table' }]} />
                                     <Button block icon={<ClearOutlined />} onClick={resetStoryFilters}>Reset</Button>
-                                    <Button block type='primary' icon={<PlusOutlined />} loading={eventsLoading} disabled={loading || eventsError} onClick={openStoryModal}>Add Story</Button>
+                                    <Button block type='primary' icon={<PlusOutlined />} disabled={loading} onClick={openStoryModal}>Add Story or Event</Button>
                                 </div>
                             }
                             filterBarProps={{ className: 'success-page-filter-container' }}
-                            title='Success Story Library'>
-                            {filteredStories.length ? storyView === 'cards' ? (
+                        >
+                            {filteredStories.length ? (
                                 <Row gutter={[16, 16]}>{filteredStories.map(record => <Col xs={24} md={12} xl={8} key={record.id}>{renderStoryCard(record)}</Col>)}</Row>
                             ) : (
-                                <Table rowKey='id' columns={storyColumns} dataSource={filteredStories} loading={loading} scroll={{ x: 920 }} expandable={{ expandedRowRender: storyDetails }} pagination={{ pageSize: 8 }} />
-                            ) : (
                                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No success stories match these filters'>
-                                    <Button type='primary' icon={<PlusOutlined />} loading={eventsLoading} disabled={loading || eventsError} onClick={() => { resetStoryFilters(); openStoryModal() }}>Create the first story</Button>
+                                    <Button type='primary' icon={<PlusOutlined />} disabled={loading} onClick={() => { resetStoryFilters(); openStoryModal() }}>Create the first story or event</Button>
                                 </Empty>
                             )}
                         </MotionCard>
@@ -1237,7 +1318,7 @@ const SuccessChallengesPage: React.FC = () => {
                         <Row gutter={[16, 16]}>
                             {totalChallenges > 0 && (
                                 <Col xs={24} xl={8}>
-                                    <MotionCard title='Challenge Status'>
+                                    <MotionCard>
                                         <Space direction='vertical' size={20} style={{ width: '100%' }}>
                                             <Typography.Text type='secondary'>{totalChallenges} challenges in total</Typography.Text>
                                             {challengeStatusData.map(item => <div key={item.name} aria-label={`${item.name}: ${item.y} challenges`}>
@@ -1252,13 +1333,11 @@ const SuccessChallengesPage: React.FC = () => {
                             )}
                             <Col xs={24} xl={totalChallenges > 0 ? 16 : 24}>
                                 <MotionCard
-                                    title='Logged Challenges'
                                     filterBarProps={{ className: 'success-page-filter-container' }}
                                     filterBar={
                                         <div className='success-page-filters challenge-library-filters'>
                                             <Input aria-label='Search challenges' allowClear prefix={<SearchOutlined />} placeholder='Search challenges...' value={challengeSearchText} onChange={event => setChallengeSearchText(event.target.value)} />
-                                            <Select aria-label='Challenge status' value={statusFilter} onChange={setStatusFilter} options={[{ value: 'all', label: 'All statuses' }, ...challengeStatuses.map(status => ({ value: status, label: status }))]} />
-                                            <Select aria-label='Challenge type' value={challengeTypeFilter} onChange={setChallengeTypeFilter} options={[{ value: 'all', label: 'All challenge types' }, ...challengeTypes.map(type => ({ value: type, label: type }))]} />
+                                            <Select aria-label='Nature of challenge' value={challengeTypeFilter} onChange={setChallengeTypeFilter} options={[{ value: 'all', label: 'All natures of challenge' }, ...challengeTypes.map(type => ({ value: type, label: type }))]} />
                                             <Button block icon={<ClearOutlined />} onClick={resetChallengeFilters}>Reset</Button>
                                             <Button block type='primary' icon={<PlusOutlined />} onClick={() => openChallengeModal()}>Add Challenge</Button>
                                         </div>
@@ -1312,27 +1391,16 @@ const SuccessChallengesPage: React.FC = () => {
                 </div>
             </Space>
 
-            <Modal title='Success story' className='story-reader-modal' open={!!selectedStory} onCancel={() => setSelectedStory(null)} footer={<Button onClick={() => setSelectedStory(null)}>Close</Button>} width={920}>
-                {selectedStory && <article className='story-reader'>
-                    <header>
-                        <Typography.Title level={2} style={{ margin: '4px 0 8px', overflowWrap: 'anywhere' }}>{selectedStory.title || selectedStory.smeName}</Typography.Title>
-                        <Typography.Text type='secondary'>{[selectedStory.storyKind === 'Event' ? selectedStory.eventTitle : selectedStory.smeName, selectedStory.createdAt ? `Captured ${formatDateTime(selectedStory.createdAt)}` : ''].filter(Boolean).join(' · ')}</Typography.Text>
-                    </header>
-                    {storyCover(selectedStory) && <div className='story-reader-cover' style={{ background: token.colorFillAlter }}>
-                        <Image src={storyCover(selectedStory)} alt={`${selectedStory.title || selectedStory.smeName} cover`} width='100%' style={{ display: 'block', maxHeight: 360, objectFit: 'contain' }} />
-                    </div>}
-                    <div className='story-reader-meta'>
-                        <Tag color={selectedStory.storyKind === 'Event' ? 'purple' : 'blue'}>{selectedStory.storyKind || 'SMME'}</Tag>
-                        <Tag color={selectedStory.source === 'SME' ? 'cyan' : 'gold'}>{selectedStory.source || 'Department'} submitted</Tag>
-                        {selectedStory.departmentName && <Tag>{selectedStory.departmentName}</Tag>}
-                        {selectedStory.interventionTitle && <Tag>{selectedStory.interventionTitle}</Tag>}
-                    </div>
-                    {storyDetails(selectedStory)}
-                </article>}
-            </Modal>
+            <StoryReaderModal
+                story={selectedStory}
+                sections={selectedStory ? getStorySections(selectedStory).filter(([, value]) => clean(value)).map(([label, value]) => [String(label), String(value)] as [string, string]) : []}
+                cover={selectedStory ? storyCover(selectedStory) : ''}
+                subtitle={selectedStory ? [selectedStory.storyKind === 'Event' ? selectedStory.eventTitle : selectedStory.smeName, selectedStory.createdAt ? `Captured ${formatDateTime(selectedStory.createdAt)}` : ''].filter(Boolean).join(' · ') : ''}
+                onClose={() => setSelectedStory(null)}
+            />
 
-            {eventsError && <Alert type='error' showIcon message='Events could not be loaded. Refresh the page to try again before creating a story.' />}
-            <Modal title='Create Success Story' open={storyModalOpen} onCancel={closeStoryModal} footer={null} width={900} destroyOnClose>
+            {eventsError && <Alert type='error' showIcon message='Recorded events could not be loaded. You can still add an event story by entering the event details manually.' />}
+            <Modal title='Create Success Story' className='story-create-modal' open={storyModalOpen} onCancel={closeStoryModal} footer={null} width={900} destroyOnClose>
                 {storyStep >= 0 && <div style={{ background: '#f5f7fb', borderRadius: 12, padding: '10px 14px', marginBottom: 18 }}>
                     <Space direction='vertical' size={4} style={{ width: '100%' }}>
                         <Space style={{ width: '100%', justifyContent: 'space-between' }}><Typography.Text strong>Story completeness</Typography.Text><Typography.Text>{completedStoryFields} of {requiredStoryFields.length} required sections</Typography.Text></Space>
@@ -1348,7 +1416,7 @@ const SuccessChallengesPage: React.FC = () => {
                             {([
                                 { kind: 'SMME', title: 'An SMME success', description: 'Celebrate a business achievement and the support behind it.', icon: <BankOutlined /> },
                                 { kind: 'Event', title: 'An event success', description: 'Share who came together, what happened and the outcomes.', icon: <CalendarOutlined /> }
-                            ] as const).filter(option => option.kind !== 'Event' || storyEvents.length > 0).map(option => <Col xs={24} sm={12} key={option.kind}>
+                            ] as const).map(option => <Col xs={24} sm={12} key={option.kind}>
                                 <Button block onClick={() => {
                                     if (storyKind !== option.kind) {
                                         successForm.resetFields()
@@ -1358,24 +1426,30 @@ const SuccessChallengesPage: React.FC = () => {
                                     }
                                     successForm.setFieldValue('storyKind', option.kind)
                                     setStoryStep(0)
-                                }} style={{ height: 'auto', minHeight: 160, padding: 24, textAlign: 'left', whiteSpace: 'normal', borderRadius: 12 }}>
-                                    <Space direction='vertical' size={10} style={{ width: '100%' }}>
-                                        <span style={{ fontSize: 28, color: '#1677ff' }}>{option.icon}</span>
+                                }} className='story-type-card'>
+                                    <span className='story-type-card-icon'>{option.icon}</span>
+                                    <span className='story-type-card-copy'>
                                         <Typography.Text strong>{option.title}</Typography.Text>
                                         <Typography.Text type='secondary'>{option.description}</Typography.Text>
-                                    </Space>
+                                    </span>
+                                    <ArrowRightOutlined className='story-type-card-arrow' />
                                 </Button>
                             </Col>)}
                         </Row>
                     </div>}
                     {storyStep === 0 && <>
                         <Typography.Title level={4}>Tell us about {storyKind === 'Event' ? 'the event' : 'the business and its success'}.</Typography.Title>
-                        {storyKind === 'Event' && <Form.Item label='Which event is this story about?' name='eventId' rules={[{ required: true, message: 'Select a recorded event' }]}>
-                            <Select showSearch optionFilterProp='label' placeholder='Select an event' options={storyEvents.map(event => ({ value: event.id, label: `${event.title}${event.date ? ` · ${event.date}` : ''}` }))} onChange={id => {
+                        {storyKind === 'Event' && <Form.Item label='Link a recorded event (optional)' name='eventId'>
+                            <Select allowClear showSearch optionFilterProp='label' placeholder={storyEvents.length ? 'Select a recorded event' : 'No recorded events - enter the event details below'} options={storyEvents.map(event => ({ value: event.id, label: `${event.title}${event.date ? ` · ${event.date}` : ''}` }))} onChange={id => {
                                 const event = storyEvents.find(item => item.id === id)
-                                successForm.setFieldsValue({ title: event?.title || '', eventBackground: event?.description || '' })
+                                successForm.setFieldsValue({ title: event?.title || '', eventBackground: event?.description || '', eventNature: natureFromFormat(event?.format) || successForm.getFieldValue('eventNature') })
                             }} />
                         </Form.Item>}
+                        {storyKind === 'Event' && !storyFormValues.eventId && <Row gutter={12}>
+                            <Col xs={24} sm={16}><Form.Item label='Event name' name='eventTitle' rules={[{ required: true, whitespace: true, message: 'Enter the event name' }]}><Input placeholder='E.g. AI Skills Online Training' /></Form.Item></Col>
+                            <Col xs={24} sm={8}><Form.Item label='Event date' name='eventDate'><DatePicker style={{ width: '100%' }} format='YYYY-MM-DD' disabledDate={current => !!current && current.isAfter(dayjs(), 'day')} /></Form.Item></Col>
+                        </Row>}
+                        {storyKind === 'Event' && <Form.Item label='Nature of the event' name='eventNature' rules={[{ required: true, message: 'Select how the event was held' }]}><EventNatureCards /></Form.Item>}
                         <Form.Item label='Story title' name='title' rules={[{ required: true, whitespace: true, message: 'Add a clear story title' }]}><Input placeholder={storyKind === 'Event' ? 'E.g. Supplier Readiness Day connects SMMEs to buyers' : 'E.g. Safe Lifestyle grows turnover after incubation support'} /></Form.Item>
                         {storyKind !== 'Event' && <Form.Item label='SME' name='participantId' rules={[{ required: true, message: 'Select an SME' }]}><Select showSearch placeholder='Select an SME with completed interventions' optionFilterProp='label' loading={loading} onChange={value => { setSelectedParticipantId(value); successForm.setFieldValue('interventionId', undefined) }} options={smes.map(item => ({ label: item.companyName, value: item.participantId }))} notFoundContent='No SMEs with SME-confirmed interventions were found for this department.' /></Form.Item>}
                         {storyKind !== 'Event' && <Form.Item label='SME-confirmed intervention' name='interventionId' rules={[{ required: true, message: 'Select a confirmed intervention' }]}><Select showSearch placeholder='Select confirmed intervention' optionFilterProp='search' optionLabelProp='selectedLabel' disabled={!selectedParticipantId} options={interventions.map(item => ({ selectedLabel: item.interventionTitle, search: `${item.interventionTitle} ${item.departmentName || ''} ${(item.monthTags || []).join(' ')}`, label: <Space direction='vertical' size={2}><span>{item.interventionTitle}{item.departmentName ? ` - ${item.departmentName}` : ''}</span><Space size={4} wrap>{(item.occurrenceCount || 0) > 1 && <Tag color='blue'>{item.occurrenceCount} sessions</Tag>}{(item.monthTags || []).slice(0, 4).map(month => <Tag key={month}>{month}</Tag>)}</Space></Space>, value: item.id }))} /></Form.Item>}
@@ -1412,10 +1486,11 @@ const SuccessChallengesPage: React.FC = () => {
                         <Typography.Title level={4}>Ready to share your story?</Typography.Title>
                         <Paragraph type='secondary'>Review the details below. Use Back to make changes before publishing.</Paragraph>
                         <Card style={{ borderRadius: 12 }}>
-                            <Space wrap><Tag color={storyKind === 'Event' ? 'purple' : 'blue'}>{storyKind} success story</Tag><Typography.Text type='secondary'>{storyKind === 'Event' ? selectedEvent?.title : selectedSme?.companyName}</Typography.Text></Space>
+                            <Space wrap><Tag color={storyKind === 'Event' ? 'purple' : 'blue'}>{storyKind} success story</Tag><Typography.Text type='secondary'>{storyKind === 'Event' ? selectedEvent?.title || storyFormValues.eventTitle : selectedSme?.companyName}</Typography.Text></Space>
                             <Typography.Title level={3}>{storyFormValues.title}</Typography.Title>
                             {storyKind === 'Event' ? <>
-                                <Paragraph type='secondary'>{[selectedEvent?.date, selectedEvent?.location].filter(Boolean).join(' · ')}</Paragraph>
+                                <Paragraph type='secondary'>{[selectedEvent?.date || (storyFormValues.eventDate ? dayjs(storyFormValues.eventDate).format('YYYY-MM-DD') : ''), selectedEvent?.location].filter(Boolean).join(' · ')}</Paragraph>
+                                {storyFormValues.eventNature && <Tag color='geekblue'>{storyFormValues.eventNature}</Tag>}
                                 <Tag>{eventInvitees.length} invited participants</Tag>
                             </> : <Tag style={{ whiteSpace: 'normal' }}>{interventions.find(item => item.id === storyFormValues.interventionId)?.interventionTitle}</Tag>}
                             <Divider />
@@ -1438,177 +1513,48 @@ const SuccessChallengesPage: React.FC = () => {
                         </Card>
                     </div>}
                     <Row gutter={12} style={{ marginTop: 20 }}>
-                        <Col span={storyStep === -1 ? 24 : 8}><Button block onClick={(storyStep === -1 || (storyStep === 0 && !storyEvents.length)) ? closeStoryModal : () => setStoryStep(current => current - 1)}>{storyStep === -1 || (storyStep === 0 && !storyEvents.length) ? 'Cancel' : 'Back'}</Button></Col>
-                        {storyStep >= 0 && <Col span={16}>{storyStep < 3 ? <Button block type='primary' onClick={goToNextStoryStep}>{storyStep === 2 ? 'Review story' : 'Continue'}</Button> : <Button block type='primary' loading={savingStory} icon={<PlusOutlined />} onClick={() => successForm.submit()}>Publish Success Story</Button>}</Col>}
+                        <Col span={storyStep === -1 ? 24 : 8}><Button block icon={storyStep === -1 ? <CloseOutlined /> : <ArrowLeftOutlined />} onClick={storyStep === -1 ? closeStoryModal : () => setStoryStep(current => current - 1)}>{storyStep === -1 ? 'Cancel' : 'Back'}</Button></Col>
+                        {storyStep >= 0 && <Col span={16}>{storyStep < 3 ? <Button block type='primary' icon={storyStep === 2 ? <EyeOutlined /> : <ArrowRightOutlined />} iconPosition='end' onClick={goToNextStoryStep}>{storyStep === 2 ? 'Review story' : 'Continue'}</Button> : <Button block type='primary' loading={savingStory} icon={<PlusOutlined />} onClick={() => successForm.submit()}>Publish Success Story</Button>}</Col>}
                     </Row>
                 </Form>
             </Modal>
 
-            <Modal
-                title={editingChallenge ? 'Update Challenge' : 'Add Challenge'}
+            <ChallengeFormModal
                 open={challengeModalOpen}
+                editing={!!editingChallenge}
+                saving={savingChallenge}
+                initialValues={challengeInitial}
+                smes={challengeSmes}
+                statuses={challengeStatuses}
+                channels={communicationChannelOptions}
+                items={communicationItemOptions}
                 onCancel={closeChallengeModal}
-                footer={null}
-                width={900}
-                destroyOnClose
-            >
-                <Form
-                    form={challengeForm}
-                    layout='vertical'
-                    onFinish={handleChallengeSubmit}
-                    initialValues={{
-                        challengeType: 'General',
-                        mitigationSteps: [{ text: '' }],
-                        communicationAttempts: [{ attemptedAt: dayjs(), items: [] }],
-                        status: 'Open'
-                    }}
-                >
-                    <Form.Item label='Challenge Type' name='challengeType' rules={[{ required: true }]}>
-                        <Select options={challengeTypes.map(type => ({ value: type, label: type }))} />
-                    </Form.Item>
-                    {challengeType !== 'Unresponsive SMEs' && (
-                        <Form.Item label='Challenge' name='title' rules={[{ required: true, message: 'Add a challenge title' }]}>
-                            <Input placeholder='E.g. Low attendance for finance sessions' />
-                        </Form.Item>
-                    )}
-                    {challengeType === 'Unresponsive SMEs' && (
-                        <>
-                            <Form.Item
-                                label='Unresponsive SME(s)'
-                                name='smeIds'
-                                rules={[{ required: true, message: 'Select at least one SME' }]}
-                            >
-                                <Select
-                                    mode='multiple'
-                                    showSearch
-                                    optionFilterProp='label'
-                                    placeholder='Select one or more SMEs'
-                                    options={challengeSmes.map(sme => ({ value: sme.participantId, label: sme.companyName }))}
-                                />
-                            </Form.Item>
-                            <Divider orientation='left'>Communication Attempts</Divider>
-                            <Form.List name='communicationAttempts'>
-                                {(fields, { add, remove }) => (
-                                    <Space direction='vertical' size={12} style={{ width: '100%' }}>
-                                        {fields.map((field, index) => (
-                                            <div key={field.key} style={{ padding: 14, border: '1px solid #f0f0f0', borderRadius: 10 }}>
-                                                <Row gutter={12}>
-                                                    <Col xs={24} md={8}>
-                                                        <Form.Item
-                                                            {...field}
-                                                            label='Contact method'
-                                                            name={[field.name, 'channel']}
-                                                            rules={[{ required: true, message: 'Select a contact method' }]}
-                                                        >
-                                                            <Select options={communicationChannelOptions.map(channel => ({ value: channel, label: channel }))} />
-                                                        </Form.Item>
-                                                    </Col>
-                                                    <Col xs={24} md={8}>
-                                                        <Form.Item
-                                                            {...field}
-                                                            label='Attempt date and time'
-                                                            name={[field.name, 'attemptedAt']}
-                                                            rules={[{ required: true, message: 'Select when contact was attempted' }]}
-                                                        >
-                                                            <DatePicker showTime style={{ width: '100%' }} />
-                                                        </Form.Item>
-                                                    </Col>
-                                                    <Col xs={24} md={8}>
-                                                        <Form.Item
-                                                            {...field}
-                                                            label='Item(s) awaiting response'
-                                                            name={[field.name, 'items']}
-                                                            rules={[{ required: true, message: 'Select the item(s)' }]}
-                                                        >
-                                                            <Select
-                                                                mode='multiple'
-                                                                popupMatchSelectWidth={420}
-                                                                options={communicationItemOptions.map(item => ({
-                                                                    value: item,
-                                                                    label: <span title={item}>{item}</span>
-                                                                }))}
-                                                            />
-                                                        </Form.Item>
-                                                    </Col>
-                                                </Row>
-                                                <Form.Item
-                                                    {...field}
-                                                    label='Attempt notes'
-                                                    name={[field.name, 'notes']}
-                                                    rules={[{ required: true, whitespace: true, message: 'Describe where/how contact was attempted and the outcome' }]}
-                                                >
-                                                    <TextArea rows={2} placeholder='E.g. Emailed the owner and followed up on WhatsApp; messages were delivered but no response was received.' />
-                                                </Form.Item>
-                                                {fields.length > 1 && (
-                                                    <Button danger onClick={() => remove(field.name)}>Remove attempt {index + 1}</Button>
-                                                )}
-                                            </div>
-                                        ))}
-                                        <Button
-                                            type='dashed'
-                                            block
-                                            icon={<PlusOutlined />}
-                                            onClick={() => add({ attemptedAt: dayjs(), items: [] })}
-                                        >
-                                            Add Communication Attempt
-                                        </Button>
-                                    </Space>
-                                )}
-                            </Form.List>
-                        </>
-                    )}
-                    <Form.Item label='Details' name='details' rules={[{ required: true, message: 'Describe the challenge' }]}>
-                        <TextArea
-                            rows={4}
-                            placeholder={challengeType === 'Unresponsive SMEs'
-                                ? 'Describe the lack of response and the impact on delivery.'
-                                : 'What happened, who is affected, and what is the impact?'}
-                        />
-                    </Form.Item>
-                    <Divider orientation='left'>Proposed Mitigation</Divider>
-                    <Form.List name='mitigationSteps'>
-                        {(fields, { add, remove }) => (
-                            <Space direction='vertical' style={{ width: '100%' }}>
-                                {fields.map(field => (
-                                    <div key={field.key} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', width: '100%' }}>
-                                        <Form.Item {...field} name={[field.name, 'text']} style={{ flex: 1, marginBottom: 8 }}>
-                                            <Input style={{ width: '100%' }} placeholder='Mitigation step' />
-                                        </Form.Item>
-                                        {fields.length > 1 && (
-                                            <Button danger onClick={() => remove(field.name)}>Remove</Button>
-                                        )}
-                                    </div>
-                                ))}
-                                <Button onClick={() => add()} icon={<PlusOutlined />}>Add step</Button>
-                            </Space>
-                        )}
-                    </Form.List>
-                    <Row gutter={12} style={{ marginTop: 16 }}>
-                        <Col xs={24} md={12}>
-                            <Form.Item label='Due Date' name='dueDate'>
-                                <DatePicker style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-                        <Col xs={24} md={12}>
-                            <Form.Item label='Status' name='status'>
-                                <Select options={challengeStatuses.map(status => ({ value: status, label: status }))} />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-                    <Row gutter={12}>
-                        <Col span={12}>
-                            <Button block onClick={closeChallengeModal}>
-                                Cancel
-                            </Button>
-                        </Col>
-                        <Col span={12}>
-                            <Button block type='primary' htmlType='submit' loading={savingChallenge} icon={<WarningOutlined />}>
-                                Save
-                            </Button>
-                        </Col>
-                    </Row>
-                </Form>
-            </Modal>
+                onSubmit={handleChallengeSubmit}
+            />
+
+            <ChallengeCheckInModal
+                open={!!checkInChallenge}
+                saving={savingCheckIn}
+                challenge={checkInChallenge}
+                onCancel={() => setCheckInChallenge(null)}
+                onSubmit={handleCheckInSubmit}
+            />
+
+            <StoryReaderModal
+                story={viewChallenge ? { title: viewChallenge.title, attachments: [] } : null}
+                modalTitle='Challenge'
+                sections={viewChallenge ? getChallengeSections(viewChallenge) : []}
+                cover=''
+                subtitle={viewChallenge ? [viewChallenge.departmentName, viewChallenge.createdAt ? `Logged ${formatDateTime(viewChallenge.createdAt)}` : ''].filter(Boolean).join(' · ') : ''}
+                tags={viewChallenge ? <>
+                    <Tag color={viewChallenge.challengeType === 'Unresponsive SMEs' ? 'volcano' : 'gold'}>{viewChallenge.challengeType || 'General'}</Tag>
+                    <Tag color={isClosedStatus(viewChallenge.status) ? 'green' : viewChallenge.status === 'In Progress' ? 'blue' : 'gold'}>{viewChallenge.status || 'Open'}</Tag>
+                </> : undefined}
+                outcomeLabels={['Proposed mitigation']}
+                celebrate={!!viewChallenge && isClosedStatus(viewChallenge.status)}
+                finaleHeading={viewChallenge && isClosedStatus(viewChallenge.status) ? 'Challenge resolved' : 'That is the full picture'}
+                onClose={() => setViewChallenge(null)}
+            />
         </div>
     )
 }

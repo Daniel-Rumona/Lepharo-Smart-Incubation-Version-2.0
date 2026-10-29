@@ -9,7 +9,6 @@ const courseDomain_1 = require("./courseDomain");
 const staffRoles = [
     "operations",
     "coordinator",
-    "admin",
     "system_admin",
     "superadmin",
     "director",
@@ -24,6 +23,29 @@ const key = (value) => {
     return value;
 };
 const clean = (value) => JSON.parse(JSON.stringify(value));
+/**
+ * Who may enroll in a published course. Staff and the author always may.
+ * Training SMEs only take the courses linked to the training they are
+ * enrolled in; everyone else follows the course's publish audience.
+ */
+async function mayTakeCourse(tx, uid, profile, courseId, catalog) {
+    const role = String(profile.role || "").trim().toLowerCase();
+    if (catalog.owner === uid || staffRoles.includes(role))
+        return true;
+    const participantId = typeof profile.participantId === "string" ? profile.participantId : "";
+    if (role === "training_sme") {
+        if (!participantId)
+            return false;
+        const enrollment = (await tx.get(firebase_1.db.doc(`trainingEnrollments/${participantId}`))).data();
+        if (enrollment?.status !== "enrolled" || enrollment.userId !== uid || typeof enrollment.trainingId !== "string" || !enrollment.trainingId)
+            return false;
+        const training = (await tx.get(firebase_1.db.doc(`trainings/${enrollment.trainingId}`))).data();
+        return Array.isArray(training?.courseIds) && training.courseIds.includes(courseId);
+    }
+    if (catalog.publishTo?.mode !== "selected")
+        return true;
+    return !!participantId && Array.isArray(catalog.publishTo.participantIds) && catalog.publishTo.participantIds.includes(participantId);
+}
 exports.academyAction = (0, https_1.onCall)({ timeoutSeconds: 60 }, async (request) => {
     if (!request.auth)
         throw new https_1.HttpsError("unauthenticated", "Sign in to continue.");
@@ -73,6 +95,8 @@ exports.academyAction = (0, https_1.onCall)({ timeoutSeconds: 60 }, async (reque
                         : [],
                 }
                 : { mode: "all", participantIds: [] };
+            if (publishTo.mode === "selected" && !publishTo.participantIds.length)
+                bad("Choose at least one participant, or publish to all incubatees.");
             tx.create(firebase_1.db.doc(`academyKeys/${revisionId}`), clean({ ...course, owner: uid, courseId: id, revision }));
             tx.create(firebase_1.db.doc(`academyVersions/${revisionId}`), clean({ ...(0, courseDomain_1.publicCourse)(course), owner: uid, courseId: id, revision }));
             tx.set(firebase_1.db.doc(`academyCatalog/${id}`), {
@@ -97,6 +121,8 @@ exports.academyAction = (0, https_1.onCall)({ timeoutSeconds: 60 }, async (reque
             if (!catalog || catalog.deletedAt)
                 bad("This course is not available for new enrollments.");
             const profile = (await tx.get(firebase_1.db.doc(`users/${uid}`))).data() || {};
+            if (!(await mayTakeCourse(tx, uid, profile, id, catalog)))
+                throw new https_1.HttpsError("permission-denied", "This course has not been opened to you.");
             const enrollment = {
                 id: enrollmentRef.id,
                 courseId: id,

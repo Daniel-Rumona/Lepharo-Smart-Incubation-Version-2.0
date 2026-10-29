@@ -120,7 +120,7 @@ Legend: **UI** = interface change, **L** = logic change, **D** = data-model impa
 - **`workflowQueries`** (query/response threads on MOVs): usable for follow-up nudges without a new messaging system.
 - **Department capability flag pattern** (`isTraining`, `interventionsDepartment`, `isSensitive` on `departments`): the precedent for config-by-flag; the programme evidence model follows it.
 - **Compliance stack** (`complianceDocuments`, `complianceResolver`, `complianceVerificationService`, `complianceExpiry.ts`): existing verified-document source for "Compliance achieved" outcomes.
-- **Firebase Functions scheduling** (`kpiReminders.ts`, `movValidationReminders.ts`, `complianceExpiry.ts`): the pattern for follow-up-due reminders and any future detectors.
+- **Firebase Functions scheduling** (`kpiReminders.ts`, `movStageReminders.ts`, `complianceExpiry.ts`): the pattern for follow-up-due reminders and any future detectors.
 - **`ai-backend`**: existing place for "suggest deliverable and outcome for this title" (same pattern as `gap_mapping.py`, `aiAssistantService`).
 
 ---

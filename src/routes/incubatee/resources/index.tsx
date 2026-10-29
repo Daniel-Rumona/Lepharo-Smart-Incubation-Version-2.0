@@ -13,6 +13,8 @@ import {
     Space,
     Table,
     Tag,
+    Tooltip,
+    InputNumber,
     Typography
 } from 'antd'
 import {
@@ -26,6 +28,18 @@ import {
 import { addDoc, collection, getDocs, query, where } from 'firebase/firestore'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
+import { isBookableResource } from '@/types/resources'
+import dayjs, { Dayjs } from 'dayjs'
+import {
+    ResourceBooking,
+    availableForRange,
+    fetchBookings
+} from '@/lib/resourceBookings'
+import { requestStatus } from '@/lib/resourceRequests'
+import {
+    ResourceTypeOption,
+    getBookingMode
+} from '@/routes/resources/ResourceTypesModal'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import {
@@ -49,12 +63,56 @@ const ResourceRequestForm: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState('all')
     const [form] = Form.useForm()
 
+    const [resourceTypes, setResourceTypes] = useState<ResourceTypeOption[]>([])
+    const [bookings, setBookings] = useState<ResourceBooking[]>([])
+
+    const watchedRange: [Dayjs, Dayjs] | undefined = Form.useWatch('timeRange', form)
+
+    // A type's booking mode decides whether the SME picks a quantity
+    const isSingleResource = (resource: any) =>
+        getBookingMode(
+            resourceTypes.find(type => type.value === resource?.type) || {
+                value: resource?.type || ''
+            }
+        ) === 'single'
+
+    const selectedUnit = selectedResource
+        ? {
+            id: selectedResource.id,
+            name: selectedResource.name,
+            capacity: Number(selectedResource.capacity) || 0,
+            single: isSingleResource(selectedResource)
+        }
+        : undefined
+
+    // Same calculation staff use when approving, so the SME sees what's free
+    const freeForRange =
+        selectedUnit && watchedRange?.[0] && watchedRange?.[1]
+            ? availableForRange(
+                selectedUnit,
+                bookings,
+                watchedRange[0].toDate(),
+                watchedRange[1].toDate()
+            )
+            : undefined
+
     const fetchResources = async () => {
+        const [typesSnap, bookingList] = await Promise.all([
+            getDocs(collection(db, 'resourceTypes')),
+            fetchBookings()
+        ])
+        setResourceTypes(
+            typesSnap.docs.map(d => ({ id: d.id, ...d.data() }) as ResourceTypeOption)
+        )
+        setBookings(bookingList)
         const snapshot = await getDocs(collection(db, 'resources'))
-        setResources(snapshot.docs.map(resourceDoc => ({
-            id: resourceDoc.id,
-            ...resourceDoc.data()
-        })))
+        // Internal resources are branch inventory and can't be requested
+        setResources(snapshot.docs
+            .filter(resourceDoc => isBookableResource(resourceDoc.data()))
+            .map(resourceDoc => ({
+                id: resourceDoc.id,
+                ...resourceDoc.data()
+            })))
     }
 
     const fetchRequests = async () => {
@@ -118,22 +176,39 @@ const ResourceRequestForm: React.FC = () => {
     }, [user?.email, user?.name])
 
     const handleRequest = async (values: any) => {
-        if (!selectedResource) return
+        if (!selectedResource || !user) return
+
+        const [start, end] = values.timeRange as [Dayjs, Dayjs]
+        const days = end.startOf('day').diff(start.startOf('day'), 'day') + 1
+        const hours = end.diff(start, 'hour', true)
+        const requestedAt = new Date()
 
         try {
             await addDoc(collection(db, 'resourceRequests'), {
+                // Marks this as an SME booking request, not an internal purchase
+                requestType: 'external',
                 resourceId: selectedResource.id,
                 resourceName: selectedResource.name,
+                branchId: selectedResource.branchId || null,
+                quantity: isSingleResource(selectedResource) ? 1 : Number(values.quantity),
+                startTime: start.toDate(),
+                endTime: end.toDate(),
+                // Kept for older screens that read the needed-by date and duration
+                neededByDate: start.toDate(),
+                duration:
+                    days > 1
+                        ? `${days} days`
+                        : `${Math.round(hours * 10) / 10} hour${hours === 1 ? '' : 's'}`,
                 reason: values.reason,
-                duration: values.duration,
+                purpose: values.reason,
                 urgency: values.urgency,
                 deliveryMethod: values.deliveryMethod,
-                neededByDate: values.neededByDate?.toDate?.() || null,
                 requestedBy: user.name || user.email,
                 requestedByEmail: String(user.email || '').trim().toLowerCase(),
                 participantId: user.participantId || user.participantDocId || null,
                 status: 'pending',
-                requestedAt: new Date()
+                requestedAt,
+                createdAt: requestedAt
             })
             message.success('Resource request submitted successfully.')
             setFormVisible(false)
@@ -152,16 +227,21 @@ const ResourceRequestForm: React.FC = () => {
         new Date(request?.requestedAt || 0).getTime() ||
         0
 
-    const getResourceStatus = (resource: any) => {
-        const latestRequest = requests
+    const latestRequestFor = (resource: any) =>
+        requests
             .filter(request => request.resourceId === resource.id)
             .sort((left, right) => requestTimestamp(right) - requestTimestamp(left))[0]
 
-        if (!latestRequest) return resource.available ? 'available' : 'unavailable'
-        return String(latestRequest.status || 'pending').toLowerCase()
+    const getResourceStatus = (resource: any) => {
+        if (resource.status === 'maintenance' || resource.status === 'unavailable') {
+            return 'unavailable'
+        }
+        const latestRequest = latestRequestFor(resource)
+        // 'rejected' from older records reads as declined
+        return latestRequest ? requestStatus(latestRequest) : 'available'
     }
 
-    const getStatusTag = (status: string) => {
+    const getStatusTag = (status: string, resource?: any) => {
         switch (status) {
             case 'available':
                 return <Tag color='blue' icon={<InboxOutlined />}>Available</Tag>
@@ -169,8 +249,14 @@ const ResourceRequestForm: React.FC = () => {
                 return <Tag color='orange' icon={<ClockCircleOutlined />}>Pending</Tag>
             case 'approved':
                 return <Tag color='green' icon={<CheckCircleOutlined />}>Approved</Tag>
-            case 'declined':
-                return <Tag color='red' icon={<CloseCircleOutlined />}>Declined</Tag>
+            case 'declined': {
+                const reason = resource && latestRequestFor(resource)?.declineReason
+                return (
+                    <Tooltip title={reason || undefined}>
+                        <Tag color='red' icon={<CloseCircleOutlined />}>Declined</Tag>
+                    </Tooltip>
+                )
+            }
             default:
                 return <Tag>Unavailable</Tag>
         }
@@ -197,7 +283,7 @@ const ResourceRequestForm: React.FC = () => {
             title: 'Status',
             key: 'status',
             width: 120,
-            render: (_: any, record: any) => getStatusTag(getResourceStatus(record))
+            render: (_: any, record: any) => getStatusTag(getResourceStatus(record), record)
         },
         {
             title: 'Description',
@@ -215,7 +301,8 @@ const ResourceRequestForm: React.FC = () => {
                         type='primary'
                         size='small'
                         shape='round'
-                        disabled={status !== 'available'}
+                        // One open request per resource; approved or declined ones can be followed up
+                        disabled={status === 'pending' || status === 'unavailable'}
                         onClick={() => {
                             setSelectedResource(record)
                             setFormVisible(true)
@@ -250,19 +337,21 @@ const ResourceRequestForm: React.FC = () => {
             {
                 key: 'available-resources',
                 important: true,
-                icon: <InboxOutlined style={{ fontSize: 20, color: '#1677ff' }} />,
-                iconBg: 'rgba(22,119,255,.12)',
+                icon: <InboxOutlined style={{ fontSize: 20 }} />,
+                tone: 'info' as const,
                 title: 'Available Resources',
                 mobileTitle: 'Available',
-                value: resources.filter(resource => resource.available === true).length,
+                value: resources.filter(
+                    resource => resource.status !== 'maintenance' && resource.status !== 'unavailable'
+                ).length,
                 subtitle: `${resources.length} resources in the catalogue`,
                 mobileSubtitle: 'Resources'
             },
             {
                 key: 'total-requests',
                 important: true,
-                icon: <FileTextOutlined style={{ fontSize: 20, color: '#722ed1' }} />,
-                iconBg: 'rgba(114,46,209,.12)',
+                icon: <FileTextOutlined style={{ fontSize: 20 }} />,
+                tone: 'accent' as const,
                 title: 'Total Requests',
                 mobileTitle: 'Requests',
                 value: requests.length,
@@ -345,20 +434,48 @@ const ResourceRequestForm: React.FC = () => {
             >
                 <Form form={form} layout='vertical' onFinish={handleRequest}>
                     <Form.Item
-                        label='Usage Duration'
-                        name='duration'
-                        rules={[{ required: true, message: 'Please enter usage duration.' }]}
+                        label='When do you need it?'
+                        name='timeRange'
+                        rules={[{ required: true, message: 'Please select when you need it.' }]}
+                        extra={
+                            selectedUnit?.single &&
+                            freeForRange === 0 && (
+                                <Text type='danger'>
+                                    Already booked for some of this time. You can still
+                                    request it, but it may be declined.
+                                </Text>
+                            )
+                        }
                     >
-                        <Input placeholder='e.g. 2 weeks, 3 days or 1 month' />
+                        <DatePicker.RangePicker
+                            showTime={{ format: 'HH:mm' }}
+                            format='YYYY-MM-DD HH:mm'
+                            disabledDate={current => current && current < dayjs().startOf('day')}
+                            style={{ width: '100%' }}
+                        />
                     </Form.Item>
 
-                    <Form.Item
-                        label='Date Needed'
-                        name='neededByDate'
-                        rules={[{ required: true, message: 'Please select the date needed.' }]}
-                    >
-                        <DatePicker style={{ width: '100%' }} />
-                    </Form.Item>
+                    {selectedUnit && !selectedUnit.single && (
+                        <Form.Item
+                            label='Quantity'
+                            name='quantity'
+                            initialValue={1}
+                            rules={[{ required: true, message: 'Please enter a quantity.' }]}
+                            extra={
+                                freeForRange !== undefined && (
+                                    <Text type={freeForRange > 0 ? 'secondary' : 'danger'}>
+                                        {freeForRange} of {selectedUnit.capacity} free for these dates
+                                    </Text>
+                                )
+                            }
+                        >
+                            <InputNumber
+                                min={1}
+                                max={selectedUnit.capacity || undefined}
+                                style={{ width: '100%' }}
+                            />
+                        </Form.Item>
+                    )}
 
                     <Form.Item
                         label='Reason for Request'

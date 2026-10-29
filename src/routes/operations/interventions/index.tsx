@@ -50,8 +50,9 @@ import {
     OUTCOME_TYPE_LABELS,
     type OutcomeDef,
 } from "@/services/evidenceModel";
-import { InterventionWizard, type WizardValues } from "./InterventionWizard";
+import { InterventionWizard, wizardInitialFrom, type WizardValues } from "./InterventionWizard";
 import { InterventionDetailModal } from "./InterventionDetailModal";
+import WhatsWorkingCard from "@/components/dashboards/shared/WhatsWorkingCard";
 import {
     DeleteOutlined,
     EditOutlined,
@@ -105,7 +106,6 @@ type SubInterventionTemplate = {
 type InterventionDoc = {
     id: string;
     interventionTitle: string;
-    areaOfSupport: string;
     departmentId?: string | null;
     compulsory?: boolean;
     recurring?: boolean;
@@ -565,7 +565,7 @@ const InterventionsManager: React.FC = () => {
 
     // department scope
     const [effectiveDeptId, setEffectiveDeptId] = useState<string>(""); // used for create/edit defaults
-    const [effectiveDeptName, setEffectiveDeptName] = useState<string>(""); // used for areaOfSupport display
+    const [effectiveDeptName, setEffectiveDeptName] = useState<string>(""); // used for department display
     const [managedDeptIds, setManagedDeptIds] = useState<string[]>([]); // what user can SEE/MANAGE
     const [managedDeptNameMap, setManagedDeptNameMap] = useState<
         Record<string, string>
@@ -588,16 +588,6 @@ const InterventionsManager: React.FC = () => {
                 if (maybeDeptId) {
                     const s = await getDoc(doc(db, "departments", maybeDeptId));
                     if (s.exists()) deptSnap = s;
-                }
-
-                // fallback by name
-                if (!deptSnap && userDepartment) {
-                    const qDept = query(
-                        collection(db, "departments"),
-                        where("name", "==", userDepartment)
-                    );
-                    const snap = await getDocs(qDept);
-                    if (!snap.empty) deptSnap = snap.docs[0];
                 }
 
                 if (!deptSnap) {
@@ -769,7 +759,6 @@ const InterventionsManager: React.FC = () => {
                     record.outcomeDef?.followUp?.required ??
                     !!record.outcomeDef?.intendedOutcome,
                 smeCheckIn: !!record.outcomeDef?.followUp?.smeCheckIn,
-                areaOfSupport: effectiveDeptName || userDepartment,
                 compulsory: !!record.compulsory,
                 assignmentMode: preset === "as-needed" ? "ad-hoc" : "recurring",
                 recurring: record.assignmentMode === "recurring" || !!record.recurring,
@@ -817,7 +806,6 @@ const InterventionsManager: React.FC = () => {
         } else {
             form.resetFields();
             form.setFieldsValue({
-                areaOfSupport: effectiveDeptName || userDepartment,
                 compulsory: false,
                 assignmentMode: "ad-hoc",
                 recurring: false,
@@ -844,8 +832,7 @@ const InterventionsManager: React.FC = () => {
 
     const allocateCompulsoryToAccepted = async (
         interventionId: string,
-        title: string,
-        deptNameForAssignment: string
+        title: string
     ) => {
         const snapshot = await getDoc(doc(db, "interventions", interventionId));
         if (!snapshot.exists()) throw new Error("Intervention not found");
@@ -961,13 +948,6 @@ const InterventionsManager: React.FC = () => {
                 return;
             }
 
-            // Resolve owning dept name for areaOfSupport (always match actual owning dept)
-            const owningDeptName =
-                managedDeptNameMap[owningDeptId] ||
-                effectiveDeptName ||
-                userDepartment ||
-                "";
-
             const nextTitle = String(values.interventionTitle || "").trim();
             const subInterventions = mergeSubInterventionsForSave(
                 previousDefinition?.subInterventions || [],
@@ -1039,7 +1019,6 @@ const InterventionsManager: React.FC = () => {
 
             const payload: Omit<InterventionDoc, "id"> = {
                 interventionTitle: nextTitle,
-                areaOfSupport: owningDeptName,
                 departmentId: owningDeptId,
                 compulsory: !!values.compulsory,
                 assignmentMode,
@@ -1090,8 +1069,7 @@ const InterventionsManager: React.FC = () => {
                 if (!!values.compulsory) {
                     await allocateCompulsoryToAccepted(
                         editId,
-                        values.interventionTitle,
-                        owningDeptName
+                        values.interventionTitle
                     );
                 }
             } else {
@@ -1105,8 +1083,7 @@ const InterventionsManager: React.FC = () => {
                 if (!!values.compulsory) {
                     await allocateCompulsoryToAccepted(
                         ref.id,
-                        values.interventionTitle,
-                        owningDeptName
+                        values.interventionTitle
                     );
                 }
             }
@@ -1159,8 +1136,7 @@ const InterventionsManager: React.FC = () => {
         return interventions.filter((item) => {
             const title = normalize(item.interventionTitle);
             const deptName = normalize(
-                managedDeptNameMap[String(item.departmentId || "")] ||
-                item.areaOfSupport
+                managedDeptNameMap[String(item.departmentId || "")]
             );
 
             const matchesSearch =
@@ -1297,8 +1273,7 @@ const InterventionsManager: React.FC = () => {
                         data-guide="edit-intervention-action"
                         shape="round"
                         variant="filled"
-                        color="geekblue"
-                        style={{ border: "1px solid dodgerblue" }}
+                        color="primary"
                         icon={<EditOutlined />}
                         onClick={() => openModal(record)}
                     >
@@ -1314,7 +1289,6 @@ const InterventionsManager: React.FC = () => {
                         <Button
                             shape="round"
                             danger
-                            style={{ border: "1px solid red" }}
                             icon={<DeleteOutlined />}
                         />
                     </Popconfirm>
@@ -1342,31 +1316,31 @@ const InterventionsManager: React.FC = () => {
                 key: "total-interventions",
                 title: "Total Interventions",
                 value: totalInterventions,
-                icon: <FileDoneOutlined style={{ color: "#1677ff" }} />,
-                iconBg: "rgba(22,119,255,.12)",
+                icon: <FileDoneOutlined />,
+                tone: 'accent' as const,
                 important: true,
             },
             {
                 key: "recurring-interventions",
                 title: "Recurring Interventions",
                 value: recurringCount,
-                icon: <ReloadOutlined style={{ color: "#722ed1" }} />,
-                iconBg: "rgba(114,46,209,.12)",
+                icon: <ReloadOutlined />,
+                tone: 'info' as const,
                 important: true,
             },
             {
                 key: "outcome-defined",
                 title: "Outcome defined",
                 value: `${outcomeDefinedCount} of ${totalInterventions}`,
-                icon: <FileDoneOutlined style={{ color: "#13a8a8" }} />,
-                iconBg: "rgba(19,168,168,.12)",
+                icon: <FileDoneOutlined />,
+                tone: 'info' as const,
             },
             {
                 key: "check-back-on",
                 title: "With check-back",
                 value: checkBackCount,
-                icon: <ReloadOutlined style={{ color: "#d46b08" }} />,
-                iconBg: "rgba(212,107,8,.12)",
+                icon: <ReloadOutlined />,
+                tone: 'warning' as const,
             },
         ],
         [checkBackCount, outcomeDefinedCount, recurringCount, totalInterventions]
@@ -1389,6 +1363,10 @@ const InterventionsManager: React.FC = () => {
                 <>
                     <div data-guide="intervention-metrics" style={{ marginBottom: 16 }}>
                         <MetricsGrid metrics={summaryMetrics} />
+                    </div>
+
+                    <div data-guide="intervention-impact" style={{ marginBottom: 16 }}>
+                        <WhatsWorkingCard canRefresh includeEarly />
                     </div>
 
                     <MotionCard
@@ -1501,520 +1479,36 @@ const InterventionsManager: React.FC = () => {
                             form.resetFields();
                         }}
                         onOk={() => form.submit()}
-                        footer={editId ? undefined : null}
+                        footer={null}
                         okText={editId ? "Update" : "Add"}
                         okButtonProps={{ className: "guide-intervention-submit" }}
                         confirmLoading={loading}
                         destroyOnClose
                         width={780}
                     >
-                        {!editId && (
-                            <InterventionWizard
-                                departmentId={effectiveDeptId}
-                                departmentName={effectiveDeptName || userDepartment}
-                                existingTitles={interventions
-                                    .filter((item) => item.departmentId === effectiveDeptId)
-                                    .map((item) => item.interventionTitle)}
-                                saving={loading}
-                                onSubmit={(values: WizardValues) => onFinish(values)}
-                                onCancel={() => {
-                                    setModalOpen(false);
-                                    setEditId(null);
-                                    setPrevCompulsory(false);
-                                }}
-                            />
-                        )}
-                        {editId && (
-                        <Form
-                            layout="vertical"
-                            form={form}
-                            onFinish={onFinish}
-                            initialValues={{
-                                areaOfSupport: effectiveDeptName || userDepartment,
-                                compulsory: false,
-                                assignmentMode: "once-off",
-                                recurring: false,
-                                recurrencePreset: undefined,
-                                recurrenceUnit: undefined,
-                                recurrenceEvery: undefined,
-                                recurrenceStrict: true,
-                                hasSubInterventions: false,
-                                subInterventions: [
-                                    { subId: makeSubId(), title: "", description: "" },
-                                ],
+                        {/* One flow for both: adding walks through the steps; editing opens on the
+                            review, where each section can be changed on its own. */}
+                        <InterventionWizard
+                            key={editId || "new"}
+                            mode={editId ? "edit" : "create"}
+                            initial={
+                                editId
+                                    ? wizardInitialFrom(interventions.find((item) => item.id === editId))
+                                    : undefined
+                            }
+                            departmentId={effectiveDeptId}
+                            departmentName={effectiveDeptName || userDepartment}
+                            existingTitles={interventions
+                                .filter((item) => item.departmentId === effectiveDeptId && item.id !== editId)
+                                .map((item) => item.interventionTitle)}
+                            saving={loading}
+                            onSubmit={(values: WizardValues) => onFinish(values)}
+                            onCancel={() => {
+                                setModalOpen(false);
+                                setEditId(null);
+                                setPrevCompulsory(false);
                             }}
-                        >
-                            <div data-guide="intervention-title-field">
-                                <Form.Item
-                                    label="Intervention Title"
-                                    name="interventionTitle"
-                                    rules={[
-                                        { required: true, message: "Enter intervention title" },
-                                    ]}
-                                >
-                                    <Input />
-                                </Form.Item>
-                            </div>
-
-                            <Row gutter={[16, 8]}>
-                                <Col xs={24} md={10}>
-                                    <Form.Item
-                                        label="Deliverable"
-                                        name="deliverableName"
-                                        extra="What the business ends up with, e.g. a plan, policy or report. Leave empty if nothing is produced."
-                                    >
-                                        <Input placeholder="Name of the deliverable" />
-                                    </Form.Item>
-                                </Col>
-                                <Col xs={24} md={14}>
-                                    <Form.Item
-                                        label="What should be different afterwards?"
-                                        name="intendedOutcome"
-                                    >
-                                        <Input.TextArea
-                                            rows={2}
-                                            placeholder="Describe the change in the business once this is done"
-                                        />
-                                    </Form.Item>
-                                </Col>
-                                <Col xs={24} md={14}>
-                                    <Form.Item label="Kind of change" name="outcomeType">
-                                        <Select
-                                            allowClear
-                                            placeholder="What sort of change is this?"
-                                            options={OUTCOME_TYPES.map((t) => ({
-                                                value: t,
-                                                label: OUTCOME_TYPE_LABELS[t],
-                                            }))}
-                                        />
-                                    </Form.Item>
-                                </Col>
-                                <Col xs={24} md={10}>
-                                    <Form.Item
-                                        label="Check back after"
-                                        name="followUpAfterDays"
-                                        extra="When someone confirms the change actually happened."
-                                    >
-                                        <InputNumber
-                                            min={7}
-                                            max={365}
-                                            addonAfter="days"
-                                            style={{ width: "100%" }}
-                                        />
-                                    </Form.Item>
-                                </Col>
-                                <Col xs={24} md={12}>
-                                    <Form.Item
-                                        label="Check back later"
-                                        name="followUpRequired"
-                                        valuePropName="checked"
-                                        extra="The facilitator confirms the change is still in place."
-                                    >
-                                        <Switch />
-                                    </Form.Item>
-                                </Col>
-                                <Col xs={24} md={12}>
-                                    <Form.Item noStyle shouldUpdate={(p, c) => p.followUpRequired !== c.followUpRequired}>
-                                        {({ getFieldValue }) =>
-                                            getFieldValue("followUpRequired") ? (
-                                                <Form.Item
-                                                    label="Also ask the SME"
-                                                    name="smeCheckIn"
-                                                    valuePropName="checked"
-                                                    extra="The SME answers one quick question."
-                                                >
-                                                    <Switch />
-                                                </Form.Item>
-                                            ) : null
-                                        }
-                                    </Form.Item>
-                                </Col>
-                            </Row>
-
-                            <Row gutter={[16, 8]}>
-                                <Col xs={24} sm={10}>
-                                    <div data-guide="intervention-frequency-field">
-                                        <Form.Item
-                                            label="Frequency of intervention"
-                                            name="recurrencePreset"
-                                            rules={[{ required: true, message: "Select a frequency" }]}
-                                            extra="This applies to the main intervention and all of its sub-interventions."
-                                            style={{ marginBottom: 8 }}
-                                        >
-                                            <Select placeholder="Select frequency">
-                                                <Option value="as-needed">As needed</Option>
-                                                <Option value="weekly">Weekly</Option>
-                                                <Option value="bi-weekly">Every two weeks</Option>
-                                                <Option value="monthly">Once a month</Option>
-                                            </Select>
-                                        </Form.Item>
-                                    </div>
-                                </Col>
-                                <Col xs={24} sm={7}>
-                                    <div data-guide="intervention-compulsory-field">
-                                        <Form.Item
-                                            label="Compulsory"
-                                            name="compulsory"
-                                            valuePropName="checked"
-                                            style={{ marginBottom: 8 }}
-                                        >
-                                            <Switch />
-                                        </Form.Item>
-                                    </div>
-                                </Col>
-                                <Col xs={24} sm={7}>
-                                    <Form.Item
-                                        noStyle
-                                        shouldUpdate={(prev, curr) =>
-                                            prev.recurrencePreset !== curr.recurrencePreset
-                                        }
-                                    >
-                                        {({ getFieldValue }) => {
-                                            const preset = getFieldValue("recurrencePreset") as
-                                                | RecurrencePreset
-                                                | undefined;
-                                            const recurrence =
-                                                preset && preset !== "as-needed"
-                                                    ? presetToRecurrence(preset)
-                                                    : null;
-                                            return recurrence ? (
-                                                <div data-guide="intervention-cycle-requirement">
-                                                    <Form.Item
-                                                        label={strictLabelFor(recurrence)}
-                                                        name="recurrenceStrict"
-                                                        valuePropName="checked"
-                                                        style={{ marginBottom: 8 }}
-                                                    >
-                                                        <Switch />
-                                                    </Form.Item>
-                                                </div>
-                                            ) : (
-                                                <Form.Item
-                                                    label="Cycle requirement"
-                                                    style={{ marginBottom: 8 }}
-                                                >
-                                                    <Text type="secondary">As needed</Text>
-                                                </Form.Item>
-                                            );
-                                        }}
-                                    </Form.Item>
-                                </Col>
-                            </Row>
-
-                            <Form.Item
-                                noStyle
-                                shouldUpdate={(prev, curr) =>
-                                    prev.recurrencePreset !== curr.recurrencePreset ||
-                                    prev.recurrenceEndMode !== curr.recurrenceEndMode
-                                }
-                            >
-                                {({ getFieldValue }) => {
-                                    const frequency = getFieldValue("recurrencePreset");
-                                    const isRecurring = !!frequency && frequency !== "as-needed";
-                                    const endMode = getFieldValue(
-                                        "recurrenceEndMode"
-                                    ) as RecurrenceEndMode;
-                                    if (!isRecurring) return null;
-
-                                    return (
-                                        <div data-guide="intervention-recurrence-end">
-                                            <Row gutter={[16, 8]}>
-                                                <Col xs={24} md={12}>
-                                                    <Form.Item
-                                                        label="Recurring support ends"
-                                                        name="recurrenceEndMode"
-                                                        rules={[
-                                                            {
-                                                                required: true,
-                                                                message: "Choose a support duration",
-                                                            },
-                                                        ]}
-                                                    >
-                                                        <Select>
-                                                            <Option value="fixed-cycles">
-                                                                After a set number of cycles
-                                                            </Option>
-                                                            <Option value="end-date">On a specific date</Option>
-                                                            <Option value="until-closed">
-                                                                When the HOD closes it
-                                                            </Option>
-                                                            <Option value="programme-end">
-                                                                When the programme ends
-                                                            </Option>
-                                                        </Select>
-                                                    </Form.Item>
-                                                </Col>
-                                                <Col xs={24} md={12}>
-                                                    {endMode === "fixed-cycles" && (
-                                                        <Form.Item
-                                                            label="Number of cycles"
-                                                            name="recurrenceCycles"
-                                                            rules={[
-                                                                {
-                                                                    required: true,
-                                                                    message: "Enter the number of cycles",
-                                                                },
-                                                            ]}
-                                                        >
-                                                            <InputNumber min={1} style={{ width: "100%" }} />
-                                                        </Form.Item>
-                                                    )}
-                                                    {endMode === "end-date" && (
-                                                        <Form.Item
-                                                            label="End date"
-                                                            name="recurrenceEndDate"
-                                                            rules={[
-                                                                { required: true, message: "Select an end date" },
-                                                            ]}
-                                                        >
-                                                            <DatePicker style={{ width: "100%" }} />
-                                                        </Form.Item>
-                                                    )}
-                                                    {endMode === "programme-end" && (
-                                                        <Text type="secondary">
-                                                            Ends with the programme and stops future milestones
-                                                            and projections.
-                                                        </Text>
-                                                    )}
-                                                    {endMode === "until-closed" && (
-                                                        <Text type="secondary">
-                                                            Continues until the HOD marks the support as closed
-                                                            or no longer required.
-                                                        </Text>
-                                                    )}
-                                                </Col>
-                                            </Row>
-                                        </div>
-                                    );
-                                }}
-                            </Form.Item>
-
-                            <Row gutter={[16, 8]}>
-                                <Col xs={24} md={12}>
-                                    <div data-guide="intervention-milestone-toggle">
-                                        <Form.Item
-                                            label="Sub-interventions (MOV breakdown)"
-                                            name="hasSubInterventions"
-                                            valuePropName="checked"
-                                            extra="Turn this on if the action changes per month/cycle but it stays under one main intervention."
-                                        >
-                                            <Switch />
-                                        </Form.Item>
-                                    </div>
-                                </Col>
-                                <Col xs={24} md={12}>
-                                    <Form.Item
-                                        noStyle
-                                        shouldUpdate={(p, c) =>
-                                            p.hasSubInterventions !== c.hasSubInterventions
-                                        }
-                                    >
-                                        {({ getFieldValue }) =>
-                                            getFieldValue("hasSubInterventions") ? (
-                                                <div data-guide="intervention-rotation-mode">
-                                                    <Form.Item
-                                                        label="Substep path each cycle"
-                                                        name="subInterventionRotationMode"
-                                                        initialValue="rotate"
-                                                        tooltip="Choose whether each new cycle advances through the ordered substep list, or keeps using the same selected substep."
-                                                    >
-                                                        <Select style={{ width: "100%" }}>
-                                                            <Select.Option value="rotate">
-                                                                Progress to the next substep in order
-                                                            </Select.Option>
-                                                            <Select.Option value="repeat">
-                                                                Reuse the same selected substep each cycle
-                                                            </Select.Option>
-                                                        </Select>
-                                                    </Form.Item>
-                                                </div>
-                                            ) : null
-                                        }
-                                    </Form.Item>
-                                </Col>
-                            </Row>
-
-                            <Form.Item
-                                noStyle
-                                shouldUpdate={(p, c) =>
-                                    p.hasSubInterventions !== c.hasSubInterventions
-                                }
-                            >
-                                {({ getFieldValue }) => {
-                                    const on = !!getFieldValue("hasSubInterventions");
-                                    if (!on) {
-                                        return (
-                                            <Form.Item
-                                                label="Typical sessions"
-                                                name="defaultPlannedSessions"
-                                                initialValue={1}
-                                                tooltip="How many sessions this intervention normally takes - pre-fills at assignment time, still editable per assignment."
-                                            >
-                                                <InputNumber min={1} style={{ width: "100%" }} />
-                                            </Form.Item>
-                                        );
-                                    }
-
-                                    return (
-                                        <>
-                                            <Text
-                                                type="secondary"
-                                                style={{ display: "block", marginBottom: 12 }}
-                                            >
-                                                Add the work items in delivery order. Removing one
-                                                archives it for future assignments without changing
-                                                completed history.
-                                            </Text>
-
-                                            <div data-guide="sub-intervention-list">
-                                                <Form.List name="subInterventions">
-                                                    {(fields, { add, remove, move }) => {
-                                                        const onDragEnd = (result: DropResult) => {
-                                                            if (!result.destination) return;
-                                                            if (
-                                                                result.destination.index === result.source.index
-                                                            )
-                                                                return;
-                                                            move(result.source.index, result.destination.index);
-                                                        };
-
-                                                        return (
-                                                            <>
-                                                                <DragDropContext onDragEnd={onDragEnd}>
-                                                                    <Droppable droppableId="subInterventions">
-                                                                        {(provided) => (
-                                                                            <div
-                                                                                ref={provided.innerRef}
-                                                                                {...provided.droppableProps}
-                                                                            >
-                                                                                {fields.map((field, index) => (
-                                                                                    <Draggable
-                                                                                        key={field.key}
-                                                                                        draggableId={String(field.key)}
-                                                                                        index={index}
-                                                                                    >
-                                                                                        {(dragProvided) => (
-                                                                                            <Card
-                                                                                                ref={dragProvided.innerRef}
-                                                                                                {...dragProvided.draggableProps}
-                                                                                                size="small"
-                                                                                                style={{
-                                                                                                    marginBottom: 10,
-                                                                                                    background: "#fbfdff",
-                                                                                                }}
-                                                                                            >
-                                                                                                <Row
-                                                                                                    gutter={[12, 8]}
-                                                                                                    align="middle"
-                                                                                                >
-                                                                                                    <Col
-                                                                                                        flex="0 0 32px"
-                                                                                                        {...dragProvided.dragHandleProps}
-                                                                                                        style={{
-                                                                                                            cursor: "grab",
-                                                                                                            textAlign: "center",
-                                                                                                            color: "#8c8c8c",
-                                                                                                        }}
-                                                                                                    >
-                                                                                                        <HolderOutlined />
-                                                                                                    </Col>
-
-                                                                                                    <Col xs={24} md={14}>
-                                                                                                        <Form.Item
-                                                                                                            {...field}
-                                                                                                            label="Sub-intervention title"
-                                                                                                            name={[field.name, "title"]}
-                                                                                                            rules={[
-                                                                                                                {
-                                                                                                                    required: true,
-                                                                                                                    message:
-                                                                                                                        "Enter sub-intervention title",
-                                                                                                                },
-                                                                                                            ]}
-                                                                                                        >
-                                                                                                            <Input placeholder="Sub-Intervention A" />
-                                                                                                        </Form.Item>
-                                                                                                    </Col>
-
-                                                                                                    <Col xs={24} md={6}>
-                                                                                                        <Form.Item
-                                                                                                            {...field}
-                                                                                                            label="Typical sessions"
-                                                                                                            name={[
-                                                                                                                field.name,
-                                                                                                                "defaultPlannedSessions",
-                                                                                                            ]}
-                                                                                                            initialValue={1}
-                                                                                                            tooltip="How many sessions this sub-intervention normally takes - pre-fills at assignment time, still editable per assignment."
-                                                                                                        >
-                                                                                                            <InputNumber
-                                                                                                                min={1}
-                                                                                                                style={{ width: "100%" }}
-                                                                                                            />
-                                                                                                        </Form.Item>
-                                                                                                    </Col>
-
-                                                                                                    <Col
-                                                                                                        xs={24}
-                                                                                                        md={2}
-                                                                                                        style={{
-                                                                                                            display: "flex",
-                                                                                                            justifyContent: "flex-end",
-                                                                                                        }}
-                                                                                                    >
-                                                                                                        <Button
-                                                                                                            shape="round"
-                                                                                                            danger
-                                                                                                            style={{
-                                                                                                                border: "1px solid red",
-                                                                                                            }}
-                                                                                                            onClick={() =>
-                                                                                                                remove(field.name)
-                                                                                                            }
-                                                                                                            icon={<DeleteOutlined />}
-                                                                                                        />
-                                                                                                    </Col>
-
-                                                                                                    <Form.Item
-                                                                                                        {...field}
-                                                                                                        name={[field.name, "subId"]}
-                                                                                                        hidden
-                                                                                                    >
-                                                                                                        <Input />
-                                                                                                    </Form.Item>
-                                                                                                </Row>
-                                                                                            </Card>
-                                                                                        )}
-                                                                                    </Draggable>
-                                                                                ))}
-                                                                                {provided.placeholder}
-                                                                            </div>
-                                                                        )}
-                                                                    </Droppable>
-                                                                </DragDropContext>
-
-                                                                <Button
-                                                                    data-guide="add-sub-intervention-action"
-                                                                    type="dashed"
-                                                                    onClick={() =>
-                                                                        add({ subId: makeSubId(), title: "" })
-                                                                    }
-                                                                    icon={<PlusCircleOutlined />}
-                                                                    block
-                                                                >
-                                                                    Add Sub-intervention
-                                                                </Button>
-                                                            </>
-                                                        );
-                                                    }}
-                                                </Form.List>
-                                            </div>
-                                        </>
-                                    );
-                                }}
-                            </Form.Item>
-                        </Form>
-                        )}
+                        />
                     </Modal>
                 </>
             )}

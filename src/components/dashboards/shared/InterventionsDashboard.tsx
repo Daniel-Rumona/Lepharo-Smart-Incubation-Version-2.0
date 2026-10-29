@@ -63,9 +63,8 @@ export type InterventionsDashboardProps = {
      * Decides whether an intervention or a required-intervention entry belongs
      * to this department.
      *
-     * Each department matches differently — some on departmentId, some on an
-     * areaOfSupport string that does not equal the department name — so this
-     * stays with the caller rather than being guessed here.
+     * Usually the user's own departmentId; a department that covers several
+     * (sub-)departments passes a wider matcher, so this stays with the caller.
      */
     matchesDepartment: (entry: Record<string, any>) => boolean
 
@@ -379,7 +378,7 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
             <Row gutter={[24, 24]} style={{ marginTop: 16 }}>
                 <Col xs={24} xl={12}>
                     <DepartmentInterventionsStatus
-                        departmentName={user?.departmentName}
+                        departmentId={user?.departmentId}
                         matchesDepartment={departmentIds ? matchesDepartment : undefined}
                         programId={programId || undefined}
                         title="Where work is stuck"
@@ -404,7 +403,7 @@ export const InterventionsDashboard: React.FC<InterventionsDashboardProps> = ({
                         ) : null}
 
                         <MovSubmissionStatusCard
-                            departmentName={user?.departmentName}
+                            departmentId={user?.departmentId}
                             programId={programId}
                             dateRange={range}
                         />

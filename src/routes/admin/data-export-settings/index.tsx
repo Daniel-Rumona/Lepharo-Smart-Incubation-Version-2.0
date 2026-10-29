@@ -18,7 +18,7 @@ const DataExportSettingsPage: React.FC = () => {
     const [allowed, setAllowed] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
-    const isAdmin = String(user?.role || '').toLowerCase().replace(/\s+/g, '') === 'admin'
+    const isAdmin = String(user?.role || '').toLowerCase().replace(/\s+/g, '') === 'system_admin'
 
     useEffect(() => {
         if (identityLoading) return

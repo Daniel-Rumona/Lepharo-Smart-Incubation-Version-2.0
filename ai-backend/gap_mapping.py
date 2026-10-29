@@ -14,37 +14,37 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from firestore_tools import db
+from firestore_tools import db, get_department_role, get_department_roles
 
-# Mirrors DEPT_SECTION_MAP in src/routes/gap/sections.ts.
+# Mirrors DEPT_SECTION_MAP in src/routes/gap/sections.ts, keyed by department role.
 GAP_DEPT_SECTIONS: dict[str, Any] = {
-    "ROM (Recruitment, Onboarding and Maintenance)": "ALL",
-    "HSE (Health, Safety & Environment) and Labour Compliance": ["hr"],
-    "IHF (InHouse Finance)": ["finance"],
-    "M&E (Monitoring and Evaluation": "ALL",
-    "Financial Compliance": ["finance"],
-    "PDS (Personal Development Services)": ["psychometric"],
-    "Legal Advisory Services": ["legal"],
-    "Wellness Services": ["wellness"],
-    "Training Academy": ["training", "quality"],
-    "NVC (New Venture Creation)": ["training"],
-    "Marketing and Communication": ["marketing"],
-    "Market Linkages": ["market"],
-    "QMS (Quality Management System)": ["quality"],
+    "rom": "ALL",
+    "monitoring": "ALL",
+    "hse": ["hr"],
+    "inhouseFinance": ["finance"],
+    "financialCompliance": ["finance"],
+    "pds": ["psychometric"],
+    "legal": ["legal"],
+    "wellness": ["wellness"],
+    "training": ["training", "quality"],
+    "nvc": ["training"],
+    "marketing": ["marketing"],
+    "marketLinkages": ["market"],
+    "qms": ["quality"],
 }
 
-# Which department delivers each GAP section. An ALL-access viewer (ROM, M&E)
-# maps every section against its owning department's catalogue.
+# Which department role delivers each GAP section. An ALL-access viewer (ROM,
+# M&E) maps every section against its owning department's catalogue.
 GAP_SECTION_OWNER = {
-    "marketing": "Marketing and Communication",
-    "psychometric": "PDS (Personal Development Services)",
-    "finance": "IHF (InHouse Finance)",
-    "hr": "HSE (Health, Safety & Environment) and Labour Compliance",
-    "wellness": "Wellness Services",
-    "legal": "Legal Advisory Services",
-    "market": "Market Linkages",
-    "quality": "QMS (Quality Management System)",
-    "training": "Training Academy",
+    "marketing": "marketing",
+    "psychometric": "pds",
+    "finance": "inhouseFinance",
+    "hr": "hse",
+    "wellness": "wellness",
+    "legal": "legal",
+    "market": "marketLinkages",
+    "quality": "qms",
+    "training": "training",
 }
 
 # Where each section's answers sit inside the gapAnalysis document.
@@ -67,6 +67,10 @@ MAX_MAPPING_INTERVENTIONS = 60
 class GapMappingSectionInput(BaseModel):
     section: str
     questions: list[str] = Field(default_factory=list)
+    # Need-phrased questions ("Do you need ...?"), where "Yes" is the gap.
+    yesIsGap: list[int] = Field(default_factory=list)
+    # Informational prompts that are never a gap.
+    notScored: list[int] = Field(default_factory=list)
 
 
 class GapMappingRequest(BaseModel):
@@ -92,11 +96,12 @@ class GapMappingGap(BaseModel):
 class GapMappingIntervention(BaseModel):
     id: str
     title: str
-    areaOfSupport: str = ""
+    departmentId: str = ""
 
 
 class GapMappingSection(BaseModel):
     section: str
+    departmentId: str = ""
     departmentName: str
     gaps: list[GapMappingGap] = Field(default_factory=list)
     interventions: list[GapMappingIntervention] = Field(default_factory=list)
@@ -120,10 +125,32 @@ class GapMappingError(Exception):
         self.detail = detail
 
 
-def allowed_sections_for_department(department_name: Optional[str]) -> Any:
-    if not department_name:
+def _load_departments() -> list[dict[str, Any]]:
+    try:
+        return [{"id": snapshot.id, **(snapshot.to_dict() or {})} for snapshot in db.collection("departments").stream()]
+    except Exception as error:
+        print("Department lookup failed:", type(error).__name__, str(error), flush=True)
         return []
-    return GAP_DEPT_SECTIONS.get(department_name.strip(), [])
+
+
+def allowed_sections_for_department(
+    department_id: Optional[str],
+    roles: Optional[dict] = None,
+    departments: Optional[list] = None,
+) -> Any:
+    if not department_id:
+        return []
+    roles = get_department_roles() if roles is None else roles
+    departments = _load_departments() if departments is None else departments
+    role = get_department_role(department_id, roles, departments)
+    return GAP_DEPT_SECTIONS.get(role or "", [])
+
+
+def _department_name(department_id: str, departments: list[dict[str, Any]]) -> str:
+    for department in departments:
+        if department.get("id") == department_id:
+            return str(department.get("name") or "").strip()
+    return ""
 
 
 def _section_answers(gap: dict[str, Any], section: str) -> list[Any]:
@@ -140,38 +167,14 @@ def _section_answers(gap: dict[str, Any], section: str) -> list[Any]:
     return node if isinstance(node, list) else []
 
 
-def _department_interventions(department_name: str) -> list[dict[str, Any]]:
-    """Catalogue for a department, matched by id where possible, else by area."""
-    department_id = ""
-    try:
-        for snapshot in db.collection("departments").stream():
-            data = snapshot.to_dict() or {}
-            name = str(data.get("name") or data.get("departmentName") or "").strip()
-            if name.lower() == department_name.strip().lower():
-                department_id = snapshot.id
-                break
-    except Exception as error:
-        print("Department lookup failed:", type(error).__name__, str(error), flush=True)
-
+def _department_interventions(department_id: str) -> list[dict[str, Any]]:
+    """Catalogue for a department, matched on the intervention's departmentId."""
+    if not department_id:
+        return []
     results: list[dict[str, Any]] = []
     try:
-        for snapshot in db.collection("interventions").stream():
+        for snapshot in db.collection("interventions").where("departmentId", "==", department_id).stream():
             data = snapshot.to_dict() or {}
-            iv_dept = str(data.get("departmentId") or "").strip()
-            iv_area = str(
-                data.get("areaOfSupport")
-                or data.get("area")
-                or data.get("departmentName")
-                or ""
-            ).strip()
-
-            if department_id and iv_dept:
-                matches = iv_dept == department_id
-            else:
-                matches = iv_area.lower() == department_name.strip().lower()
-            if not matches:
-                continue
-
             title = str(
                 data.get("title") or data.get("interventionTitle") or data.get("name") or ""
             ).strip()
@@ -182,7 +185,7 @@ def _department_interventions(department_name: str) -> list[dict[str, Any]]:
                 {
                     "id": snapshot.id,
                     "title": title[:200],
-                    "areaOfSupport": iv_area or department_name,
+                    "departmentId": department_id,
                 }
             )
     except Exception as error:
@@ -254,11 +257,13 @@ Return JSON only: {{"edges":[{{"questionIndex":0,"interventionId":"...","confide
 def build_gap_mapping(
     payload: GapMappingRequest,
     *,
-    department_name: Optional[str],
+    department_id: Optional[str],
     actor: str,
     genai_client_factory,
 ) -> GapMappingResponse:
-    allowed = allowed_sections_for_department(department_name)
+    roles = get_department_roles()
+    departments = _load_departments()
+    allowed = allowed_sections_for_department(department_id, roles, departments)
     if allowed != "ALL" and not allowed:
         raise GapMappingError(
             403, "Your department does not own a GAP section, so there is nothing to map."
@@ -275,6 +280,7 @@ def build_gap_mapping(
 
     company = str((gap.get("company") or {}).get("name") or "").strip() or "the SMME"
     requested = {item.section: item.questions for item in payload.sections}
+    polarity = {item.section: (set(item.yesIsGap), set(item.notScored)) for item in payload.sections}
     wanted = [
         key
         for key in requested
@@ -294,13 +300,20 @@ def build_gap_mapping(
     for section in wanted:
         question_text = [str(q) for q in (requested.get(section) or [])][:MAX_MAPPING_QUESTIONS]
         answers = _section_answers(gap, section)
-        owner = GAP_SECTION_OWNER.get(section, department_name or "")
+        owner_role = GAP_SECTION_OWNER.get(section)
+        owner_id = roles.get(owner_role, "") if owner_role else (department_id or "")
+        owner = _department_name(owner_id, departments) or "the owning department"
 
+        yes_is_gap, not_scored = polarity.get(section, (set(), set()))
         gaps: list[dict[str, Any]] = []
         for index, text in enumerate(question_text):
+            if index in not_scored:
+                continue
             entry = answers[index] if index < len(answers) and isinstance(answers[index], dict) else {}
             answer = str(entry.get("answer") or "").strip()
-            if answer.lower() == "yes":
+            said_yes = answer.lower() == "yes"
+            # Unanswered is always a gap; otherwise the question's polarity decides.
+            if answer and (said_yes if index not in yes_is_gap else not said_yes):
                 continue
             gaps.append(
                 {
@@ -315,17 +328,19 @@ def build_gap_mapping(
             results.append(
                 GapMappingSection(
                     section=section,
+                    departmentId=owner_id,
                     departmentName=owner,
-                    note="No gaps in this section — every question was answered Yes.",
+                    note="No gaps in this section.",
                 )
             )
             continue
 
-        interventions = _department_interventions(owner)
+        interventions = _department_interventions(owner_id)
         if not interventions:
             results.append(
                 GapMappingSection(
                     section=section,
+                    departmentId=owner_id,
                     departmentName=owner,
                     gaps=[GapMappingGap(**item) for item in gaps],
                     note=f"No interventions are catalogued for {owner} yet.",
@@ -361,12 +376,14 @@ def build_gap_mapping(
                 "generatedAt": generated_at,
                 "generatedBy": actor,
                 "model": os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
+                "departmentId": owner_id,
                 "departmentName": owner,
             }
 
         results.append(
             GapMappingSection(
                 section=section,
+                departmentId=owner_id,
                 departmentName=owner,
                 gaps=[GapMappingGap(**item) for item in gaps],
                 interventions=[GapMappingIntervention(**item) for item in interventions],

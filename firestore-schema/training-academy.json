@@ -1,0 +1,80 @@
+{
+  "trainingAttendees/{attendeeId}": {
+    "_note": "One person from an SME. The director's doc id is {enrollmentId}_director. Types: src/components/trainings/trainingStorage.ts TrainingAttendee",
+    "enrollmentId": "string  (trainingEnrollments id: the company)",
+    "trainingId": "string",
+    "kind": "director | employee",
+    "attends": "boolean  (employees always true; a director is often only the owner)",
+    "name": "string",
+    "email": "string  (required: their login and QR self check-in)",
+    "phone": "string | null",
+    "idNumber": "string | null",
+    "idDocument": "{ url, name } | null  (Storage training_attendees/{enrollmentId}/{attendeeId}/...)",
+    "categories": "string[]  (subset of trainings.categories)",
+    "userId": "uid | absent  (their training_sme login)",
+    "status": "active | withdrawn",
+    "withdrawnAt": "iso string", "withdrawnBy": "uid", "withdrawnReason": "string",
+    "addedBy": "{ uid, role: staff | director | migration }",
+    "eligibilityOverride": "{ by, byName, reason, at } | null  (staff only)",
+    "progress": "AttendeeProgress  (Cloud Function only)",
+    "dataOrigin": "synthetic | real", "suppressNotifications": "boolean",
+    "createdAt": "iso string", "updatedAt": "iso string"
+  },
+  "trainingCompanyProgress/{enrollmentId}": {
+    "_note": "Totals only (no names), Cloud Function only. Read by staff and everyone in the company. Type: TrainingCompanyProgress in src/components/trainings/certification.ts",
+    "people": "number", "attendingPeople": "number", "sessionsHeld": "number",
+    "attendances": "number", "invitations": "number", "attendancePercent": "number",
+    "eligiblePeople": "number", "certifiedPeople": "number",
+    "companyEligibility": "company mode only", "companyCertificateId": "string | null",
+    "updatedAt": "iso string"
+  },
+  "trainingCertificates/{certificateId}": {
+    "_note": "Staff create drafts and send them for signature; signatures, number, PDF and issue/revoke are written by Cloud Functions only. Type: TrainingCertificate",
+    "trainingId": "string", "enrollmentId": "string",
+    "attendeeId": "string | null  (null = company certificate)",
+    "recipientName": "string", "companyName": "string",
+    "certificateNumber": "string  (assigned at issue from certificateCounters/{year})",
+    "templateId": "string", "templateVersion": "number",
+    "data": "map<string,string>  (values filled into the PDF form fields)",
+    "status": "draft | pending_signature | issued | revoked",
+    "signatories": "CertificateSignatory[]",
+    "signatures": "map<signatoryKey, { uid, name, title, signatureURL, signedAt, userAgent }>",
+    "pdfPath": "string", "pdfUrl": "string", "sha256": "string",
+    "verificationCode": "string  (HMAC, printed and in the QR)",
+    "issuedAt": "iso string", "revokedAt": "iso string", "revokedReason": "string",
+    "createdBy": "uid", "createdAt": "iso string", "updatedAt": "iso string"
+  },
+  "certificateTemplates/{templateId}": {
+    "_note": "Fillable PDF; form-field names are the placeholders. Training Academy staff manage. Type: CertificateTemplate",
+    "name": "string", "active": "boolean", "version": "number",
+    "file": "{ path, url, kind: pdf }  (Storage certificate_templates/{templateId}/...)",
+    "fields": "string[]", "signatureFields": "string[]", "trainingIds": "string[] | absent",
+    "createdBy": "uid", "createdAt": "iso string", "updatedAt": "iso string"
+  },
+  "certificateCounters/{year}": {
+    "_note": "Cloud Function only.",
+    "next": "number"
+  },
+  "trainingSettings/certification": {
+    "_note": "Global certification defaults; trainings.certification overrides field by field. Type: CertificationSettings",
+    "enabled": "boolean", "awardTo": "attendee | company", "templateId": "string | null",
+    "rules": "CertificationRules", "signatories": "CertificateSignatory[]  (default: Academy head by department role 'training')"
+  },
+  "trainings/{trainingId} (new fields)": {
+    "certification": "TrainingCertificationOverride | absent",
+    "plan[].category": "string | null  (one of categories; null = everyone)"
+  },
+  "appointments/{id} (new fields, Training Academy only)": {
+    "attendeeId": "string | null  (trainingAttendees id; smeId stays the enrollment id)",
+    "attendeeName": "string | null",
+    "attendeeKind": "director | employee | null"
+  },
+  "appointmentSessions/{id} (new field)": {
+    "category": "string | null"
+  },
+  "users/{uid} (new fields, role training_sme)": {
+    "participantId": "trainingEnrollments id (unchanged; the company, for directors and employees)",
+    "trainingAttendeeId": "trainingAttendees id",
+    "trainingRole": "director | employee  (not the platform 'director' role)"
+  }
+}

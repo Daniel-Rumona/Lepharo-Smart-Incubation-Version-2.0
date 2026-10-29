@@ -351,6 +351,43 @@ export type ManualMovUpload = {
     uploadedMovSize?: number
 }
 
+/**
+ * Upload the signed MOV chosen for each assignment and return what
+ * completeIntervention expects in `manualMovs`. Files come straight from an
+ * Upload control (either the UploadFile or the File inside it).
+ */
+export async function uploadManualMovs(input: {
+    storage: FirebaseStorage
+    assignments: Array<Record<string, any>>
+    filesById: Record<string, any>
+}): Promise<ManualMovUpload[]> {
+    const safe = (value: unknown, fallback: string) =>
+        String(value || fallback).trim().replace(/[\\/#?%]+/g, '_') || fallback
+    return Promise.all(
+        input.assignments.map(async assignment => {
+            const chosen = input.filesById[assignment.id]
+            const file: File | undefined = chosen?.originFileObj || chosen
+            if (!file || typeof file.arrayBuffer !== 'function')
+                throw new CompletionValidationError('Upload the signed MOV before completing.')
+            if (file.size > COMPLETION_MAX_FILE_SIZE_BYTES)
+                throw new CompletionValidationError('Each MOV file must be 25 MB or smaller.')
+            const path = `mov-documents/${safe(assignment.programId, 'no-program')}/${safe(
+                assignment.participantId,
+                'unknown-participant'
+            )}/${safe(assignment.id, 'no-assignment')}/manual/${Date.now()}_${crypto.randomUUID()}_${safe(file.name, 'manual-mov')}`
+            const fileRef = ref(input.storage, path)
+            await uploadBytes(fileRef, file)
+            return {
+                assignmentId: assignment.id,
+                uploadedMovUrl: await getDownloadURL(fileRef),
+                uploadedMovFileName: file.name,
+                uploadedMovContentType: file.type || null,
+                uploadedMovSize: file.size
+            }
+        })
+    )
+}
+
 export async function completeIntervention(input: {
     db: Firestore
     storage: FirebaseStorage
@@ -789,6 +826,11 @@ export async function completeIntervention(input: {
 
                 transaction.update(assignmentRefs[index], {
                     ...(mov ? { movDocumentId: mov.movDocumentId } : {}),
+                    // A completion the SME rejected earlier is now resubmitted: ask them again.
+                    // Leaving it 'rejected' made confirming impossible (a dead end).
+                    ...(String(snapshot.data().participantCompletionStatus || '').toLowerCase() === 'rejected'
+                        ? { participantCompletionStatus: 'pending' }
+                        : {}),
                     computedProgress: 100,
                     assigneeCompletionStatus: 'completed',
                     assignmentStatus: 'in-progress',

@@ -1,9 +1,7 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
     Alert,
-    Col,
     Modal,
-    Row,
     Table,
     Tag,
     Typography,
@@ -11,11 +9,14 @@ import {
 } from 'antd'
 import type { TableProps } from 'antd'
 import {
+    ArrowRightOutlined,
     CheckCircleFilled,
     ClockCircleOutlined,
     FileProtectOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { doc, getDoc } from 'firebase/firestore'
+import { db } from '@/firebase'
 
 const { Text } = Typography
 
@@ -57,6 +58,8 @@ type ConsolidatedMOVReviewModalProps = {
     title?: React.ReactNode
     logoSrc?: string
     logoAlt?: string
+    funderLogoSrc?: string
+    funderLogoAlt?: string
     width?: number | string
     zIndex?: number
     tablePageSize?: number
@@ -176,6 +179,8 @@ export function ConsolidatedMOVReviewModal({
     title = 'Review Consolidated MOV',
     logoSrc = '/assets/images/lepharo.png',
     logoAlt = 'Company Logo',
+    funderLogoSrc,
+    funderLogoAlt = 'Funder Logo',
     width = 1120,
     zIndex,
     tablePageSize = 5,
@@ -185,6 +190,35 @@ export function ConsolidatedMOVReviewModal({
     getRowTone
 }: ConsolidatedMOVReviewModalProps) {
     const { token } = theme.useToken()
+    const programId = pack?.programId ? String(pack.programId) : null
+    const [programFunderLogo, setProgramFunderLogo] = useState<string | null>(null)
+
+    useEffect(() => {
+        setProgramFunderLogo(null)
+        if (funderLogoSrc || !open || !programId) return
+        let mounted = true
+
+        getDoc(doc(db, 'programs', programId))
+            .then(snap => {
+                if (!mounted) return
+                const data = (snap.exists() ? snap.data() : {}) as any
+                setProgramFunderLogo(
+                    (typeof data.funderLogoUrl === 'string' && data.funderLogoUrl) ||
+                    (typeof data.logoUrl === 'string' && data.logoUrl) ||
+                    null
+                )
+            })
+            .catch(error => {
+                console.error('Failed to load program funder logo', error)
+                if (mounted) setProgramFunderLogo(null)
+            })
+
+        return () => {
+            mounted = false
+        }
+    }, [funderLogoSrc, open, programId])
+
+    const resolvedFunderLogo = funderLogoSrc || programFunderLogo
 
     const groupedRows = useMemo(() => {
         const interventions = Array.isArray(pack?.interventions)
@@ -266,8 +300,38 @@ export function ConsolidatedMOVReviewModal({
         return <CheckCircleFilled style={{ color: token.colorSuccess, fontSize: 16 }} />
     }
 
-    const signatureSpan =
-        orderedSignatureItems.length >= 3 ? 8 : orderedSignatureItems.length === 2 ? 12 : 24
+    const isStepDone = (item: ConsolidatedMovSummaryItem) => {
+        const text = getNodeText(item.value).trim()
+        return !isPendingText(item.value) && text !== '—'
+    }
+
+    const renderLogo = (src: string, alt: string) => (
+        <div
+            style={{
+                width: 92,
+                minWidth: 92,
+                height: 40,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: token.borderRadius,
+                background: '#fff',
+                border: '1px solid rgba(0,0,0,0.08)',
+                padding: '3px 7px'
+            }}
+        >
+            <img
+                src={src}
+                alt={alt}
+                style={{
+                    display: 'block',
+                    maxWidth: '100%',
+                    maxHeight: 32,
+                    objectFit: 'contain'
+                }}
+            />
+        </div>
+    )
 
     const sectionStyle: React.CSSProperties = {
         border: `1px solid ${token.colorBorderSecondary}`,
@@ -314,31 +378,7 @@ export function ConsolidatedMOVReviewModal({
                     }}
                 >
                     <div className="consolidated-mov-review__pack-logo">
-                        <div
-                            style={{
-                                width: 92,
-                                minWidth: 92,
-                                height: 40,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                borderRadius: token.borderRadius,
-                                background: '#fff',
-                                border: '1px solid rgba(0,0,0,0.08)',
-                                padding: '3px 7px'
-                            }}
-                        >
-                            <img
-                                src={logoSrc}
-                                alt={logoAlt}
-                                style={{
-                                    display: 'block',
-                                    maxWidth: '100%',
-                                    maxHeight: 32,
-                                    objectFit: 'contain'
-                                }}
-                            />
-                        </div>
+                        {resolvedFunderLogo ? renderLogo(resolvedFunderLogo, funderLogoAlt) : null}
                     </div>
 
                     <div
@@ -375,6 +415,7 @@ export function ConsolidatedMOVReviewModal({
                         >
                             {stage.label}
                         </Tag>
+                        {renderLogo(logoSrc, logoAlt)}
                     </div>
                 </div>
 
@@ -391,73 +432,172 @@ export function ConsolidatedMOVReviewModal({
                     />
                 ) : null}
 
-                <Row gutter={[8, 8]} style={{ marginBottom: summaryAlerts ? 10 : 14 }}>
-                    {orderedSummaryItems.map((item, index) => (
-                        <Col
-                            key={index}
-                            xs={24}
-                            sm={orderedSummaryItems.length >= 4 ? 12 : 24}
-                            md={Math.max(6, Math.floor(24 / Math.max(1, orderedSummaryItems.length)))}
-                        >
-                            <div
-                                style={{
-                                    ...sectionStyle,
-                                    ...summaryCardStyle(item),
-                                    height: '100%',
-                                    minHeight: 64,
-                                    padding: '8px 10px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 10
-                                }}
-                            >
-                                <div
-                                    style={{
-                                        width: 28,
-                                        height: 28,
-                                        minWidth: 28,
-                                        borderRadius: 999,
-                                        display: 'grid',
-                                        placeItems: 'center',
-                                        background: token.colorBgContainer
-                                    }}
-                                >
-                                    {summaryIcon(item)}
-                                </div>
+                <div
+                    className="consolidated-mov-review__flow"
+                    style={{ marginBottom: summaryAlerts ? 10 : 14 }}
+                >
+                    {orderedSummaryItems.map((item, index) => {
+                        const previous = index > 0 ? orderedSummaryItems[index - 1] : null
+                        const linksWorkflow =
+                            previous !== null &&
+                            getWorkflowOrder(previous.label) < 3 &&
+                            getWorkflowOrder(item.label) < 3
+                        const linkMade = previous !== null && isStepDone(previous)
+                        const stepOrder = getWorkflowOrder(item.label)
+                        const signature = stepOrder < 3
+                            ? orderedSignatureItems.find(sig => getWorkflowOrder(sig.label) === stepOrder)
+                            : undefined
 
-                                <div style={{ minWidth: 0 }}>
-                                    <Text
-                                        type="secondary"
+                        return (
+                            <React.Fragment key={index}>
+                                {linksWorkflow ? (
+                                    <div className="consolidated-mov-review__flow-arrow">
+                                        <div
+                                            style={{
+                                                width: 26,
+                                                height: 26,
+                                                borderRadius: 999,
+                                                display: 'grid',
+                                                placeItems: 'center',
+                                                background: linkMade ? token.colorSuccess : 'transparent',
+                                                border: `1.5px ${linkMade ? 'solid' : 'dashed'} ${linkMade ? token.colorSuccess : token.colorBorder}`,
+                                                transition: 'background .2s ease, border-color .2s ease'
+                                            }}
+                                        >
+                                            <ArrowRightOutlined
+                                                style={{
+                                                    fontSize: 12,
+                                                    color: linkMade ? '#fff' : token.colorTextQuaternary
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                ) : null}
+                                <div className="consolidated-mov-review__flow-step">
+                                    <div
                                         style={{
-                                            display: 'block',
-                                            fontSize: 11,
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase',
-                                            letterSpacing: 0.25,
-                                            lineHeight: 1.2
+                                            ...sectionStyle,
+                                            ...summaryCardStyle(item),
+                                            height: '100%',
+                                            minHeight: 64,
+                                            padding: '8px 10px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 8
                                         }}
                                     >
-                                        {item.label}
-                                    </Text>
-                                    <Text
-                                        strong
-                                        style={{
-                                            display: 'block',
-                                            marginTop: 3,
-                                            fontSize: 14,
-                                            lineHeight: 1.3,
-                                            color: token.colorText,
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis'
-                                        }}
-                                    >
-                                        {item.value}
-                                    </Text>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <div
+                                                style={{
+                                                    width: 28,
+                                                    height: 28,
+                                                    minWidth: 28,
+                                                    borderRadius: 999,
+                                                    display: 'grid',
+                                                    placeItems: 'center',
+                                                    background: token.colorBgContainer
+                                                }}
+                                            >
+                                                {summaryIcon(item)}
+                                            </div>
+
+                                            <div style={{ minWidth: 0 }}>
+                                                <Text
+                                                    type="secondary"
+                                                    style={{
+                                                        display: 'block',
+                                                        fontSize: 11,
+                                                        fontWeight: 600,
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: 0.25,
+                                                        lineHeight: 1.2
+                                                    }}
+                                                >
+                                                    {item.label}
+                                                </Text>
+                                                <Text
+                                                    strong
+                                                    style={{
+                                                        display: 'block',
+                                                        marginTop: 3,
+                                                        fontSize: 14,
+                                                        lineHeight: 1.3,
+                                                        color: token.colorText,
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis'
+                                                    }}
+                                                >
+                                                    {item.value}
+                                                </Text>
+                                            </div>
+
+                                            {signature ? (
+                                                <Tag
+                                                    color={signature.signatureUrl ? 'green' : isPendingText(signature.name) ? 'orange' : 'default'}
+                                                    style={{ margin: '0 0 0 auto', borderRadius: 999, flexShrink: 0 }}
+                                                >
+                                                    {signature.signatureUrl
+                                                        ? 'Signed'
+                                                        : isPendingText(signature.name)
+                                                            ? 'Pending'
+                                                            : 'Unsigned'}
+                                                </Tag>
+                                            ) : null}
+                                        </div>
+
+                                        {signature ? (
+                                            signature.signatureUrl ? (
+                                                <div
+                                                    style={{
+                                                        marginTop: 'auto',
+                                                        height: 56,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        padding: '6px 10px',
+                                                        borderRadius: 8,
+                                                        background: '#fff',
+                                                        border: '1px solid rgba(0,0,0,0.12)'
+                                                    }}
+                                                >
+                                                    <img
+                                                        src={signature.signatureUrl}
+                                                        alt={signature.signatureAlt || `${getNodeText(signature.label) || 'Approval'} signature`}
+                                                        style={{
+                                                            display: 'block',
+                                                            maxWidth: '100%',
+                                                            maxHeight: 42,
+                                                            objectFit: 'contain'
+                                                        }}
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div
+                                                    style={{
+                                                        marginTop: 'auto',
+                                                        height: 56,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        borderRadius: 8,
+                                                        border: `1px dashed ${token.colorBorder}`,
+                                                        background: token.colorFillAlter,
+                                                        padding: 8,
+                                                        textAlign: 'center'
+                                                    }}
+                                                >
+                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                        {signature.emptySignatureText ?? 'No signature captured'}
+                                                    </Text>
+                                                </div>
+                                            )
+                                        ) : null}
+                                    </div>
                                 </div>
-                            </div>
-                        </Col>
-                    ))}
-                </Row>
+                            </React.Fragment>
+                        )
+                    })}
+                </div>
 
                 {summaryAlerts ? (
                     <div
@@ -539,132 +679,6 @@ export function ConsolidatedMOVReviewModal({
                         </div>
                     </div>
                 ))}
-
-                {orderedSignatureItems.length ? (
-                    <div style={{ marginTop: 6, marginBottom: 4 }}>
-                        <div style={{ marginBottom: 8 }}>
-                            <Text strong style={{ fontSize: 14 }}>
-                                Approval trail
-                            </Text>
-                        </div>
-
-                        <Row gutter={[10, 10]} align="stretch">
-                            {orderedSignatureItems.map((item, index) => {
-                                const pending = isPendingText(item.name) || !item.signatureUrl
-                                const statusLabel = item.signatureUrl
-                                    ? 'Signed'
-                                    : isPendingText(item.name)
-                                        ? 'Pending'
-                                        : 'Signature missing'
-
-                                return (
-                                    <Col key={index} xs={24} md={signatureSpan}>
-                                        <div
-                                            style={{
-                                                ...sectionStyle,
-                                                height: '100%',
-                                                minHeight: 148,
-                                                padding: 12,
-                                                display: 'flex',
-                                                flexDirection: 'column'
-                                            }}
-                                        >
-                                            <div
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'flex-start',
-                                                    justifyContent: 'space-between',
-                                                    gap: 8,
-                                                    marginBottom: 8
-                                                }}
-                                            >
-                                                <div style={{ minWidth: 0 }}>
-                                                    <Text
-                                                        type="secondary"
-                                                        style={{
-                                                            display: 'block',
-                                                            fontSize: 11,
-                                                            fontWeight: 600,
-                                                            textTransform: 'uppercase',
-                                                            letterSpacing: 0.25
-                                                        }}
-                                                    >
-                                                        {item.label}
-                                                    </Text>
-                                                    <Text
-                                                        strong
-                                                        style={{
-                                                            display: 'block',
-                                                            marginTop: 2,
-                                                            color: token.colorText
-                                                        }}
-                                                    >
-                                                        {item.name}
-                                                    </Text>
-                                                </div>
-
-                                                <Tag
-                                                    color={item.signatureUrl ? 'green' : pending ? 'orange' : 'default'}
-                                                    style={{ margin: 0, borderRadius: 999 }}
-                                                >
-                                                    {statusLabel}
-                                                </Tag>
-                                            </div>
-
-                                            {item.signatureUrl ? (
-                                                <div
-                                                    style={{
-                                                        marginTop: 'auto',
-                                                        minHeight: 68,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        padding: '8px 12px',
-                                                        borderRadius: 8,
-                                                        background: '#fff',
-                                                        border: '1px solid rgba(0,0,0,0.12)'
-                                                    }}
-                                                >
-                                                    <img
-                                                        src={item.signatureUrl}
-                                                        alt={item.signatureAlt || `${getNodeText(item.label) || 'Approval'} signature`}
-                                                        style={{
-                                                            display: 'block',
-                                                            maxWidth: '100%',
-                                                            maxHeight: 50,
-                                                            width: 'auto',
-                                                            height: 'auto',
-                                                            objectFit: 'contain'
-                                                        }}
-                                                    />
-                                                </div>
-                                            ) : (
-                                                <div
-                                                    style={{
-                                                        marginTop: 'auto',
-                                                        minHeight: 68,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        borderRadius: 8,
-                                                        border: `1px dashed ${token.colorBorder}`,
-                                                        background: token.colorFillAlter,
-                                                        padding: 10,
-                                                        textAlign: 'center'
-                                                    }}
-                                                >
-                                                    <Text type="secondary">
-                                                        {item.emptySignatureText ?? 'No signature captured'}
-                                                    </Text>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </Col>
-                                )
-                            })}
-                        </Row>
-                    </div>
-                ) : null}
             </div>
 
             <style>{`
@@ -688,6 +702,26 @@ export function ConsolidatedMOVReviewModal({
                 .consolidated-mov-review__pack-stage {
                     justify-self: end;
                     min-width: 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+
+                .consolidated-mov-review__flow {
+                    display: flex;
+                    align-items: stretch;
+                    gap: 6px;
+                }
+
+                .consolidated-mov-review__flow-step {
+                    flex: 1 1 0;
+                    min-width: 0;
+                }
+
+                .consolidated-mov-review__flow-arrow {
+                    flex: 0 0 auto;
+                    display: grid;
+                    place-items: center;
                 }
 
                 .consolidated-mov-review__notes-grid {
@@ -715,7 +749,6 @@ export function ConsolidatedMOVReviewModal({
                 .consolidated-mov-review .ant-table-wrapper .ant-table-pagination {
                     margin-block: 10px;
                 }
-
 
                 .consolidated-mov-review .ant-table-wrapper .consolidated-mov-review__row > td {
                     transition: background-color .18s ease, box-shadow .18s ease;
@@ -758,6 +791,14 @@ export function ConsolidatedMOVReviewModal({
                         grid-column: 1 / -1;
                         grid-row: 2;
                         justify-self: center;
+                    }
+
+                    .consolidated-mov-review__flow {
+                        flex-direction: column;
+                    }
+
+                    .consolidated-mov-review__flow-arrow {
+                        transform: rotate(90deg);
                     }
 
                     .consolidated-mov-review__notes-grid {

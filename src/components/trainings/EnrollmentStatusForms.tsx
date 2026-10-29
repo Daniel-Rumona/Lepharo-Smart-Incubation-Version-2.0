@@ -1,23 +1,28 @@
 import React, { useState } from "react";
 import { Button, Empty, Form, Input, Select, Typography } from "antd";
+import { useFormChanged } from "@/lib/useFormChanged";
 import { CategoryCards } from "./EnrollSmeForm";
 import type { Training, TrainingEnrollment } from "./trainingStorage";
+
+/*
+ * Each of these sits in a dialog closed by its ×: one full-width action,
+ * enabled once something has been chosen (pressing it shows what's missing).
+ */
 
 type AssignFormShape = { trainingId: string; categories?: string[] };
 
 export function AssignTrainingForm({
   trainings,
   onSubmit,
-  onCancel,
 }: {
   trainings: Training[];
   onSubmit: (trainingId: string, categories: string[]) => Promise<void>;
-  onCancel: () => void;
 }) {
   const [form] = Form.useForm<AssignFormShape>();
   const trainingId = Form.useWatch("trainingId", form);
   const training = trainings.find((t) => t.id === trainingId);
   const [submitting, setSubmitting] = useState(false);
+  const changed = useFormChanged(form);
 
   const handleFinish = async (values: AssignFormShape) => {
     setSubmitting(true);
@@ -51,14 +56,9 @@ export function AssignTrainingForm({
           )}
         </Form.Item>
       )}
-      <div style={{ marginTop: 8, display: "flex", gap: 12 }}>
-        <Button shape="round" onClick={onCancel} style={{ flex: 1 }}>
-          Cancel
-        </Button>
-        <Button shape="round" type="primary" htmlType="submit" loading={submitting} style={{ flex: 1 }}>
-          Enroll
-        </Button>
-      </div>
+      <Button shape="round" type="primary" htmlType="submit" block size="large" disabled={!changed} loading={submitting} style={{ marginTop: 8 }}>
+        Enroll
+      </Button>
     </Form>
   );
 }
@@ -69,15 +69,14 @@ export function PickExistingSmeForm({
   training,
   candidates,
   onSubmit,
-  onCancel,
 }: {
   training: Training;
   candidates: TrainingEnrollment[];
   onSubmit: (smeId: string, categories: string[]) => Promise<void>;
-  onCancel: () => void;
 }) {
   const [form] = Form.useForm<PickExistingFormShape>();
   const [submitting, setSubmitting] = useState(false);
+  const changed = useFormChanged(form);
 
   const handleFinish = async (values: PickExistingFormShape) => {
     setSubmitting(true);
@@ -116,31 +115,19 @@ export function PickExistingSmeForm({
           )}
         </Form.Item>
       )}
-      <div style={{ marginTop: 8, display: "flex", gap: 12 }}>
-        <Button shape="round" onClick={onCancel} style={{ flex: 1 }}>
-          Cancel
-        </Button>
-        <Button shape="round" type="primary" htmlType="submit" loading={submitting} style={{ flex: 1 }}>
-          Enroll
-        </Button>
-      </div>
+      <Button shape="round" type="primary" htmlType="submit" block size="large" disabled={!changed} loading={submitting} style={{ marginTop: 8 }}>
+        Enroll
+      </Button>
     </Form>
   );
 }
 
 type DiscontinueFormShape = { reason: string };
 
-export function DiscontinueForm({
-  smeName,
-  onSubmit,
-  onCancel,
-}: {
-  smeName: string;
-  onSubmit: (reason: string) => Promise<void>;
-  onCancel: () => void;
-}) {
+export function DiscontinueForm({ smeName, onSubmit }: { smeName: string; onSubmit: (reason: string) => Promise<void> }) {
   const [form] = Form.useForm<DiscontinueFormShape>();
   const [submitting, setSubmitting] = useState(false);
+  const changed = useFormChanged(form);
 
   const handleFinish = async (values: DiscontinueFormShape) => {
     setSubmitting(true);
@@ -159,14 +146,9 @@ export function DiscontinueForm({
       <Form.Item label="Reason" name="reason" rules={[{ required: true, message: "Add a reason for discontinuing" }]}>
         <Input.TextArea rows={3} placeholder="e.g. Stopped attending after session 2" />
       </Form.Item>
-      <div style={{ marginTop: 8, display: "flex", gap: 12 }}>
-        <Button shape="round" onClick={onCancel} style={{ flex: 1 }}>
-          Cancel
-        </Button>
-        <Button shape="round" danger type="primary" htmlType="submit" loading={submitting} style={{ flex: 1 }}>
-          Discontinue
-        </Button>
-      </div>
+      <Button shape="round" danger type="primary" htmlType="submit" block size="large" disabled={!changed} loading={submitting} style={{ marginTop: 8 }}>
+        Discontinue
+      </Button>
     </Form>
   );
 }

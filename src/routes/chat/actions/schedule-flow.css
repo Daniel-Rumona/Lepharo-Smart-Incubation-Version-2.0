@@ -1,0 +1,171 @@
+/* Interactive appointment flow — SME card picker + sheet chrome.
+   Uses the --app-* tokens so it follows light/dark. */
+
+.sme-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sme-picker-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.sme-picker-arrow {
+    flex: 0 0 auto;
+}
+
+.sme-card {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 24px 16px 20px;
+    border: 1px solid var(--app-border);
+    border-radius: 20px;
+    background: var(--app-surface-sunken);
+    box-shadow: var(--app-shadow);
+    text-align: center;
+    touch-action: pan-y;
+    user-select: none;
+    outline: none;
+}
+
+.sme-card:focus-visible {
+    border-color: var(--app-accent);
+}
+
+.sme-card-avatar {
+    margin-bottom: 6px;
+    border: 3px solid var(--app-surface);
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+}
+
+.sme-card .sme-card-company {
+    margin: 0;
+    max-width: 100%;
+    color: var(--app-text);
+    overflow-wrap: anywhere;
+}
+
+.sme-card-name {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.sme-card-tag {
+    margin: 6px 0 0;
+    border-radius: 999px;
+}
+
+.sme-picker-count {
+    text-align: center;
+    font-size: 12px;
+}
+
+/* Bottom-sheet grab handle (mobile drawer only). */
+.responsive-sheet-grabber {
+    width: 40px;
+    height: 4px;
+    margin: 0 auto 12px;
+    border-radius: 999px;
+    background: var(--app-border-strong);
+}
+
+.responsive-sheet-drawer .ant-drawer-content {
+    border-radius: 20px 20px 0 0;
+}
+
+.schedule-flow-sme-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 14px;
+    background: var(--app-surface-sunken);
+}
+
+.schedule-flow-sme-chip .ant-typography {
+    margin: 0;
+}
+
+.schedule-flow-interventions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.schedule-flow-intervention {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--app-border);
+    border-radius: 14px;
+    background: var(--app-surface);
+    color: var(--app-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.schedule-flow-intervention:hover,
+.schedule-flow-intervention:focus-visible {
+    border-color: var(--app-accent);
+    outline: none;
+}
+
+.schedule-flow-intervention-active {
+    border-color: var(--app-accent);
+    background: var(--app-accent-soft);
+}
+
+.schedule-flow-intervention-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.schedule-flow-intervention-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.schedule-flow-intervention-sub {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.schedule-flow-intervention-meta {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.schedule-flow-intervention-check {
+    flex: 0 0 auto;
+    font-size: 18px;
+    color: var(--app-accent);
+}
+
+.schedule-flow-footer {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.schedule-flow-footer > .ant-btn {
+    flex: 1 1 0;
+}

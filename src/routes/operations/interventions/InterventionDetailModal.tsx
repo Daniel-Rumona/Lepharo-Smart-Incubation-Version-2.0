@@ -6,13 +6,13 @@ import { db } from "@/firebase";
 import { summariseDelivery, type DeliverySummary } from "@/services/interventionDeliverySummary";
 import { EditOutlined } from "@ant-design/icons";
 import { OUTCOME_TYPE_LABELS, type OutcomeDef } from "@/services/evidenceModel";
+import { InterventionImpactSection } from "@/components/interventions/ImpactSummary";
 
 const { Text, Title } = Typography;
 
 export type DetailRecord = {
     id: string;
     interventionTitle: string;
-    areaOfSupport?: string;
     departmentId?: string | null;
     compulsory?: boolean;
     recurring?: boolean;
@@ -41,6 +41,7 @@ const SECTIONS = [
     { key: "schedule", label: "Schedule" },
     { key: "structure", label: "Structure" },
     { key: "delivery", label: "Delivery" },
+    { key: "impact", label: "Impact" },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]["key"];
 
@@ -183,7 +184,7 @@ export const InterventionDetailModal: React.FC<Props> = ({ record, departmentLab
             case "overview":
                 return (
                     <>
-                        <Field label="Department">{departmentLabel || record.areaOfSupport || <NotSet />}</Field>
+                        <Field label="Department">{departmentLabel || <NotSet />}</Field>
                         <Field label="Compulsory">
                             <Tag color={record.compulsory ? "red" : undefined} style={{ borderRadius: 999 }}>
                                 {record.compulsory ? "Yes, for every accepted SME" : "No, assigned as needed"}
@@ -253,6 +254,8 @@ export const InterventionDetailModal: React.FC<Props> = ({ record, departmentLab
             }
             case "delivery":
                 return <DeliverySection interventionId={record.id} />;
+            case "impact":
+                return <InterventionImpactSection interventionId={record.id} />;
             case "structure":
                 return record.hasSubInterventions && activeSubs.length ? (
                     <>

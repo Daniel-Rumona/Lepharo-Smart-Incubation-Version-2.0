@@ -58,7 +58,9 @@ import {
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { branchService } from '@/services/branchService'
+import { functionsBaseUrl } from '@/firebaseConfig'
 
 dayjs.extend(isBetween)
 
@@ -143,9 +145,7 @@ const EmployeeRegistration: React.FC<{
                 role: displayRole(initialEmployee.role),
                 position: initialEmployee.position,
                 workerType: initialEmployee.workerType || 'permanent',
-                departmentId:
-                    initialEmployee.departmentId ||
-                    departments.find(dep => dep.name === initialEmployee.department)?.id,
+                departmentId: initialEmployee.departmentId,
                 branchId:
                     initialEmployee.branchId ||
                     branches.find(branch => branch.name === initialEmployee.branch)?.id,
@@ -655,7 +655,6 @@ const EmployeesPage: React.FC = () => {
                     'incubatee',
                     'Incubatee',
                     'funder',
-                    'admin',
                     'system_admin',
                     'director'
                 ])
@@ -747,7 +746,7 @@ const EmployeesPage: React.FC = () => {
 
         const departments = new Set(
             employees
-                .map(e => (e.department || '').trim())
+                .map(e => String(e.departmentId || '').trim())
                 .filter(Boolean)
         ).size
 
@@ -881,9 +880,7 @@ const EmployeesPage: React.FC = () => {
         }
 
         if (departmentFilter) {
-            rows = rows.filter(
-                r => (r.department || '').toLowerCase() === departmentFilter.toLowerCase()
-            )
+            rows = rows.filter(r => r.departmentId === departmentFilter)
         }
 
         return rows
@@ -902,10 +899,7 @@ const EmployeesPage: React.FC = () => {
             .sort()
     }, [employees, savedPositions])
 
-    const departmentOptions = useMemo(
-        () => departments.map(department => department.name),
-        [departments]
-    )
+    const departmentOptions = departments
 
     const onAddEmployee = async (employee: any) => {
         const idToken = await auth.currentUser?.getIdToken()
@@ -979,7 +973,7 @@ const EmployeesPage: React.FC = () => {
             }
 
             const resp = await fetch(
-                'https://us-central1-lph-smart-inc.cloudfunctions.net/createPlatformUser',
+                `${functionsBaseUrl}/createPlatformUser`,
                 {
                     method: 'POST',
                     headers: {
@@ -1599,10 +1593,10 @@ const EmployeesPage: React.FC = () => {
             <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading}
                             icon={<TeamOutlined />}
-                            iconBg='rgba(22,119,255,.12)'
+                            tone='accent'
                             title='Total Staff'
                             value={metrics.totalStaff}
                             subtitle='Active visible staff'
@@ -1612,10 +1606,10 @@ const EmployeesPage: React.FC = () => {
 
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading}
                             icon={<ApartmentOutlined />}
-                            iconBg='rgba(82,196,26,.12)'
+                            tone='success'
                             title='Departments'
                             value={metrics.departments}
                             subtitle='Distinct departments'
@@ -1625,10 +1619,10 @@ const EmployeesPage: React.FC = () => {
 
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading}
                             icon={<IdcardOutlined />}
-                            iconBg='rgba(250,173,20,.12)'
+                            tone='warning'
                             title='Positions'
                             value={metrics.positions}
                             subtitle='Distinct positions'
@@ -1638,10 +1632,10 @@ const EmployeesPage: React.FC = () => {
 
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading || metricsLoading}
                             icon={<CalendarOutlined />}
-                            iconBg='rgba(114,46,209,.12)'
+                            tone='info'
                             title='Leave Pending'
                             value={metrics.pendingLeave}
                             subtitle='Awaiting action'
@@ -1651,10 +1645,10 @@ const EmployeesPage: React.FC = () => {
 
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading || metricsLoading}
                             icon={<CalendarOutlined />}
-                            iconBg='rgba(19,194,194,.12)'
+                            tone='info'
                             title='On Leave Today'
                             value={metrics.onLeaveToday}
                             subtitle='Approved leave'
@@ -1664,10 +1658,10 @@ const EmployeesPage: React.FC = () => {
 
                 <Col xs={24} sm={12} md={8} lg={4}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading || metricsLoading}
                             icon={<CheckCircleOutlined />}
-                            iconBg='rgba(82,196,26,.12)'
+                            tone='success'
                             title='Checked-in Today'
                             value={metrics.checkedInToday}
                             subtitle='Timesheet activity today'
@@ -1718,8 +1712,8 @@ const EmployeesPage: React.FC = () => {
                                 onChange={v => setDepartmentFilter(v)}
                             >
                                 {departmentOptions.map(dep => (
-                                    <Option key={dep} value={dep}>
-                                        {dep}
+                                    <Option key={dep.id} value={dep.id}>
+                                        {dep.name}
                                     </Option>
                                 ))}
                             </Select>
@@ -1939,9 +1933,9 @@ const EmployeesPage: React.FC = () => {
                         <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
                             <Col xs={24} md={8}>
                                 <MotionCard>
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         icon={<ClockCircleOutlined />}
-                                        iconBg='rgba(22,119,255,.12)'
+                                        tone='accent'
                                         title='Total Hours'
                                         value={weeklySummary.hours}
                                     />
@@ -1950,9 +1944,9 @@ const EmployeesPage: React.FC = () => {
 
                             <Col xs={24} md={8}>
                                 <MotionCard>
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         icon={<CheckCircleOutlined />}
-                                        iconBg='rgba(82,196,26,.12)'
+                                        tone='success'
                                         title='Overtime'
                                         value={weeklySummary.overtime}
                                     />
@@ -1961,9 +1955,9 @@ const EmployeesPage: React.FC = () => {
 
                             <Col xs={24} md={8}>
                                 <MotionCard>
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         icon={<CalendarOutlined />}
-                                        iconBg='rgba(250,173,20,.12)'
+                                        tone='warning'
                                         title='Late Total'
                                         value={weeklySummary.late}
                                     />

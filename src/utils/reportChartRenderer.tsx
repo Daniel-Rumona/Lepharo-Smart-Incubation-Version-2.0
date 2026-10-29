@@ -1,13 +1,12 @@
 // src/utils/reportChartRenderer.ts
 import Highcharts from "highcharts"
-import HCExporting from "highcharts/modules/exporting"
+import "highcharts/modules/exporting"
 
 // chart.getSVG() below comes from the exporting module, which Highcharts does not
 // load by default. It was previously only present as a side effect of some other
 // page (e.g. funder analytics) having already registered it on the shared
 // Highcharts instance first — so this crashed with "chart.getSVG is not a
 // function" whenever this renderer ran before one of those pages did.
-if (typeof HCExporting === "function") HCExporting(Highcharts)
 
 type RenderOpts = { width?: number; height?: number }
 
@@ -49,7 +48,9 @@ export async function renderHighchartsToPngDataUrl(
         // Small tick to ensure layout/paint
         await new Promise(r => setTimeout(r, 40))
 
-        const svg = chart.getSVG({
+        // getSVG is still on Chart at runtime (the exporting module keeps it as
+        // a wrapper for chart.exporting.getSVG) but is no longer in the typings.
+        const svg = (chart as Highcharts.Chart & { getSVG: (options?: Highcharts.Options) => string }).getSVG({
             exporting: { sourceWidth: width, sourceHeight: height } as any
         })
 

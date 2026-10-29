@@ -26,7 +26,7 @@ const kinds = [
     label: "Document",
     hint: "Supporting document — PDF, Word, presentation or text",
     icon: <FileTextOutlined />,
-    color: "#1677ff",
+    color: "var(--cb-primary, var(--app-accent, #1677ff))",
     accept: ".pdf,.doc,.docx,.ppt,.pptx,.txt",
   },
   {
@@ -34,7 +34,7 @@ const kinds = [
     label: "Image",
     hint: "Illustrate a concept — PNG, JPEG, WebP or GIF",
     icon: <PictureOutlined />,
-    color: "#389e0d",
+    color: "var(--cb-ok, #389e0d)",
     accept: "image/png,image/jpeg,image/webp,image/gif",
   },
   {
@@ -42,7 +42,7 @@ const kinds = [
     label: "Video link",
     hint: "Link a video or recorded lesson by URL",
     icon: <PlayCircleOutlined />,
-    color: "#722ed1",
+    color: "var(--cb-ai, #722ed1)",
     accept: "",
   },
   {
@@ -50,7 +50,7 @@ const kinds = [
     label: "Audio",
     hint: "Audio explanation — upload a voice note or recording",
     icon: <AudioOutlined />,
-    color: "#d46b08",
+    color: "var(--cb-assignment, #d46b08)",
     accept: "audio/*",
   },
 ];

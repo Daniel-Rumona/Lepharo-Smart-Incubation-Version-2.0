@@ -113,10 +113,13 @@ export default function ExtractContentModal({
         answer: q.answer,
         feedback: q.feedback,
         materials: [],
+        // The answer was picked by AI from the document: the author confirms it.
+        aiSuggested: q.answer >= 0,
       }));
       changes.questions = replace ? added : [...item.questions, ...added];
     }
-    onApply(changes);
+    // Written by AI from a document: the author reads it before publishing.
+    onApply({ ...changes, aiDraft: true });
     message.success(
       quiz
         ? `${questions.length} question${

@@ -23,12 +23,14 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.appointmentCompletionNotifier = exports.onAppointmentWriteNotifyIncubatee = void 0;
+exports.onAppointmentSessionChangedNotifySmes = exports.appointmentCompletionNotifier = exports.onAppointmentWriteNotifyIncubatee = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
+const syntheticData_1 = require("./syntheticData");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailHelpers_1 = require("./emailHelpers");
 const emailShared_1 = require("./emailShared");
+const inAppNotifications_1 = require("./inAppNotifications");
 const timestampKey = (value) => {
     if (typeof value?.toMillis === "function")
         return String(value.toMillis());
@@ -113,12 +115,103 @@ async function notifyAssigneeOfRescheduleProposal(apptId, appt) {
     const from = process.env.SMTP_FROM || process.env.SMTP_USER;
     await transporter.sendMail({ from, to: recipient, subject, html, text });
     logger.info("appointment_reschedule_proposal.sent", { apptId, to: recipient });
+    await (0, inAppNotifications_1.notifyInApp)({
+        type: "appointment_reschedule_proposed",
+        message: `${participantName} proposed ${proposals.length} alternative time${proposals.length === 1 ? "" : "s"} for ${interventionTitle}.`,
+        recipientIds: [appt.assigneeId || appt.consultantId],
+        appointmentId: apptId,
+        link: actionPath,
+    });
+}
+/**
+ * Schema-v5 invitations ("appointments") hold only the SME; the time, place and
+ * facilitator live on the session (appointmentSessions). Older appointments
+ * carry everything themselves. Either way, this returns one complete record.
+ */
+async function withSessionDetails(appt, session) {
+    const merged = {
+        ...appt,
+        participantId: appt.participantId || appt.smeId || "",
+        participantName: appt.participantName || appt.smeName || "",
+    };
+    const sessionId = String(appt.appointmentSessionId || "").trim();
+    const source = session || (sessionId && (!appt.startTime || !appt.date)
+        ? (await emailShared_1.db.collection("appointmentSessions").doc(sessionId).get().catch(() => null))?.data()
+        : null);
+    if (source) {
+        const start = (0, emailShared_1.toDate)(source.startAt);
+        merged.startTime = source.startAt;
+        merged.endTime = source.endAt;
+        merged.date = start ? start.toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }) : merged.date || "";
+        merged.deliveryMethod = source.deliveryMethod || merged.deliveryMethod;
+        merged.location = source.location || merged.location;
+        merged.meetingLink = source.meetingLink || merged.meetingLink;
+        merged.consultantName = merged.consultantName || source.assigneeName || merged.assigneeName || "your facilitator";
+        merged.consultantId = merged.consultantId || source.assigneeId || merged.assigneeId;
+        merged._sessionSuppressed = (0, syntheticData_1.suppressRecordNotifications)(source, sessionId);
+    }
+    merged.consultantName = merged.consultantName || merged.assigneeName || "your facilitator";
+    return merged;
+}
+/** In-app notice plus an email (with a calendar file unless cancelled) to the invited SME. */
+async function sendSmeAppointmentEmail(apptId, ref, appt, kind) {
+    const pSnap = appt.participantId
+        ? await emailShared_1.db.collection("participants").doc(appt.participantId).get().catch(() => null)
+        : null;
+    const participantEmail = pSnap?.data()?.email || appt.smeEmail || null;
+    const participantName = pSnap?.data()?.beneficiaryName || appt.participantName || "Participant";
+    const participantPhone = pSnap?.data()?.phone || null;
+    const changeKind = kind === "cancelled" ? "cancelled" : kind === "updated" ? "updated" : "scheduled";
+    await (0, inAppNotifications_1.notifyInApp)({
+        type: `appointment_${changeKind}`,
+        message: `Appointment ${changeKind}: ${appt.interventionTitle || "Session"}${appt.consultantName ? ` with ${appt.consultantName}` : ""}${appt.date ? ` on ${appt.date}` : ""}.`,
+        recipientIds: [await (0, inAppNotifications_1.uidForParticipant)(appt.participantId, participantEmail)],
+        appointmentId: apptId,
+        participantId: appt.participantId,
+        link: "/incubatee/appointments",
+    });
+    if (!participantEmail) {
+        logger.warn("appointment_notify.skip_no_email", { apptId, participantId: appt.participantId });
+        return;
+    }
+    const start = (0, emailShared_1.toDate)(appt.startTime);
+    const end = (0, emailShared_1.toDate)(appt.endTime);
+    if (!start || !end) {
+        logger.warn("appointment_notify.skip_no_times", { apptId });
+        return;
+    }
+    const transporter = (0, emailShared_1.getTransporter)();
+    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+    const subjectBase = `${appt.interventionTitle} with ${appt.consultantName}`;
+    const subject = kind === "cancelled" ? `Cancelled: ${subjectBase}` : kind === "updated" ? `Updated: ${subjectBase}` : `Appointment Scheduled: ${subjectBase}`;
+    const html = (0, emailHelpers_1.buildAppointmentEmailHTML)({ appt, start, end, participantName, participantPhone, type: kind });
+    const ics = kind === "cancelled" ? undefined : {
+        filename: "appointment.ics",
+        content: (0, emailHelpers_1.buildICS)({ uid: `${apptId}@lepharosmartinc.co.za`, appt, start, end, organizerEmail: from }),
+        contentType: "text/calendar; method=PUBLISH; charset=UTF-8",
+    };
+    await transporter.sendMail({
+        from,
+        to: participantEmail,
+        subject,
+        html,
+        text: `Appointment ${changeKind}: ${appt.interventionTitle} with ${appt.consultantName}
+When: ${appt.date} ${start.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })} – ${end.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
+Where: ${(0, emailShared_1.formatWhere)(appt, participantPhone)}`,
+        attachments: ics ? [ics] : undefined,
+    });
+    logger.info("appointment_notify.sent", { apptId, to: participantEmail, type: kind });
+    await ref.set({
+        notificationFlags: { lastSentAt: emailShared_1.admin.firestore.FieldValue.serverTimestamp(), lastType: kind },
+    }, { merge: true });
 }
 exports.onAppointmentWriteNotifyIncubatee = (0, firestore_1.onDocumentWritten)({ region: "us-central1", document: "appointments/{apptId}" }, async (event) => {
     try {
         const before = event.data?.before?.data();
         const after = event.data?.after?.data();
         if (!after)
+            return;
+        if ((0, syntheticData_1.suppressRecordNotifications)(after, event.params.apptId))
             return;
         const proposalSubmitted = after.rescheduleRequest?.status === "proposed" &&
             timestampKey(after.rescheduleRequest?.proposedAt) !==
@@ -142,51 +235,11 @@ exports.onAppointmentWriteNotifyIncubatee = (0, firestore_1.onDocumentWritten)({
         const rescheduled = !!before && !cancelled && (0, emailHelpers_1.coreChanged)(before, after);
         if (!created && !rescheduled && !cancelled)
             return;
-        const pSnap = await emailShared_1.db.collection("participants").doc(after.participantId).get().catch(() => null);
-        const participantEmail = pSnap?.data()?.email || null;
-        const participantName = pSnap?.data()?.beneficiaryName || after.participantName || "Participant";
-        const participantPhone = pSnap?.data()?.phone || null;
-        if (!participantEmail) {
-            logger.warn("appointment_notify.skip_no_email", { apptId: event.params.apptId, participantId: after.participantId });
+        const full = await withSessionDetails(after);
+        // Seeded sessions mark the session itself; an invitation copied without the mark mustn't email.
+        if (full._sessionSuppressed)
             return;
-        }
-        const start = (0, emailShared_1.toDate)(after.startTime);
-        const end = (0, emailShared_1.toDate)(after.endTime);
-        if (!start || !end) {
-            logger.warn("appointment_notify.skip_no_times", { apptId: event.params.apptId });
-            return;
-        }
-        const transporter = (0, emailShared_1.getTransporter)();
-        const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-        const subjectBase = `${after.interventionTitle} with ${after.consultantName}`;
-        const subject = cancelled ? `Cancelled: ${subjectBase}` : rescheduled ? `Updated: ${subjectBase}` : `Appointment Scheduled: ${subjectBase}`;
-        const html = (0, emailHelpers_1.buildAppointmentEmailHTML)({ appt: after, start, end, participantName, participantPhone, type: cancelled ? "cancelled" : rescheduled ? "updated" : "created" });
-        const ics = cancelled ? undefined : {
-            filename: "appointment.ics",
-            content: (0, emailHelpers_1.buildICS)({ uid: `${event.params.apptId}@lepharosmartinc.co.za`, appt: after, start, end, organizerEmail: from }),
-            contentType: "text/calendar; method=PUBLISH; charset=UTF-8",
-        };
-        await transporter.sendMail({
-            from,
-            to: participantEmail,
-            subject,
-            html,
-            text: `Appointment ${cancelled ? "cancelled" : rescheduled ? "updated" : "scheduled"}: ${after.interventionTitle} with ${after.consultantName}
-When: ${after.date} ${start.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })} – ${end.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
-Where: ${(0, emailShared_1.formatWhere)(after, participantPhone)}`,
-            attachments: ics ? [ics] : undefined,
-        });
-        logger.info("appointment_notify.sent", {
-            apptId: event.params.apptId,
-            to: participantEmail,
-            type: created ? "created" : cancelled ? "cancelled" : "updated",
-        });
-        await event.data.after.ref.set({
-            notificationFlags: {
-                lastSentAt: emailShared_1.admin.firestore.FieldValue.serverTimestamp(),
-                lastType: created ? "created" : cancelled ? "cancelled" : "updated",
-            },
-        }, { merge: true });
+        await sendSmeAppointmentEmail(event.params.apptId, event.data.after.ref, full, cancelled ? "cancelled" : rescheduled ? "updated" : "created");
     }
     catch (e) {
         logger.error("onAppointmentWriteNotifyIncubatee.failed", { err: String(e) });
@@ -256,6 +309,8 @@ exports.appointmentCompletionNotifier = (0, scheduler_1.onSchedule)({
     const uncoveredGroups = new Map();
     for (const appointmentDoc of snap.docs) {
         const appointment = appointmentDoc.data();
+        if ((0, syntheticData_1.suppressRecordNotifications)(appointment, appointmentDoc.id))
+            continue;
         if (appointment.sessionCoverage?.latest)
             continue;
         const groupKey = String(appointment.appointmentGroupKey || appointmentDoc.id);
@@ -311,6 +366,13 @@ exports.appointmentCompletionNotifier = (0, scheduler_1.onSchedule)({
                 updateUrl,
             });
             await transporter.sendMail({ from, to: recipientEmail, subject, html, text });
+            await (0, inAppNotifications_1.notifyInApp)({
+                type: "appointment_coverage_required",
+                message: `Your session for ${appt.interventionTitle || "an intervention"} has ended. Please record whether it took place and add coverage.`,
+                recipientIds: [appt.assigneeId || appt.consultantId],
+                appointmentId: apptId,
+                link: updateUrl.slice(base.length),
+            });
             await Promise.all(appointmentDocs.map(appointmentDoc => {
                 const appointment = appointmentDoc.data();
                 return appointmentDoc.ref.set({
@@ -336,6 +398,51 @@ exports.appointmentCompletionNotifier = (0, scheduler_1.onSchedule)({
         catch (e) {
             logger.error("appointmentCompletionNotifier.failed", { apptId, err: String(e) });
         }
+    }
+});
+/**
+ * Schema-v5 reschedules and postpones change the session, not the invitations,
+ * so the invitation trigger never sees them. When a session's time or place
+ * changes, email every SME still invited to it. (Cancelling also cancels each
+ * invitation, which the invitation trigger already reports.)
+ */
+exports.onAppointmentSessionChangedNotifySmes = (0, firestore_1.onDocumentUpdated)({ region: "us-central1", document: "appointmentSessions/{sessionId}" }, async (event) => {
+    try {
+        const before = event.data?.before.data();
+        const after = event.data?.after.data();
+        if (!before || !after)
+            return;
+        const sessionId = event.params.sessionId;
+        if ((0, syntheticData_1.suppressRecordNotifications)(after, sessionId))
+            return;
+        if (String(after.status || "").toLowerCase() === "cancelled")
+            return;
+        const millis = (v) => (0, emailShared_1.toDate)(v)?.getTime() || 0;
+        const moved = millis(before.startAt) !== millis(after.startAt) ||
+            millis(before.endAt) !== millis(after.endAt) ||
+            String(before.deliveryMethod || "") !== String(after.deliveryMethod || "") ||
+            String(before.location || "") !== String(after.location || "") ||
+            String(before.meetingLink || "") !== String(after.meetingLink || "");
+        if (!moved)
+            return;
+        const invitations = await emailShared_1.db.collection("appointments").where("appointmentSessionId", "==", sessionId).get();
+        for (const invitation of invitations.docs) {
+            const data = invitation.data();
+            if (["cancelled", "declined"].includes(String(data.status || "").toLowerCase()))
+                continue;
+            if ((0, syntheticData_1.suppressRecordNotifications)(data, invitation.id))
+                continue;
+            try {
+                const full = await withSessionDetails(data, after);
+                await sendSmeAppointmentEmail(invitation.id, invitation.ref, full, "updated");
+            }
+            catch (error) {
+                logger.error("onAppointmentSessionChangedNotifySmes.invitationFailed", { sessionId, apptId: invitation.id, err: String(error) });
+            }
+        }
+    }
+    catch (e) {
+        logger.error("onAppointmentSessionChangedNotifySmes.failed", { err: String(e) });
     }
 });
 //# sourceMappingURL=emailAppointments.js.map

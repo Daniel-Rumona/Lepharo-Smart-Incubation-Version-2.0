@@ -23,60 +23,10 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.movReminderCron = exports.onMovDocumentWorkflowEmails = void 0;
+exports.movReminderCron = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
-const firestore_1 = require("firebase-functions/v2/firestore");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
-exports.onMovDocumentWorkflowEmails = (0, firestore_1.onDocumentWritten)({ region: "us-central1", document: "movDocuments/{movId}" }, async (event) => {
-    const before = event.data?.before;
-    const after = event.data?.after;
-    if (!after?.exists)
-        return;
-    const beforeStatus = before?.exists ? String(before.data().status || "") : "";
-    const afterData = after.data();
-    const afterStatus = String(afterData.status || "");
-    const movId = String(event.params.movId || "");
-    const notifications = afterData.workflowNotifications || {};
-    if (afterStatus === "generated" && beforeStatus !== "generated" && !notifications.ccPackSubmittedNotifiedAt) {
-        const recipients = await (0, emailShared_1.getCCRecipients)();
-        if (recipients.length) {
-            const content = (0, emailShared_1.buildMovNotificationContent)({
-                statusLabel: "submitted",
-                movId,
-                interventionTitle: afterData.interventionTitle,
-                beneficiaryName: afterData.beneficiaryName,
-                facilitatorName: afterData.facilitatorName,
-            });
-            await (0, emailShared_1.sendStatusChangeNotification)(recipients, content.subject, content.html, content.text);
-            await after.ref.set({
-                workflowNotifications: {
-                    ...notifications,
-                    ccPackSubmittedNotifiedAt: emailShared_1.admin.firestore.FieldValue.serverTimestamp(),
-                },
-            }, { merge: true });
-        }
-    }
-    if (afterStatus === "signed" && beforeStatus !== "signed" && !notifications.mePackSignedNotifiedAt) {
-        const recipients = await (0, emailShared_1.getMERecipients)();
-        if (recipients.length) {
-            const content = (0, emailShared_1.buildMovNotificationContent)({
-                statusLabel: "signed",
-                movId,
-                interventionTitle: afterData.interventionTitle,
-                beneficiaryName: afterData.beneficiaryName,
-                facilitatorName: afterData.facilitatorName,
-            });
-            await (0, emailShared_1.sendStatusChangeNotification)(recipients, content.subject, content.html, content.text);
-            await after.ref.set({
-                workflowNotifications: {
-                    ...notifications,
-                    mePackSignedNotifiedAt: emailShared_1.admin.firestore.FieldValue.serverTimestamp(),
-                },
-            }, { merge: true });
-        }
-    }
-});
 /**
  * One daily scheduler replaces the former HOD, CC and M&E scheduler resources.
  * HOD reminders run daily, with CC and M&E reminders added on the 4th and 7th.

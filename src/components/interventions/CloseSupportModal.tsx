@@ -55,8 +55,10 @@ export const CloseSupportModal: React.FC<Props> = ({ target, user, onClose, onDo
 
     return (
         <Modal
+ wrapClassName="mobile-sheet"
             open={!!target}
             centered
+            width={640}
             destroyOnClose
             onCancel={onClose}
             title="Close support"
@@ -67,7 +69,7 @@ export const CloseSupportModal: React.FC<Props> = ({ target, user, onClose, onDo
                 </Button>
             ]}
         >
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
                 <div>
                     <Text strong>{target?.interventionTitle}</Text>
                     {target?.participantName ? <Text type="secondary"> · {target.participantName}</Text> : null}
@@ -75,19 +77,20 @@ export const CloseSupportModal: React.FC<Props> = ({ target, user, onClose, onDo
                 <Alert
                     type="info"
                     showIcon
-                    message="No new cycles will be assigned and undelivered assignments are cancelled. Anything already delivered, or waiting for the SME to confirm, is kept. You can reopen it later."
+                    message="No new cycles will be assigned and undelivered work is cancelled. Delivered work, or work awaiting SME confirmation, is kept. You can reopen it later."
                 />
-                <Text strong>Why is it being closed?</Text>
+                <Text strong style={{ marginBottom: -4 }}>Why is it being closed?</Text>
                 <Radio.Group value={reason} onChange={event => setReason(event.target.value)} style={{ width: '100%' }}>
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8, width: '100%' }}>
                         {CLOSE_REASONS.map(option => (
                             <Card
                                 key={option.value}
                                 hoverable
                                 size="small"
                                 onClick={() => setReason(option.value)}
-                                styles={{ body: { padding: '8px 12px' } }}
+                                styles={{ body: { padding: '6px 10px' } }}
                                 style={{
+                                    gridColumn: option.value === 'other' ? '1 / -1' : undefined,
                                     cursor: 'pointer',
                                     borderColor: reason === option.value ? '#1677ff' : undefined,
                                     background: reason === option.value ? 'rgba(22,119,255,0.05)' : undefined
@@ -99,12 +102,13 @@ export const CloseSupportModal: React.FC<Props> = ({ target, user, onClose, onDo
                                 </Radio>
                             </Card>
                         ))}
-                    </Space>
+                    </div>
                 </Radio.Group>
                 <div>
                     <Text>Note {reason === 'other' ? '(required)' : '(optional)'}</Text>
                     <Input.TextArea
-                        rows={2}
+                        rows={1}
+                        autoSize={{ minRows: 1, maxRows: 3 }}
                         maxLength={500}
                         value={note}
                         onChange={event => setNote(event.target.value)}

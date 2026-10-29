@@ -14,10 +14,10 @@ import {
 } from 'antd'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import more from 'highcharts/highcharts-more'
-import accessibility from 'highcharts/modules/accessibility'
-import treemap from 'highcharts/modules/treemap'
-import treegraph from 'highcharts/modules/treegraph'
+import 'highcharts/highcharts-more'
+import 'highcharts/modules/accessibility'
+import 'highcharts/modules/treemap'
+import 'highcharts/modules/treegraph'
 import {
     collection,
     getDocs,
@@ -28,11 +28,8 @@ import {
 import { getAuth } from 'firebase/auth'
 import { db } from '@/firebase'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
+import { formatterPoint } from '@/lib/highchartsTypes'
 
-if (typeof more === 'function') more(Highcharts)
-if (typeof accessibility === 'function') accessibility(Highcharts)
-if (typeof treemap === 'function') treemap(Highcharts)
-if (typeof treegraph === 'function') treegraph(Highcharts)
 
 const { Text } = Typography
 
@@ -94,7 +91,7 @@ const topNWithOther = (m: Map<string, number>, topN = 8) => {
     if (entries.length <= topN) return entries
     const top = entries.slice(0, topN)
     const restSum = entries.slice(topN).reduce((s, [, v]) => s + v, 0)
-    return [...top, ['Other', restSum] as const]
+    return [...top, ['Other', restSum] as [string, number]]
 }
 
 const buildDonut = (
@@ -705,7 +702,7 @@ const PortfolioCompanies: React.FC = () => {
                             true
                     }
                 }
-            } as Highcharts.SeriesTreegraphOptions
+            } as unknown as Highcharts.SeriesTreegraphOptions // nodePadding is missing from the treegraph typings
         ],
 
         tooltip: {
@@ -715,7 +712,8 @@ const PortfolioCompanies: React.FC = () => {
             formatter:
                 function () {
                     const point =
-                        this.point as Highcharts.Point & {
+                        formatterPoint(this) as Highcharts.Point & {
+                            id?: string
                             name?: string
                             custom?: {
                                 type?: string

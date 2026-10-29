@@ -21,6 +21,7 @@ import { assignedInterventionService } from '@/services/assignedInterventionServ
 import { loadInterventionMetrics, type InterventionMetricSummary } from '@/services/interventionMetricsService'
 import { collection, documentId, getDocs, query, where } from 'firebase/firestore'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import dayjs from 'dayjs'
 import { motion } from 'framer-motion'
@@ -92,6 +93,8 @@ interface ResourceRow {
 const MarketingDashboard: React.FC = () => {
     const { user } = useFullIdentity()
     const { activeProgramId } = useActiveProgramId()
+    const { hasRole, idForRole } = useDepartmentRoles()
+    const marketingDepartmentId = idForRole('marketing') || ''
 
     const [loading, setLoading] = useState(false)
     const [interventions, setInterventions] = useState<Intervention[]>([])
@@ -108,8 +111,8 @@ const MarketingDashboard: React.FC = () => {
 
     // hard-stop if not marketing dept (keeps the page from querying wrong stuff)
     const canView = useMemo(() => {
-        return !!user && user.departmentName === 'Marketing and Communication'
-    }, [user])
+        return !!user && hasRole(user.departmentId, 'marketing')
+    }, [user, hasRole])
 
     const fetchData = useCallback(async () => {
         if (!canView) return
@@ -125,25 +128,20 @@ const MarketingDashboard: React.FC = () => {
         setLoading(true)
         try {
             const departmentId = user?.departmentId || ''
-            const deptName = user?.departmentName || ''
+            const isMarketingRecord = (row: any) =>
+                !!row?.departmentId && (row.departmentId === departmentId || row.departmentId === marketingDepartmentId)
 
             // Completed SME-confirmed interventions are read from the canonical
             // assignedInterventions collection.
             const interData = (await assignedInterventionService.listCompleted({
                 programId: activeProgramId
-            })).filter((row: any) =>
-                String(row.areaOfSupport || '').trim().toLowerCase() === 'marketing support'
-            ) as unknown as Intervention[]
+            })).filter(isMarketingRecord) as unknown as Intervention[]
 
             setInterventions(interData)
             setInterventionMetrics(await loadInterventionMetrics({
                 programId: activeProgramId,
-                assignedMatches: row =>
-                    (departmentId && row.departmentId === departmentId) ||
-                    String(row.areaOfSupport || row.departmentName || '').trim().toLowerCase() === 'marketing support',
-                requiredMatches: entry =>
-                    (departmentId && entry.departmentId === departmentId) ||
-                    String(entry.areaOfSupport || entry.area || entry.departmentName || '').trim().toLowerCase() === 'marketing support'
+                assignedMatches: isMarketingRecord,
+                requiredMatches: isMarketingRecord
             }))
 
             // resources nested within interventions (best effort)
@@ -224,7 +222,7 @@ const MarketingDashboard: React.FC = () => {
             const deptFormsQ = query(
                 collection(db, 'departmentForms'),
                 where('programId', '==', activeProgramId),
-                where('department', '==', deptName)
+                where('departmentId', '==', departmentId)
             )
             const deptSnap = await getDocs(deptFormsQ)
 
@@ -267,7 +265,7 @@ const MarketingDashboard: React.FC = () => {
         } finally {
             setLoading(false)
         }
-    }, [activeProgramId, canView, user])
+    }, [activeProgramId, canView, user, marketingDepartmentId])
 
     // ✅ Program switching: re-run whenever activeProgramId changes.
     useEffect(() => {
@@ -384,7 +382,7 @@ const MarketingDashboard: React.FC = () => {
             {/* Charts row */}
             <Row gutter={16}>
                 <Col xs={24} md={12}>
-                    <DepartmentInterventionsStatus programId={activeProgramId} departmentName={user?.departmentName} />
+                    <DepartmentInterventionsStatus programId={activeProgramId} departmentId={user?.departmentId} />
                 </Col>
 
                 <Col xs={24} md={12}>

@@ -56,11 +56,13 @@ import { branchService } from '@/services/branchService'
 import { departmentService } from '@/services/departmentService'
 import AdminPasswordResetModal from './AdminPasswordResetModal'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { Helmet } from 'react-helmet'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { MotionCard } from '../dashboards/metrics/Header'
 import { OrganogramModal } from './OrganogramModal'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
+import { functionsBaseUrl } from '@/firebaseConfig'
 
 interface User {
     id: string
@@ -113,7 +115,7 @@ const ROLE_DISPLAY_MAP: Record<string, string> = {
     employee: 'Employee',
 }
 const ROLE_BACKEND_MAP: Record<string, string> = {
-    'System Admin': 'admin',
+    'System Admin': 'system_admin',
     'Center Coordinator': 'projectadmin',
     'Head Of Department': 'operations',
     Coordinator: 'coordinator',
@@ -142,6 +144,7 @@ const HR_MANAGED_ROLES = [
 
 export const UserManagement: React.FC = () => {
     const { user } = useFullIdentity()
+    const { hasRole } = useDepartmentRoles()
     const [users, setUsers] = useState<User[]>([])
     const [branches, setBranches] = useState<any[]>([])
     const [departments, setDepartments] = useState<any[]>([])
@@ -339,7 +342,7 @@ export const UserManagement: React.FC = () => {
 
     const isAdmin = (me: any) => {
         const role = (me?.role || '').toLowerCase()
-        return role === 'admin'
+        return role === 'system_admin'
     }
 
     const shouldHideRow = (me: any, email?: string) => {
@@ -358,18 +361,14 @@ export const UserManagement: React.FC = () => {
 
     const isSuperUser = (me: any) => {
         const role = (me?.role || '').toLowerCase()
-        return role === 'admin'
+        return role === 'system_admin'
     }
 
     const canUseSystemTools = isAdmin(user)
 
     const getAssignableRoles = (): string[] => {
         const role = (user?.role || '').toLowerCase()
-        const deptName = (user?.departmentName || '').toLowerCase()
-        const isHrDepartment =
-            role === 'hr' ||
-            deptName.startsWith('hrm') ||
-            deptName.includes('human resources')
+        const isHrDepartment = role === 'hr' || hasRole(user?.departmentId, 'hr')
 
         if (isHrDepartment && !isAdmin(user)) {
             return HR_MANAGED_ROLES
@@ -922,7 +921,7 @@ export const UserManagement: React.FC = () => {
                     if (!idToken) throw new Error('missing_id_token')
 
                     const resp = await fetch(
-                        'https://us-central1-lph-smart-inc.cloudfunctions.net/createPlatformUser',
+                        `${functionsBaseUrl}/createPlatformUser`,
                         {
                             method: 'POST',
                             headers: {
@@ -1049,7 +1048,7 @@ export const UserManagement: React.FC = () => {
 
                 try {
                     const resp = await fetch(
-                        'https://us-central1-lph-smart-inc.cloudfunctions.net/createPlatformUser',
+                        `${functionsBaseUrl}/createPlatformUser`,
                         {
                             method: 'POST',
                             headers: {
@@ -1840,24 +1839,24 @@ export const UserManagement: React.FC = () => {
             key: 'team',
             title: 'Team Members',
             value: scopedTotals.total,
-            icon: <UserOutlined style={{ color: '#1677ff' }} />,
-            iconBg: 'rgba(22,119,255,.12)',
+            icon: <UserOutlined />,
+            tone: 'info' as const,
             important: true
         },
         {
             key: 'active',
             title: 'Active Members',
             value: scopedTotals.active,
-            icon: <SmileOutlined style={{ color: '#16a34a' }} />,
-            iconBg: 'rgba(22,163,74,.12)',
+            icon: <SmileOutlined />,
+            tone: 'success' as const,
             important: true
         },
         {
             key: 'inactive',
             title: 'Inactive Members',
             value: scopedTotals.inactive,
-            icon: <FrownOutlined style={{ color: '#dc2626' }} />,
-            iconBg: 'rgba(220,38,38,.12)'
+            icon: <FrownOutlined />,
+            tone: 'danger' as const
         }
     ]
 

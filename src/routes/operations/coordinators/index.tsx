@@ -38,6 +38,7 @@ import { auth, db, functions } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import {
     guideTarget,
@@ -56,6 +57,7 @@ import {
     setDoc,
     where
 } from 'firebase/firestore'
+import { functionsBaseUrl } from '@/firebaseConfig'
 
 const { Text } = Typography
 const { useBreakpoint } = Grid
@@ -115,7 +117,7 @@ interface CoordinatorFormValues {
 }
 
 const CREATE_USER_URL =
-    'https://us-central1-lph-smart-inc.cloudfunctions.net/createPlatformUser'
+    `${functionsBaseUrl}/createPlatformUser`
 const normalizeString = (value: unknown) =>
     String(value || '')
         .trim()
@@ -1320,7 +1322,7 @@ export const CoordinatorsPage: React.FC = () => {
                             shape='circle'
                             icon={<TeamOutlined />}
                             variant='filled'
-                            color='blue'
+                            color='primary'
                             onClick={() =>
                                 navigate(
                                     `/operations/coordinators/${record.id}/performance`,
@@ -1341,7 +1343,6 @@ export const CoordinatorsPage: React.FC = () => {
                             icon={<EditOutlined />}
                             variant='filled'
                             color='gold'
-                            style={{ border: '1px solid gold' }}
                             onClick={() => openEdit(record)}
                         />
                     </Tooltip>
@@ -1426,8 +1427,7 @@ export const CoordinatorsPage: React.FC = () => {
                                 shape='round'
                                 icon={<ClearOutlined />}
                                 variant='filled'
-                                color='cyan'
-                                style={{ border: '1px solid #87e8de' }}
+                                color='primary'
                                 onClick={resetFilters}
                             >
                                 Reset
@@ -1439,8 +1439,7 @@ export const CoordinatorsPage: React.FC = () => {
                                 data-guide='add-coordinator'
                                 icon={<PlusOutlined />}
                                 variant='solid'
-                                color='blue'
-                                style={{ border: '1px solid #91caff' }}
+                                color='primary'
                                 onClick={() => {
                                     form.resetFields()
                                     form.setFieldValue('coordinatorScope', 'center')
@@ -1458,7 +1457,6 @@ export const CoordinatorsPage: React.FC = () => {
                                     icon={<EyeInvisibleOutlined />}
                                     variant='solid'
                                     color='purple'
-                                    style={{ border: '1px solid #d3adf7' }}
                                     onClick={() => {
                                         form.resetFields()
                                         form.setFieldValue('coordinatorScope', 'center')
@@ -1484,9 +1482,9 @@ export const CoordinatorsPage: React.FC = () => {
 
             <Row data-guide='coordinator-metrics' gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col xs={24} md={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<TeamOutlined style={{ color: '#1677ff' }} />}
-                        iconBg='rgba(22,119,255,0.12)'
+                    <MetricTile
+                        icon={<TeamOutlined />}
+                        tone='accent'
                         title='Total Coordinators'
                         value={totals.total}
                         subtitle='Deduped view'
@@ -1494,9 +1492,9 @@ export const CoordinatorsPage: React.FC = () => {
                 </Col>
 
                 <Col xs={24} md={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                        iconBg='rgba(82,196,26,0.12)'
+                    <MetricTile
+                        icon={<CheckCircleOutlined />}
+                        tone='success'
                         title='Active Coordinators'
                         value={totals.active}
                         subtitle={`${totals.inactive} inactive`}
@@ -1504,9 +1502,9 @@ export const CoordinatorsPage: React.FC = () => {
                 </Col>
 
                 <Col xs={24} md={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<StarOutlined style={{ color: '#faad14' }} />}
-                        iconBg='rgba(250,173,20,0.12)'
+                    <MetricTile
+                        icon={<StarOutlined />}
+                        tone='warning'
                         title='Average Rating'
                         value={totals.averageRating.toFixed(1)}
                         subtitle='Across visible coordinators'
@@ -1514,9 +1512,9 @@ export const CoordinatorsPage: React.FC = () => {
                 </Col>
 
                 <Col xs={24} md={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<UserSwitchOutlined style={{ color: '#722ed1' }} />}
-                        iconBg='rgba(114,46,209,0.12)'
+                    <MetricTile
+                        icon={<UserSwitchOutlined />}
+                        tone='info'
                         title='Assignments'
                         value={totals.totalAssignments}
                         subtitle='Mapped across all assignees'

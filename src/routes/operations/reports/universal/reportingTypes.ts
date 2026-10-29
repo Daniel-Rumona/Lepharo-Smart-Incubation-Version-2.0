@@ -2,7 +2,6 @@ import type { Timestamp } from "firebase/firestore";
 
 export interface AssignedIntervention {
     id: string;
-    areaOfSupport?: string;
     assigneeId?: string;
     assigneeName?: string;
     assigneeRole?: string;

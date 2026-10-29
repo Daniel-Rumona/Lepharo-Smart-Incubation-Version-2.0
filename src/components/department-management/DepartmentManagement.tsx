@@ -23,12 +23,16 @@ import {
 } from '@ant-design/icons'
 import { DepartmentForm } from './DepartmentForm'
 import { departmentService } from '@/services/departmentService'
+import { DEPARTMENT_ROLES, useDepartmentRoles } from '@/services/departmentRoles'
 import { Department } from '@/types/types'
 
 const { Search } = Input
 const { Title, Text } = Typography
 
 export const DepartmentManagement: React.FC = () => {
+    const { roles } = useDepartmentRoles()
+    const rolesHeldBy = (departmentId: string) =>
+        DEPARTMENT_ROLES.filter(role => roles[role.key] === departmentId)
     const [departments, setDepartments] = useState<Department[]>([])
     const [filteredDepartments, setFilteredDepartments] = useState<Department[]>(
         []
@@ -148,11 +152,11 @@ export const DepartmentManagement: React.FC = () => {
             render: (name: string, record: Department) => (
                 <div>
                     <Text strong>{name}</Text>
-                    {name.includes('ROM') && (
-                        <Tag color='blue' style={{ marginLeft: 8 }}>
-                            Core
+                    {rolesHeldBy(record.id).map(role => (
+                        <Tag key={role.key} color='blue' style={{ marginLeft: 8 }}>
+                            {role.label}
                         </Tag>
-                    )}
+                    ))}
                     {record.isTraining && (
                         <Tag color='purple' style={{ marginLeft: 8 }}>
                             Training coverage

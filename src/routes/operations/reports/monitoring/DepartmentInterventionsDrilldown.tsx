@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
-import Drilldown from "highcharts/modules/drilldown";
+import "highcharts/modules/drilldown";
 import { Card, Col, Empty, Result, Button, Row, Segmented, Skeleton, Space, Statistic, Tag } from "antd";
 import dayjs from "dayjs";
 import {
@@ -21,7 +21,6 @@ import { ArrowLeftOutlined } from "@ant-design/icons";
 import { filterReportRecords, loadReportVisibilityContext } from "@/utils/reportVisibility";
 import { rollupReportAssignments } from "@/utils/reportGroupAssignments";
 
-if (typeof Drilldown === "function") Drilldown(Highcharts);
 
 type Props = {
     programId?: string;
@@ -154,7 +153,7 @@ export default function InterventionsDeptDrilldownChart({
         Array<{
             id: string;
             participantId?: string;
-            interventions?: { required?: Array<{ area?: string }> };
+            interventions?: { required?: Array<{ departmentId?: string }> };
         }>
     >([]);
     const [assigned, setAssigned] = useState<
@@ -170,11 +169,7 @@ export default function InterventionsDeptDrilldownChart({
             participantCompletionStatus?: string;
             beneficiaryCompletionStatus?: string;
             completionStatus?: string;
-            areaOfSupport?: string;
             departmentId?: string;
-            departmentName?: string;
-            department?: string;
-            departmentTitle?: string;
             interventionTitle?: string;
             subInterventionId?: string;
             subInterventionTitle?: string;
@@ -293,35 +288,20 @@ export default function InterventionsDeptDrilldownChart({
         run();
     }, [programId]);
 
-    const depNameByLower = useMemo(() => {
+    const depNameById = useMemo(() => {
         const m = new Map<string, string>();
         for (const d of departments) {
             const n = (d.name || "").trim();
-            if (n) {
-                m.set(n.toLowerCase(), n);
-                m.set(d.id.toLowerCase(), n);
-            }
+            if (n) m.set(d.id, n);
         }
         return m;
     }, [departments]);
 
-    const depKeyFromArea = (area?: string) => {
-        const k = (area || "").trim().toLowerCase();
-        return depNameByLower.get(k);
-    };
+    const depKeyFromId = (departmentId?: string) =>
+        depNameById.get((departmentId || "").trim());
 
-    const depKeyFromAssigned = (record: {
-        areaOfSupport?: string;
-        departmentId?: string;
-        departmentName?: string;
-        department?: string;
-        departmentTitle?: string;
-    }) =>
-        depKeyFromArea(record.departmentId) ||
-        depKeyFromArea(record.departmentName) ||
-        depKeyFromArea(record.department) ||
-        depKeyFromArea(record.departmentTitle) ||
-        depKeyFromArea(record.areaOfSupport);
+    const depKeyFromAssigned = (record: { departmentId?: string }) =>
+        depKeyFromId(record.departmentId);
 
     const filterDeptCanonical = useMemo(() => {
         if (!departmentId) return undefined;
@@ -335,7 +315,7 @@ export default function InterventionsDeptDrilldownChart({
         for (const app of applications) {
             const list = app.interventions?.required ?? [];
             for (const r of list) {
-                const key = depKeyFromArea(r.area);
+                const key = depKeyFromId(r.departmentId);
                 if (!key) continue;
                 if (filterDeptCanonical && key !== filterDeptCanonical) continue;
                 m.set(key, (m.get(key) || 0) + 1);

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Button, Card, Col, Empty, message, Popconfirm, Row, Select, Skeleton, Space, Upload } from 'antd'
 import { DeleteOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons'
+import EvidenceFileRow from '@/components/interventions/EvidenceFileRow'
 
 export type ManagedEvidenceResource = {
     link: string
@@ -18,6 +19,12 @@ type Props = {
     disabled?: boolean
     showHeader?: boolean
     showUpload?: boolean
+    /**
+     * Just the documents, one card each with the red circular delete at the far
+     * end, and no "Currently on file" box around them. The caller shows the
+     * actions (Add, Delete all) wherever it likes, such as the title row.
+     */
+    bare?: boolean
     uploadLabel?: string
     replaceTarget?: string
     headerActions?: React.ReactNode
@@ -36,6 +43,7 @@ export const EvidenceManagerPanel: React.FC<Props> = ({
     disabled,
     showHeader = true,
     showUpload = true,
+    bare = false,
     uploadLabel = 'Upload',
     replaceTarget,
     headerActions,
@@ -68,7 +76,36 @@ export const EvidenceManagerPanel: React.FC<Props> = ({
                 </Space>
             </Card> : null}
 
-            {loading ? <Skeleton active paragraph={{ rows: 3 }} /> : (
+            {loading ? <Skeleton active paragraph={{ rows: 3 }} /> : bare ? (
+                resources.length ? (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        {resources.map(resource => (
+                            <EvidenceFileRow
+                                key={resource.link}
+                                name={resource.originalName || resource.label || 'Evidence'}
+                                href={resource.link}
+                                disabled={!!removingLink && removingLink !== resource.link}
+                                extra={onReplace ? (
+                                    <Button
+                                        size="small"
+                                        shape="round"
+                                        icon={<UploadOutlined />}
+                                        data-guide="replace-evidence-action"
+                                        onClick={() => onReplace(resource)}
+                                    >
+                                        Replace
+                                    </Button>
+                                ) : undefined}
+                                onRemove={() => void removeResource(resource)}
+                                confirmTitle={`Remove ${resource.label || 'this evidence'}?`}
+                                confirmDescription="This removes the evidence reference from the assignment."
+                            />
+                        ))}
+                    </Space>
+                ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No evidence added yet." />
+                )
+            ) : (
                 <Card
                     size="small"
                     title={<span style={{ color: '#8c8c8c' }}>Currently on file ({resources.length})</span>}

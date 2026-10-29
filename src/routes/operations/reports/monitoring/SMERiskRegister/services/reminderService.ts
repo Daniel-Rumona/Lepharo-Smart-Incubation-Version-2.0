@@ -1,8 +1,9 @@
 import { auth } from '@/firebase'
 
 import type { AnyDoc, DepartmentSummary, SMERow } from '../types'
+import { functionsBaseUrl } from '@/firebaseConfig'
 
-const FUNCTIONS_BASE = 'https://us-central1-lph-smart-inc.cloudfunctions.net'
+const FUNCTIONS_BASE = functionsBaseUrl
 
 export async function callReminderFunction(path: string, payload: AnyDoc) {
     const currentUser = auth.currentUser

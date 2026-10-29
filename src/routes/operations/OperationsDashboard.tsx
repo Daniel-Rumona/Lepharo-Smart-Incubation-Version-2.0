@@ -33,7 +33,7 @@ import {
 import dayjs from 'dayjs'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import drilldown from 'highcharts/modules/drilldown'
+import 'highcharts/modules/drilldown'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
 import AppointmentsCalendarModal from '@/components/modals/AppointmentsCalender'
 import AppointmentDetailsModal from '@/components/modals/AppointmentDetails'
@@ -58,7 +58,6 @@ import { workflowQueryService, type WorkflowQueryView } from '@/services/workflo
 const { Text } = Typography
 const { useToken } = theme
 
-if (typeof drilldown === 'function') drilldown(Highcharts)
 
 /* ----------------------------- types ------------------------------ */
 type AssignedIntervention = {
@@ -73,7 +72,6 @@ type AssignedIntervention = {
     beneficiaryCompletionStatus?: string
     assigneeCompletionStatus?: string
     completionStatus?: string
-    areaOfSupport?: string
     branchId?: string
     assignedBranchId?: string
     branch?: { id?: string; name?: string } | string
@@ -138,9 +136,8 @@ type BranchPerformanceMetric = 'interventions' | 'reach'
 
 type SubmissionRecord = {
     month?: string
-    department?: string
-    departmentName?: string
-    interventions?: Array<{ department?: string; departmentName?: string }>
+    departmentId?: string
+    interventions?: Array<{ departmentId?: string }>
 }
 
 
@@ -461,9 +458,7 @@ export const OperationsDashboard: React.FC = () => {
     const enriched = useMemo<EnrichedIntervention[]>(() => {
         return assigned.map(x => {
             const departmentName =
-                (x.departmentId && deptMap[x.departmentId]) ||
-                x.areaOfSupport ||
-                'Unspecified'
+                (x.departmentId && deptMap[x.departmentId]) || 'Unspecified'
 
             const participantId = getParticipantId(x)
             const directBranch = getBranchReference(x)
@@ -487,18 +482,14 @@ export const OperationsDashboard: React.FC = () => {
         })
     }, [assigned, deptMap, appMap, branchMap, programBranchMap])
 
-    const departmentNames = useMemo(
+    const uploadDepartments = useMemo(
         () =>
-            Array.from(
-                new Set(
-                    Object.entries(deptMap)
-                        .filter(([id]) => interventionDeptIds.has(id))
-                        .map(([, name]) => String(name || '').trim())
-                        .filter(name => name && name !== 'Unspecified')
-                )
-            ).sort((a, b) =>
-                a.localeCompare(b, undefined, { sensitivity: 'base' })
-            ),
+            Object.entries(deptMap)
+                .filter(([id]) => interventionDeptIds.has(id))
+                .map(([id, name]) => ({ id, name: String(name || '').trim() }))
+                .sort((a, b) =>
+                    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+                ),
         [deptMap, interventionDeptIds]
     )
 
@@ -539,8 +530,8 @@ export const OperationsDashboard: React.FC = () => {
         return [{
             key: 'open-queries',
             important: true,
-            icon: <QuestionCircleOutlined style={{ fontSize: 20, color: '#d97706' }} />,
-            iconBg: 'transparent',
+            icon: <QuestionCircleOutlined style={{ fontSize: 20 }} />,
+            tone: 'warning',
             title: 'Open Queries',
             value: queriesLoading ? '...' : openQueries.length,
             subtitle: `Open ${periodLabel.toLowerCase()}`,
@@ -651,7 +642,7 @@ export const OperationsDashboard: React.FC = () => {
         }))
     }, [branchCategories, branchBreakdown, branchPerformanceMetric, branchReachBreakdown])
 
-    const branchToDepartmentSeries = useMemo<Highcharts.DrilldownSeriesOptions[]>(() => {
+    const branchToDepartmentSeries = useMemo<Highcharts.SeriesOptionsType[]>(() => {
         return branchCategories.map(branch => {
             const departments = branchBreakdown[branch]?.departments || {}
             const departmentNames = Object.keys(departments)
@@ -667,12 +658,12 @@ export const OperationsDashboard: React.FC = () => {
                         : departments[department]?.total || 0,
                     drilldown: `branch::${branch}::dept::${department}`
                 })) as any[]
-            } as Highcharts.DrilldownSeriesColumnOptions
+            } as Highcharts.SeriesColumnOptions
         })
     }, [branchCategories, branchBreakdown, branchPerformanceMetric, branchReachBreakdown])
 
-    const departmentToStatusSeries = useMemo<Highcharts.DrilldownSeriesOptions[]>(() => {
-        const out: Highcharts.DrilldownSeriesOptions[] = []
+    const departmentToStatusSeries = useMemo<Highcharts.SeriesOptionsType[]>(() => {
+        const out: Highcharts.SeriesOptionsType[] = []
 
         branchCategories.forEach(branch => {
             const departments = branchBreakdown[branch]?.departments || {}
@@ -699,7 +690,7 @@ export const OperationsDashboard: React.FC = () => {
                                 : statusCounts[status] || 0,
                             color: INTERVENTION_STATUS_COLORS[status] || '#999'
                         })) as any[]
-                } as Highcharts.DrilldownSeriesColumnOptions)
+                } as Highcharts.SeriesColumnOptions)
             })
         })
 
@@ -800,7 +791,7 @@ export const OperationsDashboard: React.FC = () => {
                 sendNotification({
                     type: 'workflow-query-reminder',
                     message: { [role]: 'Reminder: an open query needs your response.' },
-                    recipientRoles: [role], recipientIds: [resolverId], workflowQueryId: queryItem.id,
+                    recipientIds: [resolverId], workflowQueryId: queryItem.id,
                     programId: queryItem.programId
                 }),
                 updateDoc(doc(db, 'workflowQueries', queryItem.id), {
@@ -904,7 +895,7 @@ export const OperationsDashboard: React.FC = () => {
 
                     <div style={{ marginTop: 16 }}>
                         <DepartmentMonthlyUploadStatusCard
-                            departments={departmentNames}
+                            departments={uploadDepartments}
                             submissions={monthlyMovSubmissions}
                             loading={loading}
                             dateRange={dateRange}
@@ -1059,13 +1050,16 @@ export const OperationsDashboard: React.FC = () => {
                                                     aria-label='Send reminder'
                                                 />
                                             </Tooltip>
-                                            <Button
-                                                type='link'
-                                                icon={<CheckCircleOutlined />}
-                                                onClick={() => setResolvingQuery(queryItem)}
-                                            >
-                                                Resolve
-                                            </Button>
+                                            {/* Only the person who raised a query closes it; answering is the facilitator's. */}
+                                            {String(queryItem.raisedById || '') === String(user?.uid || user?.id || '') && (
+                                                <Button
+                                                    type='link'
+                                                    icon={<CheckCircleOutlined />}
+                                                    onClick={() => setResolvingQuery(queryItem)}
+                                                >
+                                                    Close
+                                                </Button>
+                                            )}
                                         </Space>
                                     </Space>
                                 </div>
@@ -1083,7 +1077,8 @@ export const OperationsDashboard: React.FC = () => {
                     name: user?.name || user?.displayName || null,
                     email: user?.email || null,
                     role: user?.role || null,
-                    departmentName: user?.departmentName || null
+                    departmentName: user?.departmentName || null,
+                    departmentId: user?.departmentId || null
                 }}
                 onClose={() => setResolvingQuery(null)}
                 onResolved={queryId => {

@@ -31,8 +31,8 @@ export default function RegisterMetricsRow({ metrics, isDepartmentScopedView, de
             subtitle: isDepartmentScopedView ? departmentScopeLabel : 'Consolidated register',
             mobileTitle: 'SMEs',
             important: true,
-            icon: <TeamOutlined style={{ color: '#1677ff' }} />,
-            iconBg: 'rgba(22,119,255,.12)'
+            icon: <TeamOutlined />,
+            tone: 'info' as const
         },
         {
             key: 'needs-action',
@@ -41,24 +41,24 @@ export default function RegisterMetricsRow({ metrics, isDepartmentScopedView, de
             subtitle: isDepartmentScopedView ? 'My department needs action' : 'Departments still need follow-up',
             mobileTitle: 'Needs action',
             important: true,
-            icon: <ApartmentOutlined style={{ color: '#faad14' }} />,
-            iconBg: 'rgba(250,173,20,.12)'
+            icon: <ApartmentOutlined />,
+            tone: 'warning' as const
         },
         {
             key: 'not-serviced',
             title: 'Not Serviced',
             value: metrics.notServiced,
             subtitle: isDepartmentScopedView ? 'No delivery by my department' : 'No delivery for confirmed services',
-            icon: <ClockCircleOutlined style={{ color: '#722ed1' }} />,
-            iconBg: 'rgba(114,46,209,.12)'
+            icon: <ClockCircleOutlined />,
+            tone: 'info' as const
         },
         {
             key: 'critical-risk',
             title: 'Critical Risk',
             value: metrics.critical,
             subtitle: 'Immediate attention',
-            icon: <AlertOutlined style={{ color: '#ff4d4f' }} />,
-            iconBg: 'rgba(255,77,79,.12)'
+            icon: <AlertOutlined />,
+            tone: 'danger' as const
         }
     ]
 

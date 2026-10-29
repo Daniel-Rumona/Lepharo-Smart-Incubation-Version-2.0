@@ -144,3 +144,14 @@ export const buildUserContributorKeys = (user: Pick<ReportUserContext, 'uid' | '
   `user:${user.uid}`,
   ...(isOperations(user) && user.departmentId ? [`department:${user.departmentId}`] : [])
 ]
+
+/**
+ * The report owner can approve any section that isn't approved yet — including ones with
+ * no department, which otherwise could never be submitted, so the report could never finish.
+ */
+export const canUserApproveBlock = (user: ReportUserContext, report: ReportDocument, block: ReportBlock) =>
+  canUserManageReport(user, report) && block.status !== 'approved'
+
+/** The report owner can reopen an approved section for more edits. */
+export const canUserReopenBlock = (user: ReportUserContext, report: ReportDocument, block: ReportBlock) =>
+  canUserManageReport(user, report) && block.status === 'approved'

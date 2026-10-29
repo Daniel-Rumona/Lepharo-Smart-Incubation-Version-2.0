@@ -8,15 +8,17 @@ import {
     serverTimestamp,
     runTransaction,
     updateDoc,
-    where,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { isIncubateeAgreementSigned } from '@/utils/agreementStatus'
 import {
     canonicalAgreementId,
+    complianceEffectiveExpiry,
     complianceStatusCountsAsCovered,
     resolveComplianceDocumentStatus
 } from '@/services/complianceResolver'
+import { functionsBaseUrl } from '@/firebaseConfig'
+import { departmentHasRole, loadDepartmentRoles } from '@/services/departmentRoles'
 
 export type IncubationGroup = 'A' | 'B' | 'C' | 'Graduated'
 
@@ -46,9 +48,12 @@ export type PendingGroupMovement = {
 
 export type GroupRequirement = {
     id: string
+    key?: string
     title: string
     kind: 'upload' | 'agreement'
     agreementId?: string
+    hasExpiry?: boolean
+    expiryMonths?: number | null
 }
 
 export type GroupEvidence = {
@@ -121,49 +126,23 @@ export const normalizeGroup = (value: unknown): IncubationGroup => {
 export const groupLabel = (group: IncubationGroup) =>
     group === 'Graduated' ? 'Graduated' : `Group ${group}`
 
-const normalizedDepartment = (value: unknown) => clean(value).toLowerCase()
+type WorkflowDepartment = 'rom' | 'monitoring'
 
-export const isRomDepartment = (value: unknown) => {
-    const department = normalizedDepartment(value)
-    return department === 'rom' || department.startsWith('rom ') ||
-        department.includes('recruitment, onboarding and maintenance')
+/** Whether a department (or one of its ancestors) holds the ROM or M&E role. */
+export async function isDepartmentInWorkflowRole(departmentId: string | null | undefined, role: WorkflowDepartment) {
+    const { roles, departments } = await loadDepartmentRoles()
+    return departmentHasRole(clean(departmentId), role, roles, departments)
 }
-
-export const isMonitoringAndEvaluationDepartment = (value: unknown) => {
-    const department = normalizedDepartment(value).replace(/\s+/g, ' ')
-    return department === 'm&e' || department.startsWith('m&e ') ||
-        department.includes('monitoring and evaluation') ||
-        department.includes('monitoring & evaluation')
-}
-
-type WorkflowDepartment = 'rom' | 'me'
 
 async function resolveWorkflowRecipients(department: WorkflowDepartment) {
-    const departmentSnapshot = await getDocs(query(
-        collection(db, 'departments'),
-
-    ))
-    const matchingDepartmentIds = new Set(departmentSnapshot.docs
-        .filter(snapshot => department === 'rom'
-            ? isRomDepartment(snapshot.data().name || snapshot.data().departmentName)
-            : isMonitoringAndEvaluationDepartment(snapshot.data().name || snapshot.data().departmentName))
-        .map(snapshot => snapshot.id))
-    departmentSnapshot.docs.forEach(snapshot => {
-        const parentId = clean(snapshot.data().parentDepartmentId || snapshot.data().parentDeptId)
-        if (parentId && matchingDepartmentIds.has(parentId)) matchingDepartmentIds.add(snapshot.id)
-    })
+    const { roles, departments } = await loadDepartmentRoles()
     const usersSnapshot = await getDocs(query(
         collection(db, 'users'),
 
     ))
     return Array.from(new Set(usersSnapshot.docs
         .map(snapshot => snapshot.data() as any)
-        .filter(user => {
-            const nameMatches = department === 'rom'
-                ? isRomDepartment(user.departmentName || user.department)
-                : isMonitoringAndEvaluationDepartment(user.departmentName || user.department)
-            return nameMatches || matchingDepartmentIds.has(clean(user.departmentId))
-        })
+        .filter(user => departmentHasRole(clean(user.departmentId), department, roles, departments))
         .map(user => clean(user.email).toLowerCase())
         .filter(Boolean)))
 }
@@ -181,6 +160,8 @@ async function sendWorkflowEmail(input: {
     heading: string
     paragraphs: string[]
     items?: string[]
+    /** Mirrors the email into the recipients' in-app notifications (resolved server-side). */
+    inApp?: { type: string; link?: string }
 }) {
     if (!auth.currentUser) throw new Error('You must be logged in to send workflow emails.')
     const recipients = (Array.isArray(input.to) ? input.to : [input.to]).filter(Boolean)
@@ -195,12 +176,12 @@ async function sendWorkflowEmail(input: {
     </div>`
     const text = [input.heading, '', ...input.paragraphs, ...(items.length ? ['', ...items.map(item => `- ${item}`)] : []), '', 'Regards,', 'Lepharo Smart Incubator'].join('\n')
     const endpoint = typeof window !== 'undefined' && window.location.hostname.includes('localhost')
-        ? 'https://us-central1-lph-smart-inc.cloudfunctions.net/sendEmail'
+        ? `${functionsBaseUrl}/sendEmail`
         : 'https://oauth.lepharosmartinc.co.za/sendEmail'
     const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ to: recipients, subject: input.subject, html, text })
+        body: JSON.stringify({ to: recipients, subject: input.subject, html, text, inApp: input.inApp })
     })
     if (!response.ok) {
         const detail = await response.text().catch(() => '')
@@ -238,6 +219,7 @@ export async function notifyRomSmeReady(input: {
         const sent = await sendWorkflowEmail({
             to: recipients,
             subject: `${input.smeName} is ready for ${groupLabel(input.target)}`,
+            inApp: { type: 'group_movement_ready' },
             heading: 'SME ready for group movement',
             paragraphs: [
                 `${input.smeName} has met the requirements to progress from ${groupLabel(input.current)} to ${groupLabel(input.target)}.`,
@@ -298,11 +280,15 @@ export function buildGroupRequirements(programRequirements: any[] = []): GroupRe
                 requirement.type === 'agreement' || requirement.kind === 'agreement' || !!agreementId
                     ? 'agreement'
                     : 'upload'
+            const hasExpiry = Boolean(requirement.hasExpiry || requirement.expiryRule)
             return {
                 id: clean(requirement.id || requirement.key || requirement.presetId || agreementId) || `${normalizeKey(title)}-${index}`,
+                key: clean(requirement.presetId || requirement.key || requirement.preset) || undefined,
                 title,
                 kind,
-                agreementId
+                agreementId,
+                hasExpiry,
+                expiryMonths: hasExpiry ? requirement.expiryMonths ?? requirement.expiryRule?.months ?? null : null
             }
         })
 }
@@ -320,7 +306,7 @@ function asDate(value: any): Date | null {
 }
 
 function evidenceMatches(requirement: GroupRequirement, evidence: GroupEvidence) {
-    const requirementKeys = [requirement.id, requirement.title, requirement.agreementId]
+    const requirementKeys = [requirement.id, requirement.key, requirement.title, requirement.agreementId]
         .map(normalizeKey)
         .filter(Boolean)
     const evidenceKeys = [
@@ -342,24 +328,41 @@ function evidenceMatches(requirement: GroupRequirement, evidence: GroupEvidence)
         const requiredSlug = canonicalAgreementId(requirement.agreementId || requirement.id || requirement.title)
         return evidenceKeys.some(key => canonicalAgreementId(key) === requiredSlug)
     }
-    return requirementKeys.some(req =>
-        evidenceKeys.some(ev => ev === req || ev.includes(req) || req.includes(ev))
-    )
+    // Exact key matches only: a substring test let a short requirement such as
+    // "ID" or "CV" match unrelated documents.
+    return requirementKeys.some(req => evidenceKeys.includes(req))
 }
+
+// The shared rule: the requirement's validity period from the issue date,
+// otherwise the stored expiryDate.
+const evidenceExpiry = (requirement: GroupRequirement, evidence: GroupEvidence) =>
+    complianceEffectiveExpiry({ ...(evidence.raw || {}), ...evidence }, requirement)
+
+// An agreement's evidence status is 'valid' only once Operations has
+// countersigned it, the same test the Compliance page uses; the SME's own
+// signature is tracked separately as `signed`.
+export const isAgreementCountersigned = (item: any) =>
+    Boolean(item?.romSignatureURL || item?.romSignatureUrl || item?.romSignedAt)
 
 function evidenceIsValid(requirement: GroupRequirement, evidence: GroupEvidence) {
     if (requirement.kind === 'agreement') {
+        const agreementId = canonicalAgreementId(requirement.agreementId || requirement.id || requirement.title)
         const status = normalizeKey(evidence.status)
-        return evidence.signed === true ||
-            ['approved', 'verified', 'valid', 'accepted'].includes(status) ||
-            isIncubateeAgreementSigned(evidence.raw ?? evidence, requirement.agreementId || requirement.id || requirement.title)
+        const confirmed = ['approved', 'verified', 'valid', 'accepted'].includes(status)
+        const smeSigned = evidence.signed === true ||
+            isIncubateeAgreementSigned(evidence.raw ?? evidence, agreementId)
+        // GAP is complete once the SME submits it. Every other agreement also
+        // needs Operations' countersignature, matching the Compliance page, so
+        // an agreement awaiting the ROM signature does not unlock a group move.
+        if (agreementId === 'gap-analysis') return smeSigned || confirmed
+        return smeSigned && confirmed
     }
+    const expiry = evidenceExpiry(requirement, evidence)
     if (evidence.status === true) {
-        const expiry = asDate(evidence.expiryDate)
         return !expiry || expiry.getTime() > Date.now()
     }
     return complianceStatusCountsAsCovered(
-        resolveComplianceDocumentStatus(evidence, evidence.expiryDate)
+        resolveComplianceDocumentStatus(evidence, expiry)
     )
 }
 
@@ -371,15 +374,15 @@ function evidenceStatus(requirement: GroupRequirement, evidence?: GroupEvidence)
         if (['invalid', 'rejected', 'queried'].includes(storedStatus)) return storedStatus
         return 'pending'
     }
+    const expiry = evidenceExpiry(requirement, evidence)
     if (evidence.status === true) {
-        const expiry = asDate(evidence.expiryDate)
         if (expiry && expiry.getTime() < Date.now()) return 'expired'
         return resolveComplianceDocumentStatus(
             { ...evidence, status: 'valid' },
-            evidence.expiryDate
+            expiry
         )
     }
-    return resolveComplianceDocumentStatus(evidence, evidence.expiryDate)
+    return resolveComplianceDocumentStatus(evidence, expiry)
 }
 
 function evidenceReason(
@@ -392,7 +395,9 @@ function evidenceReason(
             ? 'This agreement has not been signed.'
             : 'This document has not been uploaded.'
     }
-    const expiry = asDate(evidence.expiryDate)
+    const expiry = requirement.kind === 'upload'
+        ? evidenceExpiry(requirement, evidence)
+        : asDate(evidence.expiryDate)
     const expiryLabel = expiry
         ? expiry.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
         : ''
@@ -601,7 +606,7 @@ export async function requestSmeGroupMovement(input: {
     participantId?: string
     current: IncubationGroup
     target: IncubationGroup
-    actor: { id?: string; name: string; email?: string; departmentName?: string }
+    actor: { id?: string; name: string; email?: string; departmentId?: string; departmentName?: string }
     reason: string
     requirementsMet: string[]
 
@@ -611,7 +616,7 @@ export async function requestSmeGroupMovement(input: {
     suppressNotification?: boolean
 }) {
     if (!input.applicationId) throw new Error('An application is required before a group movement can be requested.')
-    if (!isRomDepartment(input.actor.departmentName)) throw new Error('Only the ROM department can submit an SME group movement.')
+    if (!(await isDepartmentInWorkflowRole(input.actor.departmentId, 'rom'))) throw new Error('Only the ROM department can submit an SME group movement.')
     const expectedTarget: Record<IncubationGroup, IncubationGroup | null> = {
         A: 'B', B: 'C', C: 'Graduated', Graduated: null
     }
@@ -652,10 +657,11 @@ export async function requestSmeGroupMovement(input: {
         return { request, notificationSent, notificationError }
     }
     try {
-        const recipients = await resolveWorkflowRecipients('me')
+        const recipients = await resolveWorkflowRecipients('monitoring')
         notificationSent = await sendWorkflowEmail({
             to: recipients,
             subject: `M&E approval required: ${input.smeName} to ${groupLabel(input.target)}`,
+            inApp: { type: 'group_movement_approval' },
             heading: 'Group movement awaiting M&E confirmation',
             paragraphs: [
                 `ROM submitted ${input.smeName} for movement from ${groupLabel(input.current)} to ${groupLabel(input.target)}.`,
@@ -697,10 +703,11 @@ export async function notifyMeGroupMovementBatch(input: {
     }>
 }) {
     if (!input.movements.length) return { notificationSent: 0 }
-    const recipients = await resolveWorkflowRecipients('me')
+    const recipients = await resolveWorkflowRecipients('monitoring')
     const notificationSent = await sendWorkflowEmail({
         to: recipients,
         subject: `M&E approval required: ${input.movements.length} group movements`,
+        inApp: { type: 'group_movement_approval' },
         heading: 'Group movements awaiting M&E confirmation',
         paragraphs: [
             `${input.submittedBy} submitted ${input.movements.length} SME group movement request${input.movements.length === 1 ? '' : 's'}.`,
@@ -730,13 +737,13 @@ export async function confirmSmeGroupMovement(input: {
     applicationId: string
     participantId?: string
     request: PendingGroupMovement
-    actor: { id?: string; name: string; email?: string; departmentName?: string }
+    actor: { id?: string; name: string; email?: string; departmentId?: string; departmentName?: string }
     smeName: string
     smeEmail?: string
     programName?: string
     nextRequirements: string[]
 }) {
-    if (!isMonitoringAndEvaluationDepartment(input.actor.departmentName)) {
+    if (!(await isDepartmentInWorkflowRole(input.actor.departmentId, 'monitoring'))) {
         throw new Error('Only the M&E department can confirm an SME group movement.')
     }
     const entry: GroupHistoryEntry = {
@@ -789,6 +796,7 @@ export async function confirmSmeGroupMovement(input: {
             await sendWorkflowEmail({
                 to: input.smeEmail,
                 subject: `Congratulations — you have moved to ${groupLabel(input.request.to)}`,
+                inApp: { type: 'group_movement_confirmed', link: '/incubatee/group' },
                 heading: `Congratulations, ${input.smeName}!`,
                 paragraphs: [
                     `M&E has confirmed your movement from ${groupLabel(input.request.from)} to ${groupLabel(input.request.to)}.`,
@@ -819,10 +827,10 @@ export async function confirmSmeGroupMovement(input: {
 export async function returnSmeGroupMovement(input: {
     applicationId: string
     request: PendingGroupMovement
-    actor: { id?: string; name: string; email?: string; departmentName?: string }
+    actor: { id?: string; name: string; email?: string; departmentId?: string; departmentName?: string }
     reason?: string
 }) {
-    if (!isMonitoringAndEvaluationDepartment(input.actor.departmentName)) {
+    if (!(await isDepartmentInWorkflowRole(input.actor.departmentId, 'monitoring'))) {
         throw new Error('Only the M&E department can return an SME group movement to ROM.')
     }
     await runTransaction(db, async transaction => {

@@ -1,6 +1,11 @@
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/firebase";
-import { getAppointmentGroupKey } from "@/services/appointmentService";
+import { departmentNameOf, loadDepartmentRoles } from "@/services/departmentRoles";
+import {
+  formatDeliveryMethod,
+  getAppointmentGroupKey,
+  getAttendanceStatus,
+} from "@/services/appointmentService";
 
 export type JourneyScope = "sme" | "operations";
 
@@ -12,6 +17,8 @@ export type JourneyMonth = {
   completedInterventions: number;
   roadmapConfirmations: number;
   participantIds: string[];
+  /** The SMEs behind participantIds, by name, for the "SMEs helped" page. */
+  participants: { id: string; name: string }[];
   feedback: JourneyFeedback[];
   topics: string[];
   activities: JourneyActivity[];
@@ -32,6 +39,11 @@ export type JourneyActivity = {
   detail?: string;
   detailLabel?: string;
   participantIds?: string[];
+  /** Appointments only: how it was delivered, e.g. "In Person" or "Virtual". */
+  delivery?: string;
+  /** Appointments only: how many SMEs were invited and how many attended. */
+  invited?: number;
+  attended?: number;
 };
 
 const toDate = (value: any): Date | null => {
@@ -98,6 +110,7 @@ const addMonth = (
     completedInterventions: 0,
     roadmapConfirmations: 0,
     participantIds: [],
+    participants: [],
     feedback: [],
     topics: [],
     activities: [],
@@ -109,6 +122,10 @@ const addMonth = (
   current.participantIds = Array.from(
     new Set([...current.participantIds, ...(update.participantIds || [])])
   );
+  (update.participants || []).forEach((participant) => {
+    if (!current.participants.some((item) => item.id === participant.id))
+      current.participants.push(participant);
+  });
   current.feedback = [...current.feedback, ...(update.feedback || [])];
   current.topics = Array.from(
     new Set([...current.topics, ...(update.topics || [])])
@@ -126,6 +143,9 @@ export async function loadMilestoneJourney(args: {
   programId?: string | null;
 }): Promise<JourneyMonth[]> {
   const months = new Map<string, JourneyMonth>();
+  const { departments } = await loadDepartmentRoles();
+  const departmentLabel = (data: any) =>
+    departmentNameOf(String(data?.departmentId || "").trim(), departments, "") || undefined;
 
   if (args.scope === "sme") {
     const email = String(args.email || "").trim();
@@ -244,10 +264,7 @@ export async function loadMilestoneJourney(args: {
                   data?.title ||
                   "Intervention completed"
               ),
-              department:
-                String(
-                  data?.departmentName || data?.areaOfSupport || ""
-                ).trim() || undefined,
+              department: departmentLabel(data),
               detail: subInterventionFor(data),
               detailLabel: "Sub-intervention",
             },
@@ -329,7 +346,14 @@ export async function loadMilestoneJourney(args: {
     // match the appointments metrics.
     const appointmentGroups = new Map<
       string,
-      { id: string; data: any; participantIds: Set<string> }
+      {
+        id: string;
+        data: any;
+        participantIds: Set<string>;
+        names: Map<string, string>;
+        invited: Set<string>;
+        attended: Set<string>;
+      }
     >();
     departmentAppointments.forEach((item) => {
       const data = item.data() as any;
@@ -344,16 +368,39 @@ export async function loadMilestoneJourney(args: {
         id: item.id,
         data,
         participantIds: new Set<string>(),
+        names: new Map<string, string>(),
+        invited: new Set<string>(),
+        attended: new Set<string>(),
       };
-      if (participantId) current.participantIds.add(participantId);
+      // Each record is one SME's invitation to the session.
+      const inviteeKey = participantId || item.id;
+      current.invited.add(inviteeKey);
+      const attendance = getAttendanceStatus(data, data);
+      if (attendance === "checked-in" || attendance === "checked-out")
+        current.attended.add(inviteeKey);
+      if (participantId) {
+        current.participantIds.add(participantId);
+        const name = String(
+          data?.participantName ||
+            data?.beneficiaryName ||
+            data?.companyName ||
+            data?.smeName ||
+            ""
+        ).trim();
+        if (name) current.names.set(participantId, name);
+      }
       appointmentGroups.set(key, current);
     });
-    appointmentGroups.forEach(({ id, data, participantIds }) => {
+    appointmentGroups.forEach(({ id, data, participantIds, names, invited, attended }) => {
       const date = toDate(data?.date || data?.startTime || data?.createdAt);
       if (date)
         addMonth(months, date, {
           appointments: 1,
           participantIds: Array.from(participantIds),
+          participants: Array.from(participantIds).map((participantId) => ({
+            id: participantId,
+            name: names.get(participantId) || "",
+          })),
           topics: coveredTopicsFor(data),
           activities: [
             {
@@ -371,6 +418,9 @@ export async function loadMilestoneJourney(args: {
               detail: coveredTopicsFor(data).join(", ") || undefined,
               detailLabel: "Covered",
               participantIds: Array.from(participantIds),
+              delivery: formatDeliveryMethod(data) === "-" ? undefined : formatDeliveryMethod(data),
+              invited: invited.size,
+              attended: attended.size,
             },
           ],
         });
@@ -387,6 +437,18 @@ export async function loadMilestoneJourney(args: {
           participantIds: [
             String(data?.participantId || data?.beneficiaryId || "").trim(),
           ].filter(Boolean),
+          participants: [
+            {
+              id: String(data?.participantId || data?.beneficiaryId || "").trim(),
+              name: String(
+                data?.participantName ||
+                  data?.beneficiaryName ||
+                  data?.companyName ||
+                  data?.businessName ||
+                  ""
+              ).trim(),
+            },
+          ].filter((participant) => participant.id),
           feedback: String(data?.feedback?.comments || "").trim()
             ? [
                 {
@@ -412,10 +474,7 @@ export async function loadMilestoneJourney(args: {
                   data?.title ||
                   "Intervention completed"
               ),
-              department:
-                String(
-                  data?.departmentName || data?.areaOfSupport || ""
-                ).trim() || undefined,
+              department: departmentLabel(data),
               detail: subInterventionFor(data),
               detailLabel: "Sub-intervention",
               participantIds: [

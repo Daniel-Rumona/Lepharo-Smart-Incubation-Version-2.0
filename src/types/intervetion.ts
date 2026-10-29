@@ -81,7 +81,6 @@ export interface Assignment {
     dueDate?: Timestamp | null
     feedback?: { rating: number; comments: string } | null
 
-    areaOfSupport?: string | null
     departmentId?: string | null
     tracking?: Tracking | null
     computedProgress?: number
@@ -98,8 +97,6 @@ export interface Assignment {
       id: string | number
       title?: string
       interventionTitle?: string
-      area?: string
-      areaOfSupport?: string
       departmentId?: string
     }>
     completedInterventions: { id: string; title: string }[]

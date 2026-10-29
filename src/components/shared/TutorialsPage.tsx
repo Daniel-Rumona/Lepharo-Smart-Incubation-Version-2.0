@@ -62,7 +62,7 @@ type TutorialDoc = {
 }
 
 const ROLE_OPTIONS = [
-    'admin',
+    'system_admin',
     'director',
     'projectadmin',
     'projectmanager',
@@ -228,7 +228,7 @@ const TutorialsPage: React.FC = () => {
         return normalizeRole(user?.role)
     }, [user])
 
-    const canManageTutorials = currentRole === 'admin'
+    const canManageTutorials = currentRole === 'system_admin'
 
     useEffect(() => {
         const q = query(collection(db, 'tutorials'), orderBy('createdAt', 'desc'))

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { arrayUnion, doc, updateDoc } from 'firebase/firestore'
 import { getToken } from 'firebase/messaging'
 
@@ -26,7 +26,9 @@ async function activeServiceWorker(): Promise<ServiceWorkerRegistration | null> 
 }
 
 export function usePushNotifications() {
-    const { user } = useFullIdentity()
+    // The signed-in person, never a "view as" target: this browser's token
+    // must only ever be attached to its own account.
+    const { actor: user } = useFullIdentity()
     const [permission, setPermission] = useState<PushPermissionState>(
         typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
     )
@@ -74,6 +76,30 @@ export function usePushNotifications() {
         } finally {
             setRegistering(false)
         }
+    }, [user?.uid])
+
+    // Permission survives across sessions but FCM tokens rotate, and a new
+    // device/browser never clicks "Enable" because the button is hidden once
+    // permission is granted. Re-register silently on each sign-in so pushes
+    // keep reaching this browser.
+    useEffect(() => {
+        if (!user?.uid || !VAPID_KEY || typeof Notification === 'undefined') return
+        if (Notification.permission !== 'granted') return
+        let cancelled = false
+        ;(async () => {
+            try {
+                const messaging = await getMessagingInstance()
+                const registration = messaging ? await activeServiceWorker() : null
+                if (!messaging || !registration || cancelled) return
+                const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration })
+                if (token && !cancelled) {
+                    await updateDoc(doc(db, 'users', user.uid), { fcmTokens: arrayUnion(token) })
+                }
+            } catch (error) {
+                console.warn('Failed to refresh push token', error)
+            }
+        })()
+        return () => { cancelled = true }
     }, [user?.uid])
 
     // Foreground push toasts are now handled by the live Firestore listener in

@@ -1,12 +1,11 @@
 import React from 'react'
 import { Row, Col, Grid } from 'antd'
 import type { RowProps } from 'antd'
-import type { MetricCardProps } from './MetricCard'
-import { MotionCard } from './Header'
+import { MetricTile, type MetricTileProps } from './MetricTile'
 
 const { useBreakpoint } = Grid
 
-export interface DashboardMetric extends Omit<MetricCardProps, 'compact' | 'hideSubtitle'> {
+export interface DashboardMetric extends Omit<MetricTileProps, 'compact'> {
     /** Stable identifier, also used as the React key. */
     key: string
     /**
@@ -28,6 +27,12 @@ export interface MetricsGridProps {
     gutter?: RowProps['gutter']
     /** Override the desktop column span (out of 24) instead of the auto layout. */
     desktopSpan?: number
+    /**
+     * Tiles per row on mobile. 3 fits a short summary row (e.g. Total /
+     * Pending / Confirmed) by dropping the icons and tightening the gutter so
+     * every tile keeps the same size - pair it with short `mobileTitle`s.
+     */
+    mobileColumns?: 2 | 3
 }
 
 const desktopSpanFor = (count: number) => {
@@ -41,8 +46,7 @@ const desktopSpanFor = (count: number) => {
 }
 
 /**
- * Map-driven, responsive metrics row using the shared MotionCard.Metric
- * presentation.
+ * Map-driven, responsive row of MetricTiles.
  * Desktop: every metric renders, auto-spanned across the row.
  * Mobile: only metrics flagged `important` render, two per row,
  * with subtitles clamped to a single line so text can't blow out the card.
@@ -50,7 +54,8 @@ const desktopSpanFor = (count: number) => {
 export const MetricsGrid: React.FC<MetricsGridProps> = ({
     metrics,
     gutter = [16, 16],
-    desktopSpan
+    desktopSpan,
+    mobileColumns = 2
 }) => {
     const screens = useBreakpoint()
     const isMobile = !screens.md
@@ -62,39 +67,41 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
         })()
         : metrics
 
+    const threeUp = isMobile && mobileColumns === 3
     const span = desktopSpan ?? desktopSpanFor(metrics.length)
     const useFluidDesktopColumns = !isMobile && !desktopSpan && metrics.length === 5
 
     return (
-        <Row gutter={gutter}>
+        <Row gutter={threeUp ? [8, 8] : gutter}>
             {visibleMetrics.map(metric => {
                 const {
                     key,
                     important,
                     hideSubtitleOnMobile = false,
-                    mobileTitle,
-                    mobileSubtitle,
-                    ...cardProps
+                    ...tileProps
                 } = metric
-
-                const displayTitle = isMobile && mobileTitle !== undefined ? mobileTitle : cardProps.title
-                const displaySubtitle = isMobile && mobileSubtitle !== undefined ? mobileSubtitle : cardProps.subtitle
 
                 return (
                     <Col
                         key={key}
-                        xs={12}
+                        xs={threeUp ? 8 : 12}
                         md={useFluidDesktopColumns ? undefined : span}
                         flex={useFluidDesktopColumns ? '1 1 0' : undefined}
                         style={useFluidDesktopColumns ? { minWidth: 0, maxWidth: 'none' } : undefined}
                     >
-                        <MotionCard styles={{ body: { padding: 0 } }}>
-                            <MotionCard.Metric
-                                {...cardProps}
-                                title={displayTitle}
-                                subtitle={isMobile && hideSubtitleOnMobile ? undefined : displaySubtitle}
+                        {/* The tile is its own bordered surface; wrapping it in a
+                            card as well drew two borders around one number. */}
+                        <div className='qtx-motion-card' style={{ height: '100%' }}>
+                            {/* Compact on phones, which also swaps in mobileTitle /
+                                mobileSubtitle where a metric provides them. */}
+                            <MetricTile
+                                {...tileProps}
+                                compact={isMobile}
+                                icon={threeUp ? undefined : tileProps.icon}
+                                subtitle={isMobile && hideSubtitleOnMobile ? undefined : tileProps.subtitle}
+                                mobileSubtitle={hideSubtitleOnMobile ? undefined : tileProps.mobileSubtitle}
                             />
-                        </MotionCard>
+                        </div>
                     </Col>
                 )
             })}

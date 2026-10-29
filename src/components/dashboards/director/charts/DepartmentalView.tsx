@@ -4,7 +4,7 @@ import { ExpandOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import DrilldownModule from 'highcharts/modules/drilldown'
+import 'highcharts/modules/drilldown'
 import {
     collection,
     documentId,
@@ -14,13 +14,13 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { DepartmentRoleKey, useDepartmentRoles } from '@/services/departmentRoles'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import isBetween from 'dayjs/plugin/isBetween'
 dayjs.extend(isBetween)
 
-if (typeof DrilldownModule === 'function') DrilldownModule(Highcharts)
 
 const { RangePicker } = DatePicker
 
@@ -42,8 +42,7 @@ const DEFAULT_RANGE: [Dayjs, Dayjs] = [
 
 // ---------- utils ----------
 const normalize = (s?: string) => (s || '').toString().trim().toLowerCase()
-const normDept = (s?: string) =>
-    (s || 'Other').toString().replace(/\s+/g, ' ').trim()
+const deptKey = (id?: string) => String(id || '').trim()
 
 const toDate = (v: any): Date | null => {
     if (!v) return null
@@ -110,7 +109,7 @@ type AppDoc = {
     branchId?: string
     programId?: string
     applicationStatus?: string
-    interventions?: { required?: Array<{ area?: string; title?: string }> }
+    interventions?: { required?: Array<{ departmentId?: string; title?: string }> }
 }
 
 type ParticipantDoc = { id: string }
@@ -121,15 +120,14 @@ type AssignedIntervention = {
     beneficiaryId?: string
     createdAt?: any
     completedAt?: any
-    areaOfSupport?: string
+    departmentId?: string
     interventionTitle?: string
     status?: string
 }
 
 type UserDoc = {
     id: string
-    department?: string
-    departmentName?: string
+    departmentId?: string
     role?: string
     roles?: string[]
     isActive?: boolean
@@ -145,6 +143,7 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
 }) => {
     const { user, loading: identityLoading } = useFullIdentity()
     const { activeProgramId } = useActiveProgramId()
+    const { departments, hasRole, nameOf, loading: departmentsLoading } = useDepartmentRoles()
 
     // if a prop dateRange is provided, use it; else default.
     const [internalRange, setInternalRange] = useState<[Dayjs, Dayjs]>(
@@ -158,7 +157,7 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
     const dateRange = controlledRange || internalRange
 
     const [loading, setLoading] = useState(false)
-    const [depsLoaded, setDepsLoaded] = useState(false) // departments
+    const depsLoaded = !departmentsLoading
     const [coreLoaded, setCoreLoaded] = useState(false) // apps + assigned + team
     const [plansLoaded, setPlansLoaded] = useState(false) // diagnosticPlans
 
@@ -171,15 +170,15 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
     const [apps, setApps] = useState<AppDoc[]>([])
     const [assigned, setAssigned] = useState<AssignedIntervention[]>([])
     const [team, setTeam] = useState<UserDoc[]>([])
-    const [deptNames, setDeptNames] = useState<string[]>([])
     const latestPlanByPidRef = useRef<Map<string, any>>(new Map())
 
     const assignedBranch = user?.assignedBranch
 
     // Exclusions for DP mapping
-    const EXCLUDED_SUBSTR = ['ihf', 'm&e', 'stakeholder', 'hrm']
-    const isExcludedDept = (name?: string) =>
-        !!name && EXCLUDED_SUBSTR.some(s => name.toLowerCase().includes(s))
+    const EXCLUDED_ROLES: DepartmentRoleKey[] = ['inhouseFinance', 'monitoring', 'stakeholder', 'hr']
+    const isExcludedDept = (id?: string) =>
+        !!id && EXCLUDED_ROLES.some(role => hasRole(id, role))
+    const deptLabel = (id?: string) => nameOf(id, 'Other')
 
     const hasAgreement = (app: any, slug: string) => {
         const m = app?.signedAgreements || {}
@@ -194,27 +193,6 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
         },
         [dateRange]
     )
-
-    // ---- Load Departments list (names) ----
-    useEffect(() => {
-        setDepsLoaded(false)
-            ; (async () => {
-                try {
-                    const qs = await getDocs(
-                        query(
-                            collection(db, 'departments'),
-                        )
-                    )
-                    setDeptNames(
-                        qs.docs
-                            .map(d => String((d.data() as any).name || d.id).trim())
-                            .filter(n => n && !isExcludedDept(n))
-                    )
-                } finally {
-                    setDepsLoaded(true)
-                }
-            })()
-    }, [identityLoading])
 
     // ---- Load Applications, Participants, AssignedInterventions, Team ----
     // ---- Load Applications (by program), AssignedInterventions, Team ----
@@ -281,7 +259,7 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
 
                     // Enrich missing labels from the canonical intervention definitions.
                     const missing = merged.filter(
-                        r => !r.areaOfSupport || !r.interventionTitle
+                        r => !r.departmentId || !r.interventionTitle
                     )
                     const idsToFetch = Array.from(
                         new Set(
@@ -303,18 +281,14 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
                             s.forEach(d => detailsMap.set(d.id, d.data()))
                         }
                         merged = merged.map(r => {
-                            if (r.areaOfSupport && r.interventionTitle) return r
+                            if (r.departmentId && r.interventionTitle) return r
                             const info = (r as any).interventionId
                                 ? detailsMap.get((r as any).interventionId)
                                 : null
                             return info
                                 ? {
                                     ...r,
-                                    areaOfSupport:
-                                        r.areaOfSupport ??
-                                        info.areaOfSupport ??
-                                        info.department ??
-                                        'Other',
+                                    departmentId: r.departmentId ?? info.departmentId,
                                     interventionTitle:
                                         r.interventionTitle ??
                                         info.title ??
@@ -434,15 +408,16 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
     const breakdown = useMemo(() => {
         const perDept: Record<string, AssignedIntervention[]> = {}
         assignedInRange.forEach(r => {
-            const dept = normDept(r.areaOfSupport)
-            if (!perDept[dept]) perDept[dept] = []
-            perDept[dept].push(r)
+            const id = deptKey(r.departmentId)
+            if (!perDept[id]) perDept[id] = []
+            perDept[id].push(r)
         })
 
         const topData: Highcharts.PointOptionsObject[] = []
-        const drillSeries: Highcharts.DrilldownSeriesOptions[] = []
+        const drillSeries: Highcharts.SeriesOptionsType[] = []
 
-        Object.entries(perDept).forEach(([dept, rows]) => {
+        Object.entries(perDept).forEach(([deptId, rows]) => {
+            const dept = deptLabel(deptId)
             const perStatus: Record<string, AssignedIntervention[]> = {}
             rows.forEach(r => {
                 const st = canonicalStatus(r.status)
@@ -450,11 +425,11 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
                 perStatus[st].push(r)
             })
 
-            topData.push({ name: dept, y: rows.length, drilldown: `dept:${dept}` })
+            topData.push({ name: dept, y: rows.length, drilldown: `dept:${deptId}` })
 
             const statusPoints: Highcharts.PointOptionsObject[] = []
             Object.entries(perStatus).forEach(([st, srows]) => {
-                const id = `dept:${dept}::status:${st}`
+                const id = `dept:${deptId}::status:${st}`
                 statusPoints.push({ name: st, y: srows.length, drilldown: id })
 
                 const perTitle: Record<string, number> = {}
@@ -472,7 +447,7 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
             })
 
             drillSeries.push({
-                id: `dept:${dept}`,
+                id: `dept:${deptId}`,
                 name: `${dept} — by Status`,
                 type: 'column',
                 data: statusPoints
@@ -480,7 +455,7 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
         })
 
         return { topData, drillSeries }
-    }, [assignedInRange])
+    }, [assignedInRange, nameOf])
 
     const breakdownHasData = breakdown.topData.some(p => (p as any).y > 0)
     const breakdownOptions: Highcharts.Options = {
@@ -511,7 +486,6 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
     // 2) Team Members per Department (drilldown to Roles)
     // =====================================================
     const teamByDeptDrill = useMemo(() => {
-        const HIDE_DEPT = new Set(['unassigned', 'other', ''])
         const HIDE_ROLE = new Set(['incubatee'])
 
         // Normalize & map role labels
@@ -540,21 +514,21 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
         const perDept: Record<string, UserDoc[]> = {}
 
         team.forEach(u => {
-            const dept = normDept(u.departmentName || u.department || '')
-            const deptNorm = dept.toLowerCase()
+            const id = deptKey(u.departmentId)
 
             const rolesNorm = getRoles(u)
-            if (HIDE_DEPT.has(deptNorm) || rolesNorm.some(r => HIDE_ROLE.has(r)))
+            if (!id || rolesNorm.some(r => HIDE_ROLE.has(r)))
                 return
 
-            if (!perDept[dept]) perDept[dept] = []
-            perDept[dept].push(u)
+            if (!perDept[id]) perDept[id] = []
+            perDept[id].push(u)
         })
 
         const topData: Highcharts.PointOptionsObject[] = []
-        const drillSeries: Highcharts.DrilldownSeriesOptions[] = []
+        const drillSeries: Highcharts.SeriesOptionsType[] = []
 
-        Object.entries(perDept).forEach(([dept, users]) => {
+        Object.entries(perDept).forEach(([deptId, users]) => {
+            const dept = deptLabel(deptId)
             const perRole: Record<string, number> = {}
 
             users.forEach(u => {
@@ -568,10 +542,10 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
             const total = Object.values(perRole).reduce((a, b) => a + b, 0)
             if (!total) return
 
-            topData.push({ name: dept, y: total, drilldown: `t:${dept}` })
+            topData.push({ name: dept, y: total, drilldown: `t:${deptId}` })
 
             drillSeries.push({
-                id: `t:${dept}`,
+                id: `t:${deptId}`,
                 name: `${dept} — Roles`,
                 type: 'column',
                 data: Object.entries(perRole).map(([r, n]) => [r, n])
@@ -579,7 +553,7 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
         })
 
         return { topData, drillSeries }
-    }, [team])
+    }, [team, nameOf])
 
     const teamHasData = teamByDeptDrill.topData.some(p => (p as any).y > 0)
     const teamOptions: Highcharts.Options = {
@@ -614,62 +588,51 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
 
         // observed from assignedInterventions
         assignedInRange.forEach(r => {
-            const n = normDept(r.areaOfSupport)
-            if (!isExcludedDept(n)) deptSet.add(n)
+            const id = deptKey(r.departmentId)
+            if (id && !isExcludedDept(id)) deptSet.add(id)
         })
 
-        // needed per dept from applications.interventions.required[].area
+        // needed per dept from applications.interventions.required[].departmentId
         const neededByDept = new Map<string, Set<string>>() // participants needing that dept
         apps.forEach(a => {
             if (normalize(a.applicationStatus) !== 'accepted') return
             const pid = String(a.participantId || '')
             const req = a?.interventions?.required
             if (!pid || !Array.isArray(req)) return
-            const areas = new Set(req.map(it => normDept(it?.area)).filter(Boolean))
-            areas.forEach(area => {
-                if (isExcludedDept(area)) return
-                deptSet.add(area)
-                const set = neededByDept.get(area) || new Set<string>()
+            const ids = new Set(req.map(it => deptKey(it?.departmentId)).filter(Boolean))
+            ids.forEach(id => {
+                if (isExcludedDept(id)) return
+                deptSet.add(id)
+                const set = neededByDept.get(id) || new Set<string>()
                 set.add(pid)
-                neededByDept.set(area, set)
+                neededByDept.set(id, set)
             })
         })
 
         // confirmed from latest diagnosticPlans.confirmed (ROM-gated)
         const confirmedByDept = new Map<string, Set<string>>()
         const latest = latestPlanByPidRef.current
-        const norm = (s: string) =>
-            s
-                .toLowerCase()
-                .replace(/\(.*?\)|and|&/gi, '')
-                .trim()
 
         latest.forEach((plan, pid) => {
-            const conf = (plan?.confirmed || {}) as Record<string, boolean>
-            Object.entries(conf).forEach(([k, v]) => {
-                if (!v) return
-                const nk = norm(k)
-                const match = deptNames.find(
-                    d =>
-                        !isExcludedDept(d) && (norm(d).includes(nk) || nk.includes(norm(d)))
-                )
-                if (match) {
-                    const m = confirmedByDept.get(match) || new Set<string>()
-                    m.add(String(pid))
-                    confirmedByDept.set(match, m)
-                }
+            const conf = (plan?.confirmedByDeptId || {}) as Record<string, unknown>
+            Object.entries(conf).forEach(([id, v]) => {
+                if (!v || isExcludedDept(id)) return
+                const m = confirmedByDept.get(id) || new Set<string>()
+                m.add(String(pid))
+                confirmedByDept.set(id, m)
             })
         })
 
-        const cats = Array.from(
-            new Set([...deptSet, ...deptNames.filter(d => !isExcludedDept(d))])
+        const ids = Array.from(
+            new Set([...deptSet, ...departments.map(d => d.id).filter(id => !isExcludedDept(id))])
         )
             .filter(Boolean)
-            .sort()
-        const needed = cats.map(d => neededByDept.get(d)?.size || 0)
-        const confirmed = cats.map(d => confirmedByDept.get(d)?.size || 0)
+            .sort((a, b) => deptLabel(a).localeCompare(deptLabel(b)))
+        const cats = ids.map(deptLabel)
+        const needed = ids.map(d => neededByDept.get(d)?.size || 0)
+        const confirmed = ids.map(d => confirmedByDept.get(d)?.size || 0)
         return { cats, needed, confirmed }
-    }, [assignedInRange, apps, deptNames])
+    }, [assignedInRange, apps, departments, hasRole, nameOf])
 
     const paDPHasData =
         paDPModel.cats.length &&
@@ -700,9 +663,9 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
             const req = a?.interventions?.required
             if (!Array.isArray(req)) return
             req.forEach(it => {
-                const area = normDept(it?.area)
-                if (isExcludedDept(area)) return
-                reqCount[area] = (reqCount[area] || 0) + 1
+                const id = deptKey(it?.departmentId)
+                if (isExcludedDept(id)) return
+                reqCount[id] = (reqCount[id] || 0) + 1
             })
         })
 
@@ -710,20 +673,20 @@ const DepartmentalView: React.FC<DepartmentalViewProps> = ({
         assignedInRange.forEach(r => {
             const label = canonicalStatus(r.status)
             if (!isCompletedCanonical(label)) return
-            const area = normDept(r.areaOfSupport)
-            if (isExcludedDept(area)) return
-            doneCount[area] = (doneCount[area] || 0) + 1
+            const id = deptKey(r.departmentId)
+            if (isExcludedDept(id)) return
+            doneCount[id] = (doneCount[id] || 0) + 1
         })
 
-        const cats = Array.from(
+        const ids = Array.from(
             new Set([...Object.keys(reqCount), ...Object.keys(doneCount)])
-        ).sort()
+        ).sort((a, b) => deptLabel(a).localeCompare(deptLabel(b)))
         return {
-            cats,
-            required: cats.map(c => reqCount[c] || 0),
-            completed: cats.map(c => doneCount[c] || 0)
+            cats: ids.map(deptLabel),
+            required: ids.map(c => reqCount[c] || 0),
+            completed: ids.map(c => doneCount[c] || 0)
         }
-    }, [apps, assignedInRange])
+    }, [apps, assignedInRange, hasRole, nameOf])
 
     const interventionsGapHasData =
         interventionsGap.required.some(v => v > 0) ||

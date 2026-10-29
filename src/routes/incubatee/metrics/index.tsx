@@ -197,8 +197,8 @@ export const MonthlyPerformanceForm: React.FC = () => {
             value: currencyFormatter.format(totalRevenue),
             subtitle: 'Revenue recorded across all reporting periods',
             mobileSubtitle: 'All periods',
-            icon: <DollarCircleOutlined style={{ color: '#15803d' }} />,
-            iconBg: 'rgba(21,128,61,.12)',
+            icon: <DollarCircleOutlined />,
+            tone: 'success' as const,
             important: true
         },
         {
@@ -210,8 +210,8 @@ export const MonthlyPerformanceForm: React.FC = () => {
                 ? `Latest reporting period: ${monthLabel(latestRecord)}`
                 : 'No employee records available',
             mobileSubtitle: latestRecord ? monthLabel(latestRecord) : 'No records',
-            icon: <TeamOutlined style={{ color: '#1677ff' }} />,
-            iconBg: 'rgba(22,119,255,.12)',
+            icon: <TeamOutlined />,
+            tone: 'info' as const,
             important: true
         }
     ]

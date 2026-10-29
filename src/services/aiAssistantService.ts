@@ -79,12 +79,82 @@ export type AskAssistantParams = {
     chartOnly?: boolean
 }
 
+/** An interactive flow the backend proposes opening (the user completes it in a form). */
+export type AssistantAction = {
+    kind: 'schedule_appointment'
+    sme: string | null
+}
+
+/** A page the assistant offers to open and walk the user through. */
+export type ShowMeRequest = {
+    route: string
+    label: string
+    goal: string
+}
+
+export type AgentProposalKind =
+    | 'schedule_appointment'
+    | 'create_task'
+    | 'send_nudge'
+    | 'send_compliance_reminder'
+    | 'assign_intervention'
+
+/** A change the assistant drafted. Nothing happens until the agentProposeAction
+ * function validates it and the user confirms the result. */
+export type AgentProposalDraft = {
+    kind: AgentProposalKind
+    params: Record<string, unknown>
+}
+
 export type AskAssistantResult = {
     answer: string
     chart: ChartSpec | null
     guide: CatalogGuide | null
+    action: AssistantAction | null
+    showMe: ShowMeRequest | null
+    proposal: AgentProposalDraft | null
     sources: string[]
     sessionId?: string
+}
+
+const PROPOSAL_KINDS: AgentProposalKind[] = [
+    'schedule_appointment',
+    'create_task',
+    'send_nudge',
+    'send_compliance_reminder',
+    'assign_intervention'
+]
+
+const normaliseShowMe = (raw: unknown): ShowMeRequest | null => {
+    if (!raw || typeof raw !== 'object') return null
+    const value = raw as Record<string, unknown>
+    if (typeof value.route !== 'string' || !value.route.startsWith('/')) return null
+    return {
+        route: value.route,
+        label: typeof value.label === 'string' ? value.label : '',
+        goal: typeof value.goal === 'string' ? value.goal : ''
+    }
+}
+
+const normaliseProposal = (raw: unknown): AgentProposalDraft | null => {
+    if (!raw || typeof raw !== 'object') return null
+    const value = raw as Record<string, unknown>
+    const kind = PROPOSAL_KINDS.find(item => item === value.kind)
+    if (!kind) return null
+    const params = value.params && typeof value.params === 'object'
+        ? value.params as Record<string, unknown>
+        : {}
+    return { kind, params }
+}
+
+const normaliseAction = (raw: unknown): AssistantAction | null => {
+    if (!raw || typeof raw !== 'object') return null
+    const value = raw as Record<string, unknown>
+    if (value.kind !== 'schedule_appointment') return null
+    return {
+        kind: 'schedule_appointment',
+        sme: typeof value.sme === 'string' && value.sme.trim() ? value.sme.trim() : null
+    }
 }
 
 const normaliseGuide = (raw: unknown): CatalogGuide | null => {
@@ -144,8 +214,69 @@ export async function askAssistant(params: AskAssistantParams): Promise<AskAssis
             'I could not find enough data to answer that.',
         chart: normaliseChart(data.chart),
         guide: normaliseGuide(data.guide),
+        action: normaliseAction(data.action),
+        showMe: normaliseShowMe(data.showMe),
+        proposal: normaliseProposal(data.proposal),
         sources: Array.isArray(data.sources) ? data.sources.filter((s: unknown) => typeof s === 'string') : [],
         sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined
+    }
+}
+
+export type ComposedTour = {
+    guideId: string | null
+    intro: string
+    steps: { target: string | null; title: string; description: string }[]
+}
+
+/**
+ * Asks the backend to turn a goal into a tour of the page that is open now. Only the
+ * route, the page's guide titles and the visible labels of its guide targets are sent.
+ */
+export async function composeTour(params: {
+    goal: string
+    route: string
+    pageTitle?: string
+    targets: { name: string; text: string; kind: string }[]
+    guides: { id: string; title: string; description?: string }[]
+}): Promise<ComposedTour> {
+    const firebaseUser = getAuth().currentUser
+    if (!firebaseUser) throw new Error('Please sign in again to use the assistant.')
+
+    const token = await firebaseUser.getIdToken()
+    const response = await fetch(`${AI_BASE_URL}/guide/compose`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            goal: params.goal.slice(0, 400),
+            route: params.route.slice(0, 200),
+            pageTitle: (params.pageTitle || '').slice(0, 120),
+            targets: params.targets.slice(0, 120),
+            guides: params.guides.slice(0, 30).map(guide => ({
+                id: guide.id.slice(0, 80),
+                title: guide.title.slice(0, 160),
+                description: (guide.description || '').slice(0, 300)
+            }))
+        })
+    })
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data?.detail || `The tour could not be prepared (${response.status}).`)
+
+    return {
+        guideId: typeof data.guideId === 'string' ? data.guideId : null,
+        intro: typeof data.intro === 'string' ? data.intro : '',
+        steps: Array.isArray(data.steps)
+            ? data.steps
+                .filter((step: any) => step && typeof step.title === 'string')
+                .map((step: any) => ({
+                    target: typeof step.target === 'string' ? step.target : null,
+                    title: step.title,
+                    description: String(step.description || '')
+                }))
+            : []
     }
 }
 

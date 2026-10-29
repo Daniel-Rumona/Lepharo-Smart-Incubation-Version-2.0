@@ -1,77 +1,13 @@
 import * as logger from "firebase-functions/logger";
-import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import {
-  admin,
   getCCRecipients,
   getMERecipients,
   getHODRecipients,
   sendStatusChangeNotification,
-  buildMovNotificationContent,
   buildPackReminderEmail,
   APP_BASE_URL,
 } from "./emailShared";
-
-export const onMovDocumentWorkflowEmails = onDocumentWritten(
-  { region: "us-central1", document: "movDocuments/{movId}" },
-  async (event) => {
-    const before = event.data?.before;
-    const after = event.data?.after;
-    if (!after?.exists) return;
-
-    const beforeStatus = before?.exists ? String((before.data() as any).status || "") : "";
-    const afterData = after.data() as any;
-    const afterStatus = String(afterData.status || "");
-    const movId = String(event.params.movId || "");
-    const notifications = afterData.workflowNotifications || {};
-
-    if (afterStatus === "generated" && beforeStatus !== "generated" && !notifications.ccPackSubmittedNotifiedAt) {
-      const recipients = await getCCRecipients();
-      if (recipients.length) {
-        const content = buildMovNotificationContent({
-          statusLabel: "submitted",
-          movId,
-          interventionTitle: afterData.interventionTitle,
-          beneficiaryName: afterData.beneficiaryName,
-          facilitatorName: afterData.facilitatorName,
-        });
-        await sendStatusChangeNotification(recipients, content.subject, content.html, content.text);
-        await after.ref.set(
-          {
-            workflowNotifications: {
-              ...notifications,
-              ccPackSubmittedNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-          },
-          { merge: true }
-        );
-      }
-    }
-
-    if (afterStatus === "signed" && beforeStatus !== "signed" && !notifications.mePackSignedNotifiedAt) {
-      const recipients = await getMERecipients();
-      if (recipients.length) {
-        const content = buildMovNotificationContent({
-          statusLabel: "signed",
-          movId,
-          interventionTitle: afterData.interventionTitle,
-          beneficiaryName: afterData.beneficiaryName,
-          facilitatorName: afterData.facilitatorName,
-        });
-        await sendStatusChangeNotification(recipients, content.subject, content.html, content.text);
-        await after.ref.set(
-          {
-            workflowNotifications: {
-              ...notifications,
-              mePackSignedNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-          },
-          { merge: true }
-        );
-      }
-    }
-  }
-);
 
 /**
  * One daily scheduler replaces the former HOD, CC and M&E scheduler resources.

@@ -30,6 +30,8 @@ from firestore_tools import (
     get_assigned_interventions_by_department,
     get_monthly_participants_serviced_by_program,
     get_monthly_participants_serviced,
+    get_intervention_impact_by_program,
+    get_intervention_impact,
 
     get_diagnostic_plan_by_participant,
     get_diagnostic_plans,
@@ -174,6 +176,8 @@ TOOL_MAP: dict[str, Callable[..., Any]] = {
     "get_assigned_interventions_by_department": get_assigned_interventions_by_department,
     "get_monthly_participants_serviced_by_program": get_monthly_participants_serviced_by_program,
     "get_monthly_participants_serviced": get_monthly_participants_serviced,
+    "get_intervention_impact_by_program": get_intervention_impact_by_program,
+    "get_intervention_impact": get_intervention_impact,
 
     "get_diagnostic_plan_by_participant": get_diagnostic_plan_by_participant,
     "get_diagnostic_plans": get_diagnostic_plans,
@@ -307,6 +311,8 @@ MULTI_FIELD_SUMMARY_TOOLS = {
 COMPLETE_AGGREGATE_TOOLS = {
     "get_monthly_participants_serviced_by_program",
     "get_monthly_participants_serviced",
+    "get_intervention_impact_by_program",
+    "get_intervention_impact",
 }
 
 
@@ -448,6 +454,7 @@ def run_page_tools(
             "get_appointments_by_program",
             "get_movs_by_program",
             "get_monthly_participants_serviced_by_program",
+            "get_intervention_impact_by_program",
             "get_timesheets_by_program",
         }:
             if not program_id:
@@ -564,6 +571,7 @@ def run_page_tools(
             "get_inquiries",
             "get_intake_submissions",
             "get_monthly_participants_serviced",
+            "get_intervention_impact",
             "get_recent_activity_summary",
         }:
             results[tool_name] = _safe_run(

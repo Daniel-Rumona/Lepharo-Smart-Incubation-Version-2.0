@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Alert, Card, Col, Descriptions, Input, Modal, Row, message } from 'antd'
 import { collection, getDocs, limit, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { SignatureAnimation, useSignaturePlayback } from '@/components/shared/SignatureAnimation'
 
 export type GapConfirmPayload = {
     comment: string
@@ -35,6 +36,9 @@ const GapConfirmModal: React.FC<Props> = ({
     const [digitalSignature, setDigitalSignature] = useState('')
     const [loadingSig, setLoadingSig] = useState(false)
     const [submitting, setSubmitting] = useState(false)
+    // Confirm re-draws the signature before the GAP is saved with it.
+    const [signing, setSigning] = useState(false)
+    const signaturePlayback = useSignaturePlayback()
 
     useEffect(() => {
         if (!open) return
@@ -75,9 +79,17 @@ const GapConfirmModal: React.FC<Props> = ({
         run()
     }, [open, romEmail])
 
+    const hasSignature = !!signatureUrl || !!digitalSignature
+
     const handleOk = async () => {
+        if (loadingSig || !hasSignature) return
         setSubmitting(true)
         try {
+            if (signatureUrl) {
+                signaturePlayback.start()
+                setSigning(true)
+                await signaturePlayback.finished()
+            }
             await onConfirm({
                 comment,
                 romSignatureUrl: signatureUrl,
@@ -87,6 +99,7 @@ const GapConfirmModal: React.FC<Props> = ({
             console.error('Failed to confirm GAP', e)
             message.error('Failed to confirm GAP.')
         } finally {
+            setSigning(false)
             setSubmitting(false)
         }
     }
@@ -97,18 +110,29 @@ const GapConfirmModal: React.FC<Props> = ({
             open={open}
             onCancel={onCancel}
             onOk={handleOk}
-            okText='Confirm'
+            okText='Confirm and sign'
             confirmLoading={submitting}
+            // Signatures load on open; confirming before they arrive saved an unsigned GAP.
+            okButtonProps={{ disabled: loadingSig || !hasSignature }}
             width={isMobile ? '100%' : 760}
             style={isMobile ? { top: 8 } : undefined}
         >
-            <Alert
-                type='warning'
-                showIcon
-                message='ROM Review'
-                description='Your comment will be saved with your ROM digital signature and signature image.'
-                style={{ marginBottom: 12 }}
-            />
+            {!loadingSig && !hasSignature ? (
+                <Alert
+                    type='error'
+                    showIcon
+                    message='You have no signature on file'
+                    description='Add your signature to your profile first. A GAP Analysis is confirmed with the reviewer’s signature.'
+                    style={{ marginBottom: 12 }}
+                />
+            ) : (
+                <Alert
+                    type='info'
+                    showIcon
+                    message='Your comment is saved with your signature.'
+                    style={{ marginBottom: 12 }}
+                />
+            )}
 
             <Descriptions column={1} size='small' bordered style={{ marginBottom: 12 }}>
                 <Descriptions.Item label='Reviewer'>{romName || '—'}</Descriptions.Item>
@@ -129,10 +153,14 @@ const GapConfirmModal: React.FC<Props> = ({
                     <Col xs={24} md={12}>
                         <Card size='small' title='ROM Signature'>
                             {signatureUrl ? (
-                                <img
+                                <SignatureAnimation
                                     src={signatureUrl}
                                     alt='ROM Signature'
-                                    style={{ maxWidth: '100%', maxHeight: 140, objectFit: 'contain' }}
+                                    animate={signing}
+                                    className='keep-light'
+                                    onComplete={signaturePlayback.complete}
+                                    // White behind the dark ink, so it reads in dark theme too.
+                                    style={{ maxWidth: '100%', maxHeight: 140, objectFit: 'contain', background: '#fff', borderRadius: 6 }}
                                 />
                             ) : (
                                 <em>No signature image on file</em>

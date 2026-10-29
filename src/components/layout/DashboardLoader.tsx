@@ -1,186 +1,228 @@
 import React from 'react'
 import { theme } from 'antd'
 
+/*
+ * One loader, three weights, matched to how long and how blocking the wait is:
+ *
+ *  - Inline (default): page code-split chunks and in-page data waits. A 2px
+ *    sweep across the top of the window plus a small track and label in the
+ *    content area, in the user's accent colour. Both stay invisible for the
+ *    first 300ms, so the common fast load shows nothing at all instead of a
+ *    flash.
+ *  - Overlay, solid: app-level gates ("Preparing your workspace"). The same
+ *    brand moment as the sign-out screen (src/components/auth/signOutScreen.ts):
+ *    the Lepharo mark turning slowly, a label, and a sweeping track in brand red.
+ *  - Overlay, translucent: blocking saves. The splash over a frosted backdrop so
+ *    the page the user was working on stays visible underneath.
+ *
+ * Pure CSS on purpose: it renders instantly, before any chunk has arrived, and
+ * the 300ms delay needs no timers.
+ */
+
+const TIMING = {
+    /** One rotation of the mark — matches the sign-out screen. */
+    turn: 2600,
+    /** One pass of a progress sweep. */
+    sweep: 1500,
+    /** How long an inline loader stays invisible before fading in. */
+    inlineDelay: 300,
+}
+
 const STYLES = `
-@keyframes dl-ring {
-    0%   { transform: scale(0.35); opacity: 0.7; }
-    100% { transform: scale(1.25); opacity: 0; }
+.dl-root {
+    --dl-brand: #a6201f;
+    font-family: inherit;
 }
-@keyframes dl-orbit {
-    to { transform: rotate(360deg); }
+html[data-theme="dark"] .dl-root {
+    --dl-brand: #f08a80;
 }
-@keyframes dl-core {
-    0%, 100% { transform: scale(0.85); box-shadow: 0 0 0 0 rgba(31,157,143,0.45); }
-    50%      { transform: scale(1.05); box-shadow: 0 0 22px 6px rgba(31,157,143,0.35); }
+
+/* --- Overlay / splash ---------------------------------------------------- */
+
+.dl-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    animation: dl-appear 160ms ease-out both;
 }
-@keyframes dl-text {
-    0%, 100% { opacity: 0.45; letter-spacing: 0.04em; }
-    50%      { opacity: 0.95; letter-spacing: 0.08em; }
+.dl-translucent {
+    -webkit-backdrop-filter: blur(6px) saturate(120%);
+    backdrop-filter: blur(6px) saturate(120%);
 }
-@keyframes dl-bar {
-    0%   { transform: translateX(-100%); }
-    100% { transform: translateX(250%); }
+.dl-splash {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    text-align: center;
 }
+.dl-mark {
+    width: 64px;
+    height: 64px;
+    animation: dl-turn ${TIMING.turn}ms linear infinite;
+}
+.dl-splash .dl-label {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+.dl-splash .dl-track {
+    width: 160px;
+}
+.dl-splash .dl-bar {
+    background: var(--dl-brand);
+}
+
+/* --- Inline -------------------------------------------------------------- */
+
+.dl-inline {
+    width: 100%;
+    min-height: min(50vh, 420px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+.dl-inline-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    animation: dl-appear 200ms ease-out ${TIMING.inlineDelay}ms both;
+}
+.dl-inline .dl-label {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+}
+.dl-inline .dl-track {
+    width: 96px;
+}
+
+/* Window-top sweep: the "something is loading" signal that never moves the
+   layout. Sits above the app header. */
+.dl-topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 1100;
+    overflow: hidden;
+    pointer-events: none;
+    animation: dl-appear 200ms ease-out ${TIMING.inlineDelay}ms both;
+}
+.dl-topbar .dl-bar {
+    width: 30%;
+    border-radius: 0 2px 2px 0;
+}
+
+/* --- Shared track ---------------------------------------------------------- */
+
+.dl-track {
+    position: relative;
+    height: 3px;
+    border-radius: 999px;
+    overflow: hidden;
+}
+.dl-bar {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 38%;
+    border-radius: 999px;
+    animation: dl-sweep ${TIMING.sweep}ms cubic-bezier(.65, 0, .35, 1) infinite;
+}
+
+@keyframes dl-turn { to { transform: rotate(360deg); } }
+@keyframes dl-sweep {
+    0%   { transform: translateX(-110%); }
+    100% { transform: translateX(370%); }
+}
+@keyframes dl-appear {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .dl-anim { animation-duration: 6s !important; }
+    /* Keep the meaning, drop the movement: the mark stands still and each
+       sweep becomes a static centred segment. The inline delay stays, since it
+       is about not flashing, not about motion. */
+    .dl-mark { animation: none; }
+    .dl-bar { animation: none; left: 31%; }
+    .dl-topbar .dl-bar { left: 35%; }
+    .dl-overlay { animation: none; }
 }
 `
 
-const ACCENT = '#1f9d8f'
-const ACCENT_2 = '#5b8def'
-
-/**
- * Single, shared loading animation for dashboard entry. Used by both the route
- * code-split fallback and the department switcher so the user sees ONE
- * continuous loader instead of a series of different spinners.
- * Pure CSS on purpose: it renders instantly, before any chunk has arrived.
- */
 export const DashboardLoader: React.FC<{
     label?: string
-    minHeight?: number | string
-    /** Cover the whole viewport and block interaction, for app-level gates. */
+    /** Cover the whole viewport and block interaction, for app-level gates and saves. */
     overlay?: boolean
-}> = ({ label = 'Preparing your dashboard', minHeight = '70vh', overlay = false }) => {
+    /**
+     * Overlay only. 'translucent' frosts over the page instead of replacing it —
+     * use it when the user should still see what they were working on (saves).
+     */
+    backdrop?: 'solid' | 'translucent'
+}> = ({ label = 'Just a moment', overlay = false, backdrop = 'solid' }) => {
     const { token } = theme.useToken()
 
+    if (overlay) {
+        const translucent = backdrop === 'translucent'
+        return (
+            <div
+                className={translucent ? 'dl-root dl-overlay dl-translucent' : 'dl-root dl-overlay'}
+                role='status'
+                aria-live='polite'
+                aria-busy='true'
+                style={{
+                    color: token.colorText,
+                    background: translucent
+                        ? `color-mix(in srgb, ${token.colorBgLayout} 78%, transparent)`
+                        : token.colorBgLayout
+                }}
+            >
+                <style>{STYLES}</style>
+                <div className='dl-splash'>
+                    {/* The bare mark on a transparent ground; precached by the
+                        service worker. Dropped rather than shown broken if it
+                        ever fails to load. */}
+                    <img
+                        className='dl-mark'
+                        src='/icons/mark.png'
+                        alt=''
+                        aria-hidden='true'
+                        onError={e => e.currentTarget.remove()}
+                    />
+                    <p className='dl-label'>{label}</p>
+                    <div className='dl-track' style={{ background: token.colorFillSecondary }}>
+                        <div className='dl-bar' />
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return (
-    <div
-        role='status'
-        aria-live='polite'
-        aria-busy='true'
-        style={{
-            minHeight: overlay ? undefined : minHeight,
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 28,
-            color: token.colorText,
-            ...(overlay
-                ? {
-                      position: 'fixed',
-                      inset: 0,
-                      zIndex: 900,
-                      padding: 16,
-                      background: token.colorBgLayout
-                  }
-                : null)
-        }}
-    >
-        <style>{STYLES}</style>
-
-        <div style={{ position: 'relative', width: 120, height: 120 }}>
-            {[0, 1, 2].map(i => (
-                <span
-                    key={i}
-                    className='dl-anim'
-                    style={{
-                        position: 'absolute',
-                        inset: 0,
-                        borderRadius: '50%',
-                        border: `2px solid ${ACCENT}`,
-                        animation: `dl-ring 2.4s cubic-bezier(0.22, 1, 0.36, 1) ${i * 0.8}s infinite`
-                    }}
-                />
-            ))}
-
-            <span
-                className='dl-anim'
-                style={{
-                    position: 'absolute',
-                    inset: 8,
-                    animation: 'dl-orbit 1.8s linear infinite'
-                }}
-            >
-                <span
-                    style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: '50%',
-                        width: 10,
-                        height: 10,
-                        marginLeft: -5,
-                        borderRadius: '50%',
-                        background: ACCENT_2,
-                        boxShadow: `0 0 10px ${ACCENT_2}`
-                    }}
-                />
-            </span>
-
-            <span
-                className='dl-anim'
-                style={{
-                    position: 'absolute',
-                    inset: 8,
-                    animation: 'dl-orbit 2.8s linear infinite reverse'
-                }}
-            >
-                <span
-                    style={{
-                        position: 'absolute',
-                        bottom: 0,
-                        left: '50%',
-                        width: 7,
-                        height: 7,
-                        marginLeft: -3.5,
-                        borderRadius: '50%',
-                        background: ACCENT,
-                        opacity: 0.8
-                    }}
-                />
-            </span>
-
-            <span
-                className='dl-anim'
-                style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    width: 26,
-                    height: 26,
-                    margin: -13,
-                    borderRadius: '50%',
-                    background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_2})`,
-                    animation: 'dl-core 1.6s ease-in-out infinite'
-                }}
-            />
-        </div>
-
-        <div style={{ textAlign: 'center' }}>
-            <div
-                className='dl-anim'
-                style={{ fontWeight: 600, fontSize: 14, animation: 'dl-text 2s ease-in-out infinite' }}
-            >
-                {label}
+        <div className='dl-root dl-inline' role='status' aria-live='polite' aria-busy='true'>
+            <style>{STYLES}</style>
+            <div className='dl-topbar' aria-hidden='true'>
+                <div className='dl-bar' style={{ background: token.colorPrimary }} />
             </div>
-            <div
-                style={{
-                    position: 'relative',
-                    width: 140,
-                    height: 3,
-                    margin: '12px auto 0',
-                    borderRadius: 2,
-                    overflow: 'hidden',
-                    background: 'rgba(128,128,128,0.2)'
-                }}
-            >
-                <span
-                    className='dl-anim'
-                    style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        height: '100%',
-                        width: '40%',
-                        borderRadius: 2,
-                        background: `linear-gradient(90deg, ${ACCENT}, ${ACCENT_2})`,
-                        animation: 'dl-bar 1.4s ease-in-out infinite'
-                    }}
-                />
+            <div className='dl-inline-body'>
+                <div className='dl-track' style={{ background: token.colorFillSecondary }}>
+                    <div className='dl-bar' style={{ background: token.colorPrimary }} />
+                </div>
+                <p className='dl-label' style={{ color: token.colorTextSecondary }}>
+                    {label}
+                </p>
             </div>
         </div>
-    </div>
     )
 }
 

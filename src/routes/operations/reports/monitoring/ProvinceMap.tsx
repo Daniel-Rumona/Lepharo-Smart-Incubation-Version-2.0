@@ -2,8 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
-import HCMap from "highcharts/modules/map";
-import HCDrilldown from "highcharts/modules/drilldown";
+import "highcharts/modules/map";
+import "highcharts/modules/drilldown";
 import {
     Button,
     Modal,
@@ -30,8 +30,6 @@ import { getCanonicalInterventionStatus } from "./interventionStatus";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { filterReportRecords } from "@/utils/reportVisibility";
 
-if (typeof HCMap === "function") HCMap(Highcharts);
-if (typeof HCDrilldown === "function") HCDrilldown(Highcharts);
 
 Highcharts.setOptions({
     plotOptions: {
@@ -640,7 +638,8 @@ const SAProvincesDrillMap: React.FC<Props> = ({
                             },
                         });
                     },
-                    afterDrillUp: function () {
+                    // The documented event for "back to the top level".
+                    drillupall: function () {
                         setSelectedProvince(null);
                         setSelectedBranchId(null);
                     },

@@ -10,8 +10,90 @@ service cloud.firestore {
     // Prefer the custom claim when present; fall back to the users/{uid} role.
     function isSuperAdmin() {
       return request.auth != null && (
-        request.auth.token.role in ['admin', 'system_admin', 'superadmin'] ||
-        currentUser().role in ['admin', 'system_admin', 'superadmin']
+        request.auth.token.role in ['system_admin', 'superadmin'] ||
+        currentUser().role in ['system_admin', 'superadmin']
+      );
+    }
+
+    // ---- Audience: internal staff vs external logins ----
+    // Every account has a users/{uid} doc (registration, createPlatformUser,
+    // training logins), so the stored role decides the audience. Spelling
+    // variants seen in stored data are listed rather than normalised away.
+    function staffRoles() {
+      return [
+        'system_admin', 'system admin', 'superadmin', 'admin', 'director',
+        'operations', 'head of department', 'hod', 'headofdepartment',
+        'projectadmin', 'project admin', 'project_admin', 'center coordinator', 'center_coordinator',
+        'coordinator', 'receptionist', 'employee', 'hr', 'projectmanager', 'consultant', 'auxiliary'
+      ];
+    }
+    function adminRoles() {
+      return ['system_admin', 'system admin', 'superadmin', 'admin'];
+    }
+    function hasProfile() {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function myRole() {
+      return currentUser().get('role', '').lower().trim();
+    }
+    function isStaff() {
+      return isSuperAdmin() || (hasProfile() && myRole() in staffRoles());
+    }
+    // Funders (and government viewers) are read-only, scoped to the
+    // programmes on their users doc.
+    function isFunderUser() {
+      return hasProfile() && myRole() in ['funder', 'government'];
+    }
+    function funderSeesProgram(programId) {
+      return isFunderUser() && programId in currentUser().get('assignedPrograms', []);
+    }
+
+    // ---- SME ownership ----
+    // An SME's records are linked to their login only by email: participants
+    // and applications carry `email` (applications also `applicantEmail`) and
+    // nothing stores the auth uid. Firebase Auth emails are lower case; the
+    // exact comparison comes first so equality queries can be proven.
+    function isMyEmail(value) {
+      return request.auth != null && request.auth.token.get('email', '') != '' && (
+        value == request.auth.token.email ||
+        (value is string && value.lower() == request.auth.token.email.lower())
+      );
+    }
+    function ownsParticipant(pid) {
+      return request.auth != null && pid is string && pid != '' && (
+        (hasProfile() && currentUser().get('participantId', '') == pid) ||
+        isMyEmail(get(/databases/$(database)/documents/participants/$(pid)).data.email)
+      );
+    }
+    function ownsApplicationData(data) {
+      return isMyEmail(data.email) || isMyEmail(data.applicantEmail) || ownsParticipant(data.participantId);
+    }
+    function ownsApplication(appId) {
+      return appId is string && appId != '' &&
+        ownsApplicationData(get(/databases/$(database)/documents/applications/$(appId)).data);
+    }
+    // Some SME screens key records on the application id instead of the
+    // participant id (smeFeedback falls back to it).
+    function ownsSmeRecord(id) {
+      return ownsParticipant(id) || ownsApplication(id);
+    }
+    function ownsAssignment(assignmentId) {
+      return assignmentId is string && assignmentId != '' &&
+        ownsParticipant(get(/databases/$(database)/documents/assignedInterventions/$(assignmentId)).data.participantId);
+    }
+
+    // Which department plays which role (ROM, M&E, HR, ...): { roleKey: departmentId }.
+    function departmentRoles() {
+      return get(/databases/$(database)/documents/systemSettings/departmentRoles).data;
+    }
+
+    // The user's department, or its parent, is the department assigned to `role`.
+    function userDepartmentHasRole(role) {
+      let deptId = currentUser().get('departmentId', '');
+      let roleDeptId = departmentRoles().get(role, '');
+      return deptId != '' && roleDeptId != '' && (
+        deptId == roleDeptId ||
+        get(/databases/$(database)/documents/departments/$(deptId)).data.get('parentDepartmentId', '') == roleDeptId
       );
     }
 
@@ -19,13 +101,7 @@ service cloud.firestore {
       return request.auth != null &&
         (
           currentUser().role == 'hr' ||
-          (
-            currentUser().role == 'operations' &&
-            (
-              currentUser().departmentName.matches('^HRM.*') ||
-              currentUser().departmentName.matches('.*Human Resources.*')
-            )
-          )
+          (currentUser().role == 'operations' && userDepartmentHasRole('hr'))
         );
     }
 
@@ -35,48 +111,71 @@ service cloud.firestore {
       return request.auth != null &&
         (
           (data.keys().hasAny(['assigneeId']) && data.assigneeId == request.auth.uid) ||
-          currentUser().role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin', 'coordinator']
+          currentUser().role in ['director', 'system_admin', 'operations', 'projectadmin', 'coordinator']
         );
     }
 
-    // Users collection - enhanced with branch assignment support
+    // Training Academy SME logins (role training_sme). participantId is the
+    // company's trainingEnrollments id, for its director and for every
+    // employee; trainingAttendeeId is the person (trainingAttendees).
+    // trainingRole 'director' is the SME's owner -- not the platform role
+    // 'director', which is why role is always checked too.
+    function isTrainingSme() {
+      return request.auth != null && currentUser().get('role', '') == 'training_sme';
+    }
+    function isTrainingCompanyMember(enrollmentId) {
+      return isTrainingSme() && enrollmentId is string && enrollmentId != '' &&
+        currentUser().get('participantId', '') == enrollmentId;
+    }
+    function isTrainingCompanyDirector(enrollmentId) {
+      return isTrainingCompanyMember(enrollmentId) &&
+        currentUser().get('trainingRole', '') == 'director';
+    }
+
+    // Users collection. Nobody may change their own role or the fields that
+    // decide what they can see; only a super-admin grants an admin role.
     match /users/{userId} {
+      function privilegedUserFields() {
+        return ['role', 'departmentId', 'department', 'departmentName', 'assignedBranch', 'branchId',
+          'assignedPrograms', 'participantId', 'trainingRole', 'trainingAttendeeId', 'companyCode',
+          'status', 'permissions', 'acceptance'];
+      }
+      function isAdminRole(data) {
+        return data.get('role', '').lower().trim() in adminRoles();
+      }
       allow read, write: if isSuperAdmin();
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin'];
-      allow read: if isHrManager();
-      // Project admins and receptionists can see the project admins and receptionists of
-      // their own branch, so follow-ups can be assigned to them. Queries must filter on
-      // assignedBranch and role for this to apply.
-      allow read: if request.auth != null &&
-        currentUser().role in ['projectadmin', 'receptionist'] &&
-        currentUser().assignedBranch != null &&
-        resource.data.assignedBranch == currentUser().assignedBranch &&
-        resource.data.role in ['projectadmin', 'receptionist'];
-      allow update: if isHrManager() &&
-        request.resource.data.role == resource.data.role &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'name',
-          'position',
-          'jobTitle',
-          'workerType',
-          'employmentType',
-          'startDate',
-          'endDate',
-          'internEndDate',
-          'department',
-          'departmentName',
-          'departmentId',
-          'status',
-          'updatedAt'
-        ]);
+
+      // Own doc. Self-registration creates it as an SME (registration/index.tsx).
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId &&
+        request.resource.data.get('role', '') == 'incubatee' &&
+        !request.resource.data.keys().hasAny(privilegedUserFields().removeAll(['role']));
+      allow update: if request.auth != null && request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(privilegedUserFields());
+
+      // Staff read the directory and manage other people's docs (user
+      // management, HR, application decisions), but not admins' docs.
+      allow read: if isStaff();
+      allow create: if isStaff() && request.auth.uid != userId && !isAdminRole(request.resource.data);
+      allow update: if isStaff() && request.auth.uid != userId &&
+        !isAdminRole(resource.data) && !isAdminRole(request.resource.data);
+      allow delete: if isStaff() && request.auth.uid != userId && !isAdminRole(resource.data);
+
+      // External logins see staff profiles (facilitators, HODs), their own doc
+      // by email or uid query, and funders the task assignee list.
+      allow get: if request.auth != null && resource.data.get('role', '').lower().trim() in staffRoles();
+      allow read: if isMyEmail(resource.data.email) || resource.data.uid == request.auth.uid;
+      allow read: if isFunderUser();
+
+      match /{subcollection}/{rest=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     // Branches collection - directors can manage, others can read within company
     match /branches/{branchId} {
-      allow read: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin', 'receptionist'];
+      // Names and operating hours; SME and funder screens show them too.
+      allow read: if request.auth != null;
       allow create: if request.auth != null && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director';
       allow update, delete: if request.auth != null && 
@@ -86,18 +185,26 @@ service cloud.firestore {
     // Branch assignment audit - read only for directors and admins
     match /branchAssignmentAudit/{auditId} {
       allow read: if request.auth != null && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin'];
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'system_admin'];
       allow write: if false; // Only system/server can write audit logs
     }
 
-    // Departments collection - directors can manage, operations can read their assigned department
+    // Departments collection - directors manage. Every signed-in user can read
+    // them: records store only a departmentId and look the name up here.
     match /departments/{departmentId} {
-      allow read: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin'];
+      allow read: if request.auth != null;
       allow create: if request.auth != null && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director';
-      allow update, delete: if request.auth != null && 
+      allow update, delete: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'director';
+    }
+
+    // System-wide settings such as departmentRoles. Readable by every
+    // signed-in user because menus and dashboards depend on them.
+    match /systemSettings/{settingId} {
+      allow read: if request.auth != null;
+      allow write: if isSuperAdmin() ||
+        (request.auth != null && currentUser().role == 'director');
     }
 
     // Quality Objectives (LEP-QMS 024 F) - directors manage all departments'
@@ -108,7 +215,7 @@ service cloud.firestore {
       allow read, write: if isSuperAdmin();
       allow read: if request.auth != null &&
         (
-          currentUser().role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin'] ||
+          currentUser().role in ['director', 'system_admin', 'operations', 'projectadmin'] ||
           isHrManager()
         );
       allow create: if request.auth != null &&
@@ -132,7 +239,7 @@ service cloud.firestore {
             resource.data.employeeEmail == currentUser().email
           ) ||
           (
-            (currentUser().role in ['director', 'admin', 'system_admin', 'operations', 'projectadmin'] || isHrManager())
+            (currentUser().role in ['director', 'system_admin', 'operations', 'projectadmin'] || isHrManager())
           )
         );
       allow create: if request.auth != null &&
@@ -171,8 +278,7 @@ service cloud.firestore {
         return libraryUser().role == 'operations';
       }
       function isOwnDepartment(data) {
-        return (libraryUser().departmentId != null && data.departmentId == libraryUser().departmentId) ||
-               (libraryUser().departmentName != null && data.departmentName == libraryUser().departmentName);
+        return libraryUser().get('departmentId', '') != '' && data.get('departmentId', '') == libraryUser().departmentId;
       }
 
       allow read: if request.auth != null && (isSme() || (isOperations() && isOwnDepartment(resource.data)));
@@ -188,10 +294,10 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
       }
       allow read: if request.auth != null && (
-        exportSettingsUser().role == 'admin' ||
+        exportSettingsUser().role == 'system_admin' ||
         (exportSettingsUser().departmentId != null && exportSettingsUser().departmentId == departmentId)
       );
-      allow create, update, delete: if request.auth != null && exportSettingsUser().role == 'admin';
+      allow create, update, delete: if request.auth != null && exportSettingsUser().role == 'system_admin';
     }
 
     // Canonical v5 appointment model: one invitation per SME, linked to one
@@ -206,7 +312,7 @@ service cloud.firestore {
       }
       function canonicalAppointment(data) {
         return data.schemaVersion == 5 &&
-          data.keys().hasOnly(['schemaVersion','programId','departmentId','assignedInterventionId','appointmentSessionId','smeId','smeName','smeEmail','interventionId','interventionTitle','subInterventionId','subInterventionTitle','cycleKey','assigneeId','assigneeName','assigneeEmail','assigneeRole','groupKey','status','smeConfirmation','smeDeclineReason','smeRescheduleRequest','attendance','foodSelections','createdAt','updatedAt','completedAt']) &&
+          data.keys().hasOnly(['schemaVersion','programId','departmentId','assignedInterventionId','appointmentSessionId','smeId','smeName','smeEmail','attendeeId','attendeeName','attendeeKind','dataOrigin','suppressNotifications','interventionId','interventionTitle','subInterventionId','subInterventionTitle','cycleKey','assigneeId','assigneeName','assigneeEmail','assigneeRole','groupKey','status','smeConfirmation','smeDeclineReason','smeRescheduleRequest','attendance','foodSelections','createdAt','updatedAt','completedAt']) &&
           data.smeId is string && data.interventionId is string &&
           data.status in ['scheduled','in_progress','completed','cancelled','postponed'] &&
           data.smeConfirmation in ['pending','confirmed','declined'];
@@ -220,11 +326,34 @@ service cloud.firestore {
           .hasOnly(['status', 'updatedAt']) &&
           request.resource.data.status == 'in_progress';
       }
+      // The signed-in person an invitation is for. A Training Academy
+      // invitation names its person (attendeeId) and only that login matches:
+      // everyone from the same SME shares its smeId. Every other invitation
+      // keeps the older smeId / participantId / email identity -- except for
+      // a training employee: an SME-wide invitation (sent before the SME's
+      // people were set up) was its director's.
+      function isInvitationPerson(data) {
+        return request.auth != null && (
+          (data.get('attendeeId', null) is string &&
+            currentUser().get('trainingAttendeeId', '') == data.attendeeId) ||
+          (!(data.get('attendeeId', null) is string) &&
+            currentUser().get('trainingRole', '') != 'employee' && (
+            data.get('smeId', '') == request.auth.uid ||
+            (currentUser().get('participantId', '') != '' &&
+              data.get('smeId', '') == currentUser().get('participantId', '')) ||
+            (data.get('smeEmail', null) is string && currentUser().get('email', '') is string &&
+              currentUser().get('email', '') != '' &&
+              data.smeEmail.lower() == currentUser().get('email', '').lower())
+          ))
+        );
+      }
       // A signed-in SME can confirm their own attendance through the active
-      // QR session. This also works for historic invitations that have fields
-      // outside the strict v5 schema.
+      // QR session -- only on their own invitation (the facilitator and
+      // delivery managers may too). This also works for historic invitations
+      // that have fields outside the strict v5 schema.
       function isQrInvitationCheckIn() {
-        return request.resource.data.diff(resource.data).affectedKeys()
+        return (isInvitationPerson(resource.data) || canRecordAppointmentCoverage(resource.data)) &&
+          request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['attendance', 'smeConfirmation', 'updatedAt']) &&
           request.resource.data.attendance.status == 'attended' &&
           request.resource.data.smeConfirmation == 'confirmed' &&
@@ -232,17 +361,14 @@ service cloud.firestore {
       }
       // Incubatee responses must also work on historic appointment documents
       // that contain fields outside the strict v5 schema. The SME may only
-      // change their own response fields, never the schedule or linkage.
+      // change their own response fields, never the schedule or linkage. A
+      // training SME's director may also answer for the company's people.
       function isOwnSmeResponse() {
         return request.auth != null &&
           (
-            (resource.data.keys().hasAny(['smeId']) && resource.data.smeId == request.auth.uid) ||
-            (resource.data.keys().hasAny(['smeId']) &&
-              currentUser().keys().hasAny(['participantId']) &&
-              resource.data.smeId == currentUser().participantId) ||
-            (resource.data.keys().hasAny(['smeEmail']) &&
-              currentUser().keys().hasAny(['email']) &&
-              resource.data.smeEmail == currentUser().email)
+            isInvitationPerson(resource.data) ||
+            (resource.data.get('attendeeId', null) is string &&
+              isTrainingCompanyDirector(resource.data.get('smeId', '')))
           ) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'smeConfirmation',
@@ -264,14 +390,22 @@ service cloud.firestore {
           ]) &&
           request.resource.data.status in ['scheduled', 'completed'];
       }
-      allow read: if request.auth != null;
+      // Staff see every invitation; an SME their own (and a training SME's
+      // director their company's). While a session's QR check-in is open,
+      // invitees read that session's invitation list to find their own.
+      allow read: if isStaff() ||
+        isInvitationPerson(resource.data) ||
+        ownsParticipant(resource.data.smeId) ||
+        isTrainingCompanyDirector(resource.data.smeId) ||
+        (request.auth != null &&
+          get(/databases/$(database)/documents/appointmentSessions/$(resource.data.appointmentSessionId)).data.attendanceSession.status == 'active');
       // A grouped session can create many invitations in one transaction.
       // Do not read every assigned intervention from a rule: Firestore caps
       // rule reads in atomic operations, which otherwise rejects valid groups
       // as a permission error. The shared session link remains validated with
       // one getAfter lookup, while the client transaction uses deterministic
       // session and invitation IDs to prevent duplicate scheduling.
-      allow create: if request.auth != null &&
+      allow create: if isStaff() &&
         canonicalAppointment(request.resource.data) &&
         linkedSessionIsValid(request.resource.data);
       // A linked appointment cannot be repointed. Do not require the
@@ -281,6 +415,7 @@ service cloud.firestore {
       allow update: if request.auth != null &&
         (
           (
+            isStaff() &&
             canonicalAppointment(request.resource.data) &&
             request.resource.data.assignedInterventionId == resource.data.assignedInterventionId &&
             request.resource.data.appointmentSessionId == resource.data.appointmentSessionId &&
@@ -291,14 +426,14 @@ service cloud.firestore {
           isQrInvitationCheckIn() ||
           isCoverageInvitationPatch()
         );
-      allow delete: if request.auth != null;
+      allow delete: if isStaff();
     }
 
     match /appointmentSessions/{sessionId} {
       allow read, write: if isSuperAdmin();
       function canonicalSession(data) {
         return data.schemaVersion == 5 &&
-          data.keys().hasOnly(['schemaVersion','programId','departmentId','interventionId','interventionTitle','cycleKey','groupKey','sessionType','assigneeId','assigneeName','assigneeEmail','assigneeRole','title','startAt','endAt','deliveryMethod','location','meetingLink','plannedTopics','plannedCoverage','coverage','attendanceSession','attendanceSummary','foodMenu','scheduleHistory','status','createdAt','updatedAt','completedAt']) &&
+          data.keys().hasOnly(['schemaVersion','programId','departmentId','interventionId','interventionTitle','cycleKey','groupKey','sessionType','assigneeId','assigneeName','assigneeEmail','assigneeRole','title','startAt','endAt','deliveryMethod','location','meetingLink','plannedTopics','category','dataOrigin','suppressNotifications','plannedCoverage','coverage','attendanceSession','attendanceSummary','foodMenu','scheduleHistory','status','createdAt','updatedAt','completedAt']) &&
           data.sessionType in ['individual','group'] &&
           data.status in ['scheduled','in_progress','completed','cancelled','postponed'];
       }
@@ -321,17 +456,21 @@ service cloud.firestore {
           request.resource.data.status in ['scheduled', 'completed'];
       }
       allow read: if request.auth != null;
-      allow create: if request.auth != null && canonicalSession(request.resource.data);
+      allow create: if isStaff() && canonicalSession(request.resource.data);
       allow update: if request.auth != null &&
-        (canonicalSession(request.resource.data) || isQrAttendancePatch() || isCoverageSessionPatch());
-      allow delete: if request.auth != null;
+        ((isStaff() && canonicalSession(request.resource.data)) || isQrAttendancePatch() || isCoverageSessionPatch());
+      allow delete: if isStaff();
     }
 
-    // Explicit rather than relying on the broad legacy matcher below. The
-    // appointments screen needs these records to resolve its linked delivery
-    // state for every authenticated role.
+    // Staff reach these through the staff fallback below. An SME reads and
+    // answers (accept, decline, confirm, dispute) only their own; funders
+    // read their programmes'.
     match /assignedInterventions/{assignmentId} {
-      allow read, write: if request.auth != null;
+      allow read: if ownsParticipant(resource.data.participantId) ||
+        ownsApplication(resource.data.applicationId);
+      allow read: if funderSeesProgram(resource.data.programId);
+      allow update: if ownsParticipant(resource.data.participantId) &&
+        request.resource.data.participantId == resource.data.participantId;
     }
 
     // An HOD ending support for one SME. Only HODs and admins write these; a
@@ -339,7 +478,7 @@ service cloud.firestore {
     match /interventionClosures/{closureId} {
       allow read: if request.auth != null;
       allow create, update: if request.auth != null &&
-        currentUser().role in ['operations', 'admin', 'system_admin'];
+        currentUser().role in ['operations', 'system_admin'];
       allow delete: if false;
     }
 
@@ -362,7 +501,7 @@ service cloud.firestore {
           (!request.resource.data.keys().hasAny(['answeredBy']) || request.resource.data.answeredBy == request.auth.uid) &&
           (
             resource.data.assigneeId == request.auth.uid ||
-            currentUser().role in ['operations', 'admin', 'system_admin']
+            currentUser().role in ['operations', 'system_admin']
           )
         ) || (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['smeAnswer']) &&
@@ -383,19 +522,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Shared delivery state for a grouped intervention. Individual assignment
-    // records still hold each SME's attendance and MOV eligibility.
-    match /groupInterventionDeliveries/{deliveryId} {
-      allow read, write: if request.auth != null;
-    }
-
     match /agreementTemplates/{templateId} {
       allow read, write: if isSuperAdmin();
       function agreementTemplateUser() {
         return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
       }
       function isAgreementTemplateAdmin() {
-        return agreementTemplateUser().role in ['admin', 'system admin', 'system_admin'];
+        return agreementTemplateUser().role in ['system admin', 'system_admin'];
       }
 
       allow read: if request.auth != null;
@@ -488,9 +621,16 @@ service cloud.firestore {
           // Directors can access all inquiries
           (getUserData().role == 'director') ||
           // Admins can access all inquiries
-          (getUserData().role == 'admin')
+          (getUserData().role == 'system_admin')
         );
       }
+
+      // An SME (applicant or incubatee) manages the inquiries they submitted.
+      allow create: if request.auth != null && request.resource.data.submittedBy == request.auth.uid;
+      allow read, delete: if request.auth != null && resource.data.submittedBy == request.auth.uid;
+      allow read: if ownsParticipant(resource.data.participantId);
+      allow update: if request.auth != null && resource.data.submittedBy == request.auth.uid &&
+        request.resource.data.submittedBy == request.auth.uid;
 
       // Allow list/query operations for authorized users (they will be filtered by the client)
       allow list: if isValidBranchAccess();
@@ -500,7 +640,7 @@ service cloud.firestore {
         (getUserData().role in ['receptionist', 'projectadmin'] &&
          getUserData().assignedBranch == resource.data.branchId) ||
         (getUserData().role == 'director') ||
-        (getUserData().role == 'admin')
+        (getUserData().role == 'system_admin')
       );
 
       // Create permissions
@@ -510,7 +650,7 @@ service cloud.firestore {
         (getUserData().role == 'projectadmin' &&
          getUserData().assignedBranch == request.resource.data.branchId) ||
         (getUserData().role == 'director') ||
-        (getUserData().role == 'admin')
+        (getUserData().role == 'system_admin')
       );
 
       // Update permissions
@@ -524,9 +664,9 @@ service cloud.firestore {
         // Directors can update all inquiries
         (getUserData().role == 'director') ||
         // Admins can update all inquiries
-        (getUserData().role == 'admin') ||
+        (getUserData().role == 'system_admin') ||
         // Soft delete permission for directors and admins
-        ((getUserData().role == 'director' || getUserData().role == 'admin') &&
+        ((getUserData().role == 'director' || getUserData().role == 'system_admin') &&
          request.resource.data.keys().hasOnly(['isActive', 'updatedAt']) &&
          request.resource.data.isActive == false)
       );
@@ -550,9 +690,13 @@ service cloud.firestore {
           // Directors can access all follow-ups
           (getUserData().role == 'director') ||
           // Admins can access all follow-ups
-          (getUserData().role == 'admin')
+          (getUserData().role == 'system_admin')
         );
       }
+
+      // An applicant schedules a follow-up on their own inquiry, assigned to themselves.
+      allow create: if request.auth != null && request.resource.data.assignedTo == request.auth.uid;
+      allow read: if request.auth != null && resource.data.assignedTo == request.auth.uid;
 
       // Allow list/query operations for authorized users (they will be filtered by the client)
       allow list: if isValidBranchAccess();
@@ -562,7 +706,7 @@ service cloud.firestore {
         (getUserData().role in ['receptionist', 'projectadmin'] &&
          getUserData().assignedBranch == resource.data.branchId) ||
         (getUserData().role == 'director') ||
-        (getUserData().role == 'admin')
+        (getUserData().role == 'system_admin')
       );
 
       // Create permissions
@@ -572,7 +716,7 @@ service cloud.firestore {
         (getUserData().role == 'projectadmin' &&
          getUserData().assignedBranch == request.resource.data.branchId) ||
         (getUserData().role == 'director') ||
-        (getUserData().role == 'admin')
+        (getUserData().role == 'system_admin')
       );
 
       // Update permissions
@@ -586,8 +730,37 @@ service cloud.firestore {
         // Directors can update all follow-ups
         (getUserData().role == 'director') ||
         // Admins can update all follow-ups
-        (getUserData().role == 'admin')
+        (getUserData().role == 'system_admin')
       );
+    }
+
+    // Implementation-plan roadmaps. Drafted from an uploaded plan, reviewed by
+    // the HOD (operations, in the same department), then published. The
+    // check-in cron (planRoadmapCheckIns.ts) uses the admin SDK, so clients
+    // never write its bookkeeping fields meaningfully.
+    match /planRoadmaps/{roadmapId} {
+      function roadmapUser() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      }
+      function canManageRoadmap(departmentId) {
+        return request.auth != null && (
+          roadmapUser().role in ['system_admin', 'director', 'projectadmin'] ||
+          (roadmapUser().role == 'operations' && roadmapUser().departmentId == departmentId)
+        );
+      }
+
+      allow read: if request.auth != null;
+      allow create: if canManageRoadmap(request.resource.data.departmentId) &&
+        request.resource.data.status == 'draft';
+      allow update: if canManageRoadmap(resource.data.departmentId) &&
+        request.resource.data.departmentId == resource.data.departmentId;
+      allow delete: if canManageRoadmap(resource.data.departmentId) && resource.data.status == 'draft';
+
+      match /milestones/{milestoneId} {
+        allow read: if request.auth != null;
+        allow create, update, delete: if canManageRoadmap(
+          get(/databases/$(database)/documents/planRoadmaps/$(roadmapId)).data.departmentId);
+      }
     }
 
     // KPI targets are performance commitments. New targets must be committed
@@ -595,28 +768,27 @@ service cloud.firestore {
     // revision record may be added.
     match /kpiTargets/{targetId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null &&
-        request.resource.data.keys().hasAll(['companyCode', 'kpiId', 'periodType', 'periodKey', 'periodStartAt', 'target']) &&
+      allow create: if isStaff() &&
+        request.resource.data.keys().hasAll(['kpiId', 'periodType', 'periodKey', 'periodStartAt', 'target']) &&
         request.resource.data.periodStartAt > request.time;
-      allow update: if request.auth != null &&
+      allow update: if isStaff() &&
         (
           // Existing records created before periodStartAt was introduced stay
           // manageable through the application-level compatibility guard.
           !resource.data.keys().hasAll(['periodStartAt']) ||
           (
-            resource.data.companyCode == request.resource.data.companyCode &&
             resource.data.kpiId == request.resource.data.kpiId &&
             resource.data.periodStartAt > request.time &&
             request.resource.data.periodStartAt > request.time
           )
         );
-      allow delete: if request.auth != null &&
+      allow delete: if isStaff() &&
         (!resource.data.keys().hasAll(['periodStartAt']) || resource.data.periodStartAt > request.time);
     }
 
     match /kpiTargetRevisions/{revisionId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null &&
+      allow create: if isStaff() &&
         request.resource.data.status == 'approved' &&
         request.resource.data.approvedBy == request.auth.uid &&
         request.resource.data.targetDocId is string &&
@@ -626,7 +798,7 @@ service cloud.firestore {
 
     match /kpiTargetAuditLogs/{auditId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.changedBy == request.auth.uid;
+      allow create: if isStaff() && request.resource.data.changedBy == request.auth.uid;
       allow update, delete: if false;
     }
 
@@ -634,7 +806,7 @@ service cloud.firestore {
     // Super-admins can access every collection, including the explicitly restricted
     // collections above. Other authenticated users retain the previous fallback.
     function academyAuthor() {
-      return request.auth != null && currentUser().role in ['operations', 'coordinator', 'admin', 'system_admin', 'superadmin', 'director', 'projectadmin'];
+      return request.auth != null && currentUser().role in ['operations', 'coordinator', 'system_admin', 'superadmin', 'director', 'projectadmin'];
     }
     match /academyDrafts/{courseId} {
       allow read: if request.auth != null && resource.data.owner == request.auth.uid;
@@ -660,8 +832,11 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+    // Training Academy staff read learners' enrollments for the course-progress
+    // column on the Training SMEs pages. academyAuthor() is checked first so a
+    // get of a not-yet-started (missing) enrollment is allowed rather than erroring.
     match /academyEnrollments/{enrollmentId} {
-      allow read: if request.auth != null && (resource.data.learnerId == request.auth.uid || resource.data.owner == request.auth.uid);
+      allow read: if academyAuthor() || (request.auth != null && (resource.data.learnerId == request.auth.uid || resource.data.owner == request.auth.uid));
       allow write: if false;
     }
     // Trainings: name/duration/centers/categories set up by Training Academy staff.
@@ -671,26 +846,129 @@ service cloud.firestore {
     }
     // Training enrollments carry SME ID/qualification document links, so only
     // Training Academy staff (not every signed-in user) can read or write them.
+    // A training SME (role training_sme) may read only their own record.
     match /trainingEnrollments/{enrollmentId} {
-      allow read, create, update, delete: if academyAuthor();
+      allow read: if academyAuthor() || (request.auth != null && resource.data.get('userId', null) == request.auth.uid);
+      allow create, update, delete: if academyAuthor();
+    }
+    // The people an SME sends (its director and employees). Staff read and
+    // edit them; the SME's director reads all of the company's people; an
+    // employee reads only their own record, never colleagues'. Directors add
+    // and withdraw people through the manageTrainingAttendee function, which
+    // also links logins (userId). progress is written only by the progress
+    // function. A person can't be moved to another company or change kind.
+    match /trainingAttendees/{attendeeId} {
+      allow read, write: if isSuperAdmin();
+      function validTrainingAttendee(data) {
+        return data.enrollmentId is string && data.enrollmentId.size() > 0 &&
+          data.trainingId is string &&
+          data.kind in ['director', 'employee'] &&
+          data.attends is bool &&
+          (data.kind == 'director' || data.attends == true) &&
+          (data.kind != 'director' || attendeeId == data.enrollmentId + '_director') &&
+          data.name is string && data.name.size() > 0 &&
+          data.email is string && data.email.size() > 3 &&
+          data.categories is list &&
+          data.status in ['active', 'withdrawn'];
+      }
+      allow read: if academyAuthor() ||
+        (request.auth != null && resource.data.get('userId', null) == request.auth.uid) ||
+        isTrainingCompanyDirector(resource.data.enrollmentId);
+      allow create: if academyAuthor() &&
+        validTrainingAttendee(request.resource.data) &&
+        !request.resource.data.keys().hasAny(['progress', 'userId']);
+      allow update: if academyAuthor() &&
+        validTrainingAttendee(request.resource.data) &&
+        request.resource.data.enrollmentId == resource.data.enrollmentId &&
+        request.resource.data.kind == resource.data.kind &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['progress', 'userId']);
+      allow delete: if false;
+    }
+    // Company totals (no names), kept by the progress function. Everyone in
+    // the company reads them; employees see nothing per person here.
+    match /trainingCompanyProgress/{enrollmentId} {
+      allow read: if academyAuthor() || isTrainingCompanyMember(enrollmentId);
+      allow write: if false;
+    }
+    // Certificates. Staff prepare drafts and send them for signature; once
+    // anyone has signed, only the signing/issuing functions change a
+    // certificate (signatures, number, PDF, hash, verification code, issue
+    // and revoke). The company sees issued certificates: the director all of
+    // them, an employee their own and the company's (attendeeId null).
+    match /trainingCertificates/{certificateId} {
+      allow read, write: if isSuperAdmin();
+      allow read: if academyAuthor() ||
+        (resource.data.status == 'issued' && (
+          isTrainingCompanyDirector(resource.data.enrollmentId) ||
+          (isTrainingCompanyMember(resource.data.enrollmentId) &&
+            (resource.data.attendeeId == null ||
+              resource.data.attendeeId == currentUser().get('trainingAttendeeId', '')))
+        ));
+      allow create: if academyAuthor() &&
+        request.resource.data.status == 'draft' &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.trainingId is string &&
+        request.resource.data.enrollmentId is string &&
+        request.resource.data.get('signatures', {}).size() == 0 &&
+        !request.resource.data.keys().hasAny(['certificateNumber', 'pdfPath', 'pdfUrl', 'sha256',
+          'verificationCode', 'issuedAt', 'revokedAt', 'revokedReason']);
+      allow update: if academyAuthor() &&
+        resource.data.status in ['draft', 'pending_signature'] &&
+        resource.data.get('signatures', {}).size() == 0 &&
+        request.resource.data.status in ['draft', 'pending_signature'] &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['recipientName', 'companyName', 'data', 'status', 'updatedAt']);
+      allow delete: if academyAuthor() && resource.data.status == 'draft';
+    }
+    // Certificate templates: fillable PDFs managed by Training Academy staff.
+    match /certificateTemplates/{templateId} {
+      allow read, write: if isSuperAdmin();
+      allow read: if academyAuthor();
+      allow create, update: if academyAuthor() &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+        request.resource.data.active is bool &&
+        request.resource.data.file.kind == 'pdf';
+      allow delete: if false;
+    }
+    // Certificate numbers are handed out by the issuing function only.
+    match /certificateCounters/{counterId} {
+      allow read, write: if false;
+    }
+    // Training Academy settings, e.g. the global certification defaults
+    // (trainingSettings/certification) that each training can override.
+    match /trainingSettings/{settingId} {
+      allow read: if request.auth != null;
+      allow write: if academyAuthor();
     }
     // A notification is only visible to the users/roles it was addressed to.
+    // A doc naming recipientIds is theirs alone; the role branch only covers
+    // docs marked audience == 'role', which create below keeps free of
+    // recipientIds. The marker (not "recipientIds is empty") is what makes
+    // useNotificationCenter's role query provable: it filters on audience.
+    // Server writers (admin SDK) must follow the same shape -- see
+    // scripts/scope-notification-audience.cjs for the backfill.
     // Updates are restricted to marking it read so a recipient can't rewrite
     // its content or reassign it to someone else.
+    function isNotificationRecipient(data) {
+      return isSuperAdmin() ||
+        (data.keys().hasAny(['recipientIds']) && request.auth.uid in data.recipientIds) ||
+        (
+          data.keys().hasAny(['audience']) && data.audience == 'role' &&
+          data.keys().hasAny(['recipientRoles']) && currentUser().role in data.recipientRoles
+        );
+    }
     match /notifications/{notificationId} {
-      allow read: if request.auth != null && (
-        isSuperAdmin() ||
-        (resource.data.keys().hasAny(['recipientIds']) && request.auth.uid in resource.data.recipientIds) ||
-        (resource.data.keys().hasAny(['recipientRoles']) && currentUser().role in resource.data.recipientRoles)
+      allow read: if request.auth != null && isNotificationRecipient(resource.data);
+      allow create: if request.auth != null && (
+        !request.resource.data.keys().hasAny(['audience']) ||
+        (
+          request.resource.data.audience == 'role' &&
+          request.resource.data.get('recipientIds', []).size() == 0
+        )
       );
-      allow create: if request.auth != null;
       allow update: if request.auth != null &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']) &&
-        (
-          isSuperAdmin() ||
-          (resource.data.keys().hasAny(['recipientIds']) && request.auth.uid in resource.data.recipientIds) ||
-          (resource.data.keys().hasAny(['recipientRoles']) && currentUser().role in resource.data.recipientRoles)
-        );
+        isNotificationRecipient(resource.data);
       allow delete: if isSuperAdmin();
     }
     // Email-action tokens are minted and consumed only by Cloud Functions
@@ -714,10 +992,260 @@ service cloud.firestore {
         allow write: if false;
       }
     }
+    // Programmes are created and configured only from the Programs page,
+    // which the project admin and operations menus link to. Everyone signed
+    // in still reads them (applicants and incubatees pick a programme to
+    // register for). requiredDocs is edited on that page too.
+    // deptRequirements is written from the Compliance page by staff, each
+    // for their own department only, and the compliance resolver merges it
+    // over the programme's requirements, so SMEs must never write it. Other
+    // subcollections keep the general signed-in access they had before.
+    function canManagePrograms() {
+      return isSuperAdmin() || (
+        request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        currentUser().role is string &&
+        currentUser().role.lower().trim() in ['projectadmin', 'operations']
+      );
+    }
+    match /programs/{programId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if canManagePrograms();
+
+      match /requiredDocs/{docId} {
+        allow read: if request.auth != null;
+        allow create, update, delete: if canManagePrograms();
+      }
+
+      match /deptRequirements/{departmentId} {
+        allow read: if request.auth != null;
+        allow write: if canManagePrograms() || (
+          request.auth != null &&
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          currentUser().role is string &&
+          !(currentUser().role.lower().trim() in ['incubatee', 'participant', 'applicant']) &&
+          currentUser().departmentId == departmentId
+        );
+      }
+
+      match /{subcollection}/{rest=**} {
+        allow read: if request.auth != null;
+        allow write: if isStaff() &&
+          !(subcollection in ['requiredDocs', 'deptRequirements']);
+      }
+    }
+    // Collaborative reports: staff who write and review programme reports (project admins,
+    // operations — report owners and department heads — and coordinators they hand
+    // sections to). Never applicants or SMEs. Which sections each person may edit is
+    // still checked in the app (reportPermissions.ts).
+    function isReportStaff() {
+      return isSuperAdmin() || (
+        request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        currentUser().role is string &&
+        currentUser().role.lower().trim() in ['projectadmin', 'operations', 'coordinator']
+      );
+    }
+    match /reports/{reportId} {
+      allow read, write: if isReportStaff();
+    }
+    match /reportBlocks/{blockId}/{rest=**} {
+      allow read, write: if isReportStaff();
+    }
+    match /reportBlocks/{blockId} {
+      allow read, write: if isReportStaff();
+    }
+    match /reportTemplates/{templateId} {
+      allow read, write: if isReportStaff();
+    }
+    match /reportActivity/{activityId} {
+      allow read, write: if isReportStaff();
+    }
+    // Assistant actions are proposed, confirmed and logged only by Cloud
+    // Functions (functions/src/agentActions.ts, whatsappStaff.ts) through the
+    // admin SDK. A user may read their own web proposals; nobody writes these
+    // from a client, so the audit trail can't be edited or faked. System admins
+    // still read auditLogs through the super-admin line below.
+    match /agentProposals/{proposalId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+    match /auditLogs/{logId} {
+      allow read, write: if false;
+    }
+    match /whatsappAgentProposals/{proposalId} {
+      allow read, write: if false;
+    }
+    match /whatsappAgentState/{userId} {
+      allow read, write: if false;
+    }
+    // Nightly SME early-warning scores (functions/src/smeRiskScoring.ts). Staff
+    // read them; SMEs never see their own risk rating; only the job writes.
+    match /smeRiskSnapshots/{participantId} {
+      allow read: if request.auth != null &&
+        currentUser().role in ['director', 'operations', 'coordinator', 'projectadmin'];
+      allow write: if false;
+    }
+    // Monthly intervention impact results (functions/src/interventionImpact.ts).
+    // Staff and funders read them; only the job writes.
+    match /interventionImpact/{resultId} {
+      allow read: if request.auth != null &&
+        currentUser().role in ['director', 'operations', 'coordinator', 'projectadmin', 'funder'];
+      allow write: if false;
+    }
+    // Shared reference data external logins read too: catalogues, forms,
+    // staff profiles (facilitators/HODs), events, and resource bookings for
+    // the availability check. Writes stay with staff via the fallback below.
+    match /{collectionId}/{docId} {
+      allow read: if request.auth != null && collectionId in [
+        'interventions', 'resources', 'resourceTypes', 'resourceAllocations', 'tutorials',
+        'featureGovernance', 'events', 'kpiDefinitions', 'formTemplates', 'departmentForms',
+        'sentForms', 'system_settings', 'coordinators', 'consultants', 'operationsStaff',
+        'qmsStandards'
+      ];
+    }
+
+    // ---- External logins: only their own records ----
+    // SME screens probe guessed ids (participants/{uid}, applications/{pid})
+    // before falling back to an email query, so a get of a missing doc is
+    // allowed; it reveals only that nothing is there.
+    match /participants/{participantId} {
+      allow get: if request.auth != null && resource == null;
+      allow read: if isMyEmail(resource.data.email) ||
+        (hasProfile() && currentUser().get('participantId', '') == participantId);
+      allow read: if isFunderUser();
+      // The applicant profile creates the record with the login's email.
+      allow create: if isMyEmail(request.resource.data.email);
+      allow update: if isMyEmail(resource.data.email) && isMyEmail(request.resource.data.email);
+    }
+
+    match /applications/{applicationId} {
+      allow get: if request.auth != null && resource == null;
+      allow read: if ownsApplicationData(resource.data);
+      allow read: if funderSeesProgram(resource.data.programId);
+      allow create: if ownsApplicationData(request.resource.data) &&
+        request.resource.data.get('applicationStatus', 'pending') == 'pending';
+      // SMEs sign agreements and record their own progress on the
+      // application; the decision and identity fields are staff's.
+      allow update: if ownsApplicationData(resource.data) && ownsApplicationData(request.resource.data) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'applicationStatus', 'status', 'decision', 'participantId', 'programId', 'email',
+          'applicantEmail', 'acceptedAt', 'acceptedBy', 'romSignatureURL', 'aiEvaluation',
+          'aiEvaluationStatus'
+        ]);
+
+      // agreements, complianceDocuments, ... An SME uploads documents as
+      // pending; only staff mark them valid.
+      match /{subcollection}/{docId} {
+        allow read: if ownsApplication(applicationId);
+        allow create: if ownsApplication(applicationId) &&
+          (subcollection != 'complianceDocuments' || request.resource.data.get('status', 'pending') == 'pending');
+        allow update: if ownsApplication(applicationId) &&
+          (subcollection != 'complianceDocuments' ||
+            request.resource.data.get('status', 'pending') in ['pending', resource.data.get('status', 'pending')]);
+      }
+    }
+
+    match /applicationDrafts/{draftId} {
+      allow read, delete: if ownsParticipant(draftId);
+      allow create, update: if ownsParticipant(draftId) &&
+        request.resource.data.get('participantId', draftId) == draftId;
+    }
+
+    match /diagnosticPlans/{planId} {
+      allow read: if ownsParticipant(resource.data.participantId);
+      allow update: if ownsParticipant(resource.data.participantId) &&
+        request.resource.data.participantId == resource.data.participantId;
+    }
+
+    match /gapAnalysis/{gapId} {
+      allow read: if ownsParticipant(resource.data.participantId);
+      allow create: if ownsParticipant(request.resource.data.participantId);
+    }
+
+    match /interventionRequests/{requestId} {
+      allow read: if ownsParticipant(resource.data.participantId);
+      allow create: if ownsParticipant(request.resource.data.participantId);
+    }
+
+    match /smeFeedback/{feedbackId} {
+      allow read: if ownsSmeRecord(resource.data.participantId);
+      allow create: if ownsSmeRecord(request.resource.data.participantId);
+      allow update: if ownsSmeRecord(resource.data.participantId) &&
+        request.resource.data.participantId == resource.data.participantId;
+    }
+
+    match /monthlyPerformance/{participantId}/{rest=**} {
+      allow read: if ownsParticipant(participantId);
+    }
+
+    // An SME's evidence pack, found through its assignment or development plan.
+    match /movDocuments/{movId} {
+      function smeOwnsMov(data) {
+        return ownsParticipant(data.participantId) || ownsParticipant(data.smmeId) ||
+          ownsAssignment(data.assignedInterventionId) ||
+          ownsParticipant(get(/databases/$(database)/documents/diagnosticPlans/$(data.diagnosticPlanId)).data.participantId);
+      }
+      allow read, update: if smeOwnsMov(resource.data);
+      allow create: if smeOwnsMov(request.resource.data);
+    }
+
+    // Queries the SME raised, or that are about one of their assignments.
+    match /workflowQueries/{queryId} {
+      function smeOwnsQuery(data) {
+        return data.raisedById == request.auth.uid ||
+          ownsParticipant(data.context.participantId) ||
+          ownsAssignment(data.target.id);
+      }
+      allow read, update: if request.auth != null && smeOwnsQuery(resource.data);
+      allow create: if request.auth != null && request.resource.data.raisedById == request.auth.uid;
+    }
+
+    // Each SME's KPI progress; the programme summary is recalculated in the
+    // SME's own transaction (lib/kpis.ts), so SMEs keep write access to it.
+    match /kpiProgress/{programId}/participants/{participantId} {
+      allow read, write: if ownsParticipant(participantId);
+    }
+    match /kpiProgress/{programId}/summary/{summaryId} {
+      allow read, write: if hasProfile() && myRole() in ['incubatee', 'participant'];
+    }
+
+    // Survey responses are keyed by participant id (older ones by uid or email).
+    match /sentForms/{formId}/responses/{responseId} {
+      allow read, create, update: if ownsParticipant(responseId) ||
+        responseId == request.auth.uid || isMyEmail(responseId);
+    }
+    match /{path=**}/responses/{responseId} {
+      allow read: if ownsParticipant(resource.data.participantId);
+    }
+
+    match /resourceRequests/{requestId} {
+      allow read: if isMyEmail(resource.data.requestedByEmail) || isMyEmail(resource.data.requestedBy) ||
+        (hasProfile() && resource.data.requestedBy == currentUser().get('name', ''));
+      allow create: if isMyEmail(request.resource.data.requestedByEmail);
+    }
+
+    match /userSessions/{sessionId} {
+      allow read, update: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+    }
+
+    // The invoice prompt runs for every login and only ever matches HODs.
+    match /consolidatedMOVs/{movId} {
+      allow read: if request.auth != null && resource.data.hodUid == request.auth.uid;
+    }
+
+    // Funders work the task board (components/tasks/TaskModule.tsx).
+    match /tasks/{taskId} {
+      allow read, write: if isFunderUser();
+    }
+
+    // Everything else is internal staff only. Super-admins can access every
+    // collection, including the explicitly restricted collections above.
     match /{collectionId}/{document=**} {
       allow read, write: if isSuperAdmin();
-      allow read, write: if request.auth != null &&
-        !(collectionId in ['academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures']);
+      allow read, write: if isStaff() &&
+        !(collectionId in ['users', 'agentProposals', 'auditLogs', 'whatsappAgentProposals', 'whatsappAgentState', 'smeRiskSnapshots', 'interventionImpact', 'academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'trainingAttendees', 'trainingCompanyProgress', 'trainingCertificates', 'certificateTemplates', 'certificateCounters', 'trainingSettings', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'programs', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures', 'reports', 'reportBlocks', 'reportTemplates', 'reportActivity']);
     }
   }
 }

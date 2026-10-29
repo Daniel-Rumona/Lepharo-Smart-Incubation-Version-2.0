@@ -37,6 +37,18 @@ export type Appointment = {
   smeId: string
   smeName: string
   smeEmail: string | null
+  /**
+   * Training Academy only: the person (trainingAttendees id) this invitation is for.
+   * smeId stays the company's trainingEnrollments id, so one SME can have several
+   * invitations to the same session, one per attending person. smeEmail is that
+   * person's email. Absent or null on every other appointment.
+   */
+  attendeeId?: string | null
+  attendeeName?: string | null
+  attendeeKind?: 'director' | 'employee' | null
+  /** Seeded demo records: nothing about them may reach a real person. */
+  dataOrigin?: 'synthetic' | 'real'
+  suppressNotifications?: boolean
 
   interventionId: string
   interventionTitle: string
@@ -87,6 +99,11 @@ export type AppointmentSession = {
 
   /** Structured curriculum or unit-standard topics, used by Training Academy departments. */
   plannedTopics?: string[]
+  /** Training Academy only: the training category this session is for; null means everyone. */
+  category?: string | null
+  /** Seeded demo sessions: nothing about them may reach a real person. */
+  dataOrigin?: 'synthetic' | 'real'
+  suppressNotifications?: boolean
   plannedCoverage: string[]
   coverage: {
     held: boolean | null

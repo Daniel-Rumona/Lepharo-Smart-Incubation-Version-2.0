@@ -1,0 +1,122 @@
+/* The facilitator's interventions page (al-): what the shared workspace (ws-) and MOV (mv-) styles don't cover. */
+
+.allocated-tab-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: allocatedTabIn 0.25s ease-out;
+}
+@keyframes allocatedTabIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .allocated-tab-pane { animation: none; }
+}
+
+/* Progress updates, newest first. */
+.al-timeline {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.al-timeline-item {
+    position: relative;
+    padding: 0 0 16px 22px;
+}
+.al-timeline-item::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    bottom: 0;
+    left: 5px;
+    width: 2px;
+    background: var(--app-border);
+}
+.al-timeline-item:last-child::before {
+    display: none;
+}
+.al-timeline-dot {
+    position: absolute;
+    top: 5px;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--app-accent);
+    box-shadow: 0 0 0 3px var(--app-surface);
+}
+.al-timeline-item.is-done .al-timeline-dot {
+    background: #16a34a;
+}
+.al-timeline-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+}
+.al-timeline-what {
+    font-weight: 700;
+    color: var(--app-text);
+}
+.al-timeline-who {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+.al-timeline-when {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+.al-timeline-text {
+    margin: 2px 0 0;
+    color: var(--app-text);
+    overflow-wrap: anywhere;
+}
+
+.al-muted {
+    margin: 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+/* Manage evidence, grouped: each SME's own POE under the group's shared one. */
+.al-sme-evidence {
+    margin-top: 20px;
+}
+.al-sme-evidence > .al-muted {
+    margin-bottom: 10px;
+}
+.al-sme-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.al-sme-item {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    background: var(--app-surface);
+}
+.al-sme-item.is-active {
+    border-color: var(--app-accent-border-strong);
+    background: var(--app-accent-wash);
+}
+.al-sme-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.al-sme-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 600;
+    color: var(--app-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

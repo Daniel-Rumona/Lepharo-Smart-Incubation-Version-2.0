@@ -1,365 +1,577 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
-    Alert,
-    Statistic,
-    Card,
-    Row,
-    Col,
-    Table,
     Button,
-    Tag,
-    Modal,
-    Timeline,
-    Select,
-    Input,
+    Card,
+    Col,
     DatePicker,
+    Descriptions,
     Form,
-    message,
+    Grid,
+    Input,
+    InputNumber,
+    List,
+    Modal,
+    Result,
+    Row,
+    Segmented,
+    Select,
     Space,
-    Checkbox
+    Tag,
+    Timeline,
+    Typography,
+    message,
+    theme
 } from 'antd'
 import {
-    ClockCircleOutlined,
+    AppstoreOutlined,
+    CalendarOutlined,
     CheckCircleOutlined,
-    CheckOutlined,
+    ClockCircleOutlined,
+    CloseCircleOutlined,
     FileDoneOutlined,
-    PlusOutlined
+    PlusOutlined,
+    SearchOutlined,
+    ShoppingOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { motion } from 'framer-motion'
+import { addDoc, collection, onSnapshot, query, Timestamp, where } from 'firebase/firestore'
 import { db } from '@/firebase'
-import {
-    collection,
-    query,
-    where,
-    onSnapshot,
-    addDoc,
-    Timestamp
-} from 'firebase/firestore'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+import {
+    InternalRequest,
+    StageGroup,
+    isAdhoc,
+    stageGroup,
+    stageInfo,
+    toDay
+} from '@/lib/internalRequests'
+import { ResourceItem } from '@/types/resources'
+import OptionCards from '../OptionCards'
+import { getTypeIcon } from '../typeIcons'
 
-const { Option } = Select
+const { Text } = Typography
 
-const statusLabels = {
-    pending_purchase_approval: 'Pending Purchase Approval',
-    pending_quotation: 'Approved and Awaiting Quotation',
-    quotation_submitted: 'Quotation Submitted and Awaiting Approval',
-    quotation_approved: 'Quotation Approved',
-    invoice_requested: 'Invoice Requested',
-    invoice_uploaded: 'Invoice Uploaded',
-    invoice_approved: 'Invoice Approved',
-    ceo_approval: 'Awaiting CEO Approval',
-    approved_final: 'Final Approval Granted',
-    completed: 'Completed'
+type GroupFilter = StageGroup | 'all'
+
+const GROUP_OPTIONS = [
+    { value: 'all', label: 'All' },
+    { value: 'in_progress', label: 'In progress' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'rejected', label: 'Rejected' }
+]
+
+const KIND_OPTIONS = [
+    {
+        value: 'resource',
+        label: 'Existing resource',
+        icon: <AppstoreOutlined />,
+        description: 'From the resources list'
+    },
+    {
+        value: 'adhoc',
+        label: 'Ad-hoc',
+        icon: <ShoppingOutlined />,
+        description: 'Catering, one-off services'
+    }
+]
+
+const formatDay = (value: unknown, format = 'D MMM YYYY') => {
+    const d = toDay(value)
+    return d ? dayjs(d).format(format) : '—'
 }
 
-const InternalResourceRequestView = () => {
+const InternalResourceRequestView: React.FC = () => {
     const [form] = Form.useForm()
-    const [requests, setRequests] = useState([])
-    const [trackModal, setTrackModal] = useState(false)
-    const [requestModal, setRequestModal] = useState(false)
-    const [selectedRequest, setSelectedRequest] = useState(null)
-    const [filters, setFilters] = useState({ status: '', search: '' })
-    const [isAdhoc, setIsAdhoc] = useState(false)
-    const [resources, setResources] = useState([])
     const { user } = useFullIdentity()
+    const { token } = theme.useToken()
+    const screens = Grid.useBreakpoint()
+    const isDesktop = screens.sm !== false
+    // Below md, modals become bottom sheets (index.css) and the filter bar stacks
+    const isMobile = screens.md === false
+    const barCol = (flex: string) => (isMobile ? { span: 24 } : { flex })
+
+    const [requests, setRequests] = useState<InternalRequest[]>([])
+    const [resources, setResources] = useState<ResourceItem[]>([])
+    const [loading, setLoading] = useState(true)
+    const [search, setSearch] = useState('')
+    const [group, setGroup] = useState<GroupFilter>('all')
+    const [viewing, setViewing] = useState<InternalRequest | null>(null)
+    const [requestOpen, setRequestOpen] = useState(false)
+    const [saving, setSaving] = useState(false)
+
+    const kind: 'resource' | 'adhoc' | undefined = Form.useWatch('kind', form)
 
     useEffect(() => {
-        const q = query(
-            collection(db, 'resources')
-        )
-        const unsubscribe = onSnapshot(q, snapshot => {
-            const resourceData = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }))
-            setResources(resourceData)
+        const unsubscribe = onSnapshot(collection(db, 'resources'), snapshot => {
+            setResources(
+                snapshot.docs
+                    .map(d => ({ id: d.id, ...d.data() }) as ResourceItem)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+            )
         })
-
         return () => unsubscribe()
     }, [])
 
+    // Only this branch's requests; staff without a branch see none
+    const branchId = user?.assignedBranch || ''
+    // Internal requests only ever come from a project admin (Center Coordinator)
+    // for their branch; anyone else opening this page can only read
+    const canRequest = user?.role === 'projectadmin' && !!branchId
+
     useEffect(() => {
-        const q = query(
-            collection(db, 'resourceRequests'),
-            where('requestType', '==', 'internal')
+        if (!branchId) {
+            setRequests([])
+            setLoading(false)
+            return
+        }
+        setLoading(true)
+        const unsubscribe = onSnapshot(
+            query(
+                collection(db, 'resourceRequests'),
+                where('requestType', '==', 'internal'),
+                where('requestedFrom', '==', branchId)
+            ),
+            snapshot => {
+                setRequests(
+                    snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as InternalRequest)
+                )
+                setLoading(false)
+            },
+            error => {
+                console.error('Failed to load internal requests:', error)
+                message.error('Failed to load requests')
+                setLoading(false)
+            }
         )
-        const unsubscribe = onSnapshot(q, snapshot => {
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-            setRequests(data)
-        })
         return () => unsubscribe()
-    }, [])
+    }, [branchId])
 
-    const handleSubmit = async values => {
-        const selectedResource = resources.find(r => r.id === values.resourceId)
-        const resourceName = isAdhoc
-            ? values.customResource
-            : selectedResource?.name
+    const resourcesById = useMemo(
+        () => new Map(resources.map(r => [r.id, r])),
+        [resources]
+    )
 
+    const counts = useMemo(() => {
+        const c = { in_progress: 0, completed: 0, rejected: 0 }
+        requests.forEach(r => (c[stageGroup(r.status)] += 1))
+        return c
+    }, [requests])
+
+    // Newest first
+    const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase()
+        return requests
+            .filter(
+                r =>
+                    (group === 'all' || stageGroup(r.status) === group) &&
+                    (!q ||
+                        (r.resourceName || '').toLowerCase().includes(q) ||
+                        (r.purpose || '').toLowerCase().includes(q))
+            )
+            .sort(
+                (a, b) =>
+                    (toDay(b.createdAt)?.getTime() || 0) - (toDay(a.createdAt)?.getTime() || 0)
+            )
+    }, [requests, search, group])
+
+    const openRequestForm = () => {
+        if (!canRequest) return
+        form.resetFields()
+        form.setFieldsValue({ kind: 'resource', quantity: 1 })
+        setRequestOpen(true)
+    }
+
+    const handleSubmit = async () => {
+        let values: Record<string, any>
+        try {
+            values = await form.validateFields()
+        } catch {
+            return
+        }
+        const adhoc = values.kind === 'adhoc'
+        const resource = adhoc ? undefined : resourcesById.get(values.resourceId)
+        const now = Timestamp.now()
+
+        setSaving(true)
         try {
             await addDoc(collection(db, 'resourceRequests'), {
-                resourceName,
-                resourceId: values.resourceId || null,
-                neededBy: values.neededBy.toISOString(),
-                purpose: values.purpose,
-                status: 'pending_purchase_approval',
                 requestType: 'internal',
-                progress: [
-                    {
-                        stage: 'pending_purchase_approval',
-                        timestamp: Timestamp.now()
-                    }
-                ],
-                createdAt: Timestamp.now(),
+                resourceName: adhoc ? values.customResource.trim() : resource?.name || '',
+                resourceId: adhoc ? null : values.resourceId,
+                quantity: Number(values.quantity) || 1,
+                neededBy: values.neededBy.toISOString(),
+                purpose: values.purpose.trim(),
+                status: 'pending_purchase_approval',
+                progress: [{ stage: 'pending_purchase_approval', timestamp: now }],
+                createdAt: now,
+                // IHF's screens read the role and branch from these
                 requestedBy: user?.role || '',
+                requestedByName: user?.name || user?.email || '',
                 requestedFrom: user?.assignedBranch || ''
             })
             message.success('Request submitted')
-            form.resetFields()
-            setRequestModal(false)
-            setIsAdhoc(false)
-        } catch (err) {
-            console.error(err)
+            setRequestOpen(false)
+        } catch (error) {
+            console.error('Failed to submit request:', error)
             message.error('Failed to submit request')
+        } finally {
+            setSaving(false)
         }
     }
 
-    const filteredRequests = requests.filter(req => {
+    const iconFor = (request: InternalRequest) => {
+        const resource = request.resourceId ? resourcesById.get(request.resourceId) : undefined
+        return resource ? getTypeIcon(resource.type) : <ShoppingOutlined />
+    }
+
+    const iconCircle = (icon: React.ReactNode, size: number) => (
+        <div
+            style={{
+                width: size,
+                height: size,
+                borderRadius: '50%',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: size / 2.2,
+                flexShrink: 0,
+                background: token.colorPrimaryBg,
+                color: token.colorPrimary
+            }}
+        >
+            {icon}
+        </div>
+    )
+
+    const renderCard = (request: InternalRequest) => {
+        const stage = stageInfo(request.status)
         return (
-            (!filters.status || req.status === filters.status) &&
-            (!filters.search ||
-                req.resourceName.toLowerCase().includes(filters.search.toLowerCase()) ||
-                req.purpose.toLowerCase().includes(filters.search.toLowerCase()))
+            <Card
+                size='small'
+                hoverable
+                style={{ width: '100%', borderRadius: 12 }}
+                onClick={() => setViewing(request)}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {iconCircle(iconFor(request), 36)}
+                    {/* Two lines: what and where it's at, then when and why */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <Text strong ellipsis style={{ minWidth: 0 }}>
+                                {request.resourceName || 'Unnamed request'}
+                            </Text>
+                            <Tag color={stage.color} style={{ marginInlineEnd: 0, flexShrink: 0 }}>
+                                {stage.label}
+                            </Tag>
+                            {isAdhoc(request) && (
+                                <Tag style={{ marginInlineEnd: 0, flexShrink: 0 }}>Ad-hoc</Tag>
+                            )}
+                            {(request.quantity || 0) > 1 && (
+                                <Text type='secondary' style={{ fontSize: 12, flexShrink: 0 }}>
+                                    ×{request.quantity}
+                                </Text>
+                            )}
+                        </div>
+                        <Text
+                            type='secondary'
+                            style={{ fontSize: 12, display: 'block' }}
+                            ellipsis={{ tooltip: request.purpose || undefined }}
+                        >
+                            <CalendarOutlined style={{ marginRight: 6 }} />
+                            Needed by {formatDay(request.neededBy)}
+                            {request.purpose && ` · ${request.purpose}`}
+                        </Text>
+                    </div>
+                </div>
+            </Card>
         )
-    })
+    }
+
+    const viewingStage = viewing ? stageInfo(viewing.status) : undefined
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
-            <Alert
-                message='Internal Requests System'
-                description='Use this tool to request resources needed for operations. Requests can be standard or ad-hoc and will be routed through a structured approval workflow.'
-                type='info'
-                showIcon
-                closable
-                style={{ marginBottom: 24 }}
-            />
-
-            <Row gutter={16} style={{ marginBottom: 24 }}>
-                <Col span={6}>
-                    <Card
-                        style={{
-                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                            transition: 'all 0.3s ease',
-                            borderRadius: 12,
-                            border: '1px solid #d6e4ff'
-                        }}
-                    >
-                        <Statistic
-                            title='Total'
-                            value={requests.length}
-                            prefix={<FileDoneOutlined />}
-                        />
-                    </Card>
+        <div style={{ minHeight: '100vh', padding: isDesktop ? 24 : 12 }}>
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={12} md={6}>
+                    <MetricTile
+                        icon={<FileDoneOutlined />}
+                        tone='accent'
+                        title='Total Requests'
+                        value={requests.length}
+                        loading={loading}
+                    />
                 </Col>
-                <Col span={6}>
-                    <Card
-                        style={{
-                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                            transition: 'all 0.3s ease',
-                            borderRadius: 12,
-                            border: '1px solid #d6e4ff'
-                        }}
-                    >
-                        <Statistic
-                            title='Pending'
-                            value={
-                                requests.filter(r => r.status.startsWith('pending')).length
-                            }
-                            prefix={<ClockCircleOutlined />}
-                            valueStyle={{ color: '#faad14' }}
-                        />
-                    </Card>
+                <Col xs={12} md={6}>
+                    <MetricTile
+                        icon={<ClockCircleOutlined />}
+                        tone='warning'
+                        title='In Progress'
+                        value={counts.in_progress}
+                        loading={loading}
+                    />
                 </Col>
-                <Col span={6}>
-                    <Card
-                        style={{
-                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                            transition: 'all 0.3s ease',
-                            borderRadius: 12,
-                            border: '1px solid #d6e4ff'
-                        }}
-                    >
-                        <Statistic
-                            title='Approved'
-                            value={requests.filter(r => r.status === 'approved_final').length}
-                            prefix={<CheckOutlined />}
-                            valueStyle={{ color: '#52c41a' }}
-                        />
-                    </Card>
+                {/* Two metrics fit side by side on mobile; the outcomes are left out */}
+                <Col xs={0} md={6}>
+                    <MetricTile
+                        icon={<CheckCircleOutlined />}
+                        tone='success'
+                        title='Completed'
+                        value={counts.completed}
+                        loading={loading}
+                    />
                 </Col>
-                <Col span={6}>
-                    <Card
-                        style={{
-                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                            transition: 'all 0.3s ease',
-                            borderRadius: 12,
-                            border: '1px solid #d6e4ff'
-                        }}
-                    >
-                        <Statistic
-                            title='Completed'
-                            value={requests.filter(r => r.status === 'completed').length}
-                            prefix={<CheckCircleOutlined />}
-                            valueStyle={{ color: '#1890ff' }}
-                        />
-                    </Card>
+                <Col xs={0} md={6}>
+                    <MetricTile
+                        icon={<CloseCircleOutlined />}
+                        tone='danger'
+                        title='Rejected'
+                        value={counts.rejected}
+                        loading={loading}
+                    />
                 </Col>
             </Row>
 
-            <MotionCard>
-                <Space style={{ marginBottom: 10 }}>
-                    <Select
-                        placeholder='Filter by Status'
-                        onChange={val => setFilters(prev => ({ ...prev, status: val }))}
-                        allowClear
-                    >
-                        {Object.keys(statusLabels).map(status => (
-                            <Option key={status}>{statusLabels[status]}</Option>
-                        ))}
-                    </Select>
-                    <Input.Search
-                        placeholder='Search...'
-                        onChange={e =>
-                            setFilters(prev => ({ ...prev, search: e.target.value }))
-                        }
-                        allowClear
-                    />
-                    <Button
-                        type='primary'
-                        icon={<PlusOutlined />}
-                        iconPosition='start'
-                        onClick={() => setRequestModal(true)}
-                    >
-                        New Resource Request
-                    </Button>
-                </Space>
-                <Table
-                    dataSource={filteredRequests}
-                    rowKey='id'
-                    columns={[
-                        { title: 'Resource', dataIndex: 'resourceName' },
-                        { title: 'Purpose', dataIndex: 'purpose' },
-                        {
-                            title: 'Needed By',
-                            dataIndex: 'neededBy',
-                            render: val => dayjs(val).format('YYYY-MM-DD')
-                        },
-                        {
-                            title: 'Status',
-                            dataIndex: 'status',
-                            render: s => <Tag>{statusLabels[s] || s}</Tag>
-                        },
-                        {
-                            title: 'Actions',
-                            render: (_, record) =>
-                                record.status !== 'rejected' && (
-                                    <Button
-                                        onClick={() => {
-                                            setSelectedRequest(record)
-                                            setTrackModal(true)
-                                        }}
-                                    >
-                                        Track
-                                    </Button>
-                                )
-                        }
-                    ]}
-                />
-            </MotionCard>
+            <DashboardFilterBar>
+                <Row gutter={[12, 12]} align='middle'>
+                    <Col {...barCol('2 1 220px')}>
+                        <Input
+                            placeholder='Search requests...'
+                            prefix={<SearchOutlined />}
+                            allowClear
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                        />
+                    </Col>
+                    <Col {...barCol('2 1 360px')}>
+                        <Segmented
+                            block
+                            value={group}
+                            onChange={value => setGroup(value as GroupFilter)}
+                            options={GROUP_OPTIONS}
+                        />
+                    </Col>
+                    <Col {...barCol('0 1 160px')}>
+                        <Button
+                            block
+                            type='primary'
+                            icon={<PlusOutlined />}
+                            // A request without a branch would never show up for anyone
+                            disabled={!canRequest}
+                            onClick={openRequestForm}
+                        >
+                            Request
+                        </Button>
+                    </Col>
+                </Row>
+            </DashboardFilterBar>
 
-            <Modal
-                open={trackModal}
-                onCancel={() => setTrackModal(false)}
-                footer={null}
-                title='Request Progress'
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
             >
-                {selectedRequest && (
-                    <Timeline>
-                        {selectedRequest.progress.map((p, idx) => (
-                            <Timeline.Item key={idx}>
-                                <b>{statusLabels[p.stage] || p.stage}</b> —{' '}
-                                {dayjs(
-                                    p.timestamp.toDate ? p.timestamp.toDate() : p.timestamp
-                                ).format('YYYY-MM-DD HH:mm')}
-                                {/* {p.actor && ` by ${p.actor}`} */}
-                            </Timeline.Item>
-                        ))}
-                    </Timeline>
+                <List
+                    dataSource={filtered}
+                    rowKey='id'
+                    loading={loading}
+                    split={false}
+                    pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                    locale={{
+                        emptyText: !branchId ? (
+                            <Result
+                                status='warning'
+                                title='No branch assigned'
+                                subTitle='Internal requests are shared within a branch. Ask an administrator to assign you to one.'
+                            />
+                        ) : search || group !== 'all' ? (
+                                <Result
+                                    icon={<SearchOutlined />}
+                                    title='No requests found'
+                                    subTitle='Nothing matches your search or filter.'
+                                    extra={
+                                        <Button
+                                            onClick={() => {
+                                                setSearch('')
+                                                setGroup('all')
+                                            }}
+                                        >
+                                            Clear filters
+                                        </Button>
+                                    }
+                                />
+                            ) : (
+                                <Result
+                                    icon={<ShoppingOutlined />}
+                                    title='No internal requests yet'
+                                    subTitle='Request a resource or a one-off service for your team.'
+                                    extra={
+                                        canRequest && (
+                                        <Button
+                                            type='primary'
+                                            icon={<PlusOutlined />}
+                                            onClick={openRequestForm}
+                                        >
+                                            Request
+                                        </Button>
+                                        )
+                                    }
+                                />
+                            )
+                    }}
+                    renderItem={request => (
+                        <List.Item style={{ padding: '6px 0' }}>{renderCard(request)}</List.Item>
+                    )}
+                />
+            </motion.div>
+
+            {/* Read-only details, with the stage history that used to be "Track" */}
+            <Modal
+                open={!!viewing}
+                onCancel={() => setViewing(null)}
+                title='Request Details'
+                footer={null}
+                destroyOnClose
+            >
+                {viewing && viewingStage && (
+                    <Space direction='vertical' size={16} style={{ width: '100%' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            {iconCircle(iconFor(viewing), 44)}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <Text strong style={{ fontSize: 16, display: 'block' }} ellipsis>
+                                    {viewing.resourceName || 'Unnamed request'}
+                                </Text>
+                                <Text type='secondary'>
+                                    {isAdhoc(viewing) ? 'Ad-hoc request' : 'Existing resource'}
+                                </Text>
+                            </div>
+                            <Tag color={viewingStage.color} style={{ marginInlineEnd: 0 }}>
+                                {viewingStage.label}
+                            </Tag>
+                        </div>
+
+                        <Descriptions column={1} size='small' bordered>
+                            <Descriptions.Item label='Quantity'>
+                                {viewing.quantity || 1}
+                            </Descriptions.Item>
+                            <Descriptions.Item label='Needed by'>
+                                {formatDay(viewing.neededBy)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label='Purpose'>
+                                {viewing.purpose || '—'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label='Requested'>
+                                {formatDay(viewing.createdAt, 'D MMM YYYY, HH:mm')}
+                                {viewing.requestedByName && ` by ${viewing.requestedByName}`}
+                            </Descriptions.Item>
+                            {viewing.status === 'rejected' && (
+                                <Descriptions.Item label='Rejection reason'>
+                                    <Text type='danger'>{viewing.rejectionReason || 'No reason given'}</Text>
+                                </Descriptions.Item>
+                            )}
+                        </Descriptions>
+
+                        <div>
+                            <Text strong style={{ display: 'block', marginBottom: 12 }}>
+                                Progress
+                            </Text>
+                            <Timeline
+                                items={(viewing.progress || []).map((entry, i, all) => ({
+                                    color:
+                                        entry.stage === 'rejected'
+                                            ? 'red'
+                                            : i === all.length - 1
+                                              ? 'blue'
+                                              : 'green',
+                                    children: (
+                                        <div>
+                                            <Text strong>{stageInfo(entry.stage).label}</Text>
+                                            <div>
+                                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                                    {formatDay(entry.timestamp, 'D MMM YYYY, HH:mm')}
+                                                    {entry.actor && ` · ${entry.actor}`}
+                                                </Text>
+                                            </div>
+                                            {entry.note && (
+                                                <Text style={{ fontSize: 12 }}>{entry.note}</Text>
+                                            )}
+                                        </div>
+                                    )
+                                }))}
+                            />
+                        </div>
+                    </Space>
                 )}
             </Modal>
 
             <Modal
-                open={requestModal}
-                title='New Internal Resource Request'
-                onCancel={() => {
-                    setRequestModal(false)
-                    setIsAdhoc(false)
-                }}
-                onOk={() => form.submit()}
-                okText='Submit'
-                cancelText='Cancel'
+                open={requestOpen}
+                onCancel={() => setRequestOpen(false)}
+                title='New Internal Request'
+                destroyOnClose
+                footer={
+                    <Button type='primary' block loading={saving} onClick={handleSubmit}>
+                        Submit Request
+                    </Button>
+                }
             >
-                <Form form={form} layout='vertical' onFinish={handleSubmit}>
-                    <Form.Item>
-                        <Checkbox
-                            checked={isAdhoc}
-                            onChange={e => setIsAdhoc(e.target.checked)}
-                        >
-                            This is an ad-hoc request (e.g. catering, one-time service)
-                        </Checkbox>
+                <Form form={form} layout='vertical'>
+                    <Form.Item name='kind' label='What do you need?' rules={[{ required: true }]}>
+                        <OptionCards indicator options={KIND_OPTIONS} />
                     </Form.Item>
 
-                    {!isAdhoc ? (
+                    {kind === 'adhoc' ? (
                         <Form.Item
-                            name='resourceId'
-                            label='Select Resource'
-                            rules={[{ required: true }]}
+                            name='customResource'
+                            label='Describe it'
+                            rules={[{ required: true, whitespace: true }]}
                         >
-                            <Select placeholder='Select'>
-                                {resources.map(r => (
-                                    <Option key={r.id} value={r.id}>
-                                        {r.name}
-                                    </Option>
-                                ))}
-                            </Select>
+                            <Input placeholder='e.g. Catering for 40, tent hire' />
                         </Form.Item>
                     ) : (
                         <Form.Item
-                            name='customResource'
-                            label='Describe Resource'
+                            name='resourceId'
+                            label='Resource'
                             rules={[{ required: true }]}
                         >
-                            <Input placeholder='e.g. Catering for event, Tent hire' />
+                            <Select
+                                showSearch
+                                optionFilterProp='label'
+                                placeholder='Select a resource'
+                                options={resources.map(r => ({ value: r.id, label: r.name }))}
+                            />
                         </Form.Item>
                     )}
 
-                    <Form.Item
-                        name='neededBy'
-                        label='Needed By'
-                        rules={[{ required: true }]}
-                    >
-                        <DatePicker style={{ width: '100%' }} />
-                    </Form.Item>
+                    <Row gutter={12}>
+                        <Col xs={24} sm={16}>
+                            <Form.Item
+                                name='neededBy'
+                                label='Needed by'
+                                rules={[{ required: true }]}
+                            >
+                                <DatePicker
+                                    style={{ width: '100%' }}
+                                    disabledDate={current =>
+                                        current && current < dayjs().startOf('day')
+                                    }
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={8}>
+                            <Form.Item name='quantity' label='Quantity' rules={[{ required: true }]}>
+                                <InputNumber min={1} style={{ width: '100%' }} />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
                     <Form.Item
                         name='purpose'
                         label='Purpose'
-                        rules={[{ required: true }]}
+                        rules={[{ required: true, whitespace: true }]}
                     >
-                        <Input.TextArea
-                            rows={3}
-                            placeholder='Why do you need this resource?'
-                        />
+                        <Input.TextArea rows={3} placeholder='Why do you need this?' />
                     </Form.Item>
                 </Form>
             </Modal>

@@ -1,0 +1,7 @@
+/* Blur the page behind any open modal / drawer. */
+.ant-modal-mask,
+.ant-drawer-mask,
+.ant-image-preview-mask {
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}

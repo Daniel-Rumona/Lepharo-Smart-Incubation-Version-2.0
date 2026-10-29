@@ -5,7 +5,7 @@ from lph_gateway import GatewayError, LphGateway
 from whatsapp import WhatsAppChatRequest, WhatsAppConversationStore, interpret_whatsapp_message
 from whatsapp_staff import StaffDecision, StaffPropose, StaffRead
 
-ADMIN = {"id": "u1", "kind": "staff", "name": "Daniel Rumona", "role": "admin", "roleGroup": "admin"}
+ADMIN = {"id": "u1", "kind": "staff", "name": "Daniel Rumona", "role": "system_admin", "roleGroup": "system_admin"}
 HOD = {"id": "u2", "kind": "staff", "name": "Thandi Nkosi", "role": "operations", "roleGroup": "hod"}
 RECEPTION = {"id": "u3", "kind": "staff", "name": "Ayanda", "role": "receptionist", "roleGroup": "receptionist"}
 SME = {"id": "p1", "kind": "sme", "name": "Acme Traders", "participantName": "Acme Traders", "role": "incubatee"}
@@ -106,7 +106,7 @@ class StaffWhatsAppTests(unittest.TestCase):
 
     def test_user_stats_from_menu(self):
         gateway = FakeGateway(ADMIN, {"staff_overview": {
-            "users": {"total": 12, "byRole": {"admin": 2, "operations": 3, "consultant": 4, "employee": 3}},
+            "users": {"total": 12, "byRole": {"system_admin": 2, "operations": 3, "consultant": 4, "employee": 3}},
             "participants": 40, "assignments": {"total": 9, "byStatus": {}}, "upcomingSessions": 2,
         }})
         reply = self.send("2", gateway, awaiting="menu").reply

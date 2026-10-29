@@ -17,7 +17,7 @@ import { MotionCard } from './Header'
 const { Text } = Typography
 
 type MovSubmissionStatusCardProps = {
-    departmentName?: string
+    departmentId?: string | null
     programId?: string | null
     /** Reporting window supplied by the dashboard topbar. */
     dateRange?: [Dayjs, Dayjs] | null
@@ -49,7 +49,7 @@ const isAvailableForReview = (mov: any) =>
     mov?.status === 'queried'
 
 const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
-    departmentName,
+    departmentId,
     programId,
     dateRange,
     title = (
@@ -72,7 +72,7 @@ const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
             setLoading(true)
             try {
                 const clauses = [
-                    ...(departmentName ? [where('departmentName', '==', departmentName)] : []),
+                    ...(departmentId ? [where('departmentId', '==', departmentId)] : []),
                     ...(programId ? [where('programId', '==', programId)] : [])
                 ]
 
@@ -92,7 +92,7 @@ const MovSubmissionStatusCard: React.FC<MovSubmissionStatusCardProps> = ({
         return () => {
             cancelled = true
         }
-    }, [departmentName, programId])
+    }, [departmentId, programId])
 
     const periodRows = useMemo(() => {
         if (!dateRange?.[0] || !dateRange?.[1]) return rows

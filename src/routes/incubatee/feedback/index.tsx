@@ -39,6 +39,7 @@ import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
 import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
 import {
@@ -222,7 +223,15 @@ const SmeFeedbackPage: React.FC = () => {
     const [companyName, setCompanyName] = useState('')
     const [participantProfile, setParticipantProfile] = useState<any>(null)
     const [applicationProfile, setApplicationProfile] = useState<any>(null)
-    const [interventions, setInterventions] = useState<AssignedIntervention[]>([])
+    const { nameOf } = useDepartmentRoles()
+    const [assignedRows, setInterventions] = useState<AssignedIntervention[]>([])
+    const interventions = useMemo(
+        () => assignedRows.map(row => ({
+            ...row,
+            departmentName: row.departmentId ? nameOf(row.departmentId, 'Unassigned department') : 'Unassigned department'
+        })),
+        [assignedRows, nameOf]
+    )
     const [feedbackRecords, setFeedbackRecords] = useState<FeedbackRecord[]>([])
     const [inquiries, setInquiries] = useState<InquiryRecord[]>([])
     const [loading, setLoading] = useState(false)
@@ -273,8 +282,7 @@ const SmeFeedbackPage: React.FC = () => {
                         .map(row => ({
                             ...row,
                             interventionTitle: clean(row.interventionTitle || row.title || row.name || 'Untitled intervention'),
-                            departmentName: clean(row.departmentName || row.department || row.areaOfSupport || 'Unassigned department'),
-                            departmentId: clean(row.departmentId || row.departmentName || row.department || row.areaOfSupport || 'unassigned'),
+                            departmentId: clean(row.departmentId),
                             consultantName: clean(row.assigneeName || 'Unassigned coordinator')
                         }))
                         .sort((a, b) => a.interventionTitle.localeCompare(b.interventionTitle))
@@ -312,7 +320,7 @@ const SmeFeedbackPage: React.FC = () => {
     const departmentOptions = useMemo(() => {
         const map = new Map<string, string>()
         interventions.forEach(item => {
-            const id = clean(item.departmentId || item.departmentName || 'unassigned')
+            const id = clean(item.departmentId || 'unassigned')
             if (!map.has(id)) map.set(id, item.departmentName || id)
         })
         return Array.from(map.entries()).map(([value, label]) => ({ value, label }))
@@ -389,32 +397,32 @@ const SmeFeedbackPage: React.FC = () => {
         {
             key: 'complaints',
             important: true,
-            icon: <ExclamationCircleOutlined style={{ color: '#f5222d' }} />,
-            iconBg: 'rgba(245,34,45,0.12)',
+            icon: <ExclamationCircleOutlined />,
+            tone: 'danger' as const,
             title: 'Complaints',
             value: metrics.complaints
         },
         {
             key: 'inquiries',
             important: true,
-            icon: <FileSearchOutlined style={{ color: '#722ed1' }} />,
-            iconBg: 'rgba(114,46,209,0.12)',
+            icon: <FileSearchOutlined />,
+            tone: 'info' as const,
             title: 'Inquiries',
             value: metrics.inquiries
         },
         {
             key: 'praise',
             important: false,
-            icon: <LikeOutlined style={{ color: '#52c41a' }} />,
-            iconBg: 'rgba(82,196,26,0.14)',
+            icon: <LikeOutlined />,
+            tone: 'success' as const,
             title: 'Praises',
             value: metrics.praise
         },
         {
             key: 'success',
             important: false,
-            icon: <CheckCircleOutlined style={{ color: '#1677ff' }} />,
-            iconBg: 'rgba(22,119,255,0.12)',
+            icon: <CheckCircleOutlined />,
+            tone: 'info' as const,
             title: 'Success Stories',
             mobileTitle: 'Success',
             value: metrics.success

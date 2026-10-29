@@ -1,0 +1,292 @@
+/* Notification panel. Deliberately mirrors the account panel
+   (../current-user/account-menu.css): same shell, accent-wash header,
+   icon-tile rows and pill strip, all from the --app-* tokens so light, dark
+   and every accent palette follow. */
+
+.notif-panel {
+    width: min(380px, calc(100vw - 24px));
+    padding: 6px;
+    border-radius: 18px;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-raised, var(--app-surface));
+    color: var(--app-text);
+    box-shadow: 0 18px 50px -12px rgb(15 23 42 / 28%), 0 2px 6px rgb(15 23 42 / 6%);
+}
+html[data-theme="dark"] .notif-panel {
+    box-shadow: 0 18px 50px -12px rgb(0 0 0 / 70%);
+}
+
+/* --- Header -------------------------------------------------------------- */
+
+.notif-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 12px;
+    border-radius: 13px;
+    background: linear-gradient(135deg, var(--app-accent-wash), transparent 85%);
+}
+.notif-panel-head-icon {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+    font-size: 17px;
+}
+.notif-panel-head-id {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+}
+.notif-panel-head-id strong {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+.notif-panel-count {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+.notif-panel-markall {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 9px;
+    border: 0;
+    border-radius: 9px;
+    background: none;
+    color: var(--app-accent);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 140ms ease;
+}
+.notif-panel-markall:hover,
+.notif-panel-markall:focus-visible {
+    background: var(--app-accent-soft);
+    outline: none;
+}
+
+/* --- All / Unread: the account panel's pill strip ------------------------ */
+
+.notif-panel-filters {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2px;
+    margin: 8px 4px 4px;
+    padding: 3px;
+    border-radius: 12px;
+    background: #f2f4f7;
+}
+.notif-panel-filter {
+    min-height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: #4f5968;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.notif-panel-filter:hover,
+.notif-panel-filter:focus-visible {
+    color: var(--app-accent);
+    background: rgba(255, 255, 255, 0.65);
+    outline: none;
+}
+.notif-panel-filter.is-active {
+    color: var(--app-accent);
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(20, 37, 63, 0.12);
+}
+.notif-panel-filter-count {
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--app-accent);
+    color: var(--app-accent-contrast, #fff);
+    font-size: 10.5px;
+    line-height: 16px;
+}
+html[data-theme="dark"] .notif-panel-filters {
+    background: rgba(255, 255, 255, 0.05);
+}
+html[data-theme="dark"] .notif-panel-filter {
+    color: var(--app-text-muted);
+}
+html[data-theme="dark"] .notif-panel-filter:hover,
+html[data-theme="dark"] .notif-panel-filter:focus-visible {
+    color: var(--app-accent);
+    background: rgba(255, 255, 255, 0.06);
+}
+html[data-theme="dark"] .notif-panel-filter.is-active {
+    color: var(--app-accent-contrast);
+    background: var(--app-accent-active-bg);
+    box-shadow: none;
+}
+
+/* --- Rows ---------------------------------------------------------------- */
+
+.notif-panel-list {
+    max-height: min(420px, 60vh);
+    overflow-y: auto;
+    padding: 4px 0;
+    overscroll-behavior: contain;
+}
+.notif-panel-item + .notif-panel-item {
+    margin-top: 2px;
+}
+.notif-panel-row {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 11px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 140ms ease;
+}
+.notif-panel-row:hover:not(:disabled),
+.notif-panel-row:focus-visible {
+    background: var(--app-surface-sunken);
+    outline: none;
+}
+.notif-panel-row:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.notif-panel-icon {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--app-surface-sunken);
+    color: var(--app-text-muted);
+    font-size: 15px;
+    transition: background-color 140ms ease, color 140ms ease;
+}
+.notif-panel-item.is-unread .notif-panel-icon,
+.notif-panel-row:hover:not(:disabled) .notif-panel-icon {
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+}
+.notif-panel-label {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.notif-panel-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+.notif-panel-title strong,
+.notif-panel-push strong {
+    min-width: 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.notif-panel-item.is-unread .notif-panel-title strong {
+    font-weight: 700;
+}
+.notif-panel-title time {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--app-text-subtle, var(--app-text-muted));
+}
+.notif-panel-label small {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--app-text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.notif-panel-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+    border-radius: 50%;
+    background: var(--app-accent);
+}
+.notif-panel-chevron {
+    flex: 0 0 auto;
+    align-self: center;
+    font-size: 10px;
+    color: var(--app-text-subtle, var(--app-text-muted));
+}
+.notif-panel-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 10px 8px 54px;
+}
+
+/* --- Empty state --------------------------------------------------------- */
+
+.notif-panel-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 28px 16px;
+    text-align: center;
+}
+.notif-panel-empty .notif-panel-icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 6px;
+    font-size: 18px;
+}
+.notif-panel-empty strong {
+    font-size: 13.5px;
+    font-weight: 600;
+}
+.notif-panel-empty small {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+/* --- Push opt-in: a footer row, like Log out in the account panel -------- */
+
+.notif-panel-push {
+    align-items: center;
+    margin-top: 2px;
+    border-top: 1px solid var(--app-border);
+    border-radius: 0 0 11px 11px;
+    padding-top: 10px;
+}

@@ -55,6 +55,7 @@ import SHA256 from 'crypto-js/sha256'
 
 import { auth, db, functions, storage } from '@/firebase'
 import { DashboardLoader } from '@/components/layout/DashboardLoader'
+import { departmentNameOf, loadDepartmentRoles } from '@/services/departmentRoles'
 
 dayjs.extend(customParseFormat)
 
@@ -98,7 +99,8 @@ type InterventionItem = {
 }
 
 type InterventionGroup = {
-    area: string
+    departmentId: string
+    name: string
     interventions: InterventionItem[]
 }
 
@@ -715,7 +717,10 @@ const ParticipantRegistrationConversational: React.FC = () => {
 
         const loadInterventions = async () => {
             try {
-                const snap = await getDocs(collection(db, 'interventions'))
+                const [snap, { departments }] = await Promise.all([
+                    getDocs(collection(db, 'interventions')),
+                    loadDepartmentRoles()
+                ])
                 if (!mounted) return
 
                 const grouped = new Map<string, InterventionItem[]>()
@@ -723,22 +728,23 @@ const ParticipantRegistrationConversational: React.FC = () => {
                 snap.docs.forEach(interventionDoc => {
                     const data = interventionDoc.data()
                     const title = String(data.interventionTitle || data.title || '').trim()
-                    const area = String(data.areaOfSupport || 'General').trim()
+                    const departmentId = String(data.departmentId || '').trim()
 
-                    if (!title || data.internal === true || data.compulsory === true) return
+                    if (!title || !departmentId || data.internal === true || data.compulsory === true) return
 
-                    const current = grouped.get(area) || []
+                    const current = grouped.get(departmentId) || []
                     current.push({ id: interventionDoc.id, title })
-                    grouped.set(area, current)
+                    grouped.set(departmentId, current)
                 })
 
                 setInterventionGroups(
                     Array.from(grouped.entries())
-                        .map(([area, interventions]) => ({
-                            area,
+                        .map(([departmentId, interventions]) => ({
+                            departmentId,
+                            name: departmentNameOf(departmentId, departments, 'Other support'),
                             interventions: [...interventions].sort((a, b) => a.title.localeCompare(b.title))
                         }))
-                        .sort((a, b) => a.area.localeCompare(b.area))
+                        .sort((a, b) => a.name.localeCompare(b.name))
                 )
             } catch (error) {
                 console.error('[Application Flow] Failed to load interventions:', error)
@@ -911,7 +917,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
     )
 
     const activeInterventionGroup = useMemo(
-        () => interventionGroups.find(group => group.area === activeSupportArea) || null,
+        () => interventionGroups.find(group => group.departmentId === activeSupportArea) || null,
         [activeSupportArea, interventionGroups]
     )
 
@@ -934,9 +940,10 @@ const ParticipantRegistrationConversational: React.FC = () => {
     const selectedSupportByArea = useMemo(() =>
         interventionGroups
             .map(group => ({
-                area: group.area,
+                departmentId: group.departmentId,
+                name: group.name,
                 interventions: group.interventions.filter(intervention =>
-                    (interventionSelections[group.area] || []).includes(intervention.id)
+                    (interventionSelections[group.departmentId] || []).includes(intervention.id)
                 )
             }))
             .filter(group => group.interventions.length > 0),
@@ -944,14 +951,14 @@ const ParticipantRegistrationConversational: React.FC = () => {
     )
 
     // Flattened for storage: the grouping is presentation, the records
-    // downstream want a flat list carrying its area.
+    // downstream want a flat list carrying its department.
     const selectedInterventions = useMemo(
         () =>
             selectedSupportByArea.flatMap(group =>
                 group.interventions.map(intervention => ({
                     id: intervention.id,
                     title: intervention.title,
-                    area: group.area
+                    departmentId: group.departmentId
                 }))
             ),
         [selectedSupportByArea]
@@ -1586,21 +1593,21 @@ const ParticipantRegistrationConversational: React.FC = () => {
         setProfileIndex(index => Math.max(0, index - 1))
     }
 
-    const openSupportArea = async (area: string) => {
+    const openSupportArea = async (departmentId: string) => {
         await saveDraft()
-        setActiveSupportArea(area)
+        setActiveSupportArea(departmentId)
         setDirection('forward')
         setScreen('supportDepartment')
     }
 
-    const toggleIntervention = (area: string, interventionId: string) => {
+    const toggleIntervention = (departmentId: string, interventionId: string) => {
         setInterventionSelections(previous => {
-            const current = previous[area] || []
+            const current = previous[departmentId] || []
             const selected = current.includes(interventionId)
 
             return {
                 ...previous,
-                [area]: selected
+                [departmentId]: selected
                     ? current.filter(id => id !== interventionId)
                     : [...current, interventionId]
             }
@@ -3134,7 +3141,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         >
                                             {interventionGroups.map(group => {
                                                 const selectedCount =
-                                                    (interventionSelections[group.area] || []).length
+                                                    (interventionSelections[group.departmentId] || []).length
                                                 const examples = group.interventions
                                                     .slice(0, 2)
                                                     .map(item => item.title)
@@ -3143,8 +3150,8 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                 return (
                                                     <button
                                                         type='button'
-                                                        key={group.area}
-                                                        onClick={() => void openSupportArea(group.area)}
+                                                        key={group.departmentId}
+                                                        onClick={() => void openSupportArea(group.departmentId)}
                                                         style={{
                                                             border: `1px solid ${selectedCount > 0
                                                                     ? token.colorPrimaryBorder
@@ -3174,7 +3181,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                             }}
                                                         >
                                                             <Text strong style={{ fontSize: 15 }}>
-                                                                {group.area}
+                                                                {group.name}
                                                             </Text>
                                                             <ArrowRightOutlined
                                                                 style={{ color: token.colorTextSecondary }}
@@ -3271,7 +3278,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                             type='secondary'
                                             style={{ display: 'block', fontSize: 12, marginBottom: 5 }}
                                         >
-                                            {activeInterventionGroup.area}
+                                            {activeInterventionGroup.name}
                                         </Text>
                                         <Title level={2} style={{ marginBottom: 6 }}>
                                             What support would help your business?
@@ -3290,7 +3297,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                     >
                                         {activeInterventionGroup.interventions.map(intervention => {
                                             const selected = (
-                                                interventionSelections[activeInterventionGroup.area] || []
+                                                interventionSelections[activeInterventionGroup.departmentId] || []
                                             ).includes(intervention.id)
 
                                             return (
@@ -3299,7 +3306,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                     key={intervention.id}
                                                     onClick={() =>
                                                         toggleIntervention(
-                                                            activeInterventionGroup.area,
+                                                            activeInterventionGroup.departmentId,
                                                             intervention.id
                                                         )
                                                     }
@@ -3798,12 +3805,12 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                     }}
                                                 >
                                                     {selectedSupportByArea.map(group => (
-                                                        <div key={group.area} style={{ minWidth: 0 }}>
+                                                        <div key={group.departmentId} style={{ minWidth: 0 }}>
                                                             <Text
                                                                 strong
                                                                 style={{ display: 'block', marginBottom: 5 }}
                                                             >
-                                                                {group.area}
+                                                                {group.name}
                                                             </Text>
                                                             <Space wrap size={[5, 5]}>
                                                                 {group.interventions.map(intervention => (

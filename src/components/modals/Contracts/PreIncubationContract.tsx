@@ -1,5 +1,5 @@
 // src/components/modals/Contracts/PreIncubationContract.tsx
-import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Typography, message, Space, Button, Alert, Modal } from 'antd'
 import {
   collection,
@@ -20,10 +20,11 @@ import dayjs, { Dayjs } from 'dayjs'
 import { db } from '@/firebase'
 import { ScrollableContractModal } from './ScrollableContractModal'
 import { generateAndUploadContractPDF } from '@/utils/generateContractPdf'
+import { playSignature } from '@/utils/signatureReplay'
+import { useSignaturePlayback } from '@/components/shared/SignatureAnimation'
 import {
   DownloadOutlined,
-  FilePdfOutlined,
-  EditOutlined
+  FilePdfOutlined
 } from '@ant-design/icons'
 
 import {
@@ -484,6 +485,26 @@ export function PreIncubationContractModal ({
     ]
   )
 
+  // The agreement is an HTML string, so the signing animation runs on the
+  // signature <img> inside it, before the browser paints it.
+  const agreementRef = useRef<HTMLDivElement>(null)
+  const signaturePlayback = useSignaturePlayback()
+  useLayoutEffect(() => {
+    if (!previewSignatureURL) return
+    const img = agreementRef.current?.querySelector<HTMLImageElement>(
+      viewerRole === 'operations' ? 'img.sig-img[alt="ROM Signature"]' : 'img.sig-img[alt="Signature"]'
+    )
+    if (!img) {
+      signaturePlayback.complete()
+      return
+    }
+    const controller = new AbortController()
+    void playSignature(img, { signal: controller.signal }).then(() => {
+      if (!controller.signal.aborted) signaturePlayback.complete()
+    })
+    return () => controller.abort()
+  }, [previewSignatureURL]) // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ---------- Sign: persist meta and upload PDF ---------- */
   const handleSign = async () => {
     if (signing) return
@@ -503,6 +524,7 @@ export function PreIncubationContractModal ({
 
     const signedAt = new Date().toISOString()
     setSigningError('')
+    signaturePlayback.start()
     setPreviewSignatureURL(effectiveUserSignatureURL || undefined)
     setPreviewSignedAt(signedAt)
     setSigning(true)
@@ -556,6 +578,8 @@ export function PreIncubationContractModal ({
         updatedAt: serverTimestamp()
       }, { merge: true })
       await signingBatch.commit()
+      // Let the signature finish drawing before the modal closes.
+      await signaturePlayback.finished()
 
       if (viewerRole === 'incubatee') {
         setExistingParticipantSig(effectiveUserSignatureURL || undefined)
@@ -740,28 +764,19 @@ export function PreIncubationContractModal ({
       title='Pre-Incubation, Confidentiality, Non-Disclosure & Non-Circumvention Agreement'
       loading={signing}
       onCancel={onClose}
-      onConfirm={undefined}
+      // Signing goes through the modal's own footer: an "I have read and agree"
+      // box, tickable once scrolled to the end, then Confirm & Sign.
+      onConfirm={!computedReadOnly && viewerNeedsToSign ? handleSign : undefined}
       readOnly={computedReadOnly}
-      requireScroll={false}
+      requireScroll={!computedReadOnly && viewerNeedsToSign}
       signedMeta={signedMeta}
       showSignatureSummary={false}
-      footerActions={
-        <>
-          <Button icon={<DownloadOutlined />} onClick={handleDownloadDocx}>
-            Download
-          </Button>
-          {!computedReadOnly && viewerNeedsToSign && (
-            <Button
-              type='primary'
-              icon={<EditOutlined />}
-              loading={signing}
-              onClick={handleSign}
-            >
-              Confirm &amp; Sign
-            </Button>
-          )}
-        </>
-      }
+      // A copy is worth downloading once this person has signed it.
+      footerActions={viewerHasSigned ? (
+        <Button icon={<DownloadOutlined />} onClick={handleDownloadDocx}>
+          Download
+        </Button>
+      ) : undefined}
     >
       {signingError && (
         <Alert
@@ -804,7 +819,12 @@ export function PreIncubationContractModal ({
           />
         </div>
       ) : (
-        <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+        // The named container lets the agreement's own styles reflow it on a phone.
+        <div
+          ref={agreementRef}
+          style={{ containerType: 'inline-size', containerName: 'agreement' }}
+          dangerouslySetInnerHTML={{ __html: renderedHtml }}
+        />
       )}
 
       {!readOnly && viewerNeedsToSign === false && (
@@ -892,6 +912,22 @@ export function buildPreIncubationAgreementHTML (args: {
       .col { flex: 1; }
       .small { font-size: 12px; }
       .sig-img { max-height: 72px; width: auto; display: block; object-fit: contain; }
+      /* Narrow screens. A container query, not a media query: only the on-screen
+         view sits in a container (see the modal), so the PDF, rendered off-screen
+         at 900px from this same HTML, always keeps the full layout. */
+      @container agreement (max-width: 640px) {
+        .page { padding: 0; }
+        .header-table, .header-table tbody, .header-table tr, .header-table td {
+          display: block; width: 100% !important; box-sizing: border-box; text-align: center !important;
+        }
+        .header-table td + td { border-top: 0 !important; }
+        .meta-box { width: auto; display: inline-block; }
+        .justify { text-align: left; }
+        .row { flex-direction: column; gap: 8px; }
+        .sig-line { min-width: 140px; max-width: 100%; }
+        img { max-width: 100%; }
+        p, div, li { overflow-wrap: anywhere; }
+      }
     </style>
   `
 

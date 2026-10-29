@@ -3,6 +3,7 @@ import {
     Button,
     Col,
     Form,
+    Grid,
     Input,
     Modal,
     Popconfirm,
@@ -40,15 +41,19 @@ import { branchService } from '@/services/branchService'
 import { Branch, BranchFormData } from '@/types/types'
 import { defaultOperatingHours, OPERATING_DAYS } from '@/utils/branchOperatingHours'
 import { OperatingHoursFields } from './OperatingHoursFields'
+import {
+    SOUTH_AFRICAN_PROVINCES,
+    citiesForProvince,
+    formatLocation,
+    matchProvince
+} from '@/utils/southAfricanLocations'
 import { MotionCard } from '../dashboards/metrics/Header'
+import { MobileCardList } from '../shared/MobileCardList'
+import '../shared/setup-segmented.css'
 import './branch-management.css'
 
 const { Search } = Input
 const { Text } = Typography
-
-type BranchManagementProps = {
-    filterBarLeading?: React.ReactNode
-}
 
 type CentreCoordinatorOption = {
     id: string
@@ -60,7 +65,9 @@ type CentreCoordinatorOption = {
 type BranchFormValues = {
     operatingHours: NonNullable<BranchFormData['operatingHours']>
     name: string
-    location: string
+    province?: string
+    city?: string
+    address: string
     centreCoordinatorUserId?: string
     contactEmail: string
     contactPhone?: string
@@ -73,9 +80,40 @@ const getBranchLocation = (branch?: Branch | null) => {
         return branch.location
     }
 
-    return [branch.location.address, branch.location.city]
-        .filter(Boolean)
-        .join(', ')
+    return formatLocation([
+        branch.location.address,
+        branch.location.city,
+        branch.location.province
+    ])
+}
+
+/** Splits a stored branch location into the province / city / address form fields. */
+const getBranchLocationFields = (branch?: Branch | null) => {
+    const location = branch?.location as any
+
+    if (!location) return { province: undefined, city: undefined, address: '' }
+
+    // Older branches stored one free-text string; keep it as the address and
+    // let the user pick the province and city when they next edit.
+    if (typeof location === 'string') {
+        return { province: undefined, city: undefined, address: location }
+    }
+
+    const province = matchProvince(location.province)
+    const city = String(location.city || '').trim()
+    const rawAddress = String(location.address || '').trim()
+    // Branches saved by the old form put the whole "Town, Province" text in address.
+    const address =
+        rawAddress.includes(',') &&
+        rawAddress.toLowerCase() === formatLocation([rawAddress, city, location.province]).toLowerCase()
+            ? ''
+            : rawAddress
+
+    return {
+        province,
+        city: city || undefined,
+        address
+    }
 }
 
 const getBranchContact = (branch?: Branch | null) => {
@@ -89,10 +127,10 @@ const getBranchContact = (branch?: Branch | null) => {
     }
 }
 
-export const BranchManagement: React.FC<BranchManagementProps> = ({
-    filterBarLeading
-}) => {
+export const BranchManagement: React.FC = () => {
     const [form] = Form.useForm<BranchFormValues>()
+    const screens = Grid.useBreakpoint()
+    const isMobile = !screens.md
 
     const [branches, setBranches] = useState<Branch[]>([])
     const [centreCoordinators, setCentreCoordinators] = useState<CentreCoordinatorOption[]>([])
@@ -108,6 +146,18 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
     const [formSection, setFormSection] = useState<'choose' | 'details' | 'hours'>('details')
 
     const selectedCoordinatorId = Form.useWatch('centreCoordinatorUserId', form)
+    const selectedProvince = Form.useWatch('province', form)
+    const [citySearch, setCitySearch] = useState('')
+
+    // Listed towns for the chosen province, plus whatever the user typed so an
+    // unlisted town can still be used.
+    const cityOptions = useMemo(() => {
+        const listed = citiesForProvince(selectedProvince)
+        const typed = citySearch.trim()
+        const extra =
+            typed && !listed.some(city => city.toLowerCase() === typed.toLowerCase()) ? [typed] : []
+        return [...listed, ...extra].map(city => ({ value: city, label: city }))
+    }, [selectedProvince, citySearch])
 
     const selectedCoordinator = useMemo(
         () => centreCoordinators.find(item => item.id === selectedCoordinatorId),
@@ -206,7 +256,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
         form.setFieldsValue({
             operatingHours: branch?.operatingHours || defaultOperatingHours(),
             name: branch?.name || '',
-            location: getBranchLocation(branch),
+            ...getBranchLocationFields(branch),
             centreCoordinatorUserId: raw?.centreCoordinatorUserId || undefined,
             contactEmail: contact.email,
             contactPhone: contact.phone
@@ -267,7 +317,11 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
 
             const payload: BranchFormData = {
                 name: values.name.trim(),
-                location: values.location.trim(),
+                location: {
+                    province: String(values.province || '').trim(),
+                    city: String(values.city || '').trim(),
+                    address: values.address.trim()
+                },
                 contactEmail: values.contactEmail.trim(),
                 contactPhone: String(values.contactPhone || '').trim(),
                 operatingHours: values.operatingHours,
@@ -466,12 +520,8 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
         <>
             <MotionCard
                 filterBar={
-                    <Row gutter={12} wrap={false} style={{ width: '100%' }}>
-                        <Col span={8}>
-                            {filterBarLeading}
-                        </Col>
-
-                        <Col span={8}>
+                    <div className='setup-toolbar'>
+                        <div className='setup-toolbar-search'>
                             <Search
                                 placeholder='Search branches'
                                 value={searchText}
@@ -480,19 +530,18 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                                 style={{ width: '100%' }}
                                 allowClear
                             />
-                        </Col>
+                        </div>
 
-                        <Col span={8}>
+                        <div className='setup-toolbar-action'>
                             <Button
-                                block
                                 type='primary'
                                 icon={<PlusOutlined />}
                                 onClick={() => showModal(false, null)}
                             >
                                 Add Branch
                             </Button>
-                        </Col>
-                    </Row>
+                        </div>
+                    </div>
                 }
             >
                 {loading ? (
@@ -500,6 +549,53 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                         active
                         title={false}
                         paragraph={{ rows: 8, width: '100%' }}
+                    />
+                ) : isMobile ? (
+                    <MobileCardList
+                        data={filteredBranches}
+                        getKey={(row: Branch) => row.id}
+                        pageSize={8}
+                        emptyText='No branches'
+                        renderCard={(record: Branch) => {
+                            const raw = record as any
+                            const contact = getBranchContact(record)
+                            const isMain =
+                                raw.isMain === true ||
+                                raw.is_main === true ||
+                                raw.isPrimary === true ||
+                                raw.primary === true
+                            return {
+                                title: record.name,
+                                subtitle: getBranchLocation(record) || undefined,
+                                badge: isMain ? <Tag color='gold'>HQ</Tag> : undefined,
+                                fields: [
+                                    {
+                                        label: 'Centre Coordinator',
+                                        value: String(raw.centreCoordinatorName || '') || 'Not assigned'
+                                    },
+                                    { label: 'Phone', value: contact.phone || '—' }
+                                ],
+                                note: contact.email ? <Text type='secondary'>{contact.email}</Text> : undefined,
+                                actions: [
+                                    <Button key='edit' icon={<EditOutlined />} onClick={() => showModal(true, record)}>
+                                        Edit
+                                    </Button>,
+                                    <Popconfirm
+                                        key='delete'
+                                        title='Delete Branch'
+                                        description='Are you sure you want to delete this branch? This action cannot be undone.'
+                                        onConfirm={() => handleDelete(record.id)}
+                                        okText='Delete'
+                                        cancelText='Cancel'
+                                        okButtonProps={{ danger: true, loading: deletingId === record.id }}
+                                    >
+                                        <Button danger icon={<DeleteOutlined />} loading={deletingId === record.id}>
+                                            Delete
+                                        </Button>
+                                    </Popconfirm>
+                                ]
+                            }
+                        }}
                     />
                 ) : (
                     <Table
@@ -533,7 +629,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                     form={form}
                     layout='vertical'
                     onFinish={handleSubmit}
-                    requiredMark='optional'
+                    requiredMark
                     disabled={saving}
                 >
                     {formSection === 'choose' && (
@@ -572,19 +668,67 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({
                                 <Input placeholder='e.g. Lephalale Centre' />
                             </Form.Item>
 
-                            <Form.Item
-                                name='location'
-                                label='Location'
-                                rules={[
-                                    { required: true, message: 'Please enter the branch location' },
-                                    { max: 250, message: 'Location cannot exceed 250 characters' }
-                                ]}
-                            >
-                                <Input
-                                    prefix={<EnvironmentOutlined />}
-                                    placeholder='e.g. Lephalale, Limpopo'
-                                />
-                            </Form.Item>
+                            <Row gutter={16}>
+                                <Col xs={24} md={12}>
+                                    <Form.Item
+                                        name='province'
+                                        label='Province'
+                                        rules={[{ required: true, message: 'Please select a province' }]}
+                                    >
+                                        <Select
+                                            showSearch
+                                            placeholder='Select province'
+                                            optionFilterProp='label'
+                                            suffixIcon={<EnvironmentOutlined />}
+                                            options={SOUTH_AFRICAN_PROVINCES.map(province => ({
+                                                value: province,
+                                                label: province
+                                            }))}
+                                            onChange={() => {
+                                                form.setFieldsValue({ city: undefined })
+                                                setCitySearch('')
+                                            }}
+                                        />
+                                    </Form.Item>
+                                </Col>
+
+                                <Col xs={24} md={12}>
+                                    <Form.Item
+                                        name='city'
+                                        label='City / Town'
+                                        rules={[{ required: true, message: 'Please select a city or town' }]}
+                                    >
+                                        <Select
+                                            showSearch
+                                            disabled={!selectedProvince}
+                                            placeholder={selectedProvince ? 'Select or type a city / town' : 'Select a province first'}
+                                            optionFilterProp='label'
+                                            options={cityOptions}
+                                            onSearch={setCitySearch}
+                                            onBlur={() => setCitySearch('')}
+                                            notFoundContent='Type to add a town'
+                                        />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+
+                            <Row gutter={16}>
+                                <Col xs={24}>
+                                    <Form.Item
+                                        name='address'
+                                        label='Street Address'
+                                        rules={[
+                                            { required: true, message: 'Please enter the street address' },
+                                            { max: 200, message: 'Address cannot exceed 200 characters' }
+                                        ]}
+                                    >
+                                        <Input
+                                            prefix={<EnvironmentOutlined />}
+                                            placeholder='e.g. 12 Main Road, Industrial Area'
+                                        />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
 
                             <Form.Item
                                 name='centreCoordinatorUserId'

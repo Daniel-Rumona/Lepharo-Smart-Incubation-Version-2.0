@@ -161,19 +161,12 @@ export default function RomMovWorkspace({ user, department, activeProgramId }: P
             )
             const deptInterventions = interventionsSnap.docs
                 .map(item => ({ id: item.id, ...(item.data() as any) }))
-                .filter((item: any) => {
-                    const sameDepartment = departmentId && String(item.departmentId || '') === departmentId
-                    const area = normalize(item.areaOfSupport || item.area || item.departmentName)
-                    return sameDepartment || (!!area && area === normalize(departmentName))
-                })
+                .filter((item: any) => !!departmentId && String(item.departmentId || '') === departmentId)
                 .sort((a: any, b: any) => interventionTitle(a).localeCompare(interventionTitle(b)))
 
             const peopleByKey = new Map<string, any>()
             const addPerson = (id: string, data: any) => {
-                const personDept = normalize(data.departmentName || data.department)
-                const belongsToRom =
-                    String(data.departmentId || '') === departmentId ||
-                    (!!personDept && personDept === normalize(departmentName))
+                const belongsToRom = !!departmentId && String(data.departmentId || '') === departmentId
                 if (!belongsToRom && id !== String(user?.uid || user?.id || '')) return
                 const key = String(data.uid || data.userId || id || data.email || '')
                 if (!key) return
@@ -359,7 +352,6 @@ export default function RomMovWorkspace({ user, department, activeProgramId }: P
                 programName: selected.programName || '',
                 departmentId: departmentId || null,
                 departmentName,
-                areaOfSupport: departmentName,
                 interventionId: intervention.id,
                 interventionTitle: interventionTitle(intervention) || 'ROM intervention',
                 deliveryMethod: values.deliveryMethod,

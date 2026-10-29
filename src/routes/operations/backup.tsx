@@ -25,7 +25,7 @@ import dayjs from 'dayjs'
 import isBetween from 'dayjs/plugin/isBetween'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import drilldown from 'highcharts/modules/drilldown'
+import 'highcharts/modules/drilldown'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
 import AppointmentsCalendarModal from '@/components/modals/AppointmentsCalender'
 import AppointmentDetailsModal from '@/components/modals/AppointmentDetails'
@@ -37,7 +37,6 @@ import { summarizeAssignedInterventions } from '@/services/interventionMetricsSe
 import { resolveAssignmentLifecycle } from '@/services/assignmentLifecycleService'
 import type { AssignmentLifecycleKey } from '@/services/assignmentLifecycleService'
 
-if (typeof drilldown === 'function') drilldown(Highcharts)
 
 dayjs.extend(isBetween)
 const { Text } = Typography
@@ -580,7 +579,7 @@ export const OperationsDashboard: React.FC = () => {
         }))
     }, [branchCategories, branchBreakdown, branchPerformanceMetric, branchReachBreakdown])
 
-    const branchToDepartmentSeries = useMemo<Highcharts.DrilldownSeriesOptions[]>(() => {
+    const branchToDepartmentSeries = useMemo<Highcharts.SeriesOptionsType[]>(() => {
         return branchCategories.map(branch => {
             const departments = branchBreakdown[branch]?.departments || {}
             const departmentNames = Object.keys(departments)
@@ -596,12 +595,12 @@ export const OperationsDashboard: React.FC = () => {
                         : departments[department]?.total || 0,
                     drilldown: `branch::${branch}::dept::${department}`
                 })) as any[]
-            } as Highcharts.DrilldownSeriesColumnOptions
+            } as Highcharts.SeriesColumnOptions
         })
     }, [branchCategories, branchBreakdown, branchPerformanceMetric, branchReachBreakdown])
 
-    const departmentToStatusSeries = useMemo<Highcharts.DrilldownSeriesOptions[]>(() => {
-        const out: Highcharts.DrilldownSeriesOptions[] = []
+    const departmentToStatusSeries = useMemo<Highcharts.SeriesOptionsType[]>(() => {
+        const out: Highcharts.SeriesOptionsType[] = []
 
         branchCategories.forEach(branch => {
             const departments = branchBreakdown[branch]?.departments || {}
@@ -628,7 +627,7 @@ export const OperationsDashboard: React.FC = () => {
                                 : statusCounts[status] || 0,
                             color: STATUS_COLORS[status] || '#999'
                         })) as any[]
-                } as Highcharts.DrilldownSeriesColumnOptions)
+                } as Highcharts.SeriesColumnOptions)
             })
         })
 

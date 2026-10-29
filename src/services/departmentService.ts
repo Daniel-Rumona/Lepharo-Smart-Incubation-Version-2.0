@@ -32,7 +32,6 @@ export const departmentService = {
       // Convert DepartmentFormData to full Department structure
       const departmentDoc = {
         name: departmentData.name,
-        code: departmentData.name.toLowerCase().replace(/\s+/g, '-'),
         description: departmentData.description,
         manager: departmentData.manager || '',
         contactEmail: departmentData.contactEmail,
@@ -158,7 +157,7 @@ export const departmentService = {
       // Check if any users are assigned to this department
       const usersQuery = query(
         collection(db, 'users'),
-        where('department', '==', departmentId)
+        where('departmentId', '==', departmentId)
       )
       const usersSnapshot = await getDocs(usersQuery)
 
@@ -188,28 +187,24 @@ export const departmentService = {
       const lepharoDepartments = [
         {
           name: 'HSE (Health, Safety & Environment) and Labour Compliance',
-          code: 'hse-labour-compliance',
           description: 'Health, Safety, Environment and Labour Compliance management',
           manager: '',
           contactEmail: 'hse@lepharo.co.za'
         },
         {
           name: 'ROM (Recruitment, Onboarding and Maintenance)',
-          code: 'rom',
           description: 'Recruitment, Onboarding and Maintenance of participants',
           manager: '',
           contactEmail: 'rom@lepharo.co.za'
         },
         {
           name: 'Financial Compliance',
-          code: 'financial-compliance',
           description: 'Financial compliance and regulatory management',
           manager: '',
           contactEmail: 'finance@lepharo.co.za'
         },
         {
           name: 'Personal Development Services (PDS)',
-          code: 'pds',
           description: 'Personal development and skills training services',
           manager: '',
           contactEmail: 'pds@lepharo.co.za'

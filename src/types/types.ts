@@ -77,7 +77,7 @@ export interface User {
   uid: string;
   email: string;
   name: string;
-  role: 'admin' | 'director' | 'operations' | 'coordinator' | 'incubatee' | 'funder' | 'projectadmin' | 'receptionist';
+  role: 'system_admin' | 'director' | 'operations' | 'coordinator' | 'incubatee' | 'funder' | 'projectadmin' | 'receptionist';
 
   // DEPARTMENT SCOPING: ONLY for operations users
   department?: string | null; // Required for 'operations' role, null for all others
@@ -97,7 +97,7 @@ export interface User {
 // Role scoping type guards for compile-time safety
 export type BranchScopedRole = 'receptionist' | 'projectadmin';
 export type DepartmentScopedRole = 'operations';
-export type CompanyScopedRole = 'admin' | 'director';
+export type CompanyScopedRole = 'system_admin' | 'director';
 export type GlobalScopedRole = 'consultant' | 'incubatee' | 'funder' | 'government';
 
 export interface BranchScopedUser extends User {
@@ -138,9 +138,15 @@ export interface BranchAssignmentAudit {
 }
 
 // Simplified branch form data for creating/editing branches
+export interface BranchLocationInput {
+  province: string;
+  city: string;
+  address: string;
+}
+
 export interface BranchFormData {
   name: string;
-  location: string;
+  location: BranchLocationInput;
   contactEmail: string;
   contactPhone: string;
   operatingHours?: BranchOperatingHours;
@@ -154,7 +160,6 @@ export interface BranchFormData {
 export interface Department {
     id: string;
     name: string;
-    code: string;
     description: string;
     manager: string;
     contactEmail: string;

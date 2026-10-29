@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
@@ -6,6 +6,50 @@ import dayjs from 'dayjs'
 import { buildMovInterventionRows, buildMovInterventionLabel } from '@/docx/movBuilder'
 import { getAgreementTemplate, type AgreementTemplate } from '@/services/complianceResolver'
 import { resolveMovFacilitatorById } from '@/services/movService'
+
+// ---------- fit to width ----------
+
+/** The printed form's design width: its tables are laid out for this. */
+const DOCUMENT_WIDTH = 980
+/** Below this the text gets too small to read, so the form scrolls sideways instead. */
+const MIN_SCALE = 0.55
+
+/**
+ * Shows the fixed-width form scaled down to the space it's given, like a PDF
+ * viewer's "fit to width", so it never needs a sideways scroll on a laptop or
+ * monitor. Only very narrow screens fall back to one sideways scroll.
+ */
+const FitToWidth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const outer = useRef<HTMLDivElement>(null)
+    const inner = useRef<HTMLDivElement>(null)
+    const [scale, setScale] = useState(1)
+    const [height, setHeight] = useState<number | undefined>(undefined)
+
+    useLayoutEffect(() => {
+        const update = () => {
+            const available = outer.current?.clientWidth || DOCUMENT_WIDTH
+            const next = Math.max(MIN_SCALE, Math.min(1, available / DOCUMENT_WIDTH))
+            setScale(next)
+            setHeight(inner.current ? inner.current.offsetHeight * next : undefined)
+        }
+        update()
+        const observer = new ResizeObserver(update)
+        if (outer.current) observer.observe(outer.current)
+        if (inner.current) observer.observe(inner.current)
+        return () => observer.disconnect()
+    }, [])
+
+    const scrolls = scale <= MIN_SCALE
+    return (
+        <div ref={outer} style={{ width: '100%', height, overflowX: scrolls ? 'auto' : 'hidden', overflowY: 'hidden' }}>
+            <div style={{ width: DOCUMENT_WIDTH * scale }}>
+                <div ref={inner} style={{ width: DOCUMENT_WIDTH, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+                    {children}
+                </div>
+            </div>
+        </div>
+    )
+}
 
 // ---------- helpers ----------
 
@@ -116,6 +160,8 @@ export type MovSigner = {
     date?: any
     pending?: boolean
     pendingMessage?: string
+    /** Shown in place of a signature, e.g. a confirmation by the HOD's dispute decision. */
+    note?: string | null
 }
 
 export type MovDocumentViewProps = {
@@ -136,11 +182,10 @@ const HeaderTable: React.FC<{
                 <td style={{ ...TD, width: '36%', height: 58, verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <img src="/assets/images/lepharo.png" alt="Lepharo" style={{ height: 42, maxWidth: 160, objectFit: 'contain' }} />
-                        <img
-                            src={funderLogoUrl || '/assets/images/sibanye-stillwater.png'}
-                            alt="Funder"
-                            style={{ height: 56, maxWidth: 190, objectFit: 'contain' }}
-                        />
+                        {/* The programme's funder; nothing rather than another funder's logo. */}
+                        {funderLogoUrl && (
+                            <img src={funderLogoUrl} alt="Funder" style={{ height: 56, maxWidth: 190, objectFit: 'contain' }} />
+                        )}
                     </div>
                 </td>
                 <td style={{ ...TD, ...CENTER, width: '38%', fontWeight: 800, fontSize: 14 }}>
@@ -334,6 +379,10 @@ const SignatureBodyCell: React.FC<{ signer: MovSigner }> = ({ signer }) => {
 
     if (url) {
         return <img src={url} alt={`${signer.label} signature`} style={SIG_IMG} />
+    }
+
+    if (signer.note) {
+        return <em>{signer.note}</em>
     }
 
     if (signer.pending) {
@@ -646,17 +695,19 @@ export const MovDocumentView: React.FC<MovDocumentViewProps> = ({ mov, signers }
         }
     }, [])
 
+    // The MOV's own programme decides the funder logo; the active one is only a fallback.
+    const brandingProgramId = String(mov?.programId || activeProgramId || '')
     useEffect(() => {
         let mounted = true
 
         const run = async () => {
-            if (!activeProgramId) {
+            if (!brandingProgramId) {
                 if (mounted) setFunderLogoUrl(null)
                 return
             }
 
             try {
-                const ref = doc(db, 'programs', String(activeProgramId))
+                const ref = doc(db, 'programs', brandingProgramId)
                 const snap = await getDoc(ref)
                 if (!mounted) return
                 if (!snap.exists()) {
@@ -682,7 +733,7 @@ export const MovDocumentView: React.FC<MovDocumentViewProps> = ({ mov, signers }
         return () => {
             mounted = false
         }
-    }, [activeProgramId])
+    }, [brandingProgramId])
 
     const smmeConfirmed =
         effectiveMov?.smmeAccepted === true ||
@@ -707,7 +758,14 @@ export const MovDocumentView: React.FC<MovDocumentViewProps> = ({ mov, signers }
                 effectiveMov?.completedAt ||
                 effectiveMov?.interventionDate
         },
-        {
+        effectiveMov?.confirmationOverride ? {
+            // The SME disputed it and the HOD decided it was delivered as recorded.
+            label: 'Client',
+            name: effectiveMov?.smmeCompanyName,
+            designation: effectiveMov?.smmeRepresentativeDesignation || 'Director',
+            date: effectiveMov.confirmationOverride.at,
+            note: `Confirmed by HOD decision — ${effectiveMov.confirmationOverride.byName || 'HOD'}: ${effectiveMov.confirmationOverride.reason || ''}`.replace(/: $/, '')
+        } : {
             label: 'Client',
             name: effectiveMov?.smmeCompanyName,
             signatureUrl: smmeConfirmed ? effectiveMov?.smmeSignatureUrl : null,
@@ -721,8 +779,8 @@ export const MovDocumentView: React.FC<MovDocumentViewProps> = ({ mov, signers }
     ]
 
     return (
-        <div style={{ width: '100%', overflowX: 'auto' }}>
-            <div style={{ minWidth: 980, background: '#fff', padding: 8 }}>
+        <FitToWidth>
+            <div style={{ background: '#fff', padding: 8 }}>
                 <HeaderTable mov={effectiveMov} template={movTemplate} funderLogoUrl={funderLogoUrl} />
                 <OfficeClientTable mov={effectiveMov} />
                 <MethodFrequencyTable mov={effectiveMov} />
@@ -739,6 +797,6 @@ export const MovDocumentView: React.FC<MovDocumentViewProps> = ({ mov, signers }
                     SMME number example :SPR2009/233707/08GA (regional office prefix, then at the end we capture group stages) GA = Group A, when they graduate we just change the A to B.
                 </div>
             </div>
-        </div>
+        </FitToWidth>
     )
 }

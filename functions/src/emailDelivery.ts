@@ -85,8 +85,27 @@ async function writeDeliveryLogs(
   }
 }
 
+const TRANSIENT_CODES = new Set(["ECONNECTION", "ETIMEDOUT", "ESOCKET", "ECONNRESET"]);
+const SEND_ATTEMPTS = 3;
+
 /**
- * Adds Firestore delivery-attempt logging to a Nodemailer transport.
+ * True for failures worth another attempt: a dropped or timed-out connection
+ * (pooled sockets the server closed while idle) or a 4xx temporary reply.
+ * Auth failures (535) and permanent rejections (550 no such recipient) are not.
+ */
+export function isTransientSmtpError(error: any): boolean {
+  const code = Number(error?.responseCode);
+  if (code >= 400 && code < 500) return true;
+  if (code >= 500) return false;
+  if (TRANSIENT_CODES.has(String(error?.code || ""))) return true;
+  return /connection closed|timed? ?out|ECONNRESET/i.test(String(error?.message || ""));
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Adds Firestore delivery-attempt logging to a Nodemailer transport, retrying
+ * transient connection errors with backoff (only the final outcome is logged).
  *
  * "sent" means the configured SMTP server accepted the message. Final inbox
  * delivery or a later bounce requires provider webhooks and is not asserted here.
@@ -94,7 +113,22 @@ async function writeDeliveryLogs(
 export function withEmailDeliveryLogging(
   transport: nodemailer.Transporter
 ): nodemailer.Transporter {
-  const sendMail = transport.sendMail.bind(transport);
+  const rawSendMail = transport.sendMail.bind(transport);
+  const sendMail = async (options: SendMailOptionsWithMeta) => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await rawSendMail(options);
+      } catch (error: any) {
+        if (attempt >= SEND_ATTEMPTS || !isTransientSmtpError(error)) throw error;
+        logger.warn("email_delivery.retry", {
+          subject: String(options.subject || ""),
+          attempt,
+          error: String(error?.message || error),
+        });
+        await sleep(1000 * 2 ** (attempt - 1));
+      }
+    }
+  };
 
   transport.sendMail = (async (options: SendMailOptionsWithMeta, callback?: any) => {
     try {

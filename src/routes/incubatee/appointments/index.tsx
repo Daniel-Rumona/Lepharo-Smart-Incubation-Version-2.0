@@ -51,7 +51,6 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { requestOpenAccountSettings } from '@/lib/accountSettings'
-import { acceptAssignedIntervention, declineAssignedIntervention } from '@/lib/interventions'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import {
@@ -61,39 +60,38 @@ import {
     getAppointmentAssigneeName,
     getAppointmentDate,
     getAppointmentTitle,
+    getSmeResponseState,
     isPastAppointment,
+    SME_RESPONSE_META,
     normalizeAppointmentRecord,
     resolveAppointmentStart
 } from '@/services/appointmentService'
 import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
 import {
     APPOINTMENT_DECLINE_REASON_OPTIONS,
-    appointmentDeclineReasonAllowsTimeProposal,
-    buildAppointmentDeclineReason,
     type AppointmentDeclineReasonCode
 } from '@/lib/appointmentDeclineReasons'
 import AppointmentRescheduleProposalFields, {
-    buildAppointmentRescheduleProposals,
     createAppointmentProposalDraft,
     type AppointmentProposalDraft
 } from '@/components/appointments/AppointmentRescheduleProposalFields'
+import {
+    canProposeNewTime,
+    confirmAppointmentAsSme,
+    declineAppointmentAsSme
+} from '@/services/smeAppointmentResponse'
+import { useSigningCeremony } from '@/components/shared/SignatureAnimation'
 import '@/styles/incubatee-appointments.css'
 
 const { RangePicker } = DatePicker
 const { Paragraph, Text, Title } = Typography
 const { useBreakpoint } = Grid
 
-type UserConfirmation = 'pending' | 'confirmed' | 'declined'
 type AppointmentRow = Record<string, any> & { id: string }
 type DateRange = [Dayjs, Dayjs] | null
 
-const confirmationTag = (value?: UserConfirmation) => {
-    const map: Record<UserConfirmation, { color: string; label: string }> = {
-        pending: { color: 'processing', label: 'Pending' },
-        confirmed: { color: 'success', label: 'Confirmed' },
-        declined: { color: 'error', label: 'Declined' }
-    }
-    const meta = map[value || 'pending'] || map.pending
+const confirmationTag = (appointment: AppointmentRow) => {
+    const meta = SME_RESPONSE_META[getSmeResponseState(appointment as any)]
     return <Tag color={meta.color}>{meta.label}</Tag>
 }
 
@@ -152,6 +150,7 @@ const deliveryIcon = (method: string) => {
 
 const UserAppointments: React.FC = () => {
     const { user } = useFullIdentity()
+    const signingCeremony = useSigningCeremony()
     const { activeProgramId } = useActiveProgramId()
     const navigate = useNavigate()
     const screens = useBreakpoint()
@@ -191,6 +190,13 @@ const UserAppointments: React.FC = () => {
     useEffect(() => {
         let cancelled = false
         const resolveParticipant = async () => {
+            // Training SMEs have no participants/applications doc: their
+            // enrollment id is stored as participantId and is the appointments' smeId.
+            if (user?.role === 'training_sme') {
+                if (!cancelled) setParticipantId(String(user?.participantId || '').trim() || null)
+                return
+            }
+
             const email = String(user?.email || '').trim()
             if (!email) {
                 setParticipantId(null)
@@ -229,11 +235,12 @@ const UserAppointments: React.FC = () => {
                     participantDoc = exact.docs[0] || null
                 }
 
+                // Only staff may scan participants; for an SME this finds nothing.
                 if (!participantDoc) {
                     const normalizedEmail = email.toLowerCase()
-                    const allParticipants = await getDocs(collection(db, 'participants'))
+                    const allParticipants = await getDocs(collection(db, 'participants')).catch(() => null)
                     participantDoc =
-                        allParticipants.docs.find(
+                        allParticipants?.docs.find(
                             item =>
                                 String(item.data()?.email || '').trim().toLowerCase() ===
                                 normalizedEmail
@@ -389,8 +396,8 @@ const UserAppointments: React.FC = () => {
             value: totalAppointments,
             subtitle: 'All appointments assigned to you',
             mobileSubtitle: 'Assigned to you',
-            icon: <CalendarOutlined style={{ color: '#1677ff' }} />,
-            iconBg: 'rgba(22,119,255,.12)'
+            icon: <CalendarOutlined />,
+            tone: 'accent' as const
         },
         {
             key: 'upcoming',
@@ -398,8 +405,8 @@ const UserAppointments: React.FC = () => {
             value: upcomingAppointments,
             subtitle: 'Scheduled for a future date',
             mobileSubtitle: 'Scheduled ahead',
-            icon: <ClockCircleOutlined style={{ color: '#16a34a' }} />,
-            iconBg: 'rgba(22,163,74,.12)',
+            icon: <ClockCircleOutlined />,
+            tone: 'success' as const,
             important: true
         },
         {
@@ -409,8 +416,8 @@ const UserAppointments: React.FC = () => {
             value: pendingAppointments,
             subtitle: 'Appointments requiring your response',
             mobileSubtitle: 'Needs your reply',
-            icon: <CloseCircleOutlined style={{ color: '#d97706' }} />,
-            iconBg: 'rgba(217,119,6,.12)',
+            icon: <CloseCircleOutlined />,
+            tone: 'warning' as const,
             important: true
         },
         {
@@ -419,8 +426,8 @@ const UserAppointments: React.FC = () => {
             value: completedAppointments,
             subtitle: 'Appointments already completed',
             mobileSubtitle: 'Already completed',
-            icon: <CheckCircleOutlined style={{ color: '#0891b2' }} />,
-            iconBg: 'rgba(8,145,178,.12)'
+            icon: <CheckCircleOutlined />,
+            tone: 'info' as const
         }
     ]
 
@@ -488,31 +495,22 @@ const UserAppointments: React.FC = () => {
             return
         }
 
-        try {
-            await updateDoc(doc(db, 'appointments', id), {
-                smeConfirmation: 'confirmed',
-                updatedAt: Timestamp.now()
-            })
+        const appointment = appointments.find(row => row.id === id)
+        if (!appointment) return
 
-            // Responding to an appointment doubles as accepting the underlying
-            // intervention assignment when it's still awaiting that decision.
-            // A no-op (already accepted, or a later appointment in the same
-            // intervention) throws and is safe to ignore here.
-            const assignedInterventionId = String(
-                appointments.find(appointment => appointment.id === id)?.assignedInterventionId || ''
-            ).trim()
-            if (assignedInterventionId) {
-                try {
-                    await acceptAssignedIntervention(db, assignedInterventionId)
-                } catch {
-                    // Not awaiting acceptance - nothing to do.
-                }
-            }
+        try {
+            // Confirming is signed with the saved signature: show it being written.
+            await signingCeremony.sign(
+                user.signatureURL,
+                () => confirmAppointmentAsSme(appointment),
+                'Confirming appointment',
+                appointment.interventionTitle || appointment.sessionTitle || undefined
+            )
 
             setAppointments(previous =>
                 previous.map(appointment =>
                     appointment.id === id
-                        ? { ...appointment, userConfirmation: 'confirmed' }
+                        ? { ...appointment, userConfirmation: 'confirmed', smeConfirmation: 'confirmed' }
                         : appointment
                 )
             )
@@ -546,89 +544,30 @@ const UserAppointments: React.FC = () => {
             setSelectedApptId(null)
             return
         }
-        let reason
+        let patch: Awaited<ReturnType<typeof declineAppointmentAsSme>>
         try {
-            reason = buildAppointmentDeclineReason(declineReasonCode, declineReason)
-        } catch (error: any) {
-            message.error(error?.message || 'Please provide a reason.')
-            return
-        }
-        const canProposeTime =
-            selectedAppointment.isGroupAppointment !== true &&
-            appointmentDeclineReasonAllowsTimeProposal(reason.code)
-        let rescheduleProposals: ReturnType<typeof buildAppointmentRescheduleProposals> = []
-        try {
-            rescheduleProposals = canProposeTime
-                ? buildAppointmentRescheduleProposals(declineProposals)
-                : []
-        } catch (error: any) {
-            message.error(error?.message || 'Check the proposed appointment times.')
-            return
-        }
-
-        try {
-            await updateDoc(doc(db, 'appointments', selectedApptId), {
-                smeConfirmation: 'declined',
-                smeDeclineReason: reason.text,
-                smeRescheduleRequest: rescheduleProposals.length
-                    ? {
-                        status: 'proposed',
-                        reasonCode: reason.code,
-                        reasonText: reason.text,
-                        proposals: rescheduleProposals
-                    }
-                    : null,
-                updatedAt: Timestamp.now()
+            patch = await declineAppointmentAsSme(selectedAppointment, {
+                reasonCode: declineReasonCode,
+                reasonDetails: declineReason,
+                proposals: declineProposals
             })
-
-            // Declining an appointment that's still awaiting the SME's initial
-            // acceptance declines the underlying assignment too. A no-op
-            // (already resolved, or a later appointment in the same
-            // intervention) throws and is safe to ignore here.
-            const assignedInterventionId = String(
-                (selectedAppointment as any)?.assignedInterventionId || ''
-            ).trim()
-            if (assignedInterventionId) {
-                try {
-                    await declineAssignedIntervention(db, assignedInterventionId, reason.text)
-                } catch {
-                    // Not awaiting acceptance - nothing to do.
-                }
-            }
-
-            setAppointments(previous =>
-                previous.map(appointment =>
-                    appointment.id === selectedApptId
-                        ? {
-                            ...appointment,
-                            userConfirmation: 'declined',
-                            declineReasonCode: reason.code,
-                            declineReasonLabel: reason.label,
-                            declineReasonDetails: reason.details,
-                            declineReason: reason.text,
-                            userRejectionReason: reason.text,
-                            rescheduleRequest: rescheduleProposals.length
-                                ? {
-                                    status: 'proposed',
-                                    reasonCode: reason.code,
-                                    reasonText: reason.text,
-                                    proposals: rescheduleProposals
-                                }
-                                : null
-                        }
-                        : appointment
-                )
-            )
-            message.success('Appointment declined.')
-            setDeclineModalOpen(false)
-            setSelectedApptId(null)
-            setDeclineReasonCode(undefined)
-            setDeclineReason('')
-            setDeclineProposals([createAppointmentProposalDraft()])
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to decline appointment:', error)
-            message.error('Failed to decline appointment.')
+            message.error(error?.message || 'Failed to decline appointment.')
+            return
         }
+
+        setAppointments(previous =>
+            previous.map(appointment =>
+                appointment.id === selectedApptId ? { ...appointment, ...patch } : appointment
+            )
+        )
+        message.success('Appointment declined.')
+        setDeclineModalOpen(false)
+        setSelectedApptId(null)
+        setDeclineReasonCode(undefined)
+        setDeclineReason('')
+        setDeclineProposals([createAppointmentProposalDraft()])
     }
 
     const openFoodMenu = (appointment: AppointmentRow) => {
@@ -878,7 +817,7 @@ const UserAppointments: React.FC = () => {
             title: 'Confirmation',
             key: 'confirmation',
             width: 130,
-            render: (_, appointment) => confirmationTag(appointment.userConfirmation)
+            render: (_, appointment) => confirmationTag(appointment)
         },
         {
             title: 'Actions',
@@ -894,6 +833,7 @@ const UserAppointments: React.FC = () => {
             <Col xs={24} md={9}>
                 <RangePicker
                     allowClear
+                    popupClassName='appointments-range-picker-popup'
                     value={dateRange}
                     onChange={value =>
                         setDateRange(
@@ -961,7 +901,7 @@ const UserAppointments: React.FC = () => {
                                                     {resolveDepartmentName(appointment)}
                                                 </Text>
                                             </div>
-                                            {confirmationTag(appointment.userConfirmation)}
+                                            {confirmationTag(appointment)}
                                         </div>
                                         <div className="appointment-mobile-card__meta">
                                             <Text>
@@ -1025,6 +965,8 @@ const UserAppointments: React.FC = () => {
                 )}
             </MotionCard>
 
+            {signingCeremony.element}
+
             <Modal
                 title="Decline appointment"
                 open={declineModalOpen}
@@ -1068,8 +1010,7 @@ const UserAppointments: React.FC = () => {
                         />
                     ) : null}
                     {selectedApptId &&
-                        appointments.find(appointment => appointment.id === selectedApptId)?.isGroupAppointment !== true &&
-                        appointmentDeclineReasonAllowsTimeProposal(declineReasonCode) ? (
+                        canProposeNewTime(appointments.find(appointment => appointment.id === selectedApptId), declineReasonCode) ? (
                         <>
                             <Divider style={{ margin: '4px 0' }} />
                             <AppointmentRescheduleProposalFields

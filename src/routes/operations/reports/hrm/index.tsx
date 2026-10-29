@@ -11,8 +11,8 @@ import {
 import { ExpandOutlined, ReloadOutlined } from '@ant-design/icons'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import drilldownModule from 'highcharts/modules/drilldown'
-import heatmapModule from 'highcharts/modules/heatmap'
+import 'highcharts/modules/drilldown'
+import 'highcharts/modules/heatmap'
 import dayjs from 'dayjs'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
@@ -22,8 +22,6 @@ import { MotionCard } from '@/components/dashboards/metrics/Header'
 
 // Init Highcharts modules (safe-guard for SSR)
 if (typeof Highcharts === 'function') {
-    drilldownModule(Highcharts)
-    heatmapModule(Highcharts)
 }
 
 // Global disable exporting / credits as requested
@@ -379,7 +377,7 @@ const HRMReportsPage: React.FC = () => {
     // 2) robust type/status grouping + zero filtering
     const leaveByTypeStatus = useMemo(() => {
         const types: Highcharts.PointOptionsObject[] = []
-        const dd: Highcharts.DrilldownSeriesOptions[] = []
+        const dd: Highcharts.SeriesOptionsType[] = []
 
         // dynamic buckets so unknown types won't crash
         const typeGroups: Record<string, Leave[]> = {}
@@ -513,7 +511,6 @@ const HRMReportsPage: React.FC = () => {
             {
                 type: 'pie',
                 name: 'Leave Types',
-                colorByPoint: true,
                 data: leaveByTypeStatus.types
             }
         ],

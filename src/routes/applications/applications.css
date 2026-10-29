@@ -1,0 +1,221 @@
+/* Applications review page — the parts specific to applications: AI score
+   and assessment, onboarding answers, documents, challenges and analytics.
+   The shared layout (toolbar, list, detail, contact, ownership) lives in
+   components/workspace/workspace.css. */
+
+/* AI score chip, toned by band. */
+.apx-score {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 22px;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--qtx-tone-fg);
+    background: var(--qtx-tone-bg);
+    border-radius: 999px;
+}
+
+.apx-decision-note {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+/* Challenges: each one its own row with a warning mark. */
+.apx-challenges {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.apx-challenges li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 12px;
+    line-height: 1.5;
+    color: var(--app-text);
+    background: color-mix(in srgb, #d97706 7%, var(--app-surface));
+    border: 1px solid color-mix(in srgb, #d97706 18%, transparent);
+    border-radius: 10px;
+}
+
+.apx-challenges li .anticon {
+    flex: 0 0 auto;
+    margin-top: 4px;
+    color: #d97706;
+}
+
+html[data-theme="dark"] .apx-challenges li .anticon {
+    color: #fbbf24;
+}
+
+.apx-ai {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 14px;
+    align-items: center;
+    margin: 14px 20px 0;
+    padding: 12px 14px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.apx-ai-score {
+    grid-row: span 2;
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    font-size: 18px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--qtx-tone-fg);
+    background: var(--qtx-tone-bg);
+    border-radius: 14px;
+}
+
+.apx-ai-label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.apx-ai-text {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--app-text);
+    white-space: pre-line;
+}
+
+.apx-ai-text.is-clamped {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+.apx-qa {
+    display: grid;
+    gap: 10px;
+}
+
+.apx-qa-item {
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+}
+
+.apx-qa-q {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.apx-qa-a {
+    margin-top: 4px;
+    color: var(--app-text);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.apx-doc {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+}
+
+.apx-doc-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.apx-doc-name {
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.apx-doc-file {
+    overflow: hidden;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* --- Analytics ------------------------------------------------------------ */
+.apx-analytics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+@media (max-width: 640px) {
+    .apx-analytics {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.apx-dist {
+    padding: 14px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.apx-dist h4 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+.apx-dist-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 2fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+.apx-dist-label {
+    overflow: hidden;
+    color: var(--app-text);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.apx-dist-track {
+    height: 8px;
+    overflow: hidden;
+    background: var(--app-surface-sunken);
+    border-radius: 999px;
+}
+
+.apx-dist-fill {
+    height: 100%;
+    background: var(--qtx-tone-fg, var(--app-accent));
+    border-radius: 999px;
+}
+
+.apx-dist-value {
+    min-width: 64px;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-muted);
+}

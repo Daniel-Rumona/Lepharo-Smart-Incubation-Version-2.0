@@ -7,7 +7,7 @@ import {
 } from '@ant-design/icons'
 import { ReceptionistDashboardData } from '@/types/inquiry'
 import { MotionCard } from '../dashboards/metrics/Header'
-
+import { MetricTile } from '../dashboards/metrics/MetricTile'
 interface DashboardMetricsProps {
   dashboardData: ReceptionistDashboardData
 }
@@ -19,12 +19,12 @@ const DashboardMetrics: React.FC<DashboardMetricsProps> = ({
     <Row gutter={[16, 16]}>
       <Col xs={24} sm={12} lg={6}>
         <MotionCard>
-          <MotionCard.Metric
+          <MetricTile
             title="Today's Inquiries"
             value={dashboardData.todayInquiries}
             subtitle='Received today'
-            icon={<CalendarOutlined style={{ color: '#1890ff', fontSize: 20 }} />}
-            iconBg='rgba(24,144,255,.12)'
+            icon={<CalendarOutlined style={{ fontSize: 20 }} />}
+            tone='info'
             wrapperStyle={{ minHeight: 72 }}
           />
         </MotionCard>
@@ -32,12 +32,12 @@ const DashboardMetrics: React.FC<DashboardMetricsProps> = ({
 
       <Col xs={24} sm={12} lg={6}>
         <MotionCard>
-          <MotionCard.Metric
+          <MetricTile
             title='This Week'
             value={dashboardData.weekInquiries}
             subtitle='Last 7 days'
-            icon={<FileTextOutlined style={{ color: '#52c41a', fontSize: 20 }} />}
-            iconBg='rgba(82,196,26,.12)'
+            icon={<FileTextOutlined style={{ fontSize: 20 }} />}
+            tone='success'
             wrapperStyle={{ minHeight: 72 }}
           />
         </MotionCard>
@@ -45,12 +45,12 @@ const DashboardMetrics: React.FC<DashboardMetricsProps> = ({
 
       <Col xs={24} sm={12} lg={6}>
         <MotionCard>
-          <MotionCard.Metric
+          <MetricTile
             title='This Month'
             value={dashboardData.monthInquiries}
             subtitle='Last 30 days'
-            icon={<FileTextOutlined style={{ color: '#722ed1', fontSize: 20 }} />}
-            iconBg='rgba(114,46,209,.12)'
+            icon={<FileTextOutlined style={{ fontSize: 20 }} />}
+            tone='info'
             wrapperStyle={{ minHeight: 72 }}
           />
         </MotionCard>
@@ -58,12 +58,12 @@ const DashboardMetrics: React.FC<DashboardMetricsProps> = ({
 
       <Col xs={24} sm={12} lg={6}>
         <MotionCard>
-          <MotionCard.Metric
+          <MetricTile
             title='Pending Follow-ups'
             value={dashboardData.pendingFollowUps}
             subtitle={dashboardData.pendingFollowUps > 0 ? 'Needs attention' : 'All caught up'}
-            icon={<ClockCircleOutlined style={{ color: '#fa8c16', fontSize: 20 }} />}
-            iconBg='rgba(250,140,22,.12)'
+            icon={<ClockCircleOutlined style={{ fontSize: 20 }} />}
+            tone='warning'
             wrapperStyle={{ minHeight: 72 }}
           />
         </MotionCard>

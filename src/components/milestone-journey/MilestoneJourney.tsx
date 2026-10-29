@@ -1,33 +1,39 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Button,
   Card,
   DatePicker,
   Empty,
-  Modal,
+  Result,
+  Grid,
+  Pagination,
   Space,
   Spin,
   Tag,
-  Tooltip,
   Typography,
 } from "antd";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
 import dayjs, { type Dayjs } from "dayjs";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import FullscreenReveal from "@/components/shared/FullscreenReveal";
+import { MotionCard } from "@/components/dashboards/metrics/Header";
+import { useColorMode } from "@/contexts/ThemeContext";
 import {
   CalendarOutlined,
   CheckCircleOutlined,
-  FullscreenExitOutlined,
-  FullscreenOutlined,
+  CloseOutlined,
+  EnvironmentOutlined,
   LeftOutlined,
   PauseOutlined,
+  ReloadOutlined,
   PlayCircleOutlined,
   RightOutlined,
   RocketOutlined,
+  PhoneOutlined,
   TeamOutlined,
   TrophyOutlined,
+  VideoCameraOutlined,
 } from "@ant-design/icons";
 import {
   loadMilestoneJourney,
@@ -44,7 +50,7 @@ const { Text, Title } = Typography;
 // A "field journal" palette — ink + paper base, teal for verified growth,
 // amber for milestones, coral/plum to tell activity kinds apart.
 // ---------------------------------------------------------------------------
-const tokens = {
+const lightTokens = {
   ink: "#15302C",
   paper: "#F4F7F5",
   paperRaised: "#FFFFFF",
@@ -58,16 +64,56 @@ const tokens = {
   plum: "#5B4A82",
   plumSoft: "#E4DFEF",
   skin: "#F1D9AE",
-} as const;
+};
+
+type JourneyTokens = typeof lightTokens;
+
+// Same roles on a dark surface: the accents are lifted so they keep their
+// contrast, and the "soft" tints become deep, low-key washes.
+const darkTokens: JourneyTokens = {
+  ink: "#E6F0EC",
+  paper: "#0F1A18",
+  paperRaised: "#17251F",
+  line: "#2C3F39",
+  teal: "#3FB89C",
+  tealSoft: "#1B3A33",
+  amber: "#E0B25A",
+  amberSoft: "#3A2F17",
+  coral: "#E8805C",
+  coralSoft: "#3B241B",
+  plum: "#A793D6",
+  plumSoft: "#2A2440",
+  skin: "#F1D9AE",
+};
+
+const useJourneyTokens = (): JourneyTokens => {
+  const { isDark } = useColorMode();
+  return isDark ? darkTokens : lightTokens;
+};
+
+// "complete" is the closing step after the last chapter; it belongs to no month.
+type SlideKey = "overview" | "done" | "appointments" | "smes" | "feedback" | "complete";
+
+/** The pages a chapter is made of. A page only exists when the month has something for it. */
+const monthSlides = (month: JourneyMonth | undefined, scope: JourneyScope): SlideKey[] => {
+  const slides: SlideKey[] = ["overview"];
+  if (!month) return slides;
+  if (month.activities.some((activity) => activity.kind !== "appointment")) slides.push("done");
+  if (month.activities.some((activity) => activity.kind === "appointment")) slides.push("appointments");
+  if (scope === "operations" && month.participants.some((participant) => participant.name))
+    slides.push("smes");
+  if (scope === "operations" && month.feedback.length > 0) slides.push("feedback");
+  return slides;
+};
 
 const serifDisplay = "Georgia, 'Iowan Old Style', 'Palatino Linotype', serif";
 
-const activityColour = (kind: string) =>
+const activityColour = (kind: string, palette: JourneyTokens) =>
   kind === "appointment"
-    ? tokens.plum
+    ? palette.plum
     : kind === "intervention"
-    ? tokens.teal
-    : tokens.coral;
+    ? palette.teal
+    : palette.coral;
 const activityVerb = (kind: string) =>
   kind === "appointment"
     ? "Attended"
@@ -189,6 +235,7 @@ export const MilestoneActivityChart: React.FC<{
   programId?: string | null;
   dateRange?: [Dayjs, Dayjs];
 }> = (props) => {
+  const tokens = useJourneyTokens();
   const { loading, months } = useJourneyMonths(
     props.scope,
     props.email,
@@ -249,7 +296,7 @@ export const MilestoneActivityChart: React.FC<{
         },
       ],
     }),
-    [chartMonths, props.scope]
+    [chartMonths, props.scope, tokens]
   );
   return (
     <Card
@@ -268,7 +315,9 @@ export const MilestoneActivityChart: React.FC<{
   );
 };
 
-const TrailPreview: React.FC = () => (
+const TrailPreview: React.FC = () => {
+  const tokens = useJourneyTokens();
+  return (
   <svg width="56" height="40" viewBox="0 0 56 40" aria-hidden="true">
     <path
       d="M4 30 C 14 10, 24 34, 34 14 S 52 6, 52 6"
@@ -294,324 +343,6 @@ const TrailPreview: React.FC = () => (
       />
     ))}
   </svg>
-);
-
-// Small, quiet, and tied to the active month only — these move every time you
-// step or drag to a new chapter, they never summarise the whole range.
-const StatPill: React.FC<{
-  value: number;
-  label: string;
-  colour: string;
-  soft: string;
-  icon: React.ReactNode;
-}> = ({ value, label, colour, soft, icon }) => (
-  <div
-    style={{
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      background: soft,
-      color: colour,
-      borderRadius: 999,
-      padding: "5px 12px 5px 8px",
-      fontSize: 12,
-      fontWeight: 600,
-    }}
-  >
-    <span style={{ display: "flex", fontSize: 13 }}>{icon}</span>
-    <span style={{ fontFamily: serifDisplay, fontSize: 15 }}>{value}</span>
-    <span style={{ fontWeight: 500, opacity: 0.85 }}>{label}</span>
-  </div>
-);
-
-const Traveler: React.FC<{
-  walking: boolean;
-  celebrating: boolean;
-  facing: "left" | "right";
-}> = ({ walking, celebrating, facing }) => {
-  const reduceMotion = useReducedMotion();
-  return (
-    <svg
-      width="30"
-      height="34"
-      viewBox="0 0 30 34"
-      style={{
-        overflow: "visible",
-        transform: facing === "left" ? "scaleX(-1)" : undefined,
-      }}
-      aria-hidden="true"
-    >
-      <circle cx="9" cy="17" r="4" fill={tokens.amber} />
-      <path d="M15 12 L20 24 L10 24 Z" fill={tokens.teal} />
-      <circle
-        cx="15"
-        cy="7"
-        r="6"
-        fill={tokens.skin}
-        stroke={tokens.ink}
-        strokeWidth="1"
-      />
-      <motion.line
-        x1="13"
-        y1="24"
-        x2="11"
-        y2="32"
-        stroke={tokens.ink}
-        strokeWidth="2"
-        strokeLinecap="round"
-        animate={!reduceMotion && walking ? { x2: [11, 15, 11] } : { x2: 11 }}
-        transition={{
-          duration: 0.55,
-          repeat: walking && !reduceMotion ? Infinity : 0,
-          ease: "easeInOut",
-        }}
-      />
-      <motion.line
-        x1="17"
-        y1="24"
-        x2="19"
-        y2="32"
-        stroke={tokens.ink}
-        strokeWidth="2"
-        strokeLinecap="round"
-        animate={!reduceMotion && walking ? { x2: [19, 15, 19] } : { x2: 19 }}
-        transition={{
-          duration: 0.55,
-          repeat: walking && !reduceMotion ? Infinity : 0,
-          ease: "easeInOut",
-          delay: 0.27,
-        }}
-      />
-      {celebrating ? (
-        <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <path
-            d="M10 14 L3 6"
-            stroke={tokens.ink}
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <path
-            d="M20 14 L27 6"
-            stroke={tokens.ink}
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </motion.g>
-      ) : (
-        <path
-          d="M10 16 L5 22 M20 16 L25 22"
-          stroke={tokens.ink}
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-      )}
-    </svg>
-  );
-};
-
-const ConfettiBurst: React.FC = () => {
-  const pieces = useMemo(
-    () =>
-      Array.from({ length: 12 }, (_, index) => ({
-        id: index,
-        angle: (index / 12) * Math.PI * 2,
-        colour: [tokens.amber, tokens.teal, tokens.coral, tokens.plum][
-          index % 4
-        ],
-      })),
-    []
-  );
-  return (
-    <div
-      style={{ position: "absolute", left: 15, top: 4, width: 0, height: 0 }}
-      aria-hidden="true"
-    >
-      {pieces.map((piece) => (
-        <motion.span
-          key={piece.id}
-          initial={{ opacity: 1, x: 0, y: 0 }}
-          animate={{
-            opacity: 0,
-            x: Math.cos(piece.angle) * 36,
-            y: Math.sin(piece.angle) * 36 - 12,
-          }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          style={{
-            position: "absolute",
-            width: 5,
-            height: 5,
-            borderRadius: 1,
-            background: piece.colour,
-          }}
-        />
-      ))}
-    </div>
-  );
-};
-
-const TrailNav: React.FC<{
-  months: JourneyMonth[];
-  activeIndex: number;
-  playing: boolean;
-  onSelect: (index: number) => void;
-}> = ({ months, activeIndex, playing, onSelect }) => {
-  const reduceMotion = useReducedMotion();
-  const trailRef = useRef<HTMLDivElement>(null);
-  const prevIndexRef = useRef(activeIndex);
-  const [facing, setFacing] = useState<"left" | "right">("right");
-  const [celebrate, setCelebrate] = useState(false);
-
-  const isLastChapter = activeIndex === months.length - 1 && months.length > 1;
-  const pctFor = (index: number) =>
-    months.length < 2 ? 0 : (index / (months.length - 1)) * 100;
-
-  useEffect(() => {
-    if (activeIndex !== prevIndexRef.current) {
-      setFacing(activeIndex > prevIndexRef.current ? "right" : "left");
-      prevIndexRef.current = activeIndex;
-    }
-  }, [activeIndex]);
-
-  useEffect(() => {
-    if (!isLastChapter) return;
-    setCelebrate(true);
-    const timer = window.setTimeout(() => setCelebrate(false), 900);
-    return () => window.clearTimeout(timer);
-  }, [isLastChapter]);
-
-  if (months.length < 2) return null;
-
-  const handleDragEnd = (_: unknown, info: { point: { x: number } }) => {
-    const rect = trailRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const ratio = Math.min(
-      1,
-      Math.max(0, (info.point.x - rect.left) / rect.width)
-    );
-    onSelect(Math.round(ratio * (months.length - 1)));
-  };
-
-  return (
-    <div
-      ref={trailRef}
-      style={{ position: "relative", margin: "30px 12px 30px", height: 2 }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: 0,
-          height: 2,
-          background: `repeating-linear-gradient(90deg, ${tokens.line} 0 6px, transparent 6px 11px)`,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          height: 2,
-          width: `${pctFor(activeIndex)}%`,
-          background: tokens.teal,
-          transition: reduceMotion ? undefined : "width .3s ease",
-        }}
-      />
-
-      {months.map((month, index) => {
-        const isActive = index === activeIndex;
-        const isPast = index < activeIndex;
-        return (
-          <Tooltip title={month.label} key={month.key}>
-            <button
-              onClick={() => onSelect(index)}
-              aria-label={`Go to ${month.label}`}
-              aria-current={isActive}
-              style={{
-                position: "absolute",
-                left: `${pctFor(index)}%`,
-                top: 0,
-                transform: "translate(-50%, -50%)",
-                width: isActive ? 20 : 14,
-                height: isActive ? 20 : 14,
-                borderRadius: "50%",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-                background: isActive
-                  ? tokens.amber
-                  : isPast
-                  ? tokens.teal
-                  : tokens.paperRaised,
-                boxShadow: isActive
-                  ? `0 0 0 4px ${tokens.amberSoft}`
-                  : `0 0 0 2px ${tokens.line}`,
-                transition: "all .25s ease",
-              }}
-            />
-          </Tooltip>
-        );
-      })}
-
-      {months.map((month, index) => (
-        <Text
-          key={month.key}
-          type="secondary"
-          style={{
-            position: "absolute",
-            left: `${pctFor(index)}%`,
-            top: 16,
-            transform: "translateX(-50%)",
-            fontSize: 10,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {dayjs(`${month.key}-01`).format("MMM")}
-        </Text>
-      ))}
-
-      <motion.div
-        role="slider"
-        tabIndex={0}
-        aria-label="Drag to scrub the journey"
-        aria-valuemin={0}
-        aria-valuemax={months.length - 1}
-        aria-valuenow={activeIndex}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowRight")
-            onSelect(Math.min(months.length - 1, activeIndex + 1));
-          if (event.key === "ArrowLeft") onSelect(Math.max(0, activeIndex - 1));
-        }}
-        drag="x"
-        dragConstraints={trailRef}
-        dragElastic={0.12}
-        dragMomentum={false}
-        dragSnapToOrigin
-        onDragEnd={handleDragEnd}
-        animate={{ left: `${pctFor(activeIndex)}%` }}
-        transition={{ type: "spring", stiffness: 260, damping: 22 }}
-        style={{
-          position: "absolute",
-          top: 0,
-          transform: "translate(-50%, calc(-100% - 6px))",
-          cursor: "grab",
-          touchAction: "none",
-        }}
-        whileDrag={{ cursor: "grabbing", scale: 1.08 }}
-      >
-        <motion.div
-          animate={!reduceMotion && !playing ? { y: [0, -3, 0] } : { y: 0 }}
-          transition={{
-            duration: 1.6,
-            repeat: !reduceMotion && !playing ? Infinity : 0,
-            ease: "easeInOut",
-          }}
-        >
-          <Traveler walking={playing} celebrating={celebrate} facing={facing} />
-        </motion.div>
-        {celebrate && !reduceMotion && <ConfettiBurst />}
-      </motion.div>
-    </div>
   );
 };
 
@@ -623,6 +354,11 @@ export type MilestoneJourneyProps = {
   departmentIds?: string[];
   programId?: string | null;
   triggerOnly?: boolean;
+  /**
+   * Opened from outside (the agent page): no trigger is shown and the caller
+   * owns open/close. `inline` means the caller already animates the reveal.
+   */
+  controlled?: { open: boolean; onClose: () => void; inline?: boolean };
 };
 
 export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
@@ -633,6 +369,7 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
   departmentIds,
   programId,
   triggerOnly = false,
+  controlled,
 }) => {
   const { loading, months } = useJourneyMonths(
     scope,
@@ -642,8 +379,22 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
     departmentIds,
     programId
   );
+  const tokens = useJourneyTokens();
+  const screens = Grid.useBreakpoint();
   const reduceMotion = useReducedMotion();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  const open = controlled ? controlled.open : internalOpen;
+  const openFrom = (event: React.MouseEvent<HTMLElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    setOrigin({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
+    setInternalOpen(true);
+  };
+  const closeJourney = () => {
+    setPlaying(false);
+    if (controlled) controlled.onClose();
+    else setInternalOpen(false);
+  };
   const [range, setRange] = useState<[Dayjs, Dayjs]>([
     dayjs().subtract(5, "month").startOf("month"),
     dayjs().endOf("month"),
@@ -651,7 +402,7 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeSlide, setActiveSlide] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [complete, setComplete] = useState(false);
   const visibleMonths = useMemo(
     () =>
       months.filter((month) => {
@@ -706,16 +457,138 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
       ...otherActivities,
     ];
   }, [activeMonth, scope]);
-  const hasFeedbackSlide =
-    scope === "operations" && (activeMonth?.feedback.length || 0) > 0;
+  const doneItems = displayActivities.filter((activity) => activity.kind !== "appointment");
+  const appointmentItems = displayActivities.filter((activity) => activity.kind === "appointment");
+  const smeItems = useMemo(() => {
+    const names = new Map<string, string>();
+    (activeMonth?.participants || []).forEach((participant) => {
+      if (participant.name) names.set(participant.id, participant.name);
+    });
+    return Array.from(names.entries()).map(([id, name]) => {
+      const involved = (activeMonth?.activities || []).filter((activity) =>
+        (activity.participantIds || []).includes(id)
+      );
+      const interventions = involved.filter((activity) => activity.kind === "intervention").length;
+      const appointments = involved.filter((activity) => activity.kind === "appointment").length;
+      return {
+        id,
+        title: name,
+        detail: [
+          interventions ? `${interventions} intervention${plural(interventions)}` : "",
+          appointments ? `${appointments} appointment${plural(appointments)}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    });
+  }, [activeMonth]);
+
+  // How a page of cards is laid out depends on how many there are: up to 5
+  // stack vertically, 6-8 sit two across, 9 or more go three across, and past
+  // a 3 x 3 page they stay three across and are paged.
+  const [cardPage, setCardPage] = useState(1);
+  useEffect(() => {
+    setCardPage(1);
+  }, [activeIndex, activeSlide, range]);
+  const renderCardGrid = (
+    items: Array<{ id: string; title: string; detail?: string; colour: string; meta?: React.ReactNode }>
+  ) => {
+    const count = items.length;
+    const columns = !screens.md ? 1 : count <= 5 ? 1 : count <= 8 ? 2 : 3;
+    const pageSize = columns === 3 ? 9 : Math.max(count, 1);
+    const visible = items.slice((cardPage - 1) * pageSize, cardPage * pageSize);
+    return (
+      <>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+            gap: 12,
+          }}
+        >
+          {visible.map((item, index) => (
+            <motion.div
+              key={item.id}
+              initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: reduceMotion ? 0 : index * 0.05 }}
+              style={{
+                minWidth: 0,
+                padding: "14px 16px",
+                border: `1px solid ${item.colour}66`,
+                borderRadius: 12,
+                background: tokens.paperRaised,
+                textAlign: "left",
+              }}
+            >
+              <Text strong style={{ color: tokens.ink }}>
+                {item.title}
+              </Text>
+              {item.meta && <div style={{ marginTop: 8 }}>{item.meta}</div>}
+              {item.detail && (
+                <div style={{ marginTop: 6 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {item.detail}
+                  </Text>
+                </div>
+              )}
+            </motion.div>
+          ))}
+        </div>
+        {count > pageSize && (
+          <Pagination
+            current={cardPage}
+            pageSize={pageSize}
+            total={count}
+            showSizeChanger={false}
+            onChange={setCardPage}
+            style={{ display: "flex", justifyContent: "center" }}
+          />
+        )}
+      </>
+    );
+  };
+
+  const slides = useMemo(() => monthSlides(activeMonth, scope), [activeMonth, scope]);
+  const slideKey: SlideKey = complete
+    ? "complete"
+    : slides[Math.min(activeSlide, slides.length - 1)] ?? "overview";
+  const journeySummary = useMemo(() => {
+    const smes = new Set<string>();
+    const departments = new Set<string>();
+    let completed = 0;
+    let appointments = 0;
+    visibleMonths.forEach((month) => {
+      completed += month.completedInterventions;
+      appointments += scope === "sme" ? month.attendedAppointments : month.appointments;
+      month.participantIds.forEach((id) => smes.add(id));
+      month.activities.forEach((activity) => {
+        if (activity.department) departments.add(activity.department);
+      });
+    });
+    return {
+      completed,
+      appointments,
+      reach: scope === "operations" ? smes.size : departments.size,
+      months: visibleMonths.length,
+      from: visibleMonths[0]?.label,
+      to: visibleMonths[visibleMonths.length - 1]?.label,
+    };
+  }, [visibleMonths, scope]);
+
   const atFinalChapter =
     visibleMonths.length > 0 &&
     activeIndex === visibleMonths.length - 1 &&
-    (!hasFeedbackSlide || activeSlide === 1);
+    activeSlide >= slides.length - 1;
 
   const goNext = () => {
-    if (hasFeedbackSlide && activeSlide === 0) {
-      setActiveSlide(1);
+    if (complete) return;
+    if (atFinalChapter) {
+      setComplete(true);
+      return;
+    }
+    if (activeSlide < slides.length - 1) {
+      setActiveSlide(activeSlide + 1);
       return;
     }
     setActiveSlide(0);
@@ -725,27 +598,45 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
   };
 
   const goPrevious = () => {
+    if (complete) {
+      setComplete(false);
+      return;
+    }
     if (activeSlide > 0) {
-      setActiveSlide(0);
+      setActiveSlide(activeSlide - 1);
       return;
     }
     const previousIndex = activeIndex - 1;
     if (previousIndex < 0) return;
-    const previousMonth = visibleMonths[previousIndex];
     setActiveIndex(previousIndex);
-    setActiveSlide(
-      scope === "operations" && previousMonth?.feedback.length ? 1 : 0
-    );
+    setActiveSlide(monthSlides(visibleMonths[previousIndex], scope).length - 1);
   };
 
   useEffect(() => {
     setActiveIndex(0);
     setActiveSlide(0);
+    setComplete(false);
     setPlaying(false);
   }, [range, months.length]);
+
+  const replay = () => {
+    setComplete(false);
+    setActiveIndex(0);
+    setActiveSlide(0);
+    setPlaying(true);
+  };
+
+  // The journey starts playing by itself as soon as it opens and has data.
+  useEffect(() => {
+    if (open && !loading && visibleMonths.length) replay();
+    else if (!open) setPlaying(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, loading, visibleMonths.length]);
+
   useEffect(() => {
     if (!playing || !visibleMonths.length) return;
-    if (atFinalChapter) {
+    // Reaching the closing step ends playback; Replay starts it again.
+    if (complete) {
       setPlaying(false);
       return;
     }
@@ -756,20 +647,48 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
     visibleMonths.length,
     activeIndex,
     activeSlide,
-    hasFeedbackSlide,
+    slides.length,
     atFinalChapter,
+    complete,
   ]);
 
   const title =
     scope === "sme" ? "My milestone journey" : "Department milestone journey";
 
+  const closeButton = (
+    <Button
+      danger
+      shape="circle"
+      className="mj-close"
+      aria-label="Close journey"
+      icon={<CloseOutlined />}
+      onClick={closeJourney}
+    />
+  );
+
+  // Shared by the controls bar and the empty state, so a period with nothing in
+  // it can still be widened.
+  const rangePicker = (
+    <RangePicker
+      picker="month"
+      value={range}
+      allowClear={false}
+      // The journey is a full-screen layer above the app's popups, so the
+      // month dropdown needs to sit higher than it or it opens out of sight.
+      popupStyle={{ zIndex: 2100 }}
+      onChange={(value) => {
+        if (value?.[0] && value?.[1]) setRange([value[0], value[1]]);
+      }}
+    />
+  );
+
   return (
     <>
-      {triggerOnly ? (
+      {controlled ? null : triggerOnly ? (
         <Button
           type="primary"
           icon={<RocketOutlined />}
-          onClick={() => setOpen(true)}
+          onClick={openFrom}
           style={{ background: tokens.teal, borderColor: tokens.teal }}
         >
           Open journey
@@ -819,7 +738,7 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
             <Button
               type="primary"
               icon={<RocketOutlined />}
-              onClick={() => setOpen(true)}
+              onClick={openFrom}
               style={{ background: tokens.teal, borderColor: tokens.teal }}
             >
               Open journey
@@ -828,163 +747,366 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
         </Card>
       )}
 
-      {/* Modal's own title carries the accessible name — nothing this large repeats inside the body. */}
-      <Modal
+      <FullscreenReveal
         open={open}
-        onCancel={() => {
-          setOpen(false);
-          setPlaying(false);
-          setIsFullscreen(false);
-        }}
-        footer={null}
-        width={isFullscreen ? "100vw" : 980}
-        title={title}
-        style={
-          isFullscreen
-            ? { top: 0, maxWidth: "100vw", paddingBottom: 0 }
-            : undefined
-        }
-        styles={{
-          body: {
-            padding: 0,
-            height: isFullscreen ? "calc(100vh - 55px)" : undefined,
-            overflowY: "auto",
-          },
-        }}
+        onClose={closeJourney}
+        ariaLabel={title}
+        origin={origin}
+        inline={controlled?.inline}
       >
-        <div style={{ padding: 24, background: tokens.paper }}>
+        <div
+          style={{
+            padding: 24,
+            background: tokens.paper,
+            minHeight: "100%",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 1280,
+              width: "100%",
+              margin: "0 auto",
+              flex: "1 1 auto",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
           {loading ? (
-            <div style={{ padding: 40, textAlign: "center" }}>
-              <Spin />
-            </div>
+            <>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>{closeButton}</div>
+              <div style={{ flex: "1 1 auto", display: "grid", placeItems: "center" }}>
+                <Spin size="large" />
+              </div>
+            </>
           ) : !visibleMonths.length ? (
-            <Alert
-              type="info"
-              showIcon
-              message="No verified milestones for this period"
-              description="Widen the date range below, or check back once activity has been recorded."
-            />
+            <>
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+                {rangePicker}
+                {closeButton}
+              </div>
+              <div style={{ flex: "1 1 auto", display: "grid", placeItems: "center" }}>
+                <Result
+                  status="info"
+                  title="No verified milestones for this period"
+                  subTitle="Try a wider date range, or check back once activity has been recorded."
+                />
+              </div>
+            </>
           ) : (
-            <Space direction="vertical" size={18} style={{ width: "100%" }}>
-              {/* The trail leads — pick a range here and everything below follows it. */}
-              <Card
-                style={{ borderRadius: 14, border: `1px solid ${tokens.line}` }}
-                bodyStyle={{ padding: "16px 20px 4px" }}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 18,
+                width: "100%",
+                flex: "1 1 auto",
+              }}
+            >
+              {/* Pick a range and everything below follows it. */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Space size={8}>
-                    <Tooltip
-                      title={
-                        isFullscreen ? "Exit fullscreen" : "View fullscreen"
-                      }
-                    >
+                <Space size={8} wrap>
+                  {rangePicker}
+                    <Space size={8}>
                       <Button
-                        aria-label={
-                          isFullscreen ? "Exit fullscreen" : "View fullscreen"
-                        }
+                        shape="circle"
+                        aria-label="Previous scene"
+                        icon={<LeftOutlined />}
+                        disabled={activeIndex === 0 && activeSlide === 0 && !complete}
+                        onClick={goPrevious}
+                      />
+                      <Button
                         icon={
-                          isFullscreen ? (
-                            <FullscreenExitOutlined />
+                          complete ? (
+                            <ReloadOutlined />
+                          ) : playing ? (
+                            <PauseOutlined />
                           ) : (
-                            <FullscreenOutlined />
+                            <PlayCircleOutlined />
                           )
                         }
-                        onClick={() => setIsFullscreen((current) => !current)}
+                        shape="circle"
+                        aria-label={complete ? "Replay journey" : playing ? "Pause journey" : "Play journey"}
+                        title={complete ? "Replay" : playing ? "Pause" : "Play journey"}
+                        onClick={() =>
+                          complete ? replay() : setPlaying((current) => !current)
+                        }
+                        style={
+                          playing && !complete
+                            ? { color: tokens.coral, borderColor: tokens.coral }
+                            : undefined
+                        }
                       />
-                    </Tooltip>
-                    <Button
-                      aria-label="Previous scene"
-                      icon={<LeftOutlined />}
-                      disabled={activeIndex === 0 && activeSlide === 0}
-                      onClick={goPrevious}
-                    />
-                    <Button
-                      icon={
-                        playing ? <PauseOutlined /> : <PlayCircleOutlined />
-                      }
-                      onClick={() => setPlaying((current) => !current)}
-                      style={
-                        playing
-                          ? { color: tokens.coral, borderColor: tokens.coral }
-                          : undefined
-                      }
-                    >
-                      {playing ? "Pause" : "Play journey"}
-                    </Button>
-                    <Button
-                      aria-label="Next scene"
-                      icon={<RightOutlined />}
-                      disabled={atFinalChapter}
-                      onClick={goNext}
-                    />
-                    {atFinalChapter && (
-                      <Tag
-                        icon={<TrophyOutlined />}
-                        style={{
-                          background: tokens.amberSoft,
-                          color: tokens.amber,
-                          border: "none",
-                        }}
-                      >
-                        Journey complete
-                      </Tag>
-                    )}
-                  </Space>
-                  <RangePicker
-                    picker="month"
-                    value={range}
-                    allowClear={false}
-                    onChange={(value) => {
-                      if (value?.[0] && value?.[1])
-                        setRange([value[0], value[1]]);
-                    }}
-                  />
-                </div>
-                <TrailNav
-                  months={visibleMonths}
-                  activeIndex={activeIndex}
-                  playing={playing}
-                  onSelect={(index) => {
-                    setPlaying(false);
-                    setActiveIndex(index);
-                    setActiveSlide(0);
-                  }}
-                />
-              </Card>
+                      <Button
+                        shape="circle"
+                        aria-label="Next scene"
+                        icon={<RightOutlined />}
+                        disabled={complete}
+                        onClick={goNext}
+                      />
+                      {complete && (
+                        <Tag
+                          icon={<TrophyOutlined />}
+                          style={{
+                            background: tokens.amberSoft,
+                            color: tokens.amber,
+                            border: "none",
+                          }}
+                        >
+                          Journey complete
+                        </Tag>
+                      )}
+                    </Space>
+                </Space>
+                {closeButton}
+              </div>
 
               {/* Everything below is scoped to the active month only — it changes every time the trail moves. */}
               <AnimatePresence mode="wait">
                 {activeMonth && narrative && (
                   <motion.div
-                    key={`${activeMonth.key}-${activeSlide}`}
+                    key={complete ? "complete" : `${activeMonth.key}-${activeSlide}`}
                     initial={{ opacity: 0, x: reduceMotion ? 0 : 46 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: reduceMotion ? 0 : -46 }}
                     transition={{ duration: reduceMotion ? 0 : 0.34 }}
+                    style={{
+                      flex: "1 1 auto",
+                      display: "flex",
+                      flexDirection: "column",
+                      minHeight: 0,
+                    }}
                   >
+                    {/* No card around any page: the content sits straight on the page, centred. */}
                     <Card
                       style={{
-                        borderRadius: 14,
-                        border: `1px solid ${tokens.line}`,
+                        flex: "1 1 auto",
+                        display: "flex",
+                        flexDirection: "column",
+                        border: "none",
+                        background: "transparent",
+                        boxShadow: "none",
                       }}
-                      bodyStyle={{ padding: 24 }}
+                      bodyStyle={{
+                        padding: 0,
+                        flex: "1 1 auto",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "center",
+                      }}
                     >
                       <Space
                         direction="vertical"
                         size={16}
-                        style={{ width: "100%" }}
+                        style={{
+                          width: "100%",
+                          maxWidth: 1100,
+                          margin: "0 auto",
+                          textAlign: "center",
+                        }}
                       >
-                        {activeSlide === 0 && (
+                        {slideKey === "complete" && (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              textAlign: "center",
+                              gap: 10,
+                              padding: "24px 0",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 72,
+                                height: 72,
+                                borderRadius: "50%",
+                                display: "grid",
+                                placeItems: "center",
+                                fontSize: 32,
+                                color: tokens.amber,
+                                background: tokens.amberSoft,
+                              }}
+                            >
+                              <TrophyOutlined />
+                            </div>
+                            <Text
+                              style={{
+                                fontSize: 11,
+                                letterSpacing: 1,
+                                color: tokens.teal,
+                                fontWeight: 600,
+                              }}
+                            >
+                              JOURNEY COMPLETE
+                            </Text>
+                            <Title
+                              level={2}
+                              style={{
+                                margin: 0,
+                                fontFamily: serifDisplay,
+                                color: tokens.ink,
+                                fontWeight: 400,
+                                maxWidth: 820,
+                                lineHeight: 1.3,
+                              }}
+                            >
+                              {scope === "sme" ? "You" : "The team"} completed{" "}
+                              {journeySummary.completed} intervention
+                              {plural(journeySummary.completed)}, {scope === "sme" ? "attended" : "held"}{" "}
+                              {journeySummary.appointments}{" "}
+                              {scope === "sme" ? "session" : "appointment"}
+                              {plural(journeySummary.appointments)} and reached{" "}
+                              {journeySummary.reach}{" "}
+                              {scope === "operations" ? "SME" : "department"}
+                              {plural(journeySummary.reach)}.
+                            </Title>
+                            <Text type="secondary">
+                              {journeySummary.months} month{plural(journeySummary.months)}
+                              {journeySummary.from && journeySummary.to
+                                ? ` · ${journeySummary.from}${
+                                    journeySummary.from === journeySummary.to ? "" : ` – ${journeySummary.to}`
+                                  }`
+                                : ""}
+                            </Text>
+                            <Space size={12} style={{ marginTop: 18 }}>
+                              <Button type="primary" icon={<ReloadOutlined />} onClick={replay}>
+                                Replay
+                              </Button>
+                              {closeButton}
+                            </Space>
+                          </div>
+                        )}
+
+                        {slideKey === "overview" && (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              textAlign: "center",
+                              gap: 8,
+                              padding: "24px 0 12px",
+                            }}
+                          >
+                              <Text
+                              style={{
+                                fontSize: 11,
+                                letterSpacing: 1,
+                                color: tokens.teal,
+                                fontWeight: 600,
+                              }}
+                            >
+                              CHAPTER {activeIndex + 1} OF {visibleMonths.length} · THE MONTH IN NUMBERS
+                            </Text>
+                            <Title
+                              level={3}
+                              style={{
+                                margin: "4px 0 0",
+                                fontFamily: serifDisplay,
+                                color: tokens.ink,
+                                fontWeight: 400,
+                                lineHeight: 1.35,
+                                maxWidth: 820,
+                              }}
+                            >
+                              {narrative.sentence ||
+                                `${activeMonth.label} was quiet — no verified activity was recorded.`}
+                            </Title>
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+                                gap: 18,
+                                width: "100%",
+                                maxWidth: 980,
+                                marginTop: 28,
+                              }}
+                            >
+                              {[
+                                {
+                                  key: "completed",
+                                  icon: <CheckCircleOutlined />,
+                                  value: narrative.stats.completed,
+                                  label: "Interventions completed",
+                                  colour: tokens.teal,
+                                  soft: tokens.tealSoft,
+                                },
+                                {
+                                  key: "appointments",
+                                  icon: <CalendarOutlined />,
+                                  value: narrative.stats.attended,
+                                  label: scope === "sme" ? "Sessions attended" : "Appointments held",
+                                  colour: tokens.plum,
+                                  soft: tokens.plumSoft,
+                                },
+                                {
+                                  key: "reach",
+                                  icon: <TeamOutlined />,
+                                  value: narrative.stats.connections,
+                                  label: scope === "operations" ? "SMEs reached" : "Departments reached",
+                                  colour: tokens.amber,
+                                  soft: tokens.amberSoft,
+                                },
+                              ].map((metric, index) => (
+                                <motion.div
+                                  key={metric.key}
+                                  initial={{ opacity: 0, y: reduceMotion ? 0 : 16 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: reduceMotion ? 0 : index * 0.1 }}
+                                  style={{
+                                    padding: "28px 20px",
+                                    borderRadius: 20,
+                                    border: `1px solid ${tokens.line}`,
+                                    background: tokens.paperRaised,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      width: 44,
+                                      height: 44,
+                                      margin: "0 auto",
+                                      borderRadius: "50%",
+                                      display: "grid",
+                                      placeItems: "center",
+                                      fontSize: 20,
+                                      color: metric.colour,
+                                      background: metric.soft,
+                                    }}
+                                  >
+                                    {metric.icon}
+                                  </div>
+                                  <div
+                                    style={{
+                                      marginTop: 14,
+                                      fontSize: "clamp(44px, 6vw, 68px)",
+                                      fontWeight: 800,
+                                      lineHeight: 1,
+                                      color: tokens.ink,
+                                    }}
+                                  >
+                                    {metric.value}
+                                  </div>
+                                  <Text type="secondary" style={{ display: "block", marginTop: 10 }}>
+                                    {metric.label}
+                                  </Text>
+                                </motion.div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {slideKey === "done" && (
                           <>
-                            <div>
                               <Text
                                 style={{
                                   fontSize: 11,
@@ -993,89 +1115,115 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
                                   fontWeight: 600,
                                 }}
                               >
-                                CHAPTER {activeIndex + 1} OF{" "}
-                                {visibleMonths.length} · WHAT WAS ACCOMPLISHED
+                                CHAPTER {activeIndex + 1} OF {visibleMonths.length} · WHAT WAS DONE
                               </Text>
-
-                              {narrative.sentence ? (
-                                <>
-                                  <Title
-                                    level={3}
-                                    style={{
-                                      margin: "4px 0 0",
-                                      fontFamily: serifDisplay,
-                                      color: tokens.ink,
-                                      fontWeight: 400,
-                                      lineHeight: 1.35,
-                                    }}
-                                  >
-                                    {narrative.sentence}
-                                  </Title>
-                                  {narrative.trailing && (
-                                    <Text type="secondary">
-                                      {narrative.trailing}
-                                    </Text>
-                                  )}
-                                </>
-                              ) : (
-                                <Title
-                                  level={3}
-                                  style={{
-                                    margin: "4px 0 0",
-                                    fontFamily: serifDisplay,
-                                    color: tokens.ink,
-                                    fontWeight: 400,
-                                  }}
-                                >
-                                  {activeMonth.label} was quiet — no verified
-                                  activity was recorded.
-                                </Title>
-                              )}
-                            </div>
-
-                            {narrative.sentence && (
-                              <Space size={8} wrap>
-                                {narrative.stats.completed > 0 && (
-                                  <StatPill
-                                    value={narrative.stats.completed}
-                                    label="completed"
-                                    colour={tokens.teal}
-                                    soft={tokens.tealSoft}
-                                    icon={<CheckCircleOutlined />}
-                                  />
-                                )}
-                                {narrative.stats.attended > 0 && (
-                                  <StatPill
-                                    value={narrative.stats.attended}
-                                    label={
-                                      scope === "sme" ? "attended" : "held"
-                                    }
-                                    colour={tokens.plum}
-                                    soft={tokens.plumSoft}
-                                    icon={<CalendarOutlined />}
-                                  />
-                                )}
-                                {narrative.stats.connections > 0 && (
-                                  <StatPill
-                                    value={narrative.stats.connections}
-                                    label={
-                                      scope === "operations"
-                                        ? "SMEs"
-                                        : "departments"
-                                    }
-                                    colour={tokens.amber}
-                                    soft={tokens.amberSoft}
-                                    icon={<TeamOutlined />}
-                                  />
-                                )}
-                              </Space>
+                            {renderCardGrid(
+                              doneItems.map((activity) => ({
+                                id: activity.id,
+                                title: activity.title,
+                                detail: activity.detail
+                                  ? `${activity.detailLabel || "Covered"}: ${activity.detail}`
+                                  : undefined,
+                                colour: activityColour(activity.kind, tokens),
+                              }))
                             )}
                           </>
                         )}
 
-                        {activeSlide === 1 &&
-                          scope === "operations" &&
-                          activeMonth.feedback.length > 0 && (
+                        {slideKey === "appointments" && (
+                          <>
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  letterSpacing: 1,
+                                  color: tokens.teal,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                CHAPTER {activeIndex + 1} OF {visibleMonths.length} · APPOINTMENTS
+                              </Text>
+                            {renderCardGrid(
+                              appointmentItems.map((activity) => {
+                                const invited = activity.invited ?? 0;
+                                const attended = activity.attended ?? 0;
+                                const rate = invited ? Math.round((attended / invited) * 100) : null;
+                                const chip = {
+                                  margin: 0,
+                                  border: "none",
+                                  borderRadius: 999,
+                                  background: tokens.plumSoft,
+                                  color: tokens.plum,
+                                };
+                                const mode = (activity.delivery || "").toLowerCase();
+                                return {
+                                  id: activity.id,
+                                  title: activity.title,
+                                  detail: activity.detail
+                                    ? `${activity.detailLabel || "Covered"}: ${activity.detail}`
+                                    : undefined,
+                                  colour: tokens.plum,
+                                  meta: (
+                                    <Space size={6} wrap>
+                                      {activity.delivery && (
+                                        <Tag
+                                          style={chip}
+                                          icon={
+                                            mode.includes("person") ? (
+                                              <EnvironmentOutlined />
+                                            ) : mode.includes("tele") ? (
+                                              <PhoneOutlined />
+                                            ) : (
+                                              <VideoCameraOutlined />
+                                            )
+                                          }
+                                        >
+                                          {activity.delivery}
+                                        </Tag>
+                                      )}
+                                      {invited > 0 && (
+                                        <Tag style={chip} icon={<TeamOutlined />}>
+                                          {invited} invited
+                                        </Tag>
+                                      )}
+                                      {rate !== null && (
+                                        <Tag
+                                          style={{
+                                            ...chip,
+                                            background: rate >= 70 ? tokens.tealSoft : rate >= 40 ? tokens.amberSoft : tokens.coralSoft,
+                                            color: rate >= 70 ? tokens.teal : rate >= 40 ? tokens.amber : tokens.coral,
+                                          }}
+                                          icon={<CheckCircleOutlined />}
+                                        >
+                                          {attended} attended · {rate}%
+                                        </Tag>
+                                      )}
+                                    </Space>
+                                  ),
+                                };
+                              })
+                            )}
+                          </>
+                        )}
+
+                        {slideKey === "smes" && (
+                          <>
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  letterSpacing: 1,
+                                  color: tokens.teal,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                CHAPTER {activeIndex + 1} OF {visibleMonths.length} · SMEs HELPED
+                              </Text>
+                            {renderCardGrid(
+                              smeItems.map((sme) => ({ ...sme, colour: tokens.amber }))
+                            )}
+                          </>
+                        )}
+
+                        {slideKey === "feedback" && (
                             <div>
                               <Text
                                 strong
@@ -1117,6 +1265,7 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
                                       style={{
                                         minWidth: 0,
                                         padding: 12,
+                                        textAlign: "left",
                                         border: `1px solid ${tokens.line}`,
                                         borderRadius: 12,
                                         background: tokens.paperRaised,
@@ -1180,108 +1329,16 @@ export const MilestoneJourney: React.FC<MilestoneJourneyProps> = ({
                             </div>
                           )}
 
-                        {activeSlide === 0 && displayActivities.length > 0 && (
-                          <div style={{ position: "relative", paddingLeft: 4 }}>
-                            <div
-                              style={{
-                                position: "absolute",
-                                left: 8,
-                                top: 6,
-                                bottom: 6,
-                                width: 2,
-                                background: `repeating-linear-gradient(180deg, ${tokens.line} 0 4px, transparent 4px 8px)`,
-                              }}
-                            />
-                            <Space
-                              direction="vertical"
-                              size={14}
-                              style={{ width: "100%" }}
-                            >
-                              {displayActivities
-                                .slice(0, 6)
-                                .map((activity, index) => (
-                                  <motion.div
-                                    key={activity.id}
-                                    initial={{
-                                      opacity: 0,
-                                      y: reduceMotion ? 0 : 10,
-                                    }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{
-                                      delay: reduceMotion ? 0 : index * 0.07,
-                                    }}
-                                    style={{
-                                      display: "flex",
-                                      gap: 12,
-                                      alignItems: "start",
-                                      position: "relative",
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        width: 10,
-                                        height: 10,
-                                        borderRadius: "50%",
-                                        marginTop: 5,
-                                        background: activityColour(
-                                          activity.kind
-                                        ),
-                                        boxShadow: `0 0 0 4px ${tokens.paperRaised}`,
-                                        flex: "0 0 auto",
-                                        zIndex: 1,
-                                      }}
-                                    />
-                                    <div>
-                                      <Text
-                                        style={{
-                                          fontSize: 11,
-                                          letterSpacing: 0.5,
-                                          color: activityColour(activity.kind),
-                                          fontWeight: 700,
-                                          textTransform: "uppercase",
-                                        }}
-                                      >
-                                        {activityVerb(activity.kind)}
-                                      </Text>
-                                      <div>
-                                        <Text strong>{activity.title}</Text>
-                                        {activity.department && (
-                                          <Tag
-                                            style={{
-                                              marginLeft: 8,
-                                              background: tokens.tealSoft,
-                                              color: tokens.teal,
-                                              border: "none",
-                                            }}
-                                          >
-                                            {activity.department}
-                                          </Tag>
-                                        )}
-                                      </div>
-                                      {activity.detail && (
-                                        <Text
-                                          type="secondary"
-                                          style={{ fontSize: 12 }}
-                                        >
-                                          {activity.detailLabel || "Covered"}:{" "}
-                                          {activity.detail}
-                                        </Text>
-                                      )}
-                                    </div>
-                                  </motion.div>
-                                ))}
-                            </Space>
-                          </div>
-                        )}
                       </Space>
                     </Card>
                   </motion.div>
                 )}
               </AnimatePresence>
-            </Space>
+            </div>
           )}
+          </div>
         </div>
-      </Modal>
+      </FullscreenReveal>
     </>
   );
 };

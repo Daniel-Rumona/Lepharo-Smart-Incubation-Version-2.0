@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
     Alert,
+    Avatar,
     Typography,
     Table,
     Space,
@@ -42,6 +44,7 @@ import {
     DeleteOutlined,
     BarChartOutlined,
     PieChartOutlined,
+    ArrowLeftOutlined,
 } from "@ant-design/icons";
 import { Helmet } from "react-helmet";
 import {
@@ -61,10 +64,13 @@ import {
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
-import { motion } from "framer-motion";
+import { useDepartmentRoles } from "@/services/departmentRoles";
+import { AnimatePresence, motion } from "framer-motion";
+import AssignmentDetailPanel, { CycleDetailPanel } from "./AssignmentDetailPanel";
 import dayjs from "dayjs";
 import weekOfYear from "dayjs/plugin/weekOfYear";
 import { MotionCard, DashboardFilterBar } from "@/components/dashboards/metrics/Header";
+import { MetricTile } from "@/components/dashboards/metrics/MetricTile";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import {
     guideTarget,
@@ -138,7 +144,6 @@ const norm = (s: any) =>
         .replace(/\s+/g, " ")
         .trim();
 
-const ciEq = (a?: string, b?: string) => norm(a) === norm(b);
 const normalizeId = (v: any) => (v == null ? "" : String(v));
 const safeLower = (v: any) =>
     String(v ?? "")
@@ -566,21 +571,14 @@ const dedupeInterventions = (items: any[]) => {
 };
 
 // Normalises a raw intervention definition (from either the `interventions`
-// collection or a Diagnostic Plan's embedded intervention list - the two
-// sources disagree on whether `area` or `areaOfSupport` is primary, hence
-// `preferAreaField`) into the shape the rest of this page expects. Was
-// written out twice, nearly identically, at the two call sites below.
+// collection or a Diagnostic Plan's embedded intervention list) into the
+// shape the rest of this page expects.
 const normalizeInterventionDef = (
     iv: any,
-    deptId: string,
-    deptName: string,
-    preferAreaField: boolean
+    deptId: string
 ) => ({
     id: String(iv?.id || ""),
     interventionTitle: iv?.title || iv?.interventionTitle || iv?.name || "Untitled",
-    areaOfSupport: preferAreaField
-        ? iv?.area || iv?.areaOfSupport || deptName
-        : iv?.areaOfSupport || iv?.area || deptName,
     departmentId: iv?.departmentId || deptId || null,
     hasSubInterventions: !!iv?.hasSubInterventions,
     subInterventions: getActiveSubInterventions(iv),
@@ -793,15 +791,15 @@ export type Bottleneck = {
 
 const LENIENT_OPEN_CYCLE_LIMIT = 3;
 
-// Shared accent palette for the metric-tile icon chips on this page (page-level
+// Shared tone palette for the metric-tile icon chips on this page (page-level
 // progress cards and the per-beneficiary coverage cards). One source of truth
 // so the two card sets can't drift into slightly different shades of the same
 // color, as blue/orange had before.
 const METRIC_ACCENT = {
-    purple: { color: "#722ed1", bg: "rgba(114,46,209,.12)" },
-    blue: { color: "#1677ff", bg: "rgba(22,119,255,.12)" },
-    green: { color: "#52c41a", bg: "rgba(82,196,26,.12)" },
-    orange: { color: "#fa8c16", bg: "rgba(250,140,22,.12)" },
+    purple: { color: "#722ed1", tone: "accent" },
+    blue: { color: "#1677ff", tone: "info" },
+    green: { color: "#52c41a", tone: "success" },
+    orange: { color: "#fa8c16", tone: "warning" },
 } as const;
 
 const ONCE_OFF_COMPLETED_REASON = "Already completed";
@@ -1116,6 +1114,7 @@ type OperationsModalType =
 
 export const InterventionsAssignments: React.FC = () => {
     const { user } = useFullIdentity();
+    const { nameOf } = useDepartmentRoles();
     const { token } = theme.useToken();
     const screens = Grid.useBreakpoint();
     const isMobile = !screens.md; // < md (xs/sm) treated as mobile
@@ -1529,10 +1528,10 @@ export const InterventionsAssignments: React.FC = () => {
 
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [coordinators, setCoordinators] = useState<
-        { id: string; name: string; email?: string; departmentName?: string }[]
+        { id: string; name: string; email?: string; departmentId?: string; departmentName?: string }[]
     >([]);
     const [hodList, setHodList] = useState<
-        { id: string; name: string; email?: string; departmentName?: string }[]
+        { id: string; name: string; email?: string; departmentId?: string; departmentName?: string }[]
     >([]);
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [groupDeliveries, setGroupDeliveries] = useState<Record<string, GroupInterventionDelivery>>({});
@@ -1556,6 +1555,13 @@ export const InterventionsAssignments: React.FC = () => {
         setActiveModal((prev) => (visible ? type : prev === type ? null : prev));
     const manageModalVisible = activeModal === "manage";
     const setManageModalVisible = makeModalSetter("manage");
+    const [detailRecordId, setDetailRecordIdState] = useState<string | null>(null);
+    const [detailCycleKey, setDetailCycleKey] = useState<string | null>(null);
+    const [cycleAppointments, setCycleAppointments] = useState<any[]>([]);
+    const setDetailRecordId = (id: string | null) => {
+        setDetailRecordIdState(id);
+        setDetailCycleKey(null);
+    };
     const assignmentModalVisible = activeModal === "assign";
     const setAssignmentModalVisible = makeModalSetter("assign");
 
@@ -1676,29 +1682,20 @@ export const InterventionsAssignments: React.FC = () => {
 
     const hasBothConfirmationsForDept = (
         dp: any,
-        deptId?: string,
-        deptName?: string
+        deptId?: string
     ) => {
         const id = String(deptId || "").trim();
-        const name = String(deptName || "").trim();
+        if (!id) return false;
 
-        const deptValById = id ? dp?.confirmedByDeptId?.[id] : undefined;
-        const deptValByName = name ? dp?.confirmed?.[name] : undefined;
-
-        const deptConfirmed =
-            isConfirmedValue(deptValById) || isConfirmedValue(deptValByName);
+        const deptConfirmed = isConfirmedValue(dp?.confirmedByDeptId?.[id]);
 
         // Department saves can create an empty/partial smmeConfirmedByDeptId
         // map while the SME roadmap writes its confirmation to the incubatee
         // map. Check this department in every supported map, not just the
         // first truthy map (an empty object is truthy too).
         const smmeConfirmed = [
-            id ? dp?.smmeConfirmedByDeptId?.[id] : undefined,
-            id ? dp?.incubateeDepartmentConfirmationsByDeptId?.[id] : undefined,
-            name ? dp?.smmeConfirmedByDept?.[name] : undefined,
-            name ? dp?.incubateeConfirmedByDept?.[name] : undefined,
-            name ? dp?.incubateeDepartmentConfirmations?.[name] : undefined,
-            name ? dp?.smmeConfirmedMap?.[name] : undefined,
+            dp?.smmeConfirmedByDeptId?.[id],
+            dp?.incubateeDepartmentConfirmationsByDeptId?.[id],
         ].some(isConfirmedValue);
 
         return deptConfirmed && smmeConfirmed;
@@ -1763,7 +1760,6 @@ export const InterventionsAssignments: React.FC = () => {
         (async () => {
             const snap = await getDocs(collection(db, "operationsStaff"));
             const currentDepartmentId = String((user as any)?.departmentId || "").trim();
-            const currentDepartmentName = String(user?.departmentName || "").trim();
 
             setHodList(
                 snap.docs
@@ -1773,20 +1769,13 @@ export const InterventionsAssignments: React.FC = () => {
                         if (isControlAccount) return true;
 
                         const hodDepartmentId = String(h?.departmentId || "").trim();
-                        const hodDepartmentName = String(h?.departmentName || "").trim();
-
-                        if (currentDepartmentId && hodDepartmentId) {
-                            return hodDepartmentId === currentDepartmentId;
-                        }
-
-                        return ciEq(hodDepartmentName, currentDepartmentName);
+                        return !!currentDepartmentId && hodDepartmentId === currentDepartmentId;
                     })
             );
         })().catch(() => { });
     }, [
         isControlAccount,
         (user as any)?.departmentId,
-        user?.departmentName,
     ]);
 
     useEffect(() => {
@@ -2123,27 +2112,18 @@ export const InterventionsAssignments: React.FC = () => {
                 const deptId = String(
                     (user as any)?.departmentId || userDepartment?.id || ""
                 );
-                const deptName = String(
-                    user?.departmentName || userDepartment?.name || ""
-                );
 
                 setIvDefsById(Object.fromEntries(interventionsSnap.docs.map(d =>
                     [d.id, { ...d.data(), id: d.id }])));
                 const departmentInterventions = interventionsSnap.docs
                     .map((d) => ({ id: d.id, ...(d.data() as any) }))
-                    .filter((iv: any) => {
-                        const ivDeptId = String(iv?.departmentId || "").trim();
-                        const ivArea = String(
-                            iv?.areaOfSupport || iv?.area || iv?.departmentName || ""
-                        ).trim();
-
-                        if (deptId && ivDeptId) return ivDeptId === deptId;
-                        return ciEq(ivArea, deptName);
-                    });
+                    .filter((iv: any) =>
+                        !!deptId && String(iv?.departmentId || "").trim() === deptId
+                    );
 
                 const monitoringRequiredInterventions = dedupeInterventions(
                     departmentInterventions.filter((iv: any) => iv.compulsory === true).map((iv: any) =>
-                        normalizeInterventionDef(iv, deptId, deptName, false)
+                        normalizeInterventionDef(iv, deptId)
                     )
                 );
 
@@ -2159,7 +2139,7 @@ export const InterventionsAssignments: React.FC = () => {
                     ? apps
                     : apps.filter((app) => {
                         const dp = dpMap[String(app.participantId)];
-                        return hasBothConfirmationsForDept(dp, deptId, deptName) ||
+                        return hasBothConfirmationsForDept(dp, deptId) ||
                             (dp?.interventions || []).some((iv: any) =>
                                 isCompulsoryIntervention(iv, departmentInterventions));
                     });
@@ -2175,15 +2155,13 @@ export const InterventionsAssignments: React.FC = () => {
                     const requiredForDeptRaw = isMonitoringDepartment
                         ? monitoringRequiredInterventions
                         : eligiblePlanInterventions(dpInterventions,
-                            hasBothConfirmationsForDept(dp, deptId, deptName)).filter((iv: any) => {
-                                if (deptId && iv?.departmentId)
-                                    return String(iv.departmentId) === deptId;
-                                return ciEq(iv?.area || iv?.areaOfSupport, deptName);
-                            });
+                            hasBothConfirmationsForDept(dp, deptId)).filter((iv: any) =>
+                                !!deptId && String(iv?.departmentId || "") === deptId
+                            );
 
                     const requiredForDept = dedupeInterventions(
                         requiredForDeptRaw.map((iv: any) =>
-                            normalizeInterventionDef(iv, deptId, deptName, true)
+                            normalizeInterventionDef(iv, deptId)
                         )
                     );
 
@@ -2194,6 +2172,7 @@ export const InterventionsAssignments: React.FC = () => {
                             pData.beneficiaryName ||
                             pData.businessName ||
                             "Unknown",
+                        email: String(pData.email || app.email || "").trim().toLowerCase(),
                         sector: pData.sector || app.sector || "—",
                         stage: pData.stage || app.stage || "—",
                         province: pData.province || app.province || "—",
@@ -2206,9 +2185,36 @@ export const InterventionsAssignments: React.FC = () => {
                         hasDiagnosticPlan: !!dp,
                         bypassedDpGate:
                             isMonitoringDepartment &&
-                            !hasBothConfirmationsForDept(dp, deptId, deptName),
+                            !hasBothConfirmationsForDept(dp, deptId),
                     } as any;
                 });
+
+                // Single photo source: users/{uid}.photoURL. Participants hold no logo.
+                const missingEmails = Array.from(new Set(
+                    fetchedParticipants
+                        .filter((p: any) => p.email)
+                        .map((p: any) => p.email as string)
+                ));
+                if (missingEmails.length) {
+                    try {
+                        const photoByEmail = new Map<string, string>();
+                        for (let i = 0; i < missingEmails.length; i += 10) {
+                            const usersSnap = await getDocs(
+                                query(collection(db, "users"), where("email", "in", missingEmails.slice(i, i + 10)))
+                            );
+                            usersSnap.docs.forEach((d) => {
+                                const u = d.data() as any;
+                                const url = String(u.photoURL || "").trim();
+                                if (url && u.email) photoByEmail.set(String(u.email).toLowerCase(), url);
+                            });
+                        }
+                        fetchedParticipants.forEach((p: any) => {
+                            if (p.email) p.imageUrl = photoByEmail.get(p.email);
+                        });
+                    } catch (error) {
+                        console.warn("Could not load SME avatars from users", error);
+                    }
+                }
 
                 const pim: Record<string, string[]> = {};
                 fetchedParticipants.forEach((p) => {
@@ -2222,16 +2228,13 @@ export const InterventionsAssignments: React.FC = () => {
                         const data = d.data() as any;
                         return {
                             id: d.id,
+                            departmentId: String(data.departmentId || ""),
                             departmentName: data.departmentName,
                             name: data.name,
                             email: data.email,
                         };
                     })
-                    .filter((c) => {
-                        const deptNameSafe =
-                            user?.departmentName || userDepartment?.name || "";
-                        return ciEq(c.departmentName, deptNameSafe);
-                    })
+                    .filter((c) => !!deptId && c.departmentId === deptId)
                     .filter((c) => {
                         const email = String(c.email || "").toLowerCase();
                         return email.endsWith("@quantilytix.co.za")
@@ -2261,10 +2264,8 @@ export const InterventionsAssignments: React.FC = () => {
         };
     }, [
         (user as any)?.departmentId,
-        user?.departmentName,
         activeProgramId,
         userDepartment?.id,
-        userDepartment?.name,
         isMonitoringDepartment,
     ]);
 
@@ -2272,88 +2273,34 @@ export const InterventionsAssignments: React.FC = () => {
         const deptId = String(
             (user as any)?.departmentId || userDepartment?.id || ""
         );
-        const deptName = String(
-            (user as any)?.departmentName ||
-            user?.departmentName ||
-            userDepartment?.name ||
-            ""
-        );
+        if (!deptId) return;
 
-        const qDept = deptId
-            ? query(
+        return onSnapshot(
+            query(
                 assignedInterventionService.collectionRef(),
                 where("departmentId", "==", deptId)
-            )
-            : null;
-
-        const qArea = deptName
-            ? query(
-                assignedInterventionService.collectionRef(),
-                where("areaOfSupport", "==", deptName)
-            )
-            : null;
-
-        let a1: any[] = [];
-        let a2: any[] = [];
-
-        const mergeAndSet = () => {
-            const byId = new Map<string, any>();
-            [...a1, ...a2].forEach((a) => byId.set(String(a.id), a));
-            setAssignments(Array.from(byId.values()));
-        };
-
-        const unsub: Array<() => void> = [];
-
-        if (qDept) {
-            unsub.push(
-                onSnapshot(
-                    qDept,
-                    (snap) => {
-                        a1 = snap.docs.map((d) =>
-                            toAssignedInterventionView(d.id, d.data())
-                        );
-                        mergeAndSet();
-                    },
-                    (err) => {
-                        // eslint-disable-next-line no-console
-                        console.error(err);
-                    }
-                )
-            );
-        }
-
-        if (qArea) {
-            unsub.push(
-                onSnapshot(
-                    qArea,
-                    (snap) => {
-                        a2 = snap.docs.map((d) =>
-                            toAssignedInterventionView(d.id, d.data())
-                        );
-                        mergeAndSet();
-                    },
-                    (err) => {
-                        // eslint-disable-next-line no-console
-                        console.error(err);
-                    }
-                )
-            );
-        }
-
-        return () => unsub.forEach((u) => u());
+            ),
+            (snap) => {
+                setAssignments(
+                    snap.docs.map((d) => toAssignedInterventionView(d.id, d.data()))
+                );
+            },
+            (err) => {
+                // eslint-disable-next-line no-console
+                console.error(err);
+            }
+        );
     }, [
         (user as any)?.departmentId,
-        (user as any)?.departmentName,
         userDepartment?.id,
-        userDepartment?.name,
     ]);
 
     const departmentFilteredParticipants = useMemo(() => {
         if (!userDepartment || userDepartment?.isMain) return participants;
-        const depName = norm(userDepartment?.name);
+        const depId = String(userDepartment?.id || "");
         return (participants || []).filter((p) =>
             ((p as any).requiredInterventions || []).some(
-                (iv: any) => norm(iv?.area || iv?.areaOfSupport) === depName
+                (iv: any) => String(iv?.departmentId || "") === depId
             )
         );
     }, [participants, userDepartment]);
@@ -2722,9 +2669,37 @@ export const InterventionsAssignments: React.FC = () => {
         (a) => getCompositeStatus(a).label === "Needs Reassignment"
     ).length;
 
+    // Appointments held against the cycle that is open in the details view.
+    useEffect(() => {
+        if (!detailCycleKey) {
+            setCycleAppointments([]);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            const found = new Map<string, any>();
+            const snap = await getDocs(
+                query(collection(db, "appointments"), where("assignedInterventionId", "==", detailCycleKey))
+            );
+            snap.docs.forEach((d) => found.set(d.id, { id: d.id, ...(d.data() as any) }));
+            const raw = (assignments as any[]).find((a) => String(a.id) === detailCycleKey);
+            const groupKey = String(raw?.groupKey || "");
+            if (groupKey) {
+                const gSnap = await getDocs(query(collection(db, "appointments"), where("groupKey", "==", groupKey)));
+                gSnap.docs.forEach((d) => found.set(d.id, { id: d.id, ...(d.data() as any) }));
+            }
+            if (!cancelled) setCycleAppointments(Array.from(found.values()));
+        })().catch((error) => {
+            console.error("Failed to load cycle appointments:", error);
+            if (!cancelled) setCycleAppointments([]);
+        });
+        return () => { cancelled = true; };
+    }, [detailCycleKey, assignments]);
+
     const handleManageParticipant = (p: Participant) => {
         setSelectedParticipant(p);
         setManageModalVisible(true);
+        setDetailRecordId(null);
         setInterventionFilter("all");
     };
 
@@ -2765,14 +2740,14 @@ export const InterventionsAssignments: React.FC = () => {
         if (!selectedParticipant) return [];
 
         const participantId = String((selectedParticipant as any).id);
-        const validArea = norm(userDepartment?.name || "");
+        const validDeptId = String(userDepartment?.id || "");
         const requiredAllRaw = ((selectedParticipant as any)
             .requiredInterventions || []) as any[];
 
         const requiredAll = dedupeInterventions(
             requiredAllRaw.filter((iv) =>
                 userDepartment && !userDepartment?.isMain
-                    ? norm(iv?.area || iv?.areaOfSupport) === validArea
+                    ? String(iv?.departmentId || "") === validDeptId
                     : true
             )
         );
@@ -2790,11 +2765,7 @@ export const InterventionsAssignments: React.FC = () => {
             const def = ivDefsById[ivId] || null;
             const iv = def ? { ...ivRaw, ...def } : ivRaw;
 
-            const areaText =
-                iv?.areaOfSupport || iv?.area || userDepartment?.name || null;
-            const mapDep = departments.find((d) => ciEq(d?.name, areaText));
-            const depId =
-                iv?.departmentId ?? mapDep?.id ?? userDepartment?.id ?? null;
+            const depId = iv?.departmentId ?? userDepartment?.id ?? null;
 
             const { recurring, recurrencePreset, recurrence, recurrenceStrict } =
                 getRecurrenceMetaSafe(ivId, iv, assignedForParticipant);
@@ -2840,7 +2811,6 @@ export const InterventionsAssignments: React.FC = () => {
                     cycleKey: current?.cycleKey ?? currentCycleKey,
 
                     departmentId: depId,
-                    areaOfSupport: areaText,
 
                     currentAssignment: current,
 
@@ -2895,7 +2865,6 @@ export const InterventionsAssignments: React.FC = () => {
 
                 isUnassigned: true,
                 departmentId: depId,
-                areaOfSupport: areaText,
 
                 recurring,
                 recurrencePreset,
@@ -2951,6 +2920,29 @@ export const InterventionsAssignments: React.FC = () => {
         });
         setAssignmentModalVisible(true);
     };
+
+    // The assistant hands an assignment over as router state (see agentActions.ts).
+    // Open the normal form filled in once the page's data has loaded; the user
+    // still checks sessions and recurrence and saves it themselves.
+    const location = useLocation();
+    const agentPrefillHandled = useRef(false);
+    useEffect(() => {
+        const prefill = (location.state as any)?.agentPrefill;
+        if (!prefill || agentPrefillHandled.current || loading) return;
+        agentPrefillHandled.current = true;
+        openAssignNew();
+        const assignee = String(prefill.assigneeId || "");
+        const coordinator = coordinators.find((c) => String(c.id) === assignee);
+        const hod = hodList.find((h) => String(h.id) === assignee);
+        assignmentForm.setFieldsValue({
+            participant: prefill.participantId,
+            intervention: prefill.interventionId,
+            assignTo: coordinator ? "coordinator" : hod ? "hod" : "self",
+            ...(coordinator ? { coordinator: coordinator.id } : {}),
+            ...(hod ? { hodId: hod.id } : {}),
+            ...(prefill.dueDate ? { dueDate: dayjs(prefill.dueDate) } : {}),
+        });
+    }, [location.state, loading]);
 
     const handleQuickAssign = (iv: any) => {
         if (!selectedParticipant) return;
@@ -3175,15 +3167,12 @@ export const InterventionsAssignments: React.FC = () => {
             const deptId = String(
                 (user as any)?.departmentId || userDepartment?.id || ""
             );
-            const deptName = String(
-                user?.departmentName || userDepartment?.name || ""
-            );
 
             const isAllowedByDp = (pid: string) => {
                 if (isMonitoringDepartment) return true;
 
                 const dp = dpByPid[String(pid)];
-                return !!dp && hasBothConfirmationsForDept(dp, deptId, deptName);
+                return !!dp && hasBothConfirmationsForDept(dp, deptId);
             };
 
             for (const pid of selectedIds) {
@@ -3349,6 +3338,15 @@ export const InterventionsAssignments: React.FC = () => {
                     ? { ...intervention, ...interventionDef }
                     : intervention;
 
+                const departmentIdToSave =
+                    String((fullIntervention as any)?.departmentId || "").trim() || null;
+                if (!departmentIdToSave) {
+                    message.error(
+                        `"${getIvTitle(fullIntervention)}" has no department. Set its department before assigning it.`
+                    );
+                    return;
+                }
+
                 const subs = getActiveSubInterventions(fullIntervention);
 
                 const hasSubs =
@@ -3445,15 +3443,8 @@ export const InterventionsAssignments: React.FC = () => {
                         priorOpenCycleCount: backlogGate.openCycles.length,
                         priorSmeResponsivenessCycleCount:
                             backlogGate.smeResponsivenessCycles?.length || 0,
-                        departmentId:
-                            (fullIntervention as any)?.departmentId ??
-                            (user as any)?.departmentId ??
-                            null,
-                        departmentName:
-                            (fullIntervention as any)?.areaOfSupport ??
-                            (fullIntervention as any)?.area ??
-                            (user as any)?.departmentName ??
-                            null,
+                        departmentId: departmentIdToSave,
+                        departmentName: nameOf(departmentIdToSave, "") || null,
                         cycles: backlogGate.openCycles.map((a: any) => ({
                             assignmentId: String(a?.id || ""),
                             cycleKey: String(a?.cycleKey || ""),
@@ -3471,16 +3462,6 @@ export const InterventionsAssignments: React.FC = () => {
                 };
 
                 const computedProgress = computeProgress(plannedSessions, tracking);
-
-                const departmentIdToSave =
-                    (fullIntervention as any)?.departmentId ??
-                    (user as any)?.departmentId ??
-                    null;
-                const areaOfSupportToSave =
-                    (fullIntervention as any)?.areaOfSupport ??
-                    (fullIntervention as any)?.area ??
-                    (user as any)?.departmentName ??
-                    null;
 
                 const app = appsByPid[String((participant as any).id)];
                 const programIdToSave = app?.programId ?? activeProgramId ?? null;
@@ -3537,7 +3518,6 @@ export const InterventionsAssignments: React.FC = () => {
                     participantAcceptanceStatus: "pending",
                     assigneeCompletionStatus: "pending",
                     participantCompletionStatus: "pending",
-                    areaOfSupport: areaOfSupportToSave,
                     departmentId: departmentIdToSave,
                     programId: programIdToSave,
                     scheduleMode: assignmentMode,
@@ -3730,7 +3710,6 @@ export const InterventionsAssignments: React.FC = () => {
                     assigneeName: a?.assigneeName || "—",
                     programId: a?.programId || null,
                     departmentId: a?.departmentId || null,
-                    areaOfSupport: a?.areaOfSupport || null,
                     cycleKey: getAssignmentCycleKey(a) || a?.cycleKey || null,
                     cycleLabel: getAssignmentCycleLabel(a),
                     dueDate: a?.dueDate || a?.groupMeta?.dueDate || null,
@@ -4123,7 +4102,6 @@ export const InterventionsAssignments: React.FC = () => {
         const deptId = String(
             (user as any)?.departmentId || userDepartment?.id || ""
         );
-        const deptName = String(user?.departmentName || userDepartment?.name || "");
 
         return baseParticipants.filter((p: any) => {
             const pid = String(p.id);
@@ -4131,7 +4109,7 @@ export const InterventionsAssignments: React.FC = () => {
 
             if (!isMonitoringDepartment) {
                 const dp = dpByPid[pid];
-                if (!dp || !hasBothConfirmationsForDept(dp, deptId, deptName)) return false;
+                if (!dp || !hasBothConfirmationsForDept(dp, deptId)) return false;
             }
 
             return ((p.requiredInterventions || []) as any[]).some(
@@ -4949,7 +4927,7 @@ export const InterventionsAssignments: React.FC = () => {
                 <Space direction="vertical" size={2}>
                     <Text strong>{r.interventionTitle}</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                        {r.areaOfSupport || "—"}
+                        {nameOf(r.departmentId, "—")}
                     </Text>
                 </Space>
             ),
@@ -5037,29 +5015,29 @@ export const InterventionsAssignments: React.FC = () => {
         {
             title: "Total SMEs",
             value: `${activeSmeCount}`,
-            icon: <PayCircleOutlined style={{ fontSize: 18, color: METRIC_ACCENT.purple.color }} />,
-            iconBg: METRIC_ACCENT.purple.bg,
+            icon: <PayCircleOutlined style={{ fontSize: 18 }} />,
+            tone: METRIC_ACCENT.purple.tone,
             subtitle: "Confirmed SMEs currently available.",
         },
         {
             title: "Assigned / Required",
             value: `${totalAssigned} / ${totalRequired}`,
-            icon: <CheckCircleOutlined style={{ fontSize: 18, color: METRIC_ACCENT.blue.color }} />,
-            iconBg: METRIC_ACCENT.blue.bg,
+            icon: <CheckCircleOutlined style={{ fontSize: 18 }} />,
+            tone: METRIC_ACCENT.blue.tone,
             subtitle: "Allocated against total required.",
         },
         {
             title: "Completed / Assigned",
             value: `${totalCompleted} / ${totalAssigned}`,
-            icon: <CalendarOutlined style={{ fontSize: 18, color: METRIC_ACCENT.green.color }} />,
-            iconBg: METRIC_ACCENT.green.bg,
+            icon: <CalendarOutlined style={{ fontSize: 18 }} />,
+            tone: METRIC_ACCENT.green.tone,
             subtitle: "Completed out of assigned.",
         },
         {
             title: "Completion Rate",
             value: `${completionRate}%`,
-            icon: <CommentOutlined style={{ fontSize: 18, color: METRIC_ACCENT.orange.color }} />,
-            iconBg: METRIC_ACCENT.orange.bg,
+            icon: <CommentOutlined style={{ fontSize: 18 }} />,
+            tone: METRIC_ACCENT.orange.tone,
             subtitle: (
                 <div>
                     <div>Overall completion.</div>
@@ -5086,6 +5064,14 @@ export const InterventionsAssignments: React.FC = () => {
                 title: "Beneficiary",
                 dataIndex: "beneficiaryName",
                 key: "beneficiaryName",
+                render: (value: string, r: any) => (
+                    <Space size={10}>
+                        <Avatar src={r.imageUrl} size={36}>
+                            {String(value || "?").trim().charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Text strong>{value}</Text>
+                    </Space>
+                ),
             },
             {
                 title: "Sector",
@@ -5139,9 +5125,8 @@ export const InterventionsAssignments: React.FC = () => {
                     <Button
                         data-guide="manage-beneficiary"
                         variant="filled"
-                        color="geekblue"
+                        color="primary"
                         shape="round"
-                        style={{ border: "1px solid dodgerblue" }}
                         onClick={() => handleManageParticipant(r)}
                     >
                         Manage
@@ -5185,19 +5170,19 @@ export const InterventionsAssignments: React.FC = () => {
                         }
                     }}
                 >
-                    <Button type="link">Reopen</Button>
+                    <Button size="small" shape="round">Reopen</Button>
                 </Popconfirm>
             ) : (
                 <Text type="secondary">Closed</Text>
             );
         }
         return (
-            <Space size={0} wrap>
+            <Space size={8} wrap>
                 {normalActions()}
                 {mayCloseSupport && selectedParticipant ? (
                     <Button
-                        type="link"
                         danger
+                        size="small" shape="round"
                         onClick={() =>
                             setCloseTarget({
                                 participantId: String((selectedParticipant as any).id),
@@ -5276,7 +5261,7 @@ export const InterventionsAssignments: React.FC = () => {
         {
             title: "Action",
             key: "action",
-            render: (_: any, record: any) => renderWithClose(record, () => {
+            render: (_: any, record: any) => <div onClick={(e) => e.stopPropagation()}>{renderWithClose(record, () => {
                 if (record.isUnassigned) {
                     const blocked = !!record.blockedByPrevCycle;
                     if (blocked) {
@@ -5289,7 +5274,7 @@ export const InterventionsAssignments: React.FC = () => {
                                 >
                                     <Button
                                         data-guide="manage-assign-intervention"
-                                        type="link"
+                                        size="small" shape="round"
                                         onClick={() => handleQuickAssign(record)}
                                     >
                                         {record.recurring
@@ -5298,7 +5283,7 @@ export const InterventionsAssignments: React.FC = () => {
                                     </Button>
                                 </Tooltip>
                                 <Button
-                                    type="link"
+                                    size="small" shape="round"
                                     onClick={() =>
                                         setOpenPrevModal({
                                             open: true,
@@ -5316,7 +5301,7 @@ export const InterventionsAssignments: React.FC = () => {
                     return (
                         <Button
                             data-guide="manage-assign-intervention"
-                            type="link"
+                            size="small" shape="round"
                             onClick={() => handleQuickAssign(record)}
                         >
                             {record.recurring ? "Assign for this month" : "Assign"}
@@ -5330,7 +5315,7 @@ export const InterventionsAssignments: React.FC = () => {
                             <Tooltip title="The SME declined this assignment. Assigning again starts a new one; the declined record is kept.">
                                 <Button
                                     data-guide="manage-assign-intervention"
-                                    type="link"
+                                    size="small" shape="round"
                                     onClick={() => handleQuickAssign(record)}
                                 >
                                     {record.recurring ? "Assign for this month" : "Assign"}
@@ -5338,14 +5323,14 @@ export const InterventionsAssignments: React.FC = () => {
                             </Tooltip>
                         ) : null}
                         <Button
-                            type="link"
+                            size="small" shape="round"
                             onClick={() => handleQuickReassign(record.currentAssignment)}
                         >
                             Reassign
                         </Button>
                     </Space>
                 );
-            }),
+            })}</div>,
         },
     ];
 
@@ -5354,16 +5339,17 @@ export const InterventionsAssignments: React.FC = () => {
             data-guide="assignment-filters"
             gutter={12}
             align="middle"
-            wrap={false}
+            wrap={isMobile}
             style={{
                 width: "100%",
                 margin: 0,
+                rowGap: isMobile ? 8 : undefined,
             }}
         >
             {/* BENEFICIARIES */}
             {viewMode === "beneficiaries" && (
                 <>
-                    <Col flex="1 1 360px" style={{ minWidth: 0 }}>
+                    <Col flex={isMobile ? "1 1 100%" : "1 1 360px"} style={{ minWidth: 0 }}>
                         <Input.Search
                             placeholder="Search SME..."
                             allowClear
@@ -5373,7 +5359,7 @@ export const InterventionsAssignments: React.FC = () => {
                         />
                     </Col>
 
-                    <Col flex="0 1 220px" style={{ minWidth: 170 }}>
+                    <Col flex={isMobile ? "1 1 0" : "0 1 220px"} style={{ minWidth: isMobile ? 0 : 170 }}>
                         <Select
                             value={beneficiaryCoverageFilter}
                             onChange={setBeneficiaryCoverageFilter}
@@ -5395,7 +5381,7 @@ export const InterventionsAssignments: React.FC = () => {
             {/* GROUPS */}
             {viewMode === "groups" && (
                 <>
-                    <Col flex="1 1 320px" style={{ minWidth: 0 }}>
+                    <Col flex={isMobile ? "1 1 100%" : "1 1 320px"} style={{ minWidth: 0 }}>
                         <Input.Search
                             placeholder="Search intervention, facilitator or cycle..."
                             allowClear
@@ -5405,7 +5391,7 @@ export const InterventionsAssignments: React.FC = () => {
                         />
                     </Col>
 
-                    <Col flex="0 1 180px" style={{ minWidth: 150 }}>
+                    <Col flex={isMobile ? "1 1 0" : "0 1 180px"} style={{ minWidth: isMobile ? 0 : 150 }}>
                         <Select
                             value={groupProgressFilter}
                             onChange={setGroupProgressFilter}
@@ -5461,19 +5447,24 @@ export const InterventionsAssignments: React.FC = () => {
                             type="primary"
                             style={{
                                 ...roundBtn,
-                                minWidth: 205,
+                                minWidth: isMobile ? undefined : 205,
                             }}
                             icon={<CheckCircleOutlined />}
                             onClick={openAssignNew}
                             disabled={totalRequired === 0}
                         >
-                            Assign New Intervention
+                            {isMobile ? "Assign" : "Assign New Intervention"}
                         </Button>
                     </Tooltip>
                 </div>
             </Col>
         </Row>
     );
+
+    const MOBILE_METRIC_TITLES: Record<string, string> = {
+        "Assigned / Required": "Assigned",
+        "Completed / Assigned": "Completed",
+    };
 
     const noData = !loading && beneficiaryRows.length === 0;
 
@@ -5499,13 +5490,13 @@ export const InterventionsAssignments: React.FC = () => {
                     ? progressCards.filter(c => ['Assigned / Required', 'Completed / Assigned'].includes(c.title))
                     : progressCards
                 ).map((c, i) => (
-                    <Col xs={24} sm={12} lg={6} key={c.title}>
-                        <MotionCard.Metric
+                    <Col xs={12} sm={12} lg={6} key={c.title}>
+                        <MetricTile
                             loading={loading}
-                            title={c.title}
+                            title={isMobile ? (MOBILE_METRIC_TITLES[c.title] || c.title) : c.title}
                             value={c.value}
                             icon={c.icon}
-                            iconBg={c.iconBg}
+                            tone={c.tone}
                             subtitle={c.subtitle}
                         />
                     </Col>
@@ -5522,6 +5513,7 @@ export const InterventionsAssignments: React.FC = () => {
                         style={{ width: "100%" }}
                         data-guide="assignment-views"
                     >
+                        {(hasGroupedInterventions || !isMobile) && (
                         <Col flex="1 1 320px">
                             <Segmented
                                 block
@@ -5540,6 +5532,7 @@ export const InterventionsAssignments: React.FC = () => {
                                 ]}
                             />
                         </Col>
+                        )}
                         <Col flex="0 0 auto">
                             <Space wrap>
                                 <Button
@@ -5631,24 +5624,25 @@ export const InterventionsAssignments: React.FC = () => {
                                                     {p.programName ? `• ${p.programName}` : ""}
                                                 </Text>
                                             </div>
-                                            <Button
-                                                data-guide="manage-beneficiary"
-                                                type="primary"
-                                                shape="round"
-                                                onClick={() => handleManageParticipant(p)}
-                                            >
-                                                Manage
-                                            </Button>
                                         </div>
 
-                                        <Space wrap>
-                                            <Tag color="blue">
+                                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                            <Tag color="blue" style={{ marginInlineEnd: 0 }}>
                                                 Assigned / Required: {assigned}/{required}
                                             </Tag>
-                                            <Tag color="green">
-                                                Completed / Assigned: {completed}/{assigned}
+                                            <Tag color="green" style={{ marginInlineEnd: 0 }}>
+                                                Completed: {completed}/{assigned}
                                             </Tag>
-                                        </Space>
+                                        </div>
+                                        <Button
+                                            data-guide="manage-beneficiary"
+                                            type="primary"
+                                            shape="round"
+                                            block
+                                            onClick={() => handleManageParticipant(p)}
+                                        >
+                                            Manage
+                                        </Button>
                                     </Space>
                                 </Card>
                             );
@@ -5666,6 +5660,7 @@ export const InterventionsAssignments: React.FC = () => {
             </MotionCard>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 className="guide-assignment-modal"
                 centered
                 title={
@@ -5957,12 +5952,12 @@ export const InterventionsAssignments: React.FC = () => {
                                 (p) => String((p as any).id) === String(participantId)
                             );
 
-                            const validArea = norm(userDepartment?.name || "");
+                            const validDeptId = String(userDepartment?.id || "");
                             let options = (
                                 (selectedP as any)?.requiredInterventions || []
                             ).filter((iv: any) =>
                                 userDepartment && !userDepartment?.isMain
-                                    ? norm(iv?.area || iv?.areaOfSupport) === validArea
+                                    ? String(iv?.departmentId || "") === validDeptId
                                     : true
                             );
 
@@ -6331,6 +6326,7 @@ export const InterventionsAssignments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 centered
                 title="Set Up First Appointment"
                 open={firstAppointmentOpen}
@@ -6565,27 +6561,130 @@ export const InterventionsAssignments: React.FC = () => {
             />
 
             <Modal
+ wrapClassName="mobile-sheet"
                 className="guide-manage-beneficiary-modal"
                 centered
                 title={`Interventions for ${(selectedParticipant as any)?.beneficiaryName || ""
                     }`}
                 open={manageModalVisible}
-                onCancel={() => setManageModalVisible(false)}
+                onCancel={() => { setManageModalVisible(false); setDetailRecordId(null); }}
                 footer={null}
                 width={isMobile ? "100%" : 1200}
                 destroyOnClose
             >
+                {(() => {
+                    const detailRecord: any = detailRecordId
+                        ? (getFilteredInterventions("all") as any[]).find((row) => row.id === detailRecordId)
+                        : undefined;
+                    const fmt = (d: any) => (d ? dayjs(d).format("YYYY-MM-DD") : "—");
+                    const detailProps = (record: any) => {
+                        const isCompletedRow = record.currentStatus?.label === "Completed";
+                        const history = ((record.auditRows || []) as any[])
+                            .map((item: any, i: number) => {
+                                const st = getCompositeStatus(item);
+                                const assigned = item?.assignedAt?.toDate?.() || item?.createdAt?.toDate?.() || null;
+                                const completed =
+                                    item?.completedAt?.toDate?.() ||
+                                    item?.completionConfirmedAt?.toDate?.() ||
+                                    (st.label === "Completed" ? item?.updatedAt?.toDate?.() : null);
+                                const due = item?.dueDate?.toDate?.() || null;
+                                const progress =
+                                    typeof item?.computedProgress === "number"
+                                        ? Math.round(item.computedProgress)
+                                        : typeof item?.progress === "number"
+                                            ? Math.round(item.progress)
+                                            : st.label === "Completed" ? 100 : 0;
+                                const rejection = getSmeRejectionDetails(item);
+                                return {
+                                    sort: assigned ? assigned.getTime() : 0,
+                                    row: {
+                                        raw: item,
+                                        key: String(item?.id || i),
+                                        statusLabel: st.label,
+                                        statusColor: st.color || "default",
+                                        cycle:
+                                            getAssignmentCycleLabel(item) ||
+                                            formatCycleLabel(getEffectiveCycleKey(item, record.recurrence)) ||
+                                            "-",
+                                        grouped: isGroupedAssignmentRecord(item),
+                                        assignee: item?.assigneeName || "—",
+                                        subIntervention: item?.subInterventionTitle || item?.subInterventionId || "No sub-intervention",
+                                        assignedDate: fmt(assigned),
+                                        dueDate: fmt(due),
+                                        completedDate: fmt(completed),
+                                        progress,
+                                        hasRejection: !!rejection,
+                                        onViewReason: rejection ? () => setRejectionDetailsAssignment(item) : undefined,
+                                    },
+                                };
+                            })
+                            .sort((x, y) => x.sort - y.sort)
+                            .map((x) => x.row);
+                        const latest = history[history.length - 1];
+                        return {
+                            title: record.interventionTitle,
+                            deliverable: ivDefsById[String(record?.interventionId || "")]?.outcomeDef?.deliverable?.name,
+                            isUnassigned: !!record.isUnassigned,
+                            unassignedReason: record.unassignedReason,
+                            statusLabel: record.isUnassigned
+                                ? record.unassignedLabel || "Unassigned"
+                                : record.currentStatus?.label || "—",
+                            statusColor: record.isUnassigned ? "default" : record.currentStatus?.color || "default",
+                            actionRequired:
+                                !record.isUnassigned && !isCompletedRow && record.bottleneck?.pendingType !== "none"
+                                    ? record.bottleneck?.label || "Action required"
+                                    : undefined,
+                            progress: isCompletedRow ? 100 : latest?.progress ?? 0,
+                            counts: [
+                                { key: "total", label: "Assignments", value: record.totalAssignments || 0, color: "default" },
+                                { key: "done", label: "Completed", value: record.completedCount || 0, color: "green" },
+                                { key: "prog", label: "In progress", value: record.inProgressCount || 0, color: "blue" },
+                                { key: "wait", label: "Awaiting scheduling or response", value: record.awaitingAcceptanceCount || 0, color: "orange" },
+                                { key: "re", label: "Needs reassignment", value: record.needsReassignmentCount || 0, color: "purple" },
+                            ].filter((count) => count.key === "total" || count.value > 0),
+                            history,
+                            actions: isMobile ? undefined : (modalColumns.find((c: any) => c.key === "action") as any)?.render(null, record),
+                            onBack: () => setDetailRecordId(null),
+                            onSelectCycle: (key: string) => setDetailCycleKey(key),
+                        };
+                    };
+                    return (
+                        <AnimatePresence mode="wait" initial={false}>
+                            {detailRecord ? (
+                                (() => {
+                                    const props = detailProps(detailRecord);
+                                    const cycle = detailCycleKey ? props.history.find((row) => row.key === detailCycleKey) : undefined;
+                                    return cycle ? (
+                                        <CycleDetailPanel
+                                            key={`cycle-${detailCycleKey}`}
+                                            title={props.title}
+                                            row={cycle}
+                                            appointments={cycleAppointments}
+                                            onBack={() => setDetailCycleKey(null)}
+                                        />
+                                    ) : (
+                                        <AssignmentDetailPanel key="detail" {...props} />
+                                    );
+                                })()
+                            ) : (
+                                <motion.div
+                                    key="list"
+                                    initial={{ opacity: 0, x: -24 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -24 }}
+                                    transition={{ duration: 0.2, ease: "easeOut" }}
+                                >
                 <div
                     data-guide="manage-beneficiary-metrics"
                     style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}
                 >
-                    {manageMetrics.map(metric => (
+                    {(isMobile ? manageMetrics.slice(0, 2) : manageMetrics).map(metric => (
                         <div key={metric.key} style={{ flex: isMobile ? "1 1 calc(50% - 10px)" : "1 1 0", minWidth: 0 }}>
-                            <MotionCard.Metric
+                            <MetricTile
                                 title={metric.title}
                                 value={metric.value}
-                                icon={<span style={{ color: metric.accent.color }}>{metric.icon}</span>}
-                                iconBg={metric.accent.bg}
+                                icon={metric.icon}
+                                tone={metric.accent.tone}
                                 onClick={manageMetrics.length > 1 ? () => setInterventionFilter(
                                     activeManageFilter === metric.key ? "all" : metric.key
                                 ) : undefined}
@@ -6599,242 +6698,75 @@ export const InterventionsAssignments: React.FC = () => {
                     ))}
                 </div>
 
+                {isMobile ? (
+                    <List
+                        data-guide="manage-beneficiary-table"
+                        dataSource={getFilteredInterventions(activeManageFilter) as any[]}
+                        locale={{ emptyText: "No interventions." }}
+                        pagination={{ pageSize: 4, size: "small", showSizeChanger: false, hideOnSinglePage: true }}
+                        renderItem={(record: any) => {
+                            const closed = !!closureFor(record);
+                            return (
+                                <div
+                                    onClick={record.isUnassigned ? undefined : () => setDetailRecordId(record.id)}
+                                    style={{
+                                        border: `1px solid ${token.colorBorderSecondary}`,
+                                        borderRadius: 12,
+                                        padding: 12,
+                                        marginBottom: 10,
+                                        cursor: record.isUnassigned ? "default" : "pointer",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 8,
+                                    }}
+                                >
+                                    <Text strong>{record.interventionTitle}</Text>
+                                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                        {closed ? (
+                                            <Tag color="gold" style={{ borderRadius: 999, marginInlineEnd: 0 }}>Support closed</Tag>
+                                        ) : (
+                                            <Tag
+                                                color={record.isUnassigned ? undefined : record.currentStatus?.color || "default"}
+                                                style={{ borderRadius: 999, marginInlineEnd: 0 }}
+                                            >
+                                                {record.isUnassigned ? record.unassignedLabel || "Unassigned" : record.currentStatus?.label || "—"}
+                                            </Tag>
+                                        )}
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                            {record.isUnassigned ? "Not assigned" : record.assigneeName || "—"}
+                                        </Text>
+                                    </div>
+                                    <div className="mobile-action-row" onClick={(e) => e.stopPropagation()}>
+                                        {(modalColumns.find((c: any) => c.key === "action") as any)?.render(null, record)}
+                                    </div>
+                                </div>
+                            );
+                        }}
+                    />
+                ) : (
                 <Table
                     data-guide="manage-beneficiary-table"
                     columns={modalColumns as any}
                     dataSource={getFilteredInterventions(activeManageFilter) as any}
                     rowKey="id"
-                    expandable={{
-                        expandedRowRender: (record: any) => {
-                            const isCompletedRow =
-                                record.currentStatus?.label === "Completed";
-                            return (
-                                <div style={{ padding: 10 }}>
-                                    {
-                                        <Space
-                                            direction="vertical"
-                                            style={{ width: "100%" }}
-                                            size={12}
-                                        >
-                                            {record.isUnassigned ? (
-                                                <Text type="secondary">
-                                                    {record.unassignedReason || "Not assigned."}
-                                                </Text>
-                                            ) : (
-                                                <Paragraph>
-                                                    <Text strong>Current status:</Text>{" "}
-                                                    {!isCompletedRow &&
-                                                        record.bottleneck?.pendingType !== "none" ? (
-                                                        <Tag color="red">
-                                                            {record.bottleneck?.label || "Action required"}
-                                                        </Tag>
-                                                    ) : (
-                                                        <Tag
-                                                            color={record.currentStatus?.color || "default"}
-                                                        >
-                                                            {record.currentStatus?.label || "—"}
-                                                        </Tag>
-                                                    )}
-                                                </Paragraph>
-                                            )}
-
-                                            <Paragraph style={{ display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap", overflowX: "auto", maxWidth: "100%" }}>
-                                                <Text strong style={{ flexShrink: 0 }}>Assignment history:</Text>
-                                                <Tag>Assignments: {record.totalAssignments || 0}</Tag>
-                                                <Tag color="green">
-                                                    Completed: {record.completedCount || 0}
-                                                </Tag>
-                                                <Tag color="blue">
-                                                    In Progress: {record.inProgressCount || 0}
-                                                </Tag>
-                                                <Tag color="orange">
-                                                    Awaiting scheduling or response:{" "}
-                                                    {record.awaitingAcceptanceCount || 0}
-                                                </Tag>
-                                                <Tag color="purple">
-                                                    Needs Reassignment:{" "}
-                                                    {record.needsReassignmentCount || 0}
-                                                </Tag>
-                                            </Paragraph>
-
-                                            <List
-                                                size="small"
-                                                bordered
-                                                dataSource={record.auditRows || []}
-                                                locale={{ emptyText: "No assignment history." }}
-                                                renderItem={(item: any) => {
-                                                    const s = getCompositeStatus(item);
-
-                                                    const assignedDate =
-                                                        item?.assignedAt?.toDate?.() ||
-                                                        item?.createdAt?.toDate?.() ||
-                                                        null;
-
-                                                    const completedDate =
-                                                        item?.completedAt?.toDate?.() ||
-                                                        item?.completionConfirmedAt?.toDate?.() ||
-                                                        (s.label === "Completed"
-                                                            ? item?.updatedAt?.toDate?.()
-                                                            : null);
-
-                                                    const dueDate = item?.dueDate?.toDate?.() || null;
-
-                                                    const cycle =
-                                                        getAssignmentCycleLabel(item) ||
-                                                        formatCycleLabel(
-                                                            getEffectiveCycleKey(item, record.recurrence)
-                                                        ) ||
-                                                        "-";
-
-                                                    const progress =
-                                                        typeof item?.computedProgress === "number"
-                                                            ? Math.round(item.computedProgress)
-                                                            : typeof item?.progress === "number"
-                                                                ? Math.round(item.progress)
-                                                                : s.label === "Completed"
-                                                                    ? 100
-                                                                    : 0;
-
-                                                    return (
-                                                        <List.Item>
-                                                            <Row
-                                                                gutter={[12, 8]}
-                                                                style={{ width: "100%" }}
-                                                                align="middle"
-                                                            >
-                                                                <Col xs={24} md={8}>
-                                                                    <Space direction="vertical" size={2}>
-                                                                        <Space wrap>
-                                                                            <Tag color={s.color}>{s.label}</Tag>
-
-                                                                            <Tag color="default">Cycle: {cycle}</Tag>
-
-                                                                            {isGroupedAssignmentRecord(item) ? (
-                                                                                <Tag color="purple">Grouped</Tag>
-                                                                            ) : (
-                                                                                <Tag color="geekblue">Single</Tag>
-                                                                            )}
-                                                                            {getSmeRejectionDetails(item) ? (
-                                                                                <Button
-                                                                                    type="link"
-                                                                                    size="small"
-                                                                                    style={{ paddingInline: 0 }}
-                                                                                    onClick={() => setRejectionDetailsAssignment(item)}
-                                                                                >
-                                                                                    View reason
-                                                                                </Button>
-                                                                            ) : null}
-                                                                        </Space>
-
-                                                                        <Text strong>
-                                                                            {item?.assigneeName || "—"}
-                                                                        </Text>
-
-                                                                        {item?.subInterventionTitle ||
-                                                                            item?.subInterventionId ? (
-                                                                            <Text
-                                                                                type="secondary"
-                                                                                style={{ fontSize: 12 }}
-                                                                            >
-                                                                                {item?.subInterventionTitle ||
-                                                                                    item?.subInterventionId}
-                                                                            </Text>
-                                                                        ) : (
-                                                                            <Text
-                                                                                type="secondary"
-                                                                                style={{ fontSize: 12 }}
-                                                                            >
-                                                                                No sub-intervention
-                                                                            </Text>
-                                                                        )}
-                                                                    </Space>
-                                                                </Col>
-
-                                                                <Col xs={24} md={8}>
-                                                                    <Space direction="vertical" size={2}>
-                                                                        <Text
-                                                                            type="secondary"
-                                                                            style={{ fontSize: 11 }}
-                                                                        >
-                                                                            Assigned
-                                                                        </Text>
-
-                                                                        <Text>
-                                                                            {assignedDate
-                                                                                ? dayjs(assignedDate).format(
-                                                                                    "YYYY-MM-DD"
-                                                                                )
-                                                                                : "—"}
-                                                                        </Text>
-
-                                                                        <Text
-                                                                            type="secondary"
-                                                                            style={{ fontSize: 11 }}
-                                                                        >
-                                                                            Due
-                                                                        </Text>
-
-                                                                        <Text>
-                                                                            {dueDate
-                                                                                ? dayjs(dueDate).format("YYYY-MM-DD")
-                                                                                : "—"}
-                                                                        </Text>
-                                                                    </Space>
-                                                                </Col>
-
-                                                                <Col xs={24} md={8}>
-                                                                    <Space
-                                                                        direction="vertical"
-                                                                        size={2}
-                                                                        style={{ width: "100%" }}
-                                                                    >
-                                                                        <Text
-                                                                            type="secondary"
-                                                                            style={{ fontSize: 11 }}
-                                                                        >
-                                                                            Completed
-                                                                        </Text>
-
-                                                                        <Text>
-                                                                            {completedDate
-                                                                                ? dayjs(completedDate).format(
-                                                                                    "YYYY-MM-DD"
-                                                                                )
-                                                                                : "—"}
-                                                                        </Text>
-
-                                                                        <Text
-                                                                            type="secondary"
-                                                                            style={{ fontSize: 11 }}
-                                                                        >
-                                                                            Progress
-                                                                        </Text>
-
-                                                                        <Progress percent={progress} size="small" />
-                                                                    </Space>
-                                                                </Col>
-                                                            </Row>
-                                                        </List.Item>
-                                                    );
-                                                }}
-                                            />
-                                        </Space>
-                                    }
-                                </div>
-                            );
-                        },
-                    }}
+                    onRow={(record: any) => record.isUnassigned ? {} : ({ onClick: () => setDetailRecordId(record.id), style: { cursor: "pointer" } })}
                     pagination={{
                         pageSize: 5,
                         position: ["bottomCenter"],
                         showSizeChanger: false,
                     }}
-                    scroll={isMobile ? { x: 900 } : undefined}
-                    size={isMobile ? "small" : "middle"}
+                    size="middle"
                 />
+                )}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    );
+                })()}
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 className="guide-group-members-modal"
                 centered
                 title="Grouped intervention members"
@@ -6951,6 +6883,7 @@ export const InterventionsAssignments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 centered
                 title="Create group from single assignments"
                 open={convertSinglesModalVisible}
@@ -7018,6 +6951,7 @@ export const InterventionsAssignments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 className="guide-add-group-member-modal"
                 centered
                 title="Add SME to existing group"
@@ -7099,6 +7033,7 @@ export const InterventionsAssignments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 centered
                 title="SME rejection details"
                 open={!!rejectionDetailsAssignment}
@@ -7135,6 +7070,7 @@ export const InterventionsAssignments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 centered
                 title="Open cycle details"
                 open={openPrevModal.open}

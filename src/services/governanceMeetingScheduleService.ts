@@ -29,6 +29,12 @@ export const governanceMeetingScheduleService = {
       updatedAt: serverTimestamp(),
     });
   },
+  async update(id: string, patch: Partial<GovernanceMeetingSchedule>) {
+    return updateDoc(doc(db, "governanceMeetingSchedules", id), {
+      ...patch,
+      updatedAt: serverTimestamp(),
+    });
+  },
   async setActive(id: string, active: boolean) {
     return updateDoc(doc(db, "governanceMeetingSchedules", id), {
       active,

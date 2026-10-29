@@ -1,3 +1,4 @@
+import { PACK_STATUS, normalizePackStatus } from '@/utils/packStatus'
 import React, { useEffect, useMemo, useState } from 'react'
 import {
     Row,
@@ -33,13 +34,15 @@ import {
     QueryConstraint
 } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useNavigate } from 'react-router-dom'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { useDashboardDateRange } from '@/lib/useDashboardDateRange'
 import ProjectAdminProgramPulse from '@/components/dashboards/projectadmin/ProjectAdminProgramPulse'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
+import { useUpcomingWeekExtras } from '@/components/dashboards/projectadmin/useUpcomingWeekExtras'
 import DepartmentMonthlyUploadStatusCard from '@/components/dashboards/metrics/DepartmentMonthlyUploadStatusCard'
 import {
     guideTarget,
@@ -210,6 +213,7 @@ const getParticipantKey = (row: any): string | null => {
 }
 
 const CenterCoordinatorDashboard: React.FC = () => {
+    const { nameOf } = useDepartmentRoles()
     const {
         user,
         loading: identityLoading
@@ -415,8 +419,12 @@ const CenterCoordinatorDashboard: React.FC = () => {
 
     const [inquiries, setInquiries] = useState<any[]>([])
     const [interventions, setInterventions] = useState<any[]>([])
+    const weekExtras = useUpcomingWeekExtras(
+        isAllPrograms ? null : activeProgramId || null,
+        interventions
+    )
     const [consolidatedMovs, setConsolidatedMovs] = useState<any[]>([])
-    const [uploadDepartments, setUploadDepartments] = useState<string[]>([])
+    const [uploadDepartments, setUploadDepartments] = useState<Array<{ id: string; name: string }>>([])
     const [departmentsLoading, setDepartmentsLoading] = useState(true)
     const [participants, setParticipants] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
@@ -463,12 +471,13 @@ const CenterCoordinatorDashboard: React.FC = () => {
                 return 'Confirmed'
             }
 
-            const genericStatus = String(
+            const genericStatus = normalizePackStatus(
                 row?.status || row?.movStatus || row?.approvalStatus || ''
-            ).toLowerCase()
+            )
 
             if (
-                genericStatus === 'confirmed' ||
+                // A pack the Center Coordinator has confirmed is awaiting M&E (legacy name: confirmed).
+                genericStatus === PACK_STATUS.AWAITING_ME ||
                 genericStatus === 'approved' ||
                 genericStatus === 'validated'
             ) {
@@ -682,17 +691,17 @@ const CenterCoordinatorDashboard: React.FC = () => {
                 const snap = await getDocs(collection(db, 'departments'))
                 if (cancelled) return
 
-                const names = snap.docs
-                    .map(docSnap => docSnap.data() as any)
-                    .filter(data => data.interventionsDepartment === true)
-                    .map(data =>
-                        String(data.name || data.departmentName || '').trim()
-                    )
-                    .filter(name => name && name !== 'Unspecified')
+                const departments = snap.docs
+                    .filter(docSnap => (docSnap.data() as any).interventionsDepartment === true)
+                    .map(docSnap => ({
+                        id: docSnap.id,
+                        name: String((docSnap.data() as any).name || '').trim()
+                    }))
+                    .filter(department => department.name)
 
                 setUploadDepartments(
-                    Array.from(new Set(names)).sort((a, b) =>
-                        a.localeCompare(b, undefined, { sensitivity: 'base' })
+                    departments.sort((a, b) =>
+                        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
                     )
                 )
             } catch (err) {
@@ -988,10 +997,10 @@ const CenterCoordinatorDashboard: React.FC = () => {
                                 : undefined
                         }
                     >
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading}
                             icon={metric.icon}
-                            iconBg='rgba(22,119,255,0.08)'
+                            tone='info'
                             title={metric.title}
                             value={metric.value}
                             subtitle={metric.subtitle}
@@ -1005,23 +1014,13 @@ const CenterCoordinatorDashboard: React.FC = () => {
 
             <Row gutter={[16, 16]} align='stretch'>
                 <Col xs={24} lg={14}>
-                    <div style={{ marginBottom: 16 }}>
-                        <DepartmentMonthlyUploadStatusCard
-                            departments={uploadDepartments}
-                            submissions={submittedMovPacks}
-                            loading={loading || departmentsLoading}
-                            dateRange={dateRange}
-                        />
-                    </div>
-
-                    <div data-guide="cc-upcoming-appointments">
-                        <UpcomingAppointmentsCard
-                            title='Upcoming Appointments'
-                            programId={isAllPrograms ? null : activeProgramId || null}
-                            daysAhead={null}
-                            limit={null}
-                        />
-                    </div>
+                    <DepartmentMonthlyUploadStatusCard
+                        departments={uploadDepartments}
+                        submissions={submittedMovPacks}
+                        activity={interventions}
+                        loading={loading || departmentsLoading}
+                        dateRange={dateRange}
+                    />
                 </Col>
 
                 <Col xs={24} lg={10}>
@@ -1033,6 +1032,17 @@ const CenterCoordinatorDashboard: React.FC = () => {
                     </div>
                 </Col>
             </Row>
+
+            {/* Full row: nothing sits beside the week view. */}
+            <div data-guide="cc-upcoming-appointments" style={{ marginTop: 16 }}>
+                <UpcomingAppointmentsCard
+                    title='Upcoming Week'
+                    programId={isAllPrograms ? null : activeProgramId || null}
+                    daysAhead={null}
+                    limit={null}
+                    extraItems={weekExtras}
+                />
+            </div>
 
             <Modal
                 className="guide-cc-movs-modal"
@@ -1108,10 +1118,10 @@ const CenterCoordinatorDashboard: React.FC = () => {
                                 {
                                     title: 'Department',
                                     render: (_: any, record: any) =>
-                                        record.department ||
-                                        record.departmentName ||
-                                        record.areaOfSupport ||
-                                        '—'
+                                        nameOf(
+                                            record.departmentId,
+                                            record.department || record.departmentName || '—'
+                                        )
                                 },
                                 {
                                     title: 'Submission Date',

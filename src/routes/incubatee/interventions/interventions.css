@@ -1,0 +1,349 @@
+/* ============================================================================
+   Incubatee interventions page. Painted from the app tokens (--app-*, set per
+   colour mode in styles/dark-mode.css and per accent in
+   styles/accent-themes.css), so it follows the SME's mode and accent. Every
+   class here is `iv-` prefixed.
+   ========================================================================== */
+
+.iv-page {
+  padding: 24px;
+}
+
+/* --- Toolbar: one row of view switch + status chips, then area + request -- */
+
+.iv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 16px 0 12px;
+}
+.iv-toolbar-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  min-width: 0;
+}
+.iv-toolbar-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.iv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.iv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-surface);
+  color: var(--app-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.iv-chip:hover {
+  border-color: var(--app-accent-border-strong);
+  color: var(--app-text);
+}
+.iv-chip:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+.iv-chip.is-active {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  color: var(--app-accent-strong);
+}
+.iv-chip-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--app-surface-sunken);
+  color: var(--app-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+.iv-chip.is-active .iv-chip-count {
+  background: var(--app-accent);
+  color: var(--app-accent-contrast);
+}
+.iv-area {
+  width: 220px;
+}
+
+/* --- List ---------------------------------------------------------------- */
+
+.iv-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--app-border);
+  border-radius: 14px;
+  background: var(--app-surface);
+  overflow: hidden;
+}
+
+.iv-row {
+  --iv-tone: var(--app-accent);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--app-border);
+}
+.iv-row:first-child {
+  border-top: 0;
+}
+.iv-row.is-clickable {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.iv-row.is-clickable:hover {
+  background: var(--app-accent-wash);
+}
+
+/* Status tones are semantic, not the accent: under the crimson accent an
+   accent-coloured "In progress" would read as the red "Issues". */
+.iv-tone-action { --iv-tone: #d48806; }
+.iv-tone-active { --iv-tone: #1677ff; }
+.iv-tone-idle { --iv-tone: var(--app-text-subtle); }
+.iv-tone-done { --iv-tone: #389e0d; }
+.iv-tone-issue { --iv-tone: #cf1322; }
+html[data-theme="dark"] .iv-tone-action { --iv-tone: #f0b45a; }
+html[data-theme="dark"] .iv-tone-active { --iv-tone: #4a9bff; }
+html[data-theme="dark"] .iv-tone-done { --iv-tone: #73d13d; }
+html[data-theme="dark"] .iv-tone-issue { --iv-tone: #ff7875; }
+
+.iv-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--iv-tone) 14%, transparent);
+  color: var(--iv-tone);
+  font-size: 17px;
+}
+
+.iv-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.iv-name.ant-typography {
+  overflow-wrap: anywhere;
+}
+.iv-meta {
+  color: var(--app-text-muted);
+  font-size: 12.5px;
+}
+.iv-note {
+  color: var(--app-text-muted);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.iv-note strong {
+  color: var(--app-text);
+  font-weight: 600;
+}
+
+.iv-pill {
+  justify-self: end;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--iv-tone) 13%, transparent);
+  color: var(--iv-tone);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.iv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+.iv-chevron {
+  color: var(--app-text-subtle);
+}
+
+.iv-pager {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+.iv-empty {
+  padding: 28px 16px;
+}
+
+/* --- Progress view ------------------------------------------------------- */
+
+.iv-card {
+  padding: 16px 18px;
+  border: 1px solid var(--app-border);
+  border-radius: 14px;
+  background: var(--app-surface);
+}
+.iv-card-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.iv-progress-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.iv-months {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.iv-month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--app-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.iv-month:hover {
+  border-color: var(--app-accent-border-strong);
+}
+.iv-month.is-active {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+}
+.iv-month-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.iv-month-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.iv-events {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.iv-event {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+}
+.iv-event-head,
+.iv-event-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* --- Phones -------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .iv-page {
+    padding: 14px;
+  }
+  /* Stacked, and no wrapping: a wrapping column sizes its children to the
+     chip row's natural width and pushes them off-screen. */
+  .iv-toolbar,
+  .iv-toolbar-main,
+  .iv-toolbar-side {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+  .iv-toolbar-main,
+  .iv-toolbar-side {
+    width: 100%;
+    min-width: 0;
+  }
+  .iv-toolbar-side {
+    margin-left: 0;
+  }
+  .iv-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .iv-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .iv-chip {
+    flex: none;
+  }
+  .iv-area {
+    width: 100%;
+  }
+  .iv-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    row-gap: 8px;
+    padding: 14px;
+  }
+  .iv-icon {
+    grid-row: span 2;
+  }
+  /* The status pill sits under the title, so long statuses never squeeze
+     it; actions get their own full-width row. */
+  .iv-pill {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .iv-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+  .iv-actions:empty {
+    display: none;
+  }
+  .iv-actions .ant-btn {
+    flex: 1;
+  }
+  .iv-chevron {
+    display: none;
+  }
+  .iv-progress-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

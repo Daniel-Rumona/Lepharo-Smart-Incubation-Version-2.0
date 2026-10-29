@@ -478,7 +478,6 @@ export const followUpService = {
                 notes: inquiry.followUp.notes,
                 assignedTo: inquiry.followUp.assignedTo || inquiry.submittedBy,
                 assignedToName: inquiry.followUp.assignedTo || inquiry.submittedBy, // This should be resolved to actual name
-                companyCode
               })
               createdCount++
             }

@@ -332,7 +332,7 @@ const SetupHeroHeader: React.FC<{ isMobile: boolean; progress: number }> = ({
 const IdentityPanel: React.FC<{
     isMobile: boolean
     isInitialSetup: boolean
-    avatarUrl: string | null
+    photoUrl: string | null
     uploading: boolean
     onUpload: (file: File) => Promise<boolean> | boolean
     onRemove: () => void
@@ -344,7 +344,7 @@ const IdentityPanel: React.FC<{
 }> = ({
     isMobile,
     isInitialSetup,
-    avatarUrl,
+    photoUrl,
     uploading,
     onUpload,
     onRemove,
@@ -392,10 +392,10 @@ const IdentityPanel: React.FC<{
                     >
                         <Avatar
                             size={avatarSize}
-                            src={avatarUrl || undefined}
-                            icon={!avatarUrl ? <UserOutlined /> : undefined}
+                            src={photoUrl || undefined}
+                            icon={!photoUrl ? <UserOutlined /> : undefined}
                             style={{
-                                background: avatarUrl
+                                background: photoUrl
                                     ? undefined
                                     : 'linear-gradient(135deg,#1677ff,#69b1ff)',
                                 border: `3px solid ${token.colorBgContainer}`,
@@ -409,13 +409,13 @@ const IdentityPanel: React.FC<{
                             beforeUpload={onUpload}
                             disabled={uploading}
                         >
-                            <Tooltip title={avatarUrl ? 'Change photo' : 'Upload a photo'}>
+                            <Tooltip title={photoUrl ? 'Change photo' : 'Upload a photo'}>
                                 <Button
                                     shape='circle'
                                     type='primary'
                                     icon={<CameraOutlined />}
                                     loading={uploading}
-                                    aria-label={avatarUrl ? 'Change photo' : 'Upload a photo'}
+                                    aria-label={photoUrl ? 'Change photo' : 'Upload a photo'}
                                     style={{
                                         position: 'absolute',
                                         right: 0,
@@ -426,7 +426,7 @@ const IdentityPanel: React.FC<{
                             </Tooltip>
                         </Upload>
 
-                        {avatarUrl && (
+                        {photoUrl && (
                             <Tooltip title='Remove photo'>
                                 <Button
                                     shape='circle'
@@ -868,7 +868,7 @@ const ApplicantProfileForm: React.FC = () => {
     // Mobile shows a card menu first; picking a card drills into that section.
     // Ignored on desktop, where the segmented control switches sections directly.
     const [showSectionList, setShowSectionList] = useState(true)
-    const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+    const [photoUrl, setPhotoUrl] = useState<string | null>(null)
     const [uploadingAvatar, setUploadingAvatar] = useState(false)
     const [loading, setLoading] = useState(true)
     const navigate = useNavigate()
@@ -1014,6 +1014,9 @@ const ApplicantProfileForm: React.FC = () => {
                 )
                 const snapshot = await getDocs(q)
 
+                const userData: any = userSnap.exists() ? userSnap.data() : {}
+                setPhotoUrl(userData.photoURL || user.photoURL || null)
+
                 let initialValues: any = {
                     email: fallbackEmail,
                     participantName: fallbackName
@@ -1023,7 +1026,6 @@ const ApplicantProfileForm: React.FC = () => {
                     const docRef = snapshot.docs[0]
                     const data: any = docRef.data()
                     setParticipantDocId(docRef.id)
-                    setAvatarUrl(data.logoUrl || user.photoURL || null)
 
                     const flatFields: Record<string, any> = {}
 
@@ -1101,7 +1103,6 @@ const ApplicantProfileForm: React.FC = () => {
                     form.resetFields()
                     form.setFieldsValue(initialValues)
                 } else {
-                    setAvatarUrl(user.photoURL || null)
                     form.resetFields()
                     form.setFieldsValue({
                         email: fallbackEmail,
@@ -1122,8 +1123,8 @@ const ApplicantProfileForm: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [form])
 
-    // Uploads to the same storage path the applicant shell reads from, so the
-    // photo shows up in the header and anywhere else `logoUrl` is used.
+    // Same storage path and users/{uid} fields as the account settings modal, so
+    // there is a single photo source across the app (participants hold no logo).
     const handleAvatarUpload = async (file: File) => {
         if (!file) return false
 
@@ -1144,30 +1145,22 @@ const ApplicantProfileForm: React.FC = () => {
 
         try {
             setUploadingAvatar(true)
-            const fileRef = ref(
-                storage,
-                `logos/${user.uid}/${Date.now()}_${file.name}`
-            )
-            await uploadBytes(fileRef, file)
+            const fileRef = ref(storage, `profile-images/${user.uid}/avatar`)
+            await uploadBytes(fileRef, file, { contentType: file.type })
             const url = await getDownloadURL(fileRef)
-            setAvatarUrl(url)
+            setPhotoUrl(url)
 
-            // Persist right away when the participant record already exists; on
-            // first-time setup it rides along with the initial save instead.
-            if (participantDocId) {
-                await setDoc(
-                    doc(db, 'participants', participantDocId),
-                    { logoUrl: url, updatedAt: serverTimestamp() },
-                    { merge: true }
-                )
-            }
             await updateProfile(user, { photoURL: url })
-
-            message.success(
-                participantDocId
-                    ? 'Profile photo updated.'
-                    : 'Photo ready — save your profile to keep it.'
+            await setDoc(
+                doc(db, 'users', user.uid),
+                { photoURL: url },
+                { merge: true }
             )
+            window.dispatchEvent(new CustomEvent('user-profile-updated', {
+                detail: { uid: user.uid, photoURL: url }
+            }))
+
+            message.success('Profile photo updated.')
         } catch (e) {
             console.error(e)
             message.error('Failed to upload photo.')
@@ -1179,7 +1172,7 @@ const ApplicantProfileForm: React.FC = () => {
     }
 
     const handleAvatarRemove = () => {
-        if (!avatarUrl) return
+        if (!photoUrl) return
 
         Modal.confirm({
             title: 'Remove profile photo?',
@@ -1197,16 +1190,17 @@ const ApplicantProfileForm: React.FC = () => {
 
                 try {
                     setUploadingAvatar(true)
-                    setAvatarUrl(null)
+                    setPhotoUrl(null)
 
-                    if (participantDocId) {
-                        await setDoc(
-                            doc(db, 'participants', participantDocId),
-                            { logoUrl: null, updatedAt: serverTimestamp() },
-                            { merge: true }
-                        )
-                    }
                     await updateProfile(user, { photoURL: null })
+                    await setDoc(
+                        doc(db, 'users', user.uid),
+                        { photoURL: null },
+                        { merge: true }
+                    )
+                    window.dispatchEvent(new CustomEvent('user-profile-updated', {
+                        detail: { uid: user.uid, photoURL: null }
+                    }))
 
                     message.success('Profile photo removed.')
                 } catch (e) {
@@ -1328,7 +1322,6 @@ const ApplicantProfileForm: React.FC = () => {
                 province,
                 hub,
                 location,
-                logoUrl: avatarUrl || undefined,
                 headcountHistory: {
                     monthly: Object.fromEntries(
                         Object.entries(monthly).map(([k, v]: any) => [
@@ -1583,7 +1576,7 @@ const ApplicantProfileForm: React.FC = () => {
                                     <IdentityPanel
                                         isMobile={isMobile}
                                         isInitialSetup={isInitialSetup}
-                                        avatarUrl={avatarUrl}
+                                        photoUrl={photoUrl}
                                         uploading={uploadingAvatar}
                                         onUpload={handleAvatarUpload}
                                         onRemove={handleAvatarRemove}

@@ -12,15 +12,18 @@ import {
 import { Link } from 'react-router-dom'
 import InquiryDetail, { type InquiryStatusAction } from '@/components/receptionist/InquiryDetail'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import RecordUnavailable from '@/components/shared/RecordUnavailable'
 
 const ProjectAdminInquiryDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>()
     const navigate = useNavigate()
     const [statusAction, setStatusAction] = useState<InquiryStatusAction | null>(null)
+    // A missing or unreadable inquiry gets no Back/Edit header: the unavailable card has its own way out.
+    const [unavailable, setUnavailable] = useState(false)
     const isMobile = !Grid.useBreakpoint().md
 
     if (!id) {
-        return <div>Invalid inquiry ID</div>
+        return <RecordUnavailable noun='inquiry' reason='missing-id' back={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }} />
     }
 
     const handleEdit = () => {
@@ -33,6 +36,7 @@ const ProjectAdminInquiryDetailPage: React.FC = () => {
 
     return (
         <div>
+            {!unavailable && (
             <MotionCard
                 style={{ margin: '16px 24px 0' }}
                 styles={{ body: { padding: isMobile ? 12 : '12px 20px' } }}
@@ -89,9 +93,16 @@ const ProjectAdminInquiryDetailPage: React.FC = () => {
                     </div>
                 </div>
             </MotionCard>
+            )}
 
             {/* Inquiry Detail Component */}
-            <InquiryDetail inquiryId={id} onEdit={handleEdit} onStatusAction={setStatusAction} />
+            <InquiryDetail
+                inquiryId={id}
+                onEdit={handleEdit}
+                onStatusAction={setStatusAction}
+                listPath={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }}
+                onUnavailable={setUnavailable}
+            />
         </div>
     )
 }

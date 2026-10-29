@@ -86,6 +86,9 @@ type IdentityShape = {
     participantDocId?: string
     profileId?: string
     applicationId?: string
+    /** Training Academy logins: the person (trainingAttendees id) and director/employee. */
+    trainingAttendeeId?: string
+    trainingRole?: string
 }
 
 type ValidationState =
@@ -108,13 +111,27 @@ const safeString = (value: unknown) => String(value ?? '').trim()
 
 const normalizeEmail = (value: unknown) => safeString(value).toLowerCase()
 
+type ViewerPerson = { attendeeId: string; isTrainingEmployee: boolean }
+
+/**
+ * The viewer's own invitation. A Training Academy invitation names its person
+ * and only that person matches: everyone from the SME shares its smeId. A
+ * training employee never matches an SME-wide invitation (one sent before the
+ * SME's people were set up), which was its director's. Mirrors
+ * isInvitationPerson in firestore.rules.
+ */
 const invitationMatchesIdentity = (
     invitation: Record<string, any>,
     email: string,
-    participantIds: Set<string>
-) =>
-    normalizeEmail(invitation.smeEmail) === email ||
-    participantIds.has(safeString(invitation.smeId))
+    participantIds: Set<string>,
+    person: ViewerPerson
+) => {
+    const attendeeId = safeString(invitation.attendeeId)
+    if (attendeeId) return !!person.attendeeId && attendeeId === person.attendeeId
+    if (person.isTrainingEmployee) return false
+    return normalizeEmail(invitation.smeEmail) === email ||
+        participantIds.has(safeString(invitation.smeId))
+}
 
 const resolveViewerParticipantIds = async (
     identity: IdentityShape | undefined,
@@ -272,6 +289,10 @@ const MeetingCheckInPage: React.FC = () => {
 
     const authEmail = normalizeEmail(user?.email)
     const authName = safeString(user?.name || user?.fullName || user?.displayName)
+    const viewerPerson: ViewerPerson = {
+        attendeeId: safeString(user?.trainingAttendeeId),
+        isTrainingEmployee: safeString(user?.trainingRole) === 'employee'
+    }
 
     const meetingRef = useMemo(() => {
         const id = activeMeetingId || meetingId
@@ -369,7 +390,12 @@ const MeetingCheckInPage: React.FC = () => {
             setViewerParticipantIds(Array.from(participantIds))
             setInvitedCount(attendanceSnapshot.docs.length)
             const matchingInvitation = attendanceSnapshot.docs.find(item =>
-                invitationMatchesIdentity(item.data(), authEmail, participantIds)
+                invitationMatchesIdentity(item.data(), authEmail, participantIds, viewerPerson)
+            )
+            // Someone else from the viewer's SME is invited, but not them (e.g. another category's session).
+            const colleagueInvited = !!viewerPerson.attendeeId && attendanceSnapshot.docs.some(item =>
+                safeString(item.data().smeId) === safeString(user?.participantId) &&
+                item.data().status !== 'cancelled'
             )
 
             if (!session || !expectedToken || expectedToken !== token) {
@@ -419,7 +445,9 @@ const MeetingCheckInPage: React.FC = () => {
 
             if (!matchingInvitation) {
                 setState('not_invited')
-                setStatusMessage('You are not part of this meeting attendance list.')
+                setStatusMessage(colleagueInvited
+                    ? 'This session is for other people from your company. If you should be here, ask the facilitator to add you, then scan the code again.'
+                    : 'You are not part of this meeting attendance list.')
                 setLoadingMeeting(false)
                 return
             }
@@ -498,7 +526,8 @@ const MeetingCheckInPage: React.FC = () => {
                 invitationMatchesIdentity(
                     item.data(),
                     submittedEmail,
-                    new Set(viewerParticipantIds)
+                    new Set(viewerParticipantIds),
+                    viewerPerson
                 )
             )?.ref
 
@@ -520,7 +549,8 @@ const MeetingCheckInPage: React.FC = () => {
                     !invitationMatchesIdentity(
                         matchingAppointment.data(),
                         submittedEmail,
-                        new Set(viewerParticipantIds)
+                        new Set(viewerParticipantIds),
+                        viewerPerson
                     )) {
                     throw new Error('You are not authorized to check in for this meeting.')
                 }
@@ -774,8 +804,7 @@ const MeetingCheckInPage: React.FC = () => {
                                         <Button
                                             shape="round"
                                             variant="filled"
-                                            color="geekblue"
-                                            style={{ border: '1px solid dodgerblue' }}
+                                            color="primary"
                                             htmlType="submit"
                                             loading={submitting}
                                         >
@@ -817,8 +846,7 @@ const MeetingCheckInPage: React.FC = () => {
                                         <Button
                                             shape="round"
                                             variant="filled"
-                                            color="geekblue"
-                                            style={{ border: '1px solid dodgerblue' }}
+                                            color="primary"
                                             htmlType="submit"
                                             loading={submitting}
                                         >
@@ -829,7 +857,6 @@ const MeetingCheckInPage: React.FC = () => {
                                             danger
                                             shape="round"
                                             variant="filled"
-                                            style={{ border: '1px solid red' }}
                                             onClick={() => navigate(-1)}
                                         >
                                             Cancel
@@ -886,8 +913,7 @@ const MeetingCheckInPage: React.FC = () => {
                                         <Button
                                             shape="round"
                                             variant="filled"
-                                            color="geekblue"
-                                            style={{ border: '1px solid dodgerblue' }}
+                                            color="primary"
                                             onClick={() => navigate('/incubatee')}
                                         >
                                             Continue
@@ -897,7 +923,6 @@ const MeetingCheckInPage: React.FC = () => {
                                             danger
                                             variant="filled"
                                             shape="round"
-                                            style={{ border: '1px solid red' }}
                                             onClick={() => {
                                                 window.location.href = '/login'
                                             }}

@@ -1,6 +1,8 @@
 // functions/src/moaFlag.ts
 import { onSchedule } from 'firebase-functions/v2/scheduler'
+import { suppressRecordNotifications } from './syntheticData'
 import { admin, APP_BASE_URL, db, getTransporter } from './emailShared'
+import { notifyInApp, uidForParticipant } from './inAppNotifications'
 
 function addMonths(ts: admin.firestore.Timestamp, months: number) {
   const d = ts.toDate()
@@ -54,6 +56,7 @@ export const requireMoaAfter3Months = onSchedule(
       tasks.push((async () => {
         const appRef = docSnap.ref
         const data = docSnap.data() as any
+        if (suppressRecordNotifications(data, docSnap.id)) return
         const acceptedAt: admin.firestore.Timestamp | null = data?.acceptedAt ?? null
         if (!acceptedAt) return
 
@@ -97,6 +100,14 @@ export const requireMoaAfter3Months = onSchedule(
             <p><a href="${actionUrl}" style="display:inline-block;padding:10px 16px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:6px">Open Smart Incubation</a></p>
           </div>`,
           text: `Your Memorandum of Agreement is required.\nDue date: ${dueText}\nOpen Smart Incubation: ${actionUrl}`,
+        })
+        await notifyInApp({
+          type: 'moa_required',
+          message: `${firstNotice ? '' : 'Reminder: '}Your Memorandum of Agreement needs to be signed by ${dueText}.`,
+          recipientIds: [await uidForParticipant(data?.participantId, to)],
+          applicationId: appRef.id,
+          participantId: data?.participantId,
+          link: '/incubatee/moa',
         })
         await appRef.update({
           'emailNotifications.moaRequired.lastSentAt': admin.firestore.FieldValue.serverTimestamp(),

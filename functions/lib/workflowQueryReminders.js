@@ -26,6 +26,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.workflowQueryReminderCron = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
 const scheduler_1 = require("firebase-functions/v2/scheduler");
+const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
 const reminderCadence_1 = require("./reminderCadence");
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -59,6 +60,8 @@ exports.workflowQueryReminderCron = (0, scheduler_1.onSchedule)({
     let remindersSent = 0;
     for (const querySnap of snapshot.docs) {
         const query = querySnap.data();
+        if ((0, syntheticData_1.suppressRecordNotifications)(query, querySnap.id))
+            continue;
         const anchor = asDate(query.lastReminderAt) || asDate(query.createdAt);
         if (!anchor)
             continue;
@@ -74,8 +77,8 @@ exports.workflowQueryReminderCron = (0, scheduler_1.onSchedule)({
         const resolverRole = String(query.resolver?.role || "consultant").trim();
         await emailShared_1.db.collection("notifications").add({
             type: "workflow-query-reminder",
-            message: { [resolverRole]: "Reminder: an open query needs your response." },
-            recipientRoles: [resolverRole],
+            message: "Reminder: an open query needs your response.",
+            resolverRole,
             recipientIds: [resolverId],
             workflowQueryId: querySnap.id,
             programId: query.programId || null,

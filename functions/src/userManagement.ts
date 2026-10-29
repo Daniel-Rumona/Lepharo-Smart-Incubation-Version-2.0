@@ -5,6 +5,7 @@ import nodemailer from "nodemailer";
 import * as crypto from "crypto";
 import { admin as adminApp, db } from "./firebase";
 import { withEmailDeliveryLogging } from "./emailDelivery";
+import { isHrManagerProfile } from "./departmentRoles";
 
 const DEFAULT_PASSWORD = "Password@1";
 const ALLOW_ORIGINS = new Set([
@@ -84,6 +85,9 @@ export const createPlatformUser = onRequest(
       role: string
       mustRegister?: boolean
       company?: string
+      /** "training_sme" swaps in the training-portal welcome email. */
+      emailTemplate?: string
+      trainingName?: string
 
       branchId?: string | null
       branchName?: string | null
@@ -133,23 +137,11 @@ export const createPlatformUser = onRequest(
     const callerUserDoc = await db.collection("users").doc(caller.uid).get()
     const callerData = callerUserDoc.data() || {}
     const callerRole = String(callerData.role || "").trim().toLowerCase()
-    const callerDepartmentName = String(
-      callerData.departmentName || callerData.department?.name || ""
-    ).trim().toLowerCase()
-    const callerIsHrManager =
-      callerRole === "hr" ||
-      (
-        callerRole === "operations" &&
-        (
-          callerDepartmentName.startsWith("hrm") ||
-          callerDepartmentName.includes("human resources")
-        )
-      )
+    const callerIsHrManager = await isHrManagerProfile(callerData)
 
     const ALLOWED_CREATOR_ROLES = new Set([
       "director",
       "system_admin",
-      "admin",
       "hr",
       "operations",
       "projectadmin",
@@ -160,25 +152,21 @@ export const createPlatformUser = onRequest(
     let coordinatorCanOnboard = false
     if (callerRole === "coordinator") {
       const departmentId = String(callerData.departmentId || callerData.department?.id || "").trim()
-      const departmentName = String(callerData.departmentName || callerData.department?.name || "").trim().toLowerCase()
 
       if (departmentId) {
         const departmentSnap = await db.collection("departments").doc(departmentId).get()
         coordinatorCanOnboard = departmentSnap.exists && departmentSnap.data()?.isOnboarding === true
       }
-
-      if (!coordinatorCanOnboard && departmentName) {
-        const departmentsSnap = await db.collection("departments").get()
-        coordinatorCanOnboard = departmentsSnap.docs.some(department => {
-          const data = department.data()
-          const name = String(data.name || data.departmentName || "").trim().toLowerCase()
-          return name === departmentName && data.isOnboarding === true
-        })
-      }
     }
 
-    const allowed = ALLOWED_CREATOR_ROLES.has(callerRole) || coordinatorCanOnboard
-    const isSystemAdmin = callerRole === "system_admin" || callerRole === "admin"
+    // Training Academy staff enrolling an SME into a training also provision
+    // that SME's restricted portal account, whatever their staff role.
+    const isTrainingSmeRequest = String(body.role || "").trim().toLowerCase() === "training_sme"
+    const allowed =
+      ALLOWED_CREATOR_ROLES.has(callerRole) ||
+      coordinatorCanOnboard ||
+      (isTrainingSmeRequest && callerRole === "coordinator")
+    const isSystemAdmin = callerRole === "system_admin"
 
     if (!allowed) {
       res.status(403).json({ ok: false, error: "permission_denied" })
@@ -214,7 +202,7 @@ export const createPlatformUser = onRequest(
     if (
       callerRole === "operations" &&
       !callerIsHrManager &&
-      !new Set(["coordinator", "projectmanager"]).has(role)
+      !new Set(["coordinator", "projectmanager", "training_sme"]).has(role)
     ) {
       res.status(403).json({ ok: false, error: "invalid_role_for_creator" })
       return
@@ -441,9 +429,22 @@ export const createPlatformUser = onRequest(
       try {
         const transporter = getTransporter()
         const from = process.env.SMTP_FROM || process.env.SMTP_USER!
-        const subject = "Welcome to Lepharo Smart Incubation"
+        const isTrainingSmeEmail = body.emailTemplate === "training_sme"
+        const trainingName = String(body.trainingName || "").trim()
+        const subject = isTrainingSmeEmail
+          ? "Your Lepharo training portal account"
+          : "Welcome to Lepharo Smart Incubation"
 
-        const html = `
+        const html = isTrainingSmeEmail
+          ? `
+          <p>Hi ${userDoc.name || "there"},</p>
+          <p>You have been enrolled${trainingName ? ` in <b>${trainingName}</b>` : " in a training"} with <b>Lepharo</b>, and a portal account has been created for you${userDoc.company ? ` and <b>${userDoc.company}</b>` : ""}.</p>
+          <p>In the portal you can see your training dashboard, your appointments and your training plan, so you can follow exactly what is covered and track your progress.</p>
+          <p>Sign in <a href="${loginUrl}">here</a> with your email address and this temporary password: <b>Password@1</b></p>
+          <p>Please use the "Sign In" option, not "Create Account", as your account is already set up. You will be asked to choose a new password the first time you sign in.</p>
+          <p>If you were not expecting this email, please disregard it.</p>
+        `
+          : `
           <p>Hi ${userDoc.name || "there"},</p>
           <p>Your account has been successfully created for the <b>Lepharo Smart Incubation System</b>.</p>
           <p>A temporary password has been generated for your account: <b>Password@1</b></p>
@@ -453,15 +454,22 @@ export const createPlatformUser = onRequest(
           <p>If you did not request this account, please disregard this email.</p>
         `
 
-        const text =
-          `Hi ${userDoc.name || "there"},\n\n` +
-          `Your account has been successfully created for the Lepharo Smart Incubation System.\n\n` +
-          `A temporary password has been generated for your account: Password@1\n\n` +
-          `To access your account, please sign in here: ${loginUrl}\n` +
-          `Use your email address and the temporary password to sign in.\n\n` +
-          `Important: Please use the "Sign In" option, not "Create Account", as your account has already been set up.\n\n` +
-          `You will be required to change your password immediately after your first login for security purposes.\n\n` +
-          `If you did not request this account, please disregard this email.\n`
+        const text = isTrainingSmeEmail
+          ? `Hi ${userDoc.name || "there"},\n\n` +
+            `You have been enrolled${trainingName ? ` in ${trainingName}` : " in a training"} with Lepharo, and a portal account has been created for you.\n\n` +
+            `In the portal you can see your training dashboard, your appointments and your training plan.\n\n` +
+            `Sign in here: ${loginUrl}\n` +
+            `Use your email address and this temporary password: Password@1\n\n` +
+            `Please use the "Sign In" option, not "Create Account". You will be asked to choose a new password the first time you sign in.\n\n` +
+            `If you were not expecting this email, please disregard it.\n`
+          : `Hi ${userDoc.name || "there"},\n\n` +
+            `Your account has been successfully created for the Lepharo Smart Incubation System.\n\n` +
+            `A temporary password has been generated for your account: Password@1\n\n` +
+            `To access your account, please sign in here: ${loginUrl}\n` +
+            `Use your email address and the temporary password to sign in.\n\n` +
+            `Important: Please use the "Sign In" option, not "Create Account", as your account has already been set up.\n\n` +
+            `You will be required to change your password immediately after your first login for security purposes.\n\n` +
+            `If you did not request this account, please disregard this email.\n`
 
         await transporter.sendMail({
           from,
@@ -509,7 +517,7 @@ export const adminResetUserPassword = onRequest({ region: "us-central1", invoker
     const callerUserDoc = await db.collection("users").doc(caller.uid).get();
     const callerRole = String(callerUserDoc.data()?.role || "").toLowerCase();
     const hasAdminClaim = !!(caller as any).admin;
-    const ALLOWED = new Set(["director", "admin", "superadmin", "operations", "projectadmin", "center coordinator"]);
+    const ALLOWED = new Set(["director", "system_admin", "superadmin", "operations", "projectadmin", "center coordinator"]);
     if (!hasAdminClaim && !ALLOWED.has(callerRole)) {
       res.status(403).json({ ok: false, error: "permission_denied" }); return; }
 

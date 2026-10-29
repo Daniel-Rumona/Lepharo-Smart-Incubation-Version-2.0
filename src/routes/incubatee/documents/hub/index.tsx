@@ -605,8 +605,8 @@ const DocumentsHub: React.FC = () => {
                             value: totalDocuments,
                             subtitle: 'All assigned documents',
                             mobileSubtitle: 'All assigned',
-                            icon: <FileTextOutlined style={{ color: '#1677ff' }} />,
-                            iconBg: '#e6f4ff'
+                            icon: <FileTextOutlined />,
+                            tone: 'accent' as const
                         },
                         {
                             key: 'pending',
@@ -616,10 +616,9 @@ const DocumentsHub: React.FC = () => {
                             mobileSubtitle: 'Awaiting action',
                             icon: (
                                 <ExclamationCircleOutlined
-                                    style={{ color: '#d46b08' }}
                                 />
                             ),
-                            iconBg: '#fff7e6',
+                            tone: 'warning' as const,
                             important: true
                         },
                         {
@@ -630,10 +629,9 @@ const DocumentsHub: React.FC = () => {
                             mobileSubtitle: 'Saved drafts',
                             icon: (
                                 <ClockCircleOutlined
-                                    style={{ color: '#1677ff' }}
                                 />
                             ),
-                            iconBg: '#e6f4ff',
+                            tone: 'info' as const,
                             important: true
                         },
                         {
@@ -644,10 +642,9 @@ const DocumentsHub: React.FC = () => {
                             mobileSubtitle: 'Submitted',
                             icon: (
                                 <CheckCircleOutlined
-                                    style={{ color: '#389e0d' }}
                                 />
                             ),
-                            iconBg: '#f6ffed'
+                            tone: 'success' as const
                         }
                     ]}
                     gutter={[12, 12]}

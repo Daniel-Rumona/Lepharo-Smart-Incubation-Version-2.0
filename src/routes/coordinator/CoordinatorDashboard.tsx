@@ -1,23 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
     Row,
-    Col,
     List,
+    Col,
     Button,
     Tag,
-    Table,
     Space,
-    Grid,
     Empty,
     Result,
     Skeleton,
+    Progress,
+    Modal,
+    Rate,
     Typography
 } from 'antd'
 import {
     MessageOutlined,
-    BarChartOutlined,
-    CalendarOutlined,
-    CheckCircleOutlined
+    TeamOutlined,
+    UserSwitchOutlined,
+    CheckCircleOutlined,
+    ArrowRightOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { db } from '@/firebase'
@@ -32,9 +34,6 @@ import {
 import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
 
-import Highcharts from 'highcharts'
-import HighchartsReact from 'highcharts-react-official'
-
 import { workflowQueryService } from '@/services/workflowQueryService'
 import {
     dedupeAssignedInterventionViews,
@@ -42,18 +41,155 @@ import {
     toAssignedInterventionView
 } from '@/services/assignedInterventionService'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import {
     fetchAppointments,
-    getAppointmentTitle,
-    resolveAppointmentActor,
-    resolveAppointmentStart
+    resolveAppointmentActor
 } from '@/services/appointmentService'
 import ResolveQueryModal from '@/components/modals/ResolveQueryModal'
+import { QueryInbox } from '@/components/queries/QueryInbox'
+import InterventionCompletionModal, {
+    type InterventionCompletionTarget
+} from '@/components/interventions/InterventionCompletionModal'
+import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
+import EarlyWarningPanel from '@/components/dashboards/shared/EarlyWarningPanel'
 
-const { useBreakpoint } = Grid
 const { Text } = Typography
+
+const HealthGauge = ({ percent }: { percent: number }) => {
+    const color =
+        percent >= 75 ? '#52c41a' : percent >= 50 ? '#faad14' : '#ff4d4f'
+
+    const arcLength = Math.PI * 80
+
+    return (
+        <div style={{ width: 200, textAlign: 'center' }}>
+            <svg viewBox='0 0 200 110' width='100%'>
+                <path
+                    d='M 20 100 A 80 80 0 0 1 180 100'
+                    fill='none'
+                    stroke='#f0f0f0'
+                    strokeWidth={16}
+                    strokeLinecap='round'
+                />
+
+                <path
+                    d='M 20 100 A 80 80 0 0 1 180 100'
+                    fill='none'
+                    stroke={color}
+                    strokeWidth={16}
+                    strokeLinecap='round'
+                    strokeDasharray={`${(arcLength * percent) / 100} ${arcLength}`}
+                />
+
+                <text
+                    x='100'
+                    y='92'
+                    textAnchor='middle'
+                    fontSize='30'
+                    fontWeight='600'
+                    fill={color}
+                >
+                    {percent}%
+                </text>
+            </svg>
+
+            <Text type='secondary'>Health</Text>
+        </div>
+    )
+}
+
+type ReadyForCompletion = {
+    key: string
+    assignmentIds: string[]
+    beneficiaryNames: string[]
+    interventionTitle: string
+    sessionsCompleted: number
+    plannedSessions: number
+}
+
+/*
+ * Mirrors the Assigned-to-me rule: progress has reached 100%, the
+ * intervention is not yet completed, and the facilitator has not
+ * already submitted completion.
+ */
+const getRowProgress = (
+    row: Intervention
+) => {
+    const raw = row.raw || {}
+
+    const planned = Math.max(
+        1,
+        Number(raw.plannedSessions) || 1
+    )
+
+    const sessionProgress =
+        (Number(
+            raw.tracking?.sessionsLogged || 0
+        ) /
+            planned) *
+        100
+
+    const computed = Number(
+        raw.computedProgress
+    )
+
+    const history = Math.max(
+        0,
+        ...(raw.progressUpdates || []).map(
+            (update: any) =>
+                Number(
+                    update?.computedProgress || 0
+                )
+        )
+    )
+
+    const progress = Math.min(
+        100,
+        Math.max(
+            Number.isFinite(computed)
+                ? computed
+                : 0,
+            sessionProgress,
+            history
+        )
+    )
+
+    return ['pending', 'deferred'].includes(
+        String(raw.completionStatus || '')
+    )
+        ? Math.min(progress, 99)
+        : progress
+}
+
+const isReadyForCompletion = (
+    row: Intervention
+) => {
+    const raw = row.raw || {}
+
+    const facilitatorDone =
+        String(
+            raw.assigneeCompletionStatus || ''
+        ).toLowerCase() === 'completed' ||
+        String(
+            raw.assignmentStatus || ''
+        ).toLowerCase() === 'completed'
+
+    return (
+        ![
+            'completed',
+            'declined',
+            'cancelled',
+            'needs-reassignment'
+        ].includes(
+            String(row.lifecycle || '')
+        ) &&
+        !facilitatorDone &&
+        getRowProgress(row) >= 100
+    )
+}
 
 const CoordinatorDashboardSkeleton = () => (
     <Row gutter={[16, 16]}>
@@ -137,28 +273,8 @@ interface Intervention {
     lifecycle?: ReturnType<
         typeof getAssignedInterventionLifecycle
     >
-}
 
-interface Appointment {
-    id: string
-
-    title: string
-    withName?: string
-
-    location?: string
-    startAt?: Date
-
-    deliveryMethod?:
-    | 'virtual'
-    | 'in_person'
-    | 'telephonically'
-
-    meetingLink?: string
-
-    userConfirmation?:
-    | 'pending'
-    | 'confirmed'
-    | 'declined'
+    raw?: Record<string, any>
 }
 
 interface CQ {
@@ -216,191 +332,6 @@ type AssignmentContext = {
 
     beneficiaryName?: string
     interventionTitle?: string
-}
-
-const QUERY_TYPE_LABELS: Record<string, string> = {
-    'completion-rejection':
-        'Completion Rejection',
-
-    'completion-rejected':
-        'Completion Rejection',
-
-    'mov-request':
-        'Request for Means of Verification (MOV)',
-
-    'mov-issue':
-        'MOV Issue',
-
-    'poe-request':
-        'Proof of Expenditure (POE)',
-
-    'general-query':
-        'General Query'
-}
-
-const getQueryLabel = (
-    type?: string
-) => {
-    if (!type) {
-        return 'Query'
-    }
-
-    return (
-        QUERY_TYPE_LABELS[type] ||
-        type
-            .replace(/-/g, ' ')
-            .replace(
-                /\b\w/g,
-                character =>
-                    character.toUpperCase()
-            )
-    )
-}
-
-const confirmationTag = (
-    status?:
-        | 'pending'
-        | 'confirmed'
-        | 'declined'
-) => {
-    const map: Record<
-        string,
-        {
-            color: string
-            label: string
-        }
-    > = {
-        confirmed: {
-            color: 'success',
-            label: 'Confirmed'
-        },
-
-        declined: {
-            color: 'error',
-            label: 'Declined'
-        },
-
-        pending: {
-            color: 'processing',
-            label: 'Pending'
-        }
-    }
-
-    const meta =
-        map[status || 'pending']
-
-    return (
-        <Tag color={meta.color}>
-            {meta.label}
-        </Tag>
-    )
-}
-
-const parseAppointmentStart = (
-    dateValue: any,
-    timeValue: any,
-    startAtValue?: any
-) => {
-    const explicitStart =
-        typeof startAtValue?.toDate ===
-            'function'
-            ? startAtValue.toDate()
-            : startAtValue
-
-    if (
-        explicitStart &&
-        dayjs(explicitStart).isValid()
-    ) {
-        return dayjs(
-            explicitStart
-        ).toDate()
-    }
-
-    const rawDate =
-        typeof dateValue?.toDate ===
-            'function'
-            ? dateValue.toDate()
-            : dateValue
-
-    const baseDate =
-        dayjs(rawDate)
-
-    if (!baseDate.isValid()) {
-        return undefined
-    }
-
-    const rawTime =
-        typeof timeValue?.toDate ===
-            'function'
-            ? timeValue.toDate()
-            : timeValue
-
-    if (
-        rawTime instanceof Date &&
-        dayjs(rawTime).isValid()
-    ) {
-        return baseDate
-            .hour(
-                rawTime.getHours()
-            )
-            .minute(
-                rawTime.getMinutes()
-            )
-            .second(0)
-            .millisecond(0)
-            .toDate()
-    }
-
-    const timeText =
-        String(
-            rawTime || ''
-        ).trim()
-
-    const match =
-        timeText.match(
-            /^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i
-        )
-
-    if (!match) {
-        return undefined
-    }
-
-    let hour =
-        Number(match[1])
-
-    const minute =
-        Number(match[2])
-
-    const meridiem =
-        match[3]?.toUpperCase()
-
-    if (
-        meridiem === 'PM' &&
-        hour < 12
-    ) {
-        hour += 12
-    }
-
-    if (
-        meridiem === 'AM' &&
-        hour === 12
-    ) {
-        hour = 0
-    }
-
-    if (
-        hour > 23 ||
-        minute > 59
-    ) {
-        return undefined
-    }
-
-    return baseDate
-        .hour(hour)
-        .minute(minute)
-        .second(0)
-        .millisecond(0)
-        .toDate()
 }
 
 const parseAssignedAt = (
@@ -1247,9 +1178,6 @@ const hydrateDashboardQueryContext =
 
 export const CoordinatorDashboard:
     React.FC = () => {
-        const screens =
-            useBreakpoint()
-
         const navigate =
             useNavigate()
 
@@ -1317,7 +1245,7 @@ export const CoordinatorDashboard:
             setAppointments
         ] =
             useState<
-                Appointment[]
+                any[]
             >([])
 
         const [
@@ -1754,7 +1682,9 @@ export const CoordinatorDashboard:
 
                                             participantCompletionStatus:
                                                 data.participantCompletionStatus ||
-                                                'pending'
+                                                'pending',
+
+                                            raw: data
                                         }
                                     }
                                 )
@@ -1787,117 +1717,8 @@ export const CoordinatorDashboard:
                                 }
                             )
 
-                        const now =
-                            dayjs()
-
-                        const inFourteenDays =
-                            dayjs().add(
-                                14,
-                                'day'
-                            )
-
-                        const appts:
-                            Appointment[] =
-                            appointmentRows
-                                .map(
-                                    appointment => {
-                                        const resolved =
-                                            resolveAppointmentStart(
-                                                appointment
-                                            )
-
-                                        const startAt =
-                                            resolved.date?.toDate() ||
-                                            parseAppointmentStart(
-                                                appointment.date,
-                                                appointment.startTime,
-                                                appointment.startAt
-                                            )
-
-                                        return {
-                                            id:
-                                                appointment.id,
-
-                                            title:
-                                                getAppointmentTitle(
-                                                    appointment
-                                                ),
-
-                                            withName:
-                                                appointment.participantName ||
-                                                appointment.withName ||
-                                                appointment.with,
-
-                                            location:
-                                                appointment.location ||
-                                                appointment.venue,
-
-                                            startAt,
-
-                                            deliveryMethod:
-                                                appointment.deliveryMethod,
-
-                                            meetingLink:
-                                                appointment.meetingLink,
-
-                                            userConfirmation:
-                                                appointment.userConfirmation ||
-                                                'pending'
-                                        }
-                                    }
-                                )
-                                .filter(
-                                    appointment => {
-                                        if (
-                                            !appointment.startAt
-                                        ) {
-                                            return false
-                                        }
-
-                                        const date =
-                                            dayjs(
-                                                appointment.startAt
-                                            )
-
-                                        const afterStart =
-                                            date.isAfter(
-                                                now
-                                            ) ||
-                                            date.isSame(
-                                                now,
-                                                'minute'
-                                            )
-
-                                        const beforeEnd =
-                                            date.isBefore(
-                                                inFourteenDays
-                                            ) ||
-                                            date.isSame(
-                                                inFourteenDays,
-                                                'minute'
-                                            )
-
-                                        return (
-                                            afterStart &&
-                                            beforeEnd
-                                        )
-                                    }
-                                )
-                                .sort(
-                                    (
-                                        first,
-                                        second
-                                    ) =>
-                                        first.startAt!.getTime() -
-                                        second.startAt!.getTime()
-                                )
-                                .slice(
-                                    0,
-                                    5
-                                )
-
                         setAppointments(
-                            appts
+                            appointmentRows as any[]
                         )
 
                         /*
@@ -1984,6 +1805,180 @@ export const CoordinatorDashboard:
          * OPEN QUERIES
          * -----------------------------------------------------
          */
+        const [
+            completionTarget,
+            setCompletionTarget
+        ] =
+            useState<InterventionCompletionTarget | null>(
+                null
+            )
+
+        const [
+            queriesModalOpen,
+            setQueriesModalOpen
+        ] = useState(false)
+
+        const readyForCompletion =
+            useMemo(() => {
+                const groups =
+                    new Map<
+                        string,
+                        ReadyForCompletion
+                    >()
+
+                allInterventions
+                    .filter(
+                        isReadyForCompletion
+                    )
+                    .forEach(row => {
+                        const raw =
+                            row.raw || {}
+
+                        const groupKey =
+                            raw.groupKey ||
+                            raw.groupId ||
+                            raw.groupAssignmentId
+
+                        const key = groupKey
+                            ? `group:${groupKey}`
+                            : `single:${row.id}`
+
+                        const existing =
+                            groups.get(key)
+
+                        const logged =
+                            Number(
+                                raw.tracking
+                                    ?.sessionsLogged ||
+                                0
+                            )
+
+                        if (existing) {
+                            existing.assignmentIds.push(
+                                row.id
+                            )
+
+                            existing.beneficiaryNames.push(
+                                row.beneficiaryName
+                            )
+
+                            existing.sessionsCompleted =
+                                Math.max(
+                                    existing.sessionsCompleted,
+                                    logged
+                                )
+
+                            return
+                        }
+
+                        groups.set(key, {
+                            key,
+
+                            assignmentIds: [
+                                row.id
+                            ],
+
+                            beneficiaryNames: [
+                                row.beneficiaryName
+                            ],
+
+                            interventionTitle:
+                                row.subInterventionTitle
+                                    ? `${row.intervention} — ${row.subInterventionTitle}`
+                                    : row.intervention,
+
+                            sessionsCompleted:
+                                logged,
+
+                            plannedSessions:
+                                Math.max(
+                                    1,
+                                    Number(
+                                        raw.plannedSessions
+                                    ) || 1
+                                )
+                        })
+                    })
+
+                return Array.from(
+                    groups.values()
+                )
+            }, [allInterventions])
+
+        const deriveDeliveryMethod = (
+            assignmentIds: string[]
+        ) => {
+            const ids = new Set(
+                assignmentIds
+            )
+
+            const methods =
+                new Set<string>()
+
+            appointments.forEach(
+                (appointment: any) => {
+                    if (
+                        ids.has(
+                            String(
+                                appointment.assignedInterventionId ||
+                                ''
+                            )
+                        ) &&
+                        !['cancelled', 'postponed'].includes(
+                            appointment.status
+                        ) &&
+                        appointment.deliveryMethod
+                    ) {
+                        methods.add(
+                            appointment.deliveryMethod
+                        )
+                    }
+                }
+            )
+
+            if (
+                methods.has('in_person') &&
+                methods.has('virtual')
+            ) {
+                return 'hybrid'
+            }
+
+            return methods.size === 1
+                ? Array.from(methods)[0]
+                : undefined
+        }
+
+        const ratingSummary =
+            useMemo(() => {
+                const ratings =
+                    allInterventions
+                        .map(row =>
+                            Number(
+                                row.raw?.feedback
+                                    ?.rating
+                            )
+                        )
+                        .filter(
+                            value =>
+                                Number.isFinite(
+                                    value
+                                ) && value > 0
+                        )
+
+                return {
+                    count: ratings.length,
+
+                    average:
+                        ratings.length
+                            ? ratings.reduce(
+                                (sum, value) =>
+                                    sum + value,
+                                0
+                            ) / ratings.length
+                            : 0
+                }
+            }, [allInterventions])
+
         const openQueries =
             useMemo(
                 () =>
@@ -2076,313 +2071,6 @@ export const CoordinatorDashboard:
          * QUERY COLUMNS
          * -----------------------------------------------------
          */
-        const queryColumns =
-            [
-                {
-                    title:
-                        'SME / Intervention',
-
-                    key:
-                        'context',
-
-                    width:
-                        330,
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                CQ
-                        ) => (
-                            <Space
-                                direction='vertical'
-                                size={3}
-                                style={{
-                                    width:
-                                        '100%',
-
-                                    minWidth:
-                                        0
-                                }}
-                            >
-                                <Text
-                                    strong
-                                    ellipsis={{
-                                        tooltip:
-                                            record.beneficiaryName ||
-                                            '—'
-                                    }}
-                                >
-                                    {record.beneficiaryName ||
-                                        '—'}
-                                </Text>
-
-                                <Text
-                                    type='secondary'
-                                    ellipsis={{
-                                        tooltip:
-                                            record.interventionTitle ||
-                                            '—'
-                                    }}
-                                    style={{
-                                        fontSize:
-                                            12
-                                    }}
-                                >
-                                    {record.interventionTitle ||
-                                        '—'}
-                                </Text>
-
-                                {record.subInterventionTitle ? (
-                                    <Tag
-                                        color='blue'
-                                        title={
-                                            record.subInterventionTitle
-                                        }
-                                        style={{
-                                            width:
-                                                'fit-content',
-
-                                            maxWidth:
-                                                '100%',
-
-                                            overflow:
-                                                'hidden',
-
-                                            textOverflow:
-                                                'ellipsis',
-
-                                            whiteSpace:
-                                                'nowrap',
-
-                                            marginInlineEnd:
-                                                0,
-
-                                            borderRadius:
-                                                999,
-
-                                            fontSize:
-                                                11
-                                        }}
-                                    >
-                                        {
-                                            record.subInterventionTitle
-                                        }
-                                    </Tag>
-                                ) : null}
-                            </Space>
-                        )
-                },
-
-                {
-                    title:
-                        'Query',
-
-                    key:
-                        'query',
-
-                    width:
-                        320,
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                CQ
-                        ) => (
-                            <Space
-                                direction='vertical'
-                                size={3}
-                                style={{
-                                    width:
-                                        '100%',
-
-                                    minWidth:
-                                        0
-                                }}
-                            >
-                                <Tag
-                                    color='orange'
-                                    style={{
-                                        width:
-                                            'fit-content',
-
-                                        marginInlineEnd:
-                                            0,
-
-                                        borderRadius:
-                                            999
-                                    }}
-                                >
-                                    {getQueryLabel(
-                                        record.queryType
-                                    )}
-                                </Tag>
-
-                                <Text
-                                    ellipsis={{
-                                        tooltip:
-                                            record.queryMessage ||
-                                            '—'
-                                    }}
-                                >
-                                    {record.queryMessage ||
-                                        '—'}
-                                </Text>
-                            </Space>
-                        )
-                },
-
-                {
-                    title:
-                        'Raised By',
-
-                    dataIndex:
-                        'raisedByDept',
-
-                    key:
-                        'raisedByDept',
-
-                    width:
-                        150,
-
-                    render:
-                        (
-                            department:
-                                string
-                        ) => {
-                            const value =
-                                String(
-                                    department ||
-                                    ''
-                                )
-                                    .trim()
-                                    .toLowerCase()
-
-                            return value ===
-                                'beneficiary'
-                                ? 'SME'
-                                : department ||
-                                'Unknown'
-                        }
-                },
-
-                {
-                    title:
-                        'Raised',
-
-                    dataIndex:
-                        'raisedAt',
-
-                    key:
-                        'raisedAt',
-
-                    width:
-                        125,
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                CQ
-                        ) =>
-                            record.raisedAt
-                                ? dayjs(
-                                    record.raisedAt
-                                ).format(
-                                    'DD MMM YYYY'
-                                )
-                                : '—'
-                },
-
-                {
-                    title:
-                        'Status',
-
-                    dataIndex:
-                        'status',
-
-                    key:
-                        'status',
-
-                    width:
-                        105,
-
-                    render:
-                        (
-                            status:
-                                string
-                        ) => {
-                            const resolved =
-                                String(
-                                    status ||
-                                    'open'
-                                ).toLowerCase() ===
-                                'resolved'
-
-                            return (
-                                <Tag
-                                    color={
-                                        resolved
-                                            ? 'green'
-                                            : 'orange'
-                                    }
-                                    style={{
-                                        borderRadius:
-                                            999
-                                    }}
-                                >
-                                    {(
-                                        status ||
-                                        'open'
-                                    ).toUpperCase()}
-                                </Tag>
-                            )
-                        }
-                },
-
-                {
-                    title:
-                        'Action',
-
-                    key:
-                        'action',
-
-                    width:
-                        100,
-
-                    fixed:
-                        'right' as const,
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                CQ
-                        ) =>
-                            (
-                                record.status?.toLowerCase?.() ??
-                                'open'
-                            ) ===
-                                'open' ? (
-                                <Button
-                                    type='link'
-                                    onClick={() =>
-                                        setResolvingDashboardQuery(
-                                            record
-                                        )
-                                    }
-                                >
-                                    Resolve
-                                </Button>
-                            ) : null
-                }
-            ]
-
         /*
          * -----------------------------------------------------
          * METRICS
@@ -2463,254 +2151,72 @@ export const CoordinatorDashboard:
                 allInterventions
             ])
 
-        const donutSeries =
-            [
-                perfCounts.completed,
-                perfCounts.inProgress,
-                perfCounts.rejectedOrDeclined
-            ]
+        /*
+         * Supported = distinct SMEs allocated to this coordinator.
+         * Reached = those who attended at least one session (or whose
+         * intervention is already completed).
+         */
+        const smeCounts = useMemo(() => {
+            const supported = new Set<string>()
+            const reached = new Set<string>()
 
-        const donutOptions:
-            Highcharts.Options =
-        {
-            chart: {
-                type:
-                    'pie'
-            },
+            allInterventions.forEach(row => {
+                const smeId = row.participantId || row.id
 
-            title: {
-                text:
-                    'Intervention Performance'
-            },
+                supported.add(smeId)
 
-            credits: {
-                enabled:
-                    false
-            },
-
-            plotOptions: {
-                pie: {
-                    innerSize:
-                        '60%',
-
-                    dataLabels:
-                    {
-                        enabled:
-                            true,
-
-                        distance:
-                            10,
-
-                        style:
-                        {
-                            textOutline:
-                                'none'
-                        },
-
-                        formatter:
-                            function () {
-                                if (
-                                    this.y &&
-                                    this.y >
-                                    0
-                                ) {
-                                    return `${this.point.name}: ${this.y}`
-                                }
-
-                                return null
-                            }
-                    }
+                if (
+                    Number(
+                        row.raw?.tracking
+                            ?.sessionsLogged || 0
+                    ) > 0 ||
+                    row.lifecycle === 'completed'
+                ) {
+                    reached.add(smeId)
                 }
-            },
+            })
 
-            tooltip: {
-                pointFormat:
-                    '<b>{point.y}</b>'
-            },
+            return {
+                supported: supported.size,
+                reached: reached.size
+            }
+        }, [allInterventions])
 
-            series: [
-                {
-                    type:
-                        'pie',
+        const totalInterventions = allInterventions.length
 
-                    name:
-                        'Count',
-
-                    data: [
-                        {
-                            name:
-                                'Completed',
-
-                            y:
-                                donutSeries[0],
-
-                            color:
-                                '#52c41a'
-                        },
-
-                        {
-                            name:
-                                'In Progress',
-
-                            y:
-                                donutSeries[1],
-
-                            color:
-                                '#faad14'
-                        },
-
-                        {
-                            name:
-                                'Rejected/Declined',
-
-                            y:
-                                donutSeries[2],
-
-                            color:
-                                '#ff4d4f'
-                        }
-                    ]
-                }
-            ]
-        }
+        const toPercent = (value: number) =>
+            totalInterventions
+                ? Math.round((value / totalInterventions) * 100)
+                : 0
 
         /*
-         * -----------------------------------------------------
-         * APPOINTMENT COLUMNS
-         * -----------------------------------------------------
+         * Health = share of interventions that are not
+         * rejected, declined or awaiting reassignment.
          */
-        const upcomingCols =
-            [
-                {
-                    title:
-                        'When',
+        const healthPercent = toPercent(
+            totalInterventions - perfCounts.rejectedOrDeclined
+        )
 
-                    key:
-                        'when',
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                Appointment
-                        ) =>
-                            record.startAt
-                                ? dayjs(
-                                    record.startAt
-                                ).format(
-                                    'YYYY-MM-DD HH:mm'
-                                )
-                                : 'TBA'
-                },
-
-                {
-                    title:
-                        'Title',
-
-                    dataIndex:
-                        'title',
-
-                    key:
-                        'title'
-                },
-
-                {
-                    title:
-                        'With',
-
-                    dataIndex:
-                        'withName',
-
-                    key:
-                        'withName'
-                },
-
-                {
-                    title:
-                        'Confirmation',
-
-                    dataIndex:
-                        'userConfirmation',
-
-                    key:
-                        'userConfirmation',
-
-                    render:
-                        (
-                            status:
-                                Appointment['userConfirmation']
-                        ) =>
-                            confirmationTag(
-                                status
-                            )
-                },
-
-                {
-                    title:
-                        'Details',
-
-                    key:
-                        'details',
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                Appointment
-                        ) => {
-                            if (
-                                record.deliveryMethod ===
-                                'virtual' &&
-                                record.meetingLink
-                            ) {
-                                return (
-                                    <a
-                                        href={
-                                            record.meetingLink
-                                        }
-                                        target='_blank'
-                                        rel='noreferrer'
-                                    >
-                                        Join meeting
-                                    </a>
-                                )
-                            }
-
-                            if (
-                                record.deliveryMethod ===
-                                'in_person' &&
-                                record.location
-                            ) {
-                                return (
-                                    <span>
-                                        {
-                                            record.location
-                                        }
-                                    </span>
-                                )
-                            }
-
-                            if (
-                                record.deliveryMethod ===
-                                'telephonically'
-                            ) {
-                                return (
-                                    <span>
-                                        Telephonic
-                                    </span>
-                                )
-                            }
-
-                            return (
-                                <span>
-                                    —
-                                </span>
-                            )
-                        }
-                }
-            ]
+        const performanceRows = [
+            {
+                label: 'Completed',
+                value: perfCounts.completed,
+                percent: toPercent(perfCounts.completed),
+                color: '#52c41a'
+            },
+            {
+                label: 'In Progress',
+                value: perfCounts.inProgress,
+                percent: toPercent(perfCounts.inProgress),
+                color: '#faad14'
+            },
+            {
+                label: 'Rejected/Declined',
+                value: perfCounts.rejectedOrDeclined,
+                percent: toPercent(perfCounts.rejectedOrDeclined),
+                color: '#ff4d4f'
+            }
+        ]
 
         /*
          * -----------------------------------------------------
@@ -2789,6 +2295,10 @@ export const CoordinatorDashboard:
                             </title>
                         </Helmet>
 
+                        <div style={{ marginBottom: 16 }}>
+                            <EarlyWarningPanel scope='mine' limit={5} />
+                        </div>
+
                         <Row
                             gutter={[
                                 16,
@@ -2807,21 +2317,17 @@ export const CoordinatorDashboard:
                             */}
                             <Col
                                 xs={24}
-                                md={8}
+                                md={6}
                             >
-                                <MotionCard.Metric
+                                <MetricTile
                                     icon={
                                         <MessageOutlined
                                             style={{
                                                 fontSize:
-                                                    18,
-
-                                                color:
-                                                    '#1677ff'
-                                            }}
+                                                    18 }}
                                         />
                                     }
-                                    iconBg='rgba(22,119,255,0.12)'
+                                    tone='accent'
                                     title='Total Required'
                                     value={
                                         allInterventions.length
@@ -2832,177 +2338,237 @@ export const CoordinatorDashboard:
 
                             <Col
                                 xs={24}
-                                md={8}
+                                md={6}
                             >
-                                <MotionCard.Metric
+                                <MetricTile
                                     icon={
-                                        <BarChartOutlined
+                                        <TeamOutlined
                                             style={{
                                                 fontSize:
-                                                    18,
-
-                                                color:
-                                                    '#13c2c2'
-                                            }}
+                                                    18 }}
                                         />
                                     }
-                                    iconBg='rgba(19,194,194,0.12)'
-                                    title='In Progress'
+                                    tone='info'
+                                    title='SMEs Supported'
                                     value={
-                                        perfCounts.inProgress
+                                        smeCounts.supported
                                     }
-                                    subtitle='Currently active'
+                                    subtitle='Unique SMEs allocated to you'
                                 />
                             </Col>
 
                             <Col
                                 xs={24}
-                                md={8}
+                                md={6}
                             >
-                                <MotionCard.Metric
+                                <MetricTile
                                     icon={
-                                        <CheckCircleOutlined
+                                        <UserSwitchOutlined
                                             style={{
                                                 fontSize:
-                                                    18,
-
-                                                color:
-                                                    '#52c41a'
-                                            }}
+                                                    18 }}
                                         />
                                     }
-                                    iconBg='rgba(82,196,26,0.12)'
-                                    title='Completed'
+                                    tone='success'
+                                    title='SMEs Reached'
                                     value={
-                                        perfCounts.completed
+                                        smeCounts.reached
                                     }
-                                    subtitle='Successfully delivered'
+                                    subtitle='Attended at least one session'
                                 />
                             </Col>
 
-                            {/*
-                              Priority work:
-                              Open queries are intentionally
-                              placed directly below metrics.
-                            */}
-                            {openQueries.length >
-                                0 ? (
-                                <Col xs={24}>
+                            <Col xs={24} md={6}>
+                                <MetricTile
+                                    icon={
+                                        <MessageOutlined
+                                            style={{ fontSize: 18 }}
+                                        />
+                                    }
+                                    tone='warning'
+                                    title='Open Queries'
+                                    value={openQueries.length}
+                                    subtitle='Click to view and resolve'
+                                    onClick={() => setQueriesModalOpen(true)}
+                                />
+                            </Col>
+
+                            {readyForCompletion.length > 0 ? (
+                                <Col xs={24} lg={18}>
                                     <MotionCard
                                         title={
-                                            <Space
-                                                size={
-                                                    8
-                                                }
-                                                wrap
-                                            >
-                                                <MessageOutlined
-                                                    style={{
-                                                        color:
-                                                            '#d48806'
-                                                    }}
-                                                />
+                                            <Space size={8}>
+                                                <CheckCircleOutlined style={{ color: '#52c41a' }} />
 
-                                                <Text strong>
-                                                    My Queries
-                                                </Text>
+                                                <Text strong>Ready for completion</Text>
 
                                                 <Tag
-                                                    color='orange'
-                                                    style={{
-                                                        borderRadius:
-                                                            999,
-
-                                                        marginInlineEnd:
-                                                            0
-                                                    }}
+                                                    color='green'
+                                                    style={{ borderRadius: 999, marginInlineEnd: 0 }}
                                                 >
-                                                    {
-                                                        openQueries.length
-                                                    }{' '}
-                                                    open
+                                                    {readyForCompletion.length}
                                                 </Tag>
                                             </Space>
                                         }
-                                        style={{
-                                            border:
-                                                '1px solid #ffd591',
-
-                                            borderRadius:
-                                                12,
-
-                                            boxShadow:
-                                                '0 8px 24px rgba(250,173,20,0.12)'
-                                        }}
                                     >
-                                        <Table
-                                            size='small'
-                                            rowKey='id'
-                                            dataSource={
-                                                openQueries
-                                            }
-                                            columns={
-                                                queryColumns as any
-                                            }
-                                            pagination={
-                                                openQueries.length >
-                                                    3
-                                                    ? {
-                                                        pageSize:
-                                                            3,
-
-                                                        showSizeChanger:
-                                                            false,
-
-                                                        position:
-                                                            [
-                                                                'bottomCenter'
-                                                            ]
-                                                    }
-                                                    : false
-                                            }
-                                            scroll={{
-                                                x:
-                                                    1050
-                                            }}
-                                            locale={{
-                                                emptyText:
-                                                    <Empty description='No queries' />
-                                            }}
+                                        <List
+                                            dataSource={readyForCompletion}
+                                            renderItem={item => (
+                                                <List.Item
+                                                    key={item.key}
+                                                    style={{
+                                                        border: '1px solid #d9d9d9',
+                                                        borderRadius: 12,
+                                                        padding: '12px 16px',
+                                                        marginBottom: 10
+                                                    }}
+                                                    actions={[
+                                                        <Button
+                                                            key='complete'
+                                                            shape='circle'
+                                                            aria-label='Complete intervention'
+                                                            icon={<ArrowRightOutlined />}
+                                                            onClick={() =>
+                                                                setCompletionTarget({
+                                                                    assignmentIds: item.assignmentIds,
+                                                                    interventionTitle: item.interventionTitle,
+                                                                    sessionsCompleted: item.sessionsCompleted,
+                                                                    plannedSessions: item.plannedSessions,
+                                                                    deliveryMethod: deriveDeliveryMethod(
+                                                                        item.assignmentIds
+                                                                    )
+                                                                })
+                                                            }
+                                                        />
+                                                    ]}
+                                                >
+                                                    <List.Item.Meta
+                                                        title={item.interventionTitle}
+                                                        description={
+                                                            item.beneficiaryNames.length > 1
+                                                                ? `${item.beneficiaryNames.length} SMEs (grouped)`
+                                                                : item.beneficiaryNames[0]
+                                                        }
+                                                    />
+                                                </List.Item>
+                                            )}
                                         />
                                     </MotionCard>
                                 </Col>
                             ) : null}
+
+                            <Col
+                                xs={24}
+                                lg={6}
+                                order={readyForCompletion.length > 0 ? 0 : 1}
+                            >
+                                <MotionCard title='My review rating'>
+                                    {ratingSummary.count > 0 ? (
+                                        <div style={{ textAlign: 'center' }}>
+                                            <Progress
+                                                type='dashboard'
+                                                gapDegree={75}
+                                                percent={(ratingSummary.average / 5) * 100}
+                                                strokeColor='#1677ff'
+                                                size={140}
+                                                format={() => (
+                                                    <div>
+                                                        <div style={{ fontSize: 22, fontWeight: 600 }}>
+                                                            {ratingSummary.average.toFixed(1)}/5
+                                                        </div>
+
+                                                        <Rate
+                                                            disabled
+                                                            allowHalf
+                                                            value={ratingSummary.average}
+                                                            style={{ fontSize: 14 }}
+                                                        />
+
+                                                        <div style={{ fontSize: 12, color: '#1677ff' }}>
+                                                            {ratingSummary.count} review
+                                                            {ratingSummary.count === 1 ? '' : 's'}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <Empty
+                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                            description='No reviews yet'
+                                            style={{ padding: '25px 0' }}
+                                        />
+                                    )}
+                                </MotionCard>
+                            </Col>
 
                             {/*
                               Secondary dashboard information
                             */}
                             <Col
                                 xs={24}
-                                lg={10}
+                                lg={readyForCompletion.length > 0 ? 12 : 18}
                             >
-                                <MotionCard>
-                                    {donutSeries.some(
-                                        value =>
-                                            value > 0
-                                    ) ? (
-                                        <HighchartsReact
-                                            highcharts={
-                                                Highcharts
-                                            }
-                                            options={
-                                                donutOptions
-                                            }
-                                        />
+                                <MotionCard
+                                    title='Intervention Performance'
+                                >
+                                    {allInterventions.length > 0 ? (
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 24,
+                                                flexWrap: 'wrap'
+                                            }}
+                                        >
+                                            <HealthGauge
+                                                percent={healthPercent}
+                                            />
+
+                                            <div
+                                                style={{
+                                                    flex: 1,
+                                                    minWidth: 200
+                                                }}
+                                            >
+                                                {performanceRows.map(row => (
+                                                    <div
+                                                        key={row.label}
+                                                        style={{
+                                                            marginBottom: 12
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                display: 'flex',
+                                                                justifyContent: 'space-between'
+                                                            }}
+                                                        >
+                                                            <Text>
+                                                                {row.label}
+                                                            </Text>
+
+                                                            <Text strong>
+                                                                {row.value}
+                                                            </Text>
+                                                        </div>
+
+                                                        <Progress
+                                                            percent={row.percent}
+                                                            strokeColor={row.color}
+                                                            showInfo={false}
+                                                            size='small'
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
                                     ) : (
                                         <Empty
-                                            image={
-                                                Empty.PRESENTED_IMAGE_SIMPLE
-                                            }
+                                            image={Empty.PRESENTED_IMAGE_SIMPLE}
                                             description='No performance data yet'
                                             style={{
-                                                padding:
-                                                    '25px 0'
+                                                padding: '25px 0'
                                             }}
                                         />
                                     )}
@@ -3011,141 +2577,73 @@ export const CoordinatorDashboard:
 
                             <Col
                                 xs={24}
-                                lg={14}
+                                lg={readyForCompletion.length > 0 ? 12 : 24}
+                                order={readyForCompletion.length > 0 ? 0 : 2}
                             >
-                                <MotionCard
-                                    title={
-                                        <Space>
-                                            <CalendarOutlined />
-
-                                            Upcoming Appointments
-                                        </Space>
+                                <UpcomingAppointmentsCard
+                                    appointments={
+                                        appointments
                                     }
-                                    extra={
-                                        <Button
-                                            type='link'
-                                            onClick={() =>
-                                                navigate(
-                                                    '/calendar'
-                                                )
-                                            }
-                                        >
-                                            Go To Calendar
-                                        </Button>
+                                    programId={
+                                        activeProgramId
                                     }
-                                >
-                                    {appointments.length >
-                                        0 ? (
-                                        screens.md ? (
-                                            <Table
-                                                rowKey='id'
-                                                dataSource={
-                                                    appointments
-                                                }
-                                                columns={
-                                                    upcomingCols as any
-                                                }
-                                                pagination={
-                                                    false
-                                                }
-                                                scroll={{
-                                                    x:
-                                                        760
-                                                }}
-                                            />
-                                        ) : (
-                                            <List
-                                                itemLayout='horizontal'
-                                                dataSource={
-                                                    appointments
-                                                }
-                                                renderItem={
-                                                    appointment => (
-                                                        <List.Item
-                                                            actions={[
-                                                                confirmationTag(
-                                                                    appointment.userConfirmation
-                                                                ),
-
-                                                                ...(
-                                                                    appointment.deliveryMethod ===
-                                                                        'virtual' &&
-                                                                        appointment.meetingLink
-                                                                        ? [
-                                                                            <a
-                                                                                key='join'
-                                                                                href={
-                                                                                    appointment.meetingLink
-                                                                                }
-                                                                                target='_blank'
-                                                                                rel='noreferrer'
-                                                                            >
-                                                                                Join
-                                                                            </a>
-                                                                        ]
-                                                                        : []
-                                                                )
-                                                            ]}
-                                                        >
-                                                            <List.Item.Meta
-                                                                title={
-                                                                    appointment.title
-                                                                }
-                                                                description={
-                                                                    <>
-                                                                        {appointment.withName && (
-                                                                            <div>
-                                                                                With:{' '}
-                                                                                {
-                                                                                    appointment.withName
-                                                                                }
-                                                                            </div>
-                                                                        )}
-
-                                                                        <div>
-                                                                            When:{' '}
-                                                                            {appointment.startAt
-                                                                                ? dayjs(
-                                                                                    appointment.startAt
-                                                                                ).format(
-                                                                                    'YYYY-MM-DD HH:mm'
-                                                                                )
-                                                                                : 'TBA'}
-                                                                        </div>
-
-                                                                        {appointment.deliveryMethod ===
-                                                                            'in_person' &&
-                                                                            appointment.location && (
-                                                                                <div>
-                                                                                    Where:{' '}
-                                                                                    {
-                                                                                        appointment.location
-                                                                                    }
-                                                                                </div>
-                                                                            )}
-
-                                                                        {appointment.deliveryMethod ===
-                                                                            'telephonically' && (
-                                                                                <div>
-                                                                                    Telephonic
-                                                                                </div>
-                                                                            )}
-                                                                    </>
-                                                                }
-                                                            />
-                                                        </List.Item>
-                                                    )
-                                                }
-                                            />
+                                    daysAhead={7}
+                                    limit={8}
+                                    onViewCalendar={() =>
+                                        navigate(
+                                            '/calendar'
                                         )
-                                    ) : (
-                                        <Empty description='No upcoming appointments' />
-                                    )}
-                                </MotionCard>
+                                    }
+                                />
                             </Col>
                         </Row>
                     </div>
                 )}
+
+                <Modal
+                    open={queriesModalOpen}
+                    title={`Waiting for your answer (${openQueries.length})`}
+                    footer={null}
+                    width={640}
+                    centered
+                    onCancel={() => setQueriesModalOpen(false)}
+                    destroyOnClose
+                >
+                    <QueryInbox queries={openQueries} onAnswer={setResolvingDashboardQuery} />
+                </Modal>
+
+                <InterventionCompletionModal
+                    target={completionTarget}
+                    user={
+                        user
+                            ? {
+                                uid: user.uid || user.id,
+                                name: user.name || user.displayName,
+                                email: user.email,
+                                departmentName: user.departmentName
+                            }
+                            : null
+                    }
+                    onClose={() => setCompletionTarget(null)}
+                    onCompleted={ids => {
+                        setCompletionTarget(null)
+
+                        setAllInterventions(previous =>
+                            previous.map(row =>
+                                ids.includes(row.id)
+                                    ? {
+                                        ...row,
+                                        lifecycle: 'completed',
+                                        raw: {
+                                            ...row.raw,
+                                            assigneeCompletionStatus: 'completed'
+                                        }
+                                    }
+                                    : row
+                            )
+                        )
+                    }}
+                />
 
                 <ResolveQueryModal
                     open={
@@ -3175,6 +2673,10 @@ export const CoordinatorDashboard:
 
                         departmentName:
                             user?.departmentName ||
+                            null,
+
+                        departmentId:
+                            user?.departmentId ||
                             null
                     }}
                     onClose={() =>

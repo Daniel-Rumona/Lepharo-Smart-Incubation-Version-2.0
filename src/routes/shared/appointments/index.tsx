@@ -27,11 +27,20 @@ import {
     InputNumber,
     Steps,
     Pagination,
-    Skeleton,
     Upload,
     Image,
-    Progress
+    Progress,
+    Avatar,
+    Badge,
+    Drawer,
+    Popover
 } from 'antd'
+import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
+import { FilterPanel } from '@/components/workspace'
+import { StatusPill } from '@/routes/operations/movs/movParts'
+import '@/routes/operations/movs/movs.css'
+import './agenda.css'
+import { ChoiceCards } from '@/components/queries/ChoiceCards'
 import type { UploadFile } from 'antd/es/upload/interface'
 import {
     CalendarOutlined,
@@ -42,6 +51,9 @@ import {
     PlusOutlined,
     CheckCircleOutlined,
     TeamOutlined,
+    InfoCircleOutlined,
+    AppstoreOutlined,
+    CloseCircleOutlined,
     PhoneOutlined,
     LinkOutlined,
     EnvironmentOutlined,
@@ -49,14 +61,14 @@ import {
     EditOutlined,
     EyeOutlined,
     QrcodeOutlined,
+    SearchOutlined,
+    FilterOutlined,
     StopOutlined,
     LoginOutlined,
     LogoutOutlined,
     BarChartOutlined,
     BookOutlined,
     FileDoneOutlined,
-    SyncOutlined,
-    PictureOutlined,
     UploadOutlined,
     DeleteOutlined
 } from '@ant-design/icons'
@@ -65,7 +77,6 @@ import {
     query as fsQuery,
     where,
     getDocs,
-    addDoc,
     Timestamp,
     doc,
     documentId,
@@ -75,7 +86,6 @@ import {
     arrayUnion,
     writeBatch,
     runTransaction,
-    limit,
     type QueryConstraint
 } from 'firebase/firestore'
 import dayjs, { Dayjs } from 'dayjs'
@@ -92,12 +102,17 @@ import {
     type PageGuideRegistration
 } from '@/components/guide-me'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
+import { TrainingPlanAppointmentModal } from '@/components/trainings/TrainingPlanAppointmentModal'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { Helmet } from 'react-helmet'
 import SessionReviewModal from './SessionReviewModal'
+import SetupSegmented from '@/components/shared/SetupSegmented'
+import './appointment-detail.css'
 import CoveragePhotoGallery from '@/components/appointments/CoveragePhotoGallery'
 import { appointmentMemberStatus } from '@/lib/appointmentMemberStatus'
 import { normalizeAssignmentGroupKey } from '@/lib/assignmentIdentity'
+import { isCatchingUp } from '@/services/deliveryDisputeService'
+import { groupDeliveryRef } from '@/services/groupInterventionDeliveryService'
 import {
     assignmentCanOwnAppointment,
     assignmentDate,
@@ -115,6 +130,7 @@ import {
 import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
 import {
     AppointmentSessionAlreadyExistsError,
+    checkScheduleClash,
     scheduleAppointmentSession
 } from '@/services/appointmentSchedulingService'
 import {
@@ -127,7 +143,8 @@ import {
     departmentUsesTrainingCoverage,
     getDepartmentDescendants
 } from '@/services/departmentCapabilities'
-import { completeIntervention, completionFailureEvidence, loadInterventionCompletionContext, interventionCompletionError, mergeCompletionFailureContext, COMPLETION_SUCCESS_MESSAGE, type InterventionCompletionContext } from '@/services/interventionCompletionService'
+import { completeIntervention, completionFailureEvidence, loadInterventionCompletionContext, interventionCompletionError, mergeCompletionFailureContext, uploadManualMovs, COMPLETION_SUCCESS_MESSAGE, type InterventionCompletionContext } from '@/services/interventionCompletionService'
+import { splitMovRequirement } from '@/services/completionMovRules'
 import InterventionCompletionFields from '@/components/interventions/InterventionCompletionFields'
 import { useSearchParams } from 'react-router-dom'
 
@@ -140,6 +157,18 @@ dayjs.extend(customParseFormat)
 const { Option } = Select
 const { RangePicker } = DatePicker
 const { Text, Title, Paragraph } = Typography
+
+const AGENDA_PAGE_SIZE = 12
+/** What's listed: what needs the facilitator first, then the day, what's next, what's done. */
+type AgendaView = 'action' | 'today' | 'upcoming' | 'done' | 'cancelled' | 'all'
+const AGENDA_SEGMENTS: { value: AgendaView; label: string; tone: string }[] = [
+    { value: 'action', label: 'Needs action', tone: 'danger' },
+    { value: 'today', label: 'Today', tone: 'info' },
+    { value: 'upcoming', label: 'Upcoming', tone: 'info' },
+    { value: 'done', label: 'Done', tone: 'success' },
+    { value: 'cancelled', label: 'Cancelled', tone: 'neutral' },
+    { value: 'all', label: 'All', tone: 'neutral' }
+]
 const { useBreakpoint } = Grid
 
 type Delivery = 'in_person' | 'telephonically' | 'virtual'
@@ -281,6 +310,11 @@ type AttendanceSummary = {
 }
 
 type Appt = {
+    /** A list row: one appointment, or a group session with its members. */
+    _displayType?: 'single' | 'group'
+    /** Schema v5: the session this SME invitation belongs to, and the SME's own attendance. */
+    appointmentSessionId?: string
+    attendance?: { status?: string; checkedInAt?: any; checkedOutAt?: any; [key: string]: any }
     id: string
     assigneeId: string
     assigneeName: string
@@ -345,6 +379,24 @@ const DELIVERY_METHODS = [
     { label: 'Virtual', value: 'virtual', icon: <VideoCameraOutlined /> }
 ] as const
 
+/**
+ * The delivery method as three cards, inside a Form.Item (which passes value and
+ * onChange); onPicked applies the location / meeting-link defaults for the choice.
+ */
+const DeliveryChoice: React.FC<{ value?: Delivery; onChange?: (value: Delivery) => void; onPicked?: (value: Delivery) => void }> = ({ value, onChange, onPicked }) => (
+    <ChoiceCards
+        compact
+        columns={3}
+        label='Delivery method'
+        value={value}
+        onChange={(next: string) => {
+            onChange?.(next as Delivery)
+            onPicked?.(next as Delivery)
+        }}
+        options={DELIVERY_METHODS.map(method => ({ value: method.value, label: method.label === 'Telephonically' ? 'By phone' : method.label, icon: method.icon }))}
+    />
+)
+
 const FOOD_CATEGORY_OPTIONS: Array<{ label: string; value: FoodCategory }> = [
     { label: 'Meal', value: 'meal' },
     { label: 'Snack', value: 'snack' },
@@ -388,6 +440,14 @@ const resolveParticipantEmail = async (
         return ''
     }
 }
+
+/**
+ * Whether an SME attended, from their invitation's attendance: marked attended,
+ * checked in or out, or a QR check-in time. The same rule as the interventions page.
+ */
+const isAttendedRecord = (attendance: any) =>
+    ['attended', 'checked-in', 'checked-out'].includes(String(attendance?.status || '')) ||
+    Boolean(attendance?.checkedInAt)
 
 const toDateSafe = (value: any): Date | null => {
     if (!value) return null
@@ -537,6 +597,12 @@ const getGroupKindLabel = (kind: ReturnType<typeof getGroupKind>) => {
     }
 }
 
+/** The month the intervention is for: stored cycle if any, else the month of the appointment. */
+const cycleLabelOf = (r: any) =>
+    formatCycleLabel(r?._cycleKey) ||
+    formatCycleLabel(r?.cycleKey) ||
+    (dayjs(r?.date).isValid() ? dayjs(r.date).format('MMMM YYYY') : '')
+
 const getCycleKey = (ai: any) =>
     String(
         ai?.cycleKey ||
@@ -648,9 +714,7 @@ const getSyntheticGroupKey = (ai: any) => {
     ].join('__')
 }
 
-const getSchedulableGroupKey = (ai: any) => {
-    return getSyntheticGroupKey(ai)
-}
+const getSchedulableGroupKey = (ai: any) => getRealGroupKey(ai) || getSyntheticGroupKey(ai)
 
 const getGroupOptionMeta = (
     groups: Array<{
@@ -675,15 +739,15 @@ const isEligibleForGroupScheduling = (ai: any) => {
     return !!interventionId
 }
 
+/**
+ * Can still be booked: open work (not completed, cancelled or waiting for
+ * reassignment), and not waiting on the SME's sign-off or on the facilitator's
+ * response to a dispute. An SME who declined an appointment can be booked again.
+ */
 const isSchedulableAssigned = (row: any) => {
-    const s = norm(row?.assignmentStatus)
-    return (
-        s === 'assigned' ||
-        s === 'in-progress' ||
-        s === 'in_progress' ||
-        s === 'ongoing' ||
-        s === 'active'
-    )
+    const lifecycle = resolveAssignmentLifecycle(row)
+    if (!lifecycle.isOpen) return false
+    return !['awaiting-participant-confirmation', 'participant-rejected'].includes(lifecycle.key)
 }
 
 const belongsToCurrentUser = ({
@@ -1225,38 +1289,12 @@ const Appointments: React.FC = () => {
     usePageGuides(guideRegistration)
 
     const screens = useBreakpoint()
-    const appointmentPagePadding = screens.md ? '5px 24px' : '5px 12px'
-    const filterSelectCol = {
-        flex: '1 1 145px',
-        style: { minWidth: 120 }
-    }
-
-    const filterStatusCol = {
-        flex: '0.9 1 135px',
-        style: { minWidth: 120 }
-    }
-
-    const filterDateCol = {
-        flex: '1.35 1 220px',
-        style: { minWidth: 190 }
-    }
-
-    const filterActionCol = {
-        flex: '0 0 112px',
-        style: { minWidth: 0 }
-    }
-
-    const filterReviewCol = {
-        flex: '0 0 96px',
-        style: { minWidth: 0 }
-    }
-
     const [participantEmails, setParticipantEmails] = useState<Record<string, string>>({})
+    const [participantPhotos, setParticipantPhotos] = useState<Record<string, string>>({})
     const canScheduleForAssignedPeople = isQuantilytixUser(user?.email)
 
     const [qrModalOpen, setQrModalOpen] = useState(false)
     const [qrRecord, setQrRecord] = useState<Appt | null>(null)
-    const [qrModalTab, setQrModalTab] = useState<'overview' | 'attendance' | 'code'>('overview')
     const [qrLoading, setQrLoading] = useState(false)
 
     const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
@@ -1336,40 +1374,18 @@ const Appointments: React.FC = () => {
     const [pickedGroupKey, setPickedGroupKey] = useState<string | undefined>()
 
     const [modalOpen, setModalOpen] = useState(false)
+    // A training (Training Academy) programme books against its plan, not assigned interventions.
+    const [activeProgramIsTraining, setActiveProgramIsTraining] = useState(false)
+    const [trainingBookingOpen, setTrainingBookingOpen] = useState(false)
     const [createStep, setCreateStep] = useState(0)
     const [appointmentDetailsDraft, setAppointmentDetailsDraft] = useState<Record<string, any>>({})
     const [editModalOpen, setEditModalOpen] = useState(false)
-    const [postponeModalOpen, setPostponeModalOpen] = useState(false)
-    const [postponeRecord, setPostponeRecord] = useState<Appt | null>(null)
-    const [postponeLoading, setPostponeLoading] = useState(false)
     const [detailModalOpen, setDetailModalOpen] = useState(false)
     const [selectedAppt, setSelectedAppt] = useState<Appt | null>(null)
-    const [detailModalTab, setDetailModalTab] = useState<'overview' | 'members' | 'food'>('overview')
+    const [detailModalTab, setDetailModalTab] = useState<'overview' | 'members' | 'coverage' | 'food'>('overview')
 
 
     const openAppointmentDetails = (appointment: Appt) => {
-        console.group('[Appointment Details] Opening')
-        console.log('Appointment:', appointment)
-        console.log('Appointment ID:', appointment.id)
-        console.log('Program ID:', appointment.programId)
-        console.log('Department ID:', appointment.departmentId)
-        console.log('Assigned Intervention ID:', appointment.assignedInterventionId)
-        console.log('Intervention ID:', appointment.interventionId)
-        console.log('Participant:', {
-            id: appointment.participantId,
-            name: appointment.participantName,
-            email: appointment.participantEmail
-        })
-        console.log('Assignee:', {
-            id: appointment.assigneeId,
-            name: appointment.assigneeName,
-            email: appointment.assigneeEmail,
-            role: appointment.assigneeRole
-        })
-        console.log('Full raw appointment:', appointment)
-        console.groupEnd()
-
-        // Open AFTER logging
         setSelectedAppt(appointment)
         setDetailModalTab('overview')
         setDetailModalOpen(true)
@@ -1387,17 +1403,7 @@ const Appointments: React.FC = () => {
 
     const [form] = Form.useForm()
     const [editForm] = Form.useForm()
-    const [postponeForm] = Form.useForm()
     const createDeliveryMethod = Form.useWatch('deliveryMethod', form) as Delivery | undefined
-    const postponeDeliveryMethod = Form.useWatch(
-        'deliveryMethod',
-        postponeForm
-    )
-
-    const hasPostponeConnectionDetails =
-        postponeDeliveryMethod === 'in_person' ||
-        postponeDeliveryMethod === 'virtual'
-
     const [departmentScopeOptions, setDepartmentScopeOptions] = useState<DepartmentOption[]>([])
     const [selectedDepartmentScope, setSelectedDepartmentScope] = useState<string>('all')
     const [isParentDepartmentView, setIsParentDepartmentView] = useState(false)
@@ -1433,10 +1439,6 @@ const Appointments: React.FC = () => {
         setSelectedAppt(null)
         setDetailModalOpen(false)
         setEditModalOpen(false)
-        setPostponeModalOpen(false)
-        setPostponeRecord(null)
-        setPostponeLoading(false)
-        postponeForm.resetFields()
         setModalOpen(false)
         setCoverageModalOpen(false)
         setCoverageRecord(null)
@@ -1463,7 +1465,7 @@ const Appointments: React.FC = () => {
         setSelectedCoverageRowKeys([])
         setSelectedCoverageAppointmentIds([])
         setCoverageTargetMode('single')
-    }, [activeProgramId, form, editForm, postponeForm, coverageForm, foodMenuForm])
+    }, [activeProgramId, form, editForm, coverageForm, foodMenuForm])
 
     useEffect(() => {
         const timer = window.setInterval(() => setClockNow(dayjs()), 30_000)
@@ -1507,20 +1509,37 @@ const Appointments: React.FC = () => {
         return parsed?.isValid() ? parsed.format('HH:mm') : ''
     }
 
+    /**
+     * When it starts and ends, from the stored timestamps (the session's startAt /
+     * endAt, or the appointment's own). Rebuilding "date + HH:mm" put a session
+     * that runs past midnight on the wrong day.
+     */
+    const apptStart = (a: Appt) => {
+        const at = toDateSafe((a as any).startAt || a.startTime)
+        return at ? dayjs(at) : dayjs(`${a.date} ${formatTime(a.startTime)}`, 'YYYY-MM-DD HH:mm')
+    }
+    const apptEnd = (a: Appt) => {
+        const at = toDateSafe((a as any).endAt || a.endTime)
+        const end = at ? dayjs(at) : dayjs(`${a.date} ${formatTime(a.endTime)}`, 'YYYY-MM-DD HH:mm')
+        const start = apptStart(a)
+        // Times without a date that end "before" they start finish the next day.
+        return end.isValid() && start.isValid() && end.isBefore(start) ? end.add(1, 'day') : end
+    }
+
     const hasStarted = (a: Appt) => {
-        const start = dayjs(`${a.date} ${formatTime(a.startTime)}`, 'YYYY-MM-DD HH:mm')
+        const start = apptStart(a)
         return start.isValid() && start.isBefore(clockNow)
     }
 
     const hasEnded = (a: Appt) => {
-        const end = dayjs(`${a.date} ${formatTime(a.endTime)}`, 'YYYY-MM-DD HH:mm')
+        const end = apptEnd(a)
         return end.isValid() && end.isBefore(clockNow)
     }
 
     // After the correction window, the historical appointment must be closed
     // through coverage (held or not held), never retrospectively cancelled or moved.
     const isCoverageOnly = (a: Appt) => {
-        const end = dayjs(`${a.date} ${formatTime(a.endTime)}`, 'YYYY-MM-DD HH:mm')
+        const end = apptEnd(a)
         return end.isValid() && clockNow.isAfter(end.add(48, 'hour'))
     }
 
@@ -1543,7 +1562,7 @@ const Appointments: React.FC = () => {
         ))
 
     const canStartQrWindow = (a: Appt) => {
-        const start = dayjs(`${a.date} ${formatTime(a.startTime)}`, 'YYYY-MM-DD HH:mm')
+        const start = apptStart(a)
         if (!start.isValid()) return false
         return clockNow.isAfter(start.subtract(15, 'minute'))
     }
@@ -1699,7 +1718,22 @@ const Appointments: React.FC = () => {
         allowedDepartmentIds.length
     ])
 
-    const isAddAppointmentDisabled = addAppointmentDisabledReasons.length > 0
+    useEffect(() => {
+        if (!activeProgramId) {
+            setActiveProgramIsTraining(false)
+            return
+        }
+        let cancelled = false
+        getDoc(doc(db, 'trainings', activeProgramId))
+            .then(snap => { if (!cancelled) setActiveProgramIsTraining(snap.exists()) })
+            .catch(() => { if (!cancelled) setActiveProgramIsTraining(false) })
+        return () => { cancelled = true }
+    }, [activeProgramId])
+
+    // Training sessions don't need an assigned intervention or coordinator record.
+    const isAddAppointmentDisabled = activeProgramIsTraining
+        ? !activeProgramId
+        : addAppointmentDisabledReasons.length > 0
 
     useEffect(() => {
         if (!isAddAppointmentDisabled) return
@@ -1784,14 +1818,12 @@ const Appointments: React.FC = () => {
 
     const openQrModal = (appt: Appt) => {
         setQrRecord(appt)
-        setQrModalTab('overview')
         setQrModalOpen(true)
     }
 
     const closeQrModal = () => {
         setQrModalOpen(false)
         setQrRecord(null)
-        setQrModalTab('overview')
     }
 
     const startQrSession = async (appt: Appt) => {
@@ -1820,6 +1852,12 @@ const Appointments: React.FC = () => {
             return
         }
 
+        // Already open: starting again would issue a new code and break the one on screen or printed.
+        if (isQrSessionActive(appt)) {
+            message.info('QR check-in is already open for this session. Use Show QR.')
+            return
+        }
+
         setQrLoading(true)
         try {
             const appointmentSessionId = String((appt as any).appointmentSessionId || '').trim()
@@ -1838,27 +1876,20 @@ const Appointments: React.FC = () => {
                 return true
             })
 
-            const resolvedGroupEmails = Array.from(
-                new Set(
-                    (
-                        await Promise.all(
-                            validGroupMembers.map(async (m: Appt) => {
-                                const resolved = await resolveParticipantEmail({
-                                    participantId: m.participantId,
-                                    participantEmail: m.participantEmail
-                                })
-
-                                return resolved
-                            })
-                        )
-                    ).filter(Boolean)
-                )
-            )
+            // Emails already known on the page (no read per SME; they're only shown here).
+            const resolvedGroupEmails: string[] = Array.from(new Set<string>(
+                validGroupMembers
+                    .map((m: Appt) => String(m.participantEmail || participantEmails[m.participantId] || '').trim().toLowerCase())
+                    .filter(Boolean)
+            ))
 
             const token = generateQrToken()
-            const expiresAt = Timestamp.fromDate(
-                dayjs().add(DEFAULT_QR_DURATION_MINUTES, 'minute').toDate()
-            )
+            // Open until the meeting ends (plus a little), and never less than the default window.
+            const meetingEnd = toDateSafe((appt as any).endAt || appt.endTime)
+            const expiresAt = Timestamp.fromDate(new Date(Math.max(
+                dayjs().add(DEFAULT_QR_DURATION_MINUTES, 'minute').valueOf(),
+                meetingEnd ? dayjs(meetingEnd).add(30, 'minute').valueOf() : 0
+            )))
             const qrUrl = buildQrUrl(appointmentSessionId, token)
 
             const patch = {
@@ -1885,8 +1916,11 @@ const Appointments: React.FC = () => {
                 status: patch.status,
                 updatedAt: patch.updatedAt
             })
+            // Only SMEs still invited: cancelled, postponed or declined invitations stay as they are.
             appointments
                 .filter(item => String((item as any).appointmentSessionId || '') === appointmentSessionId)
+                .filter(item => !['cancelled', 'postponed', 'declined'].includes(String(item.status || '').toLowerCase()))
+                .filter(item => String(item.userConfirmation || '').toLowerCase() !== 'declined')
                 .forEach(item => batch.update(doc(db, 'appointments', item.id), {
                     status: 'in_progress',
                     updatedAt: patch.updatedAt
@@ -1979,7 +2013,10 @@ const Appointments: React.FC = () => {
 
         const targetMember = member || appointmentRow
 
+        // A Training Academy SME can send several people, each with their own
+        // invitation and email; the SME-wide lookup would give them all one.
         let targetEmail = String(
+            ((targetMember as any).attendeeId ? targetMember.participantEmail : '') ||
             participantEmails[targetMember.participantId] ||
             targetMember.participantEmail ||
             ''
@@ -2008,18 +2045,20 @@ const Appointments: React.FC = () => {
                 collection(db, 'appointments'),
                 where('appointmentSessionId', '==', appointmentRow.appointmentSessionId)
             ))
-            const matchingMember = memberSnapshot.docs.find(item => {
-                const data = item.data() as any
-                return String(data.smeEmail || '').trim().toLowerCase() === targetEmail ||
-                    String(data.smeId || '').trim() === String(targetMember.participantId || '').trim()
-            })
+            // The row's own invitation first: people from one SME share its smeId.
+            const matchingMember = memberSnapshot.docs.find(item => item.id === appointmentIdToUpdate) ||
+                memberSnapshot.docs.find(item => {
+                    const data = item.data() as any
+                    return String(data.smeEmail || '').trim().toLowerCase() === targetEmail ||
+                        (!data.attendeeId && String(data.smeId || '').trim() === String(targetMember.participantId || '').trim())
+                })
 
             if (!matchingMember) {
                 throw new Error('The SME appointment could not be found for this session.')
             }
 
             const ref = matchingMember.ref
-            const sessionRef = doc(db, 'appointmentSessions', appointmentRow.appointmentSessionId)
+            const sessionRef = doc(db, 'appointmentSessions', String(appointmentRow.appointmentSessionId))
 
             const result = await runTransaction(db, async transaction => {
                 const [snap, sessionSnap] = await Promise.all([
@@ -2037,7 +2076,7 @@ const Appointments: React.FC = () => {
                 const raw = snap.data() as any
                 const session = sessionSnap.data() as any
                 const nowTs = Timestamp.now()
-                if (raw.attendance?.status !== 'attended' || !raw.attendance?.checkedInAt) {
+                if (!isAttendedRecord(raw.attendance)) {
                     return {
                         status: 'not_checked_in',
                         checkedInEmails: [],
@@ -2231,19 +2270,19 @@ const Appointments: React.FC = () => {
         }
     }
 
+    // The meeting is over: its coverage is recorded (held or not held) or still due.
+    // Read from the same status the list shows, so the two never disagree.
     const isApptDone = (a: Appt) => {
         if (String(a.userConfirmation || '').toLowerCase() === 'declined') return false
-        if (a.status === 'completed') return true
-        if (a.status === 'cancelled' || a.status === 'postponed') return false
-        return hasEnded(a)
+        return ['completed', 'not_held', 'awaiting_coverage'].includes(derivedStatus(a))
     }
 
     const derivedStatus = (
         a: Appt
-    ): 'scheduled' | 'in_progress' | 'awaiting_coverage' | 'completed' | 'cancelled' | 'postponed' => {
+    ): 'scheduled' | 'in_progress' | 'awaiting_coverage' | 'completed' | 'not_held' | 'cancelled' | 'postponed' => {
         if (a.status === 'cancelled') return 'cancelled'
         if (a.status === 'postponed') return 'postponed'
-        if (a.sessionCoverage?.latest) return 'completed'
+        if (a.sessionCoverage?.latest) return a.sessionCoverage.latest.held === false ? 'not_held' : 'completed'
 
         if (hasEnded(a)) return 'awaiting_coverage'
         if (a.status === 'completed') return 'completed'
@@ -2258,14 +2297,6 @@ const Appointments: React.FC = () => {
         return 'scheduled'
     }
 
-    const awaitingCoverageCount = useMemo(
-        () => new Set(
-            appointments
-                .filter(a => derivedStatus(a) === 'awaiting_coverage')
-                .map(a => getAppointmentGroupKey(a) || a.id)
-        ).size,
-        [appointments]
-    )
 
     const displayStatus = (a: Appt) => {
         if (String(a.userConfirmation || '').toLowerCase() === 'declined') {
@@ -2282,6 +2313,9 @@ const Appointments: React.FC = () => {
         if (status === 'completed') {
             return { label: 'COMPLETED', color: 'green' as const, icon: <CheckCircleOutlined /> }
         }
+        if (status === 'not_held') {
+            return { label: 'NOT HELD', color: 'red' as const, icon: <StopOutlined /> }
+        }
         if (status === 'awaiting_coverage') {
             return { label: 'AWAITING COVERAGE', color: 'gold' as const, icon: <FileDoneOutlined /> }
         }
@@ -2292,19 +2326,6 @@ const Appointments: React.FC = () => {
         return { label: 'SCHEDULED', color: 'blue' as const, icon: <CalendarOutlined /> }
     }
 
-    const rowStatusStyle = (a: Appt) => {
-        const status = derivedStatus(a)
-        if (status === 'completed') {
-            return { backgroundColor: '#f6ffed' }
-        }
-        if (status === 'awaiting_coverage') {
-            return { backgroundColor: '#fff7e6' }
-        }
-        if (status === 'cancelled' || status === 'postponed') {
-            return { backgroundColor: '#fff1f0' }
-        }
-        return {}
-    }
 
     const isGroupMemberCheckedIn = (
         groupAppt: Appt | null,
@@ -2314,7 +2335,7 @@ const Appointments: React.FC = () => {
         // Canonical v5 check-in is stored on each invitation. Do not rely on
         // an email list here: some valid SME invitations are linked by ID and
         // have no copied email address.
-        if (['attended', 'checked-in', 'checked-out'].includes(String((member as any)?.attendance?.status || ''))) {
+        if (isAttendedRecord((member as any)?.attendance)) {
             return true
         }
 
@@ -2332,9 +2353,9 @@ const Appointments: React.FC = () => {
             .trim()
             .toLowerCase()
 
-        if (!memberEmail) {
-            return Number(member.attendanceSummary?.count || 0) > 0
-        }
+        // No email to match: their own attendance (above) is the only evidence. The
+        // session-wide count would mark them present whenever anyone checked in.
+        if (!memberEmail) return false
 
         return checkedInEmails.has(memberEmail)
     }
@@ -2940,7 +2961,7 @@ const Appointments: React.FC = () => {
                         coordinatorDocId: effectiveCoordinatorId
                     })
                 )
-                .filter(row => resolveAssignmentLifecycle(row as any).isOpen)
+                .filter(row => isSchedulableAssigned(row))
             const rows = distinctAppointmentAssignments([
                 ...ownedRows.filter(row => !isGroupedIntervention(row)),
                 ...dedupeAssignedInterventionViews(ownedRows.filter(isGroupedIntervention))
@@ -2968,12 +2989,6 @@ const Appointments: React.FC = () => {
     const closeEditModal = () => {
         setEditModalOpen(false)
         editForm.resetFields()
-    }
-
-    const closePostponeModal = () => {
-        setPostponeModalOpen(false)
-        setPostponeRecord(null)
-        postponeForm.resetFields()
     }
 
     const closeCoverageModal = () => {
@@ -3102,7 +3117,7 @@ const Appointments: React.FC = () => {
         }
 
         setFoodMenuRecord(appt)
-        setFoodMenuTab(canManage ? 'setup' : selections.length ? 'selections' : 'setup')
+        setFoodMenuTab('setup')
         foodMenuForm.setFieldsValue({
             foodMenuEnabled: appt.foodMenuEnabled === true || menu.length > 0,
             foodMenu: menu.length
@@ -3162,7 +3177,6 @@ const Appointments: React.FC = () => {
             if (selectedAppt && String((selectedAppt as any).appointmentSessionId || '') === appointmentSessionId) {
                 setSelectedAppt({
                     ...selectedAppt,
-                    attendance: { ...(selectedAppt.attendance || {}), checkedOutAt },
                     foodMenuEnabled: patch.foodMenu.length > 0,
                     foodMenu: patch.foodMenu
                 })
@@ -3215,8 +3229,8 @@ const Appointments: React.FC = () => {
             } else if (isGroupMemberCheckedIn(appt, member, participantEmails)) {
                 result[member.id] = 'attended'
             } else if (attendanceMode === 'qr') {
-                // Group coverage relies entirely on QR check-ins: anyone who
-                // didn't scan in is recorded as a no-show automatically.
+                // With QR check-in running, anyone who didn't scan starts as a
+                // no-show; the facilitator can correct it in the form.
                 result[member.id] = 'no_show'
             }
             return result
@@ -3335,9 +3349,25 @@ const Appointments: React.FC = () => {
             repairedAppointmentIds.push(appointmentId)
         }
 
+        // Every linked assignment as it is in Firestore now: progress is computed
+        // from these, never from the page's copy (which can be stale, or missing).
+        const assignmentIds = Array.from(new Set(linkedByAppointmentId.values()))
+        const assignmentsById = new Map<string, any>(directAssignmentsById)
+        const missing = assignmentIds.filter(id => !assignmentsById.has(id))
+        if (missing.length) {
+            const snapshots = await withAppointmentSaveTimeout(
+                Promise.all(missing.map(id => getDoc(doc(db, 'assignedInterventions', id)))),
+                'Checking linked interventions'
+            )
+            snapshots.forEach(snapshot => {
+                if (snapshot.exists()) assignmentsById.set(snapshot.id, { id: snapshot.id, ...(snapshot.data() as any) })
+            })
+        }
+
         return {
             linkedByAppointmentId,
-            assignmentIds: Array.from(new Set(linkedByAppointmentId.values())),
+            assignmentIds,
+            assignmentsById,
             repairedAppointmentIds,
             orphanAppointmentIds
         }
@@ -3417,21 +3447,23 @@ const Appointments: React.FC = () => {
                 message.warning('Use Reschedule to set the replacement date and time. Do not record it as a not-held outcome.')
                 return
             }
-        } else if (isGroupCoverage) {
-            const missingAttendance = coverageAppointmentRows.filter(
-                member => !participantAttendanceValues[member.id]
-            )
-
-            if (missingAttendance.length) {
-                message.warning(
-                    `Please record attendance for ${missingAttendance.length} SME${missingAttendance.length === 1 ? '' : 's'
-                    }.`
+        } else {
+            // Attendance first (each SME for a group), then the same summary rules for both.
+            if (isGroupCoverage) {
+                const missingAttendance = coverageAppointmentRows.filter(
+                    member => !participantAttendanceValues[member.id]
                 )
+                if (missingAttendance.length) {
+                    message.warning(`Please record attendance for ${missingAttendance.length} SME${missingAttendance.length === 1 ? '' : 's'}.`)
+                    return
+                }
+            } else if (!values.smeAttendance || values.smeAttendance === 'unverified') {
+                message.warning('Please record the SME attendance outcome.')
                 return
             }
-        } else if (!isGroupCoverage && (!values.smeAttendance || values.smeAttendance === 'unverified')) {
-            message.warning('Please record the SME attendance outcome.')
-            return
+        }
+        if (!heldBool) {
+            // Not held: nothing more to check.
         } else if (smeParticipated && isTrainingAcademyCoverage && !coveredPoints.length) {
             message.warning('Please add at least one formal topic or unit standard covered.')
             return
@@ -3497,7 +3529,7 @@ const Appointments: React.FC = () => {
                                 ? 'no_show'
                                 : 'unverified'
                 const sessionAppointmentId = String(linkedAppointment?.id || row.id)
-                const assignment = assignedInterventions.find(candidate => String(candidate?.id || '') === id)
+                const assignment = linkedAssignments.assignmentsById.get(id)
                 const priorAttendance = ((assignment as any)?.sessionAttendanceByAppointment || {}) as Record<string, { outcome?: string }>
                 const attendedCount = Object.entries(priorAttendance)
                     .filter(([apptId, record]) => apptId !== sessionAppointmentId && record?.outcome === 'attended')
@@ -3511,12 +3543,34 @@ const Appointments: React.FC = () => {
                 })
             })
             const isEditingExistingCoverage = Boolean((coverageRecord as any)?.sessionCoverage?.latest)
+            const appointmentSessionIdForGroup = String((row as any)?.appointmentSessionId || '').trim()
+
+            // A grouped intervention is one delivery: its progress lives on the shared
+            // group record (as the interventions page reads it), counted per session held.
+            const groupKeyOf = (assignment: any) => (assignment && !isCatchingUp(assignment) ? normalizeAssignmentGroupKey(assignment) : '')
+            const sharedGroupKey = assignmentIds.map(id => groupKeyOf(linkedAssignments.assignmentsById.get(id))).find(Boolean) || ''
+            const groupDelivery = sharedGroupKey
+                ? (await withAppointmentSaveTimeout(getDoc(groupDeliveryRef(db, sharedGroupKey)), 'Reading the group delivery')).data() as any
+                : null
+            const groupAlreadyCounted = ((groupDelivery?.progressUpdates || []) as any[])
+                .some(update => String(update?.appointmentSessionId || '') === appointmentSessionIdForGroup)
+            const groupPlanned = Math.max(1, Number(groupDelivery?.plannedSessions) || Math.max(1, ...assignmentIds.map(id => Number(linkedAssignments.assignmentsById.get(id)?.plannedSessions) || 1)))
+            const groupHeld = Number(groupDelivery?.sessionsCompleted || 0) + (heldBool && smeParticipated && !groupAlreadyCounted ? 1 : 0)
+            const groupProgress = sharedGroupKey
+                ? Math.max(Number(groupDelivery?.progress || 0), Math.min(100, Math.round((groupHeld / groupPlanned) * 100)))
+                : 0
+            // SMEs catching up after a dispute are completed on their own, not with the group.
+            const completionIds = assignmentIds.filter(id => !(sharedGroupKey && isCatchingUp(linkedAssignments.assignmentsById.get(id))))
+
             const completionRequested =
                 heldBool &&
                 smeParticipated &&
                 !isEditingExistingCoverage &&
+                completionIds.length > 0 &&
                 (
-                    Array.from(progressInfoByAssignmentId.values()).some(info => info.reachedPlan)
+                    sharedGroupKey
+                        ? groupProgress >= 100
+                        : Array.from(progressInfoByAssignmentId.values()).some(info => info.reachedPlan)
                 )
 
             const entry: SessionCoverageEntry = {
@@ -3542,15 +3596,12 @@ const Appointments: React.FC = () => {
             const coverageRecordedAt = Timestamp.now()
             const rowPatch: any = heldBool
                 ? { status: 'completed', completedAt: coverageRecordedAt, updatedAt: coverageRecordedAt }
-                : { updatedAt: coverageRecordedAt }
+                : { status: 'scheduled', completedAt: null, updatedAt: coverageRecordedAt }
 
-            const completionGroupKey = assignmentIds
-                .map(id => assignedInterventions.find(assignment => String(assignment?.id || '') === id))
-                .map(assignment => normalizeAssignmentGroupKey(assignment))
-                .find(Boolean) || ''
+            const completionGroupKey = sharedGroupKey
             if (completionRequested) {
                 entry.completionRequired = true
-                entry.completionAssignmentIds = assignmentIds
+                entry.completionAssignmentIds = completionIds
                 if (completionGroupKey) entry.completionGroupKey = completionGroupKey
             }
             const attendedParticipantIds = new Set(
@@ -3598,7 +3649,7 @@ const Appointments: React.FC = () => {
                     smeAttendance: isGroupCoverage ? null : smeAttendance,
                     attendanceByParticipant: isGroupCoverage ? attendanceByParticipant : [],
                     completionRequired: completionRequested,
-                    completionAssignmentIds: completionRequested ? assignmentIds : [],
+                    completionAssignmentIds: completionRequested ? completionIds : [],
                     completionGroupKey: completionRequested ? completionGroupKey || null : null
                 },
                 status: heldBool ? 'completed' : 'scheduled',
@@ -3638,16 +3689,6 @@ const Appointments: React.FC = () => {
                 })
             })
 
-            const wasAlreadyRecordedAsNotHeld =
-                (row as any)?.sessionCoverage?.latest?.held === false
-            if (!heldBool && !wasAlreadyRecordedAsNotHeld) {
-                const reasonLabel = titleCase(notHeldReasonCategory || 'other')
-                const department =
-                    departmentNameMap[row.departmentId || ''] ||
-                    user.departmentName ||
-                    ''
-            }
-
             assignmentIds.forEach(id => {
                 const linkedAppointment = appointmentRows.find(appointmentRow =>
                     linkedAssignments.linkedByAppointmentId.get(appointmentRow.id) === id
@@ -3672,9 +3713,7 @@ const Appointments: React.FC = () => {
                 // sessions - no manual percentage. Once the planned count is
                 // reached, completionRequested routes to the completion flow
                 // instead of writing a further progress update here.
-                const assignment = assignedInterventions.find(
-                    candidate => String(candidate?.id || '') === id
-                )
+                const assignment = linkedAssignments.assignmentsById.get(id)
                 const existingProgress = Math.max(
                     Number(assignment?.computedProgress || 0),
                     Number(assignment?.progress || 0),
@@ -3696,10 +3735,20 @@ const Appointments: React.FC = () => {
                         ? sessionMilestoneProgress
                         : Math.max(existingProgress, sessionMilestoneProgress)
                 )
+                // Only an SME who attended moves forward; a no-show adds nothing.
                 const shouldTrackAttendedSession =
-                    heldBool && progressingAssignmentIds.has(id) && derivedProgress > 0
+                    heldBool && participantOutcome === 'attended' && progressingAssignmentIds.has(id) && derivedProgress > 0
+                // Saving coverage again must not log the same session twice.
+                const alreadyLogged = ((assignment?.progressUpdates || []) as any[])
+                    .some(update => update?.source === 'appointment' && String(update?.appointmentId || '') === String(row.id))
+                // A group member's delivery progress is the group's (written once, below).
+                const isSharedGroupMember = !!sharedGroupKey && groupKeyOf(assignment) === sharedGroupKey
                 const progressPatch =
-                    shouldTrackAttendedSession
+                    shouldTrackAttendedSession && isSharedGroupMember
+                        ? { 'tracking.sessionsLogged': info?.attendedCount ?? 0 }
+                        : shouldTrackAttendedSession && alreadyLogged
+                        ? { 'tracking.sessionsLogged': info?.attendedCount ?? 0, computedProgress: derivedProgress }
+                        : shouldTrackAttendedSession
                         ? {
                             'tracking.sessionsLogged': info?.attendedCount ?? 0,
                             progressUpdates: arrayUnion({
@@ -3730,6 +3779,26 @@ const Appointments: React.FC = () => {
                     ...progressPatch
                 })
             })
+
+            if (sharedGroupKey && heldBool && smeParticipated && !groupAlreadyCounted) {
+                batch.set(groupDeliveryRef(db, sharedGroupKey), {
+                    groupKey: sharedGroupKey,
+                    progress: groupProgress,
+                    deliveryStatus: groupProgress >= 100 ? 'completed' : 'in_progress',
+                    sessionsCompleted: groupHeld,
+                    plannedSessions: groupPlanned,
+                    progressUpdates: arrayUnion({
+                        by: user.uid || user.email,
+                        source: 'appointment',
+                        appointmentSessionId: appointmentSessionIdForGroup,
+                        appointmentId: row.id,
+                        note: notes || coveredPoints.join('; '),
+                        computedProgress: groupProgress,
+                        createdAt: Timestamp.now()
+                    }),
+                    updatedAt: Timestamp.now()
+                }, { merge: true })
+            }
 
             await withAppointmentSaveTimeout(batch.commit(), 'Saving appointment coverage')
 
@@ -3895,12 +3964,22 @@ const Appointments: React.FC = () => {
         appointmentCompletionSavingRef.current = true
         setSavingAppointmentCompletion(true)
         try {
+            // The MOV is compulsory for everyone who received the intervention; a POE is optional.
+            const { required: movRows } = splitMovRequirement(appointmentCompletionContext.assignments)
+            const manualMovs = await uploadManualMovs({
+                storage,
+                assignments: movRows,
+                filesById: values.movs || {}
+            })
             const result = await completeIntervention({
                 db, storage,
                 user: { uid: user?.uid, name: user?.name, email: user?.email, departmentName: user?.departmentName },
                 assignmentIds: appointmentCompletionContext.assignments.map(row => row.id),
                 files: values.files, notes: values.notes, recurrencePreset: values.recurrencePreset,
-                deliveryMethod: completionPrompt.deliveryMethod
+                deliveryMethod: completionPrompt.deliveryMethod,
+                movAssignmentIds: movRows.map(row => row.id),
+                manualMovs,
+                poeOptional: true
             })
             message.success(COMPLETION_SUCCESS_MESSAGE)
             setAssignedInterventions(previous => previous.map(row => result.assignmentIds.includes(row.id)
@@ -4139,6 +4218,29 @@ const Appointments: React.FC = () => {
                     setParticipantEmails(emails)
                     setParticipantPhones(phones)
                 }
+
+                // Photos live on users/{uid} only; match them to SMEs by email.
+                try {
+                    const byEmail = new Map<string, string[]>()
+                    Object.entries(emails).forEach(([pid, email]) => {
+                        const key = email.toLowerCase()
+                        byEmail.set(key, [...(byEmail.get(key) || []), pid])
+                    })
+                    const keys = Array.from(byEmail.keys())
+                    const photos: Record<string, string> = {}
+                    for (let i = 0; i < keys.length; i += 10) {
+                        const snap = await getDocs(fsQuery(collection(db, 'users'), where('email', 'in', keys.slice(i, i + 10))))
+                        snap.docs.forEach(d => {
+                            const u = d.data() as any
+                            const url = String(u.photoURL || '').trim()
+                            if (!url || !u.email) return
+                            ;(byEmail.get(String(u.email).toLowerCase()) || []).forEach(pid => { photos[pid] = url })
+                        })
+                    }
+                    if (!cancelled) setParticipantPhotos(photos)
+                } catch (photoError) {
+                    console.warn('Could not load SME photos', photoError)
+                }
             } catch (e) {
                 console.error(e)
             }
@@ -4149,6 +4251,7 @@ const Appointments: React.FC = () => {
         } else {
             setParticipantEmails({})
             setParticipantPhones({})
+            setParticipantPhotos({})
         }
 
         return () => {
@@ -4162,7 +4265,7 @@ const Appointments: React.FC = () => {
         assignedInterventions.forEach(ai => {
             const pid = String(ai?.participantId || ai?.beneficiaryId || '')
             if (!pid) return
-            if (isGroupedIntervention(ai)) return
+            if (isGroupedIntervention(ai) && !isCatchingUp(ai)) return
 
             const name = String(
                 ai?.participantName ||
@@ -4179,6 +4282,18 @@ const Appointments: React.FC = () => {
             .sort((a, b) => a.name.localeCompare(b.name))
     }, [assignedInterventions])
 
+
+    // Each group's shared delivery status: a finished delivery takes no more sessions
+    // (reopening it after a dispute sets it back to in progress).
+    const [groupDeliveryStatus, setGroupDeliveryStatus] = useState<Record<string, string>>({})
+    useEffect(() => {
+        const keys = Array.from(new Set(assignedInterventions.map(ai => getRealGroupKey(ai)).filter(Boolean))) as string[]
+        if (!keys.length) return
+        let cancelled = false
+        Promise.all(keys.map(key => getDoc(groupDeliveryRef(db, key)).then(snap => [key, String((snap.data() as any)?.deliveryStatus || '')] as const).catch(() => [key, ''] as const)))
+            .then(entries => { if (!cancelled) setGroupDeliveryStatus(Object.fromEntries(entries)) })
+        return () => { cancelled = true }
+    }, [assignedInterventions])
 
     const groupOptions = useMemo(() => {
         const map = new Map<
@@ -4198,6 +4313,8 @@ const Appointments: React.FC = () => {
         assignedInterventions.forEach(ai => {
             if (!isEligibleForGroupScheduling(ai)) return
             if (!isGroupedIntervention(ai)) return
+            if (isCatchingUp(ai)) return
+            if (groupDeliveryStatus[getRealGroupKey(ai)] === 'completed') return
 
             const key = getSchedulableGroupKey(ai)
             if (!key) return
@@ -4237,14 +4354,14 @@ const Appointments: React.FC = () => {
         return Array.from(map.values())
             .filter(item => item.count > 1)
             .sort((a, b) => b.count - a.count)
-    }, [assignedInterventions])
+    }, [assignedInterventions, groupDeliveryStatus])
 
     const interventionsForPickedParticipant = useMemo(() => {
         if (!pickedParticipantId) return []
 
         return distinctAppointmentAssignments(assignedInterventions).filter(ai => {
             const pid = String(ai?.participantId || ai?.beneficiaryId || '')
-            return pid === String(pickedParticipantId) && !isGroupedIntervention(ai)
+            return pid === String(pickedParticipantId) && (!isGroupedIntervention(ai) || isCatchingUp(ai))
         })
     }, [assignedInterventions, pickedParticipantId])
 
@@ -4254,6 +4371,7 @@ const Appointments: React.FC = () => {
         return assignedInterventions.filter(ai => {
             if (!isEligibleForGroupScheduling(ai)) return false
             if (!isGroupedIntervention(ai)) return false
+            if (isCatchingUp(ai)) return false
             return getSchedulableGroupKey(ai) === pickedGroupKey
         })
     }, [assignedInterventions, pickedGroupKey])
@@ -4422,7 +4540,8 @@ const Appointments: React.FC = () => {
             const newStart = dayjs(`${date} ${startTimeStr}`, 'YYYY-MM-DD HH:mm')
 
             const clash = appointments.some(a => {
-                const existingStart = dayjs(`${a.date} ${formatTime(a.startTime)}`, 'YYYY-MM-DD HH:mm')
+                if (['cancelled', 'postponed'].includes(String(a.status || '').toLowerCase())) return false
+                const existingStart = apptStart(a)
                 return existingStart.isValid() && existingStart.isSame(newStart)
             })
             if (clash) {
@@ -4482,6 +4601,16 @@ const Appointments: React.FC = () => {
 
                 if (!responsibleId) {
                     message.error('This intervention has no responsible assignee. Assign it before scheduling an appointment.')
+                    return
+                }
+
+                const clashMessage = await checkScheduleClash({
+                    assigneeId: responsibleId,
+                    startsAt: startMoment.toDate(),
+                    endsAt: endMoment.toDate()
+                })
+                if (clashMessage) {
+                    message.error(clashMessage)
                     return
                 }
 
@@ -4599,6 +4728,16 @@ const Appointments: React.FC = () => {
                 message.error(
                     `${assignmentsWithoutResponsiblePeople.length} selected intervention(s) have no responsible assignee. Assign them before scheduling this appointment.`
                 )
+                return
+            }
+
+            const groupClashMessage = await checkScheduleClash({
+                assigneeId: String(template?.assigneeId || '').trim(),
+                startsAt: startMoment.toDate(),
+                endsAt: endMoment.toDate()
+            })
+            if (groupClashMessage) {
+                message.error(groupClashMessage)
                 return
             }
 
@@ -4810,6 +4949,21 @@ const Appointments: React.FC = () => {
         const proposalId = String(proposal?.id || '').trim()
         if (!proposalId) return
 
+        const proposedStart = toDateSafe(proposal?.startTime)
+        const proposedEnd = toDateSafe(proposal?.endTime)
+        if (proposedStart && proposedEnd) {
+            const clashMessage = await checkScheduleClash({
+                assigneeId: String((appt as any).assigneeId || ''),
+                startsAt: proposedStart,
+                endsAt: proposedEnd,
+                excludeSessionId: String((appt as any).appointmentSessionId || '')
+            })
+            if (clashMessage) {
+                message.error(clashMessage)
+                return
+            }
+        }
+
         setRescheduleDecisionLoading(proposalId)
         try {
             await acceptAppointmentRescheduleProposal({
@@ -4909,6 +5063,19 @@ const Appointments: React.FC = () => {
                 return
             }
 
+            if (scheduleChanged) {
+                const clashMessage = await checkScheduleClash({
+                    assigneeId: String((selectedAppt as any).assigneeId || ''),
+                    startsAt: nextStartTime,
+                    endsAt: nextEndTime,
+                    excludeSessionId: String((selectedAppt as any).appointmentSessionId || '')
+                })
+                if (clashMessage) {
+                    message.error(clashMessage)
+                    return
+                }
+            }
+
             const sessionPatch = {
                 deliveryMethod: values.deliveryMethod,
                 startAt: Timestamp.fromDate(nextStartTime),
@@ -4952,7 +5119,7 @@ const Appointments: React.FC = () => {
             }
 
             const batch = writeBatch(db)
-            batch.update(doc(db, 'appointmentSessions', selectedAppt.appointmentSessionId), sessionPatch as any)
+            batch.update(doc(db, 'appointmentSessions', String(selectedAppt.appointmentSessionId)), sessionPatch as any)
             let reconfirmationCount = 0
             targetRows.forEach((targetRow: Appt) => {
                 const materialDetailsChanged =
@@ -5018,6 +5185,11 @@ const Appointments: React.FC = () => {
             message.warning('This meeting is more than 48 hours past its end time. Record coverage as held or not held instead.')
             return
         }
+        // People already checked in: it happened, at least in part. Record coverage instead of cancelling.
+        if (attendanceEvidence(appt).checkedIn > 0) {
+            message.warning('SMEs have already checked in to this meeting, so it can’t be cancelled. Record its coverage instead.')
+            return
+        }
         try {
             const now = Timestamp.now()
             const correctionReason = hasStarted(appt)
@@ -5045,7 +5217,7 @@ const Appointments: React.FC = () => {
                 members.forEach(member => {
                     batch.update(doc(db, 'appointments', member.id), patch as any)
                 })
-                batch.update(doc(db, 'appointmentSessions', appt.appointmentSessionId), sessionPatch as any)
+                batch.update(doc(db, 'appointmentSessions', String(appt.appointmentSessionId)), sessionPatch as any)
 
                 await batch.commit()
 
@@ -5070,7 +5242,7 @@ const Appointments: React.FC = () => {
 
             const batch = writeBatch(db)
             batch.update(doc(db, 'appointments', appt.id), patch as any)
-            batch.update(doc(db, 'appointmentSessions', appt.appointmentSessionId), sessionPatch as any)
+            batch.update(doc(db, 'appointmentSessions', String(appt.appointmentSessionId)), sessionPatch as any)
             await batch.commit()
 
             setAppointments(prev =>
@@ -5091,300 +5263,21 @@ const Appointments: React.FC = () => {
         }
     }
 
-    const openPostponeAppointment = (appt: Appt) => {
-        if (!user?.email) {
-            message.error('You must be logged in.')
-            return
-        }
-        if (hasStarted(appt)) {
-            message.warning('This meeting has started. Use Edit/Reschedule or record its outcome through Meeting Coverage.')
-            return
-        }
 
-        const existingLocation =
-            appt.deliveryMethod === 'in_person'
-                ? String(appt.location || '').trim()
-                : ''
 
-        setPostponeRecord(appt)
-        postponeForm.setFieldsValue({
-            deliveryMethod: appt.deliveryMethod,
-            startsAt: tsToDayjs(appt.startTime, appt.date),
-            endsAt: tsToDayjs(appt.endTime, appt.date),
-            meetingLink: appt.meetingLink || '',
-            location:
-                appt.deliveryMethod === 'in_person'
-                    ? existingLocation || 'At Center'
-                    : '',
-            useDifferentLocation:
-                appt.deliveryMethod === 'in_person' &&
-                isDifferentAppointmentLocation(existingLocation),
-            reason: ''
-        })
-        setPostponeModalOpen(true)
+    const rowMatchesFilters = (row: any) => {
+        const members: Appt[] = row?._displayType === 'group' && Array.isArray(row._groupMembers) ? row._groupMembers : [row]
+        if (filterDelivery && row.deliveryMethod !== filterDelivery) return false
+        if (filterParticipant && !members.some(member => member.participantId === filterParticipant)) return false
+        if (filterDateRange) {
+            const d = dayjs(row.date, 'YYYY-MM-DD')
+            if (!d.isBetween(filterDateRange[0], filterDateRange[1], 'day', '[]')) return false
+        }
+        return filterStatus === 'all' || filterStatus === derivedStatus(row)
     }
-
-    const handlePostponeAppointment = async (values: any) => {
-        const appt = postponeRecord
-        if (!appt) return
-
-        if (!user?.email) {
-            message.error('You must be logged in.')
-            return
-        }
-
-        const selectedStart = values.startsAt || values.startTime
-        const selectedEnd = values.endsAt || values.endTime
-        const selectedDate = values.startsAt || values.date
-
-        if (!selectedDate || !selectedStart || !selectedEnd) {
-            message.warning('Select a valid new date, start time and end time.')
-            return
-        }
-
-        const nextDate = dayjs(selectedDate).format('YYYY-MM-DD')
-        const nextStart = selectedStart
-            ? dayjs(selectedStart)
-            : parseAppointmentTime(values.startTime, nextDate)
-        const nextEnd = selectedEnd
-            ? dayjs(selectedEnd)
-            : parseAppointmentTime(values.endTime, nextDate)
-
-        if (!nextStart?.isValid() || !nextEnd?.isValid()) {
-            message.warning('Select a valid new date, start time and end time.')
-            return
-        }
-
-        if (!nextEnd.isAfter(nextStart)) {
-            message.warning('End time must be after start time.')
-            return
-        }
-
-        const currentStart = dayjs(
-            `${appt.date} ${formatTime(appt.startTime, appt.date)}`,
-            'YYYY-MM-DD HH:mm',
-            true
-        )
-
-        if (currentStart.isValid() && !nextStart.isAfter(currentStart)) {
-            message.warning('A postponed appointment must move to a later date or time.')
-            return
-        }
-
-        if (!nextStart.isAfter(dayjs())) {
-            message.warning('The new appointment time must be in the future.')
-            return
-        }
-
-        const nextDeliveryMethod = values.deliveryMethod as Delivery
-        if (!nextDeliveryMethod) {
-            message.warning('Select the meeting delivery method.')
-            return
-        }
-
-        const nextLocation =
-            nextDeliveryMethod === 'in_person'
-                ? String(values.location || 'At Center').trim() || 'At Center'
-                : ''
-
-        const nextMeetingLink =
-            nextDeliveryMethod === 'virtual'
-                ? String(values.meetingLink || '').trim()
-                : ''
-
-        if (nextDeliveryMethod === 'virtual' && !nextMeetingLink) {
-            message.warning('Please provide a meeting link for the postponed virtual session.')
-            return
-        }
-
-        const appointmentSessionId = String(
-            (appt as any).appointmentSessionId || ''
-        ).trim()
-
-        if (!appointmentSessionId) {
-            message.warning('This appointment is not linked to a session.')
-            return
-        }
-
-        const targetRows = Array.isArray((appt as any)?._groupMembers)
-            ? ((appt as any)._groupMembers as Appt[])
-            : [appt]
-
-        if (!targetRows.length) {
-            message.warning('No appointments were found to postpone.')
-            return
-        }
-
-        if (targetRows.length > 450) {
-            message.error('This grouped appointment is too large to postpone safely in one operation.')
-            return
-        }
-
-        const reason = String(values.reason || '').trim()
-        const changedAt = Timestamp.now()
-        const nextStartTimestamp = Timestamp.fromDate(nextStart.toDate())
-        const nextEndTimestamp = Timestamp.fromDate(nextEnd.toDate())
-
-        setPostponeLoading(true)
-        try {
-            const batch = writeBatch(db)
-
-            batch.update(doc(db, 'appointmentSessions', appointmentSessionId), {
-                deliveryMethod: nextDeliveryMethod,
-                startAt: nextStartTimestamp,
-                endAt: nextEndTimestamp,
-                meetingLink:
-                    nextDeliveryMethod === 'virtual'
-                        ? nextMeetingLink || null
-                        : null,
-                location:
-                    nextDeliveryMethod === 'in_person'
-                        ? nextLocation || null
-                        : null,
-
-                // Postpone is a schedule move, not a terminal appointment state.
-                status: 'scheduled',
-                completedAt: null,
-                attendanceSession: null,
-
-                scheduleHistory: arrayUnion({
-                    action: 'postponed',
-                    previousStartAt: appt.startTime,
-                    previousEndAt: appt.endTime,
-                    nextStartAt: nextStartTimestamp,
-                    nextEndAt: nextEndTimestamp,
-                    previousDeliveryMethod: appt.deliveryMethod,
-                    nextDeliveryMethod,
-                    previousMeetingLink: appt.meetingLink || null,
-                    nextMeetingLink:
-                        nextDeliveryMethod === 'virtual'
-                            ? nextMeetingLink || null
-                            : null,
-                    previousLocation: appt.location || null,
-                    nextLocation:
-                        nextDeliveryMethod === 'in_person'
-                            ? nextLocation || null
-                            : null,
-                    reason: reason || null,
-                    changedAt,
-                    changedById: user?.uid || user?.id || null,
-                    changedByName: user?.name || '',
-                    changedByEmail: user?.email || ''
-                }),
-
-                lastScheduleAction: 'postponed',
-                lastPostponedAt: changedAt,
-                lastPostponedById: user?.uid || user?.id || null,
-                lastPostponeReason: reason || null,
-                updatedAt: changedAt
-            } as any)
-
-            targetRows.forEach(targetRow => {
-                batch.update(doc(db, 'appointments', targetRow.id), {
-                    status: 'scheduled',
-                    smeConfirmation: 'pending',
-                    smeDeclineReason: null,
-                    smeRescheduleRequest: null,
-                    attendance: {
-                        status: 'expected',
-                        checkedInAt: null,
-                        checkedOutAt: null
-                    },
-                    lastScheduleAction: 'postponed',
-                    lastPostponedAt: changedAt,
-                    lastPostponedById: user?.uid || user?.id || null,
-                    lastPostponeReason: reason || null,
-                    updatedAt: changedAt
-                } as any)
-            })
-
-            await withAppointmentSaveTimeout(
-                batch.commit(),
-                'Postponing appointment'
-            )
-
-            const targetIds = new Set(targetRows.map(row => row.id))
-
-            setAppointments(previous =>
-                previous.map(row =>
-                    targetIds.has(row.id)
-                        ? {
-                            ...row,
-                            date: nextDate,
-                            startTime: nextStart.toDate(),
-                            endTime: nextEnd.toDate(),
-                            deliveryMethod: nextDeliveryMethod,
-                            meetingLink:
-                                nextDeliveryMethod === 'virtual'
-                                    ? nextMeetingLink
-                                    : undefined,
-                            location:
-                                nextDeliveryMethod === 'in_person'
-                                    ? nextLocation
-                                    : undefined,
-                            status: 'scheduled',
-                            userConfirmation: 'pending',
-                            smeRescheduleRequest: null
-                        }
-                        : row
-                )
-            )
-
-            if (selectedAppt && targetIds.has(selectedAppt.id)) {
-                setSelectedAppt({
-                    ...selectedAppt,
-                    date: nextDate,
-                    startTime: nextStart.toDate(),
-                    endTime: nextEnd.toDate(),
-                    deliveryMethod: nextDeliveryMethod,
-                    meetingLink:
-                        nextDeliveryMethod === 'virtual'
-                            ? nextMeetingLink
-                            : undefined,
-                    location:
-                        nextDeliveryMethod === 'in_person'
-                            ? nextLocation
-                            : undefined,
-                    status: 'scheduled',
-                    userConfirmation: 'pending',
-                    smeRescheduleRequest: null
-                })
-            }
-
-            message.success(
-                `${targetRows.length > 1 ? 'Grouped appointment' : 'Appointment'} moved to ${nextStart.format('DD MMM YYYY, HH:mm')}–${nextEnd.format('HH:mm')}. The SME${targetRows.length > 1 ? 's' : ''} must confirm the new time.`
-            )
-
-            closePostponeModal()
-            await loadAppointments()
-        } catch (error: any) {
-            console.error(error)
-            message.error(error?.message || 'Failed to postpone appointment.')
-        } finally {
-            setPostponeLoading(false)
-        }
-    }
-
-    const filteredAppointments = useMemo(() => {
-        return appointments.filter(a => {
-            if (filterDelivery && a.deliveryMethod !== filterDelivery) return false
-            if (filterParticipant && a.participantId !== filterParticipant) return false
-
-            if (filterDateRange) {
-                const d = dayjs(a.date, 'YYYY-MM-DD')
-                if (!d.isBetween(filterDateRange[0], filterDateRange[1], 'day', '[]')) return false
-            }
-
-            const s = derivedStatus(a)
-            if (filterStatus === 'all') return true
-            return filterStatus === s
-        })
-    }, [appointments, filterDelivery, filterParticipant, filterDateRange, filterStatus, clockNow])
-
-
 
     const sortedAppointments = useMemo(() => {
-        return [...filteredAppointments].sort((a, b) => {
+        return [...appointments].sort((a, b) => {
             const da = dayjs(`${a.date} ${formatTime(a.startTime)}`, 'YYYY-MM-DD HH:mm')
             const dbb = dayjs(`${b.date} ${formatTime(b.startTime)}`, 'YYYY-MM-DD HH:mm')
             if (!da.isValid() && !dbb.isValid()) return String(a.id).localeCompare(String(b.id))
@@ -5393,9 +5286,9 @@ const Appointments: React.FC = () => {
 
             return dbb.valueOf() - da.valueOf() || String(a.id).localeCompare(String(b.id))
         })
-    }, [filteredAppointments])
+    }, [appointments])
 
-    const groupedDisplayAppointments = useMemo(() => {
+    const allDisplayAppointments = useMemo(() => {
         const map = new Map<string, any>()
 
         sortedAppointments.forEach(appt => {
@@ -5535,6 +5428,11 @@ const Appointments: React.FC = () => {
         })
     }, [sortedAppointments, clockNow])
 
+    const groupedDisplayAppointments = useMemo(
+        () => allDisplayAppointments.filter(rowMatchesFilters),
+        [allDisplayAppointments, clockNow, filterDelivery, filterParticipant, filterDateRange, filterStatus] // eslint-disable-line react-hooks/exhaustive-deps
+    )
+
     useEffect(() => {
         const checkoutId = String(searchParams.get('checkout') || '').trim()
         const appointmentId = checkoutId || String(searchParams.get('coverage') || '').trim()
@@ -5577,56 +5475,6 @@ const Appointments: React.FC = () => {
     ])
 
 
-    const now = clockNow
-
-    const totalAppointments = groupedDisplayAppointments.length
-
-    const upcomingAppointments = groupedDisplayAppointments.filter(a => {
-        const start = dayjs(`${a.date} ${formatTime(a.startTime)}`, 'YYYY-MM-DD HH:mm')
-        return derivedStatus(a) === 'scheduled' && start.isAfter(now)
-    }).length
-
-    const completedAppointments = groupedDisplayAppointments.filter(
-        a => derivedStatus(a) === 'completed'
-    ).length
-
-    const uniqueParticipants = new Set(appointments.map(a => a.participantId)).size
-    const appointmentMetrics: DashboardMetric[] = [
-        {
-            key: 'total-sessions',
-            title: 'Total Sessions',
-            value: totalAppointments,
-            icon: <CalendarOutlined style={{ color: '#1677ff', fontSize: 18 }} />,
-            iconBg: 'rgba(22,119,255,0.12)',
-            important: true,
-            hideSubtitleOnMobile: true
-        },
-        {
-            key: 'upcoming-sessions',
-            title: 'Upcoming Sessions',
-            value: upcomingAppointments,
-            icon: <ClockCircleOutlined style={{ color: '#faad14', fontSize: 18 }} />,
-            iconBg: 'rgba(250,173,20,0.14)',
-            hideSubtitleOnMobile: true
-        },
-        {
-            key: 'completed-sessions',
-            title: 'Completed Sessions',
-            value: completedAppointments,
-            icon: <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />,
-            iconBg: 'rgba(82,196,26,0.12)',
-            important: true,
-            hideSubtitleOnMobile: true
-        },
-        {
-            key: 'unique-smes',
-            title: 'Unique SMEs',
-            value: uniqueParticipants,
-            icon: <TeamOutlined style={{ color: '#722ed1', fontSize: 18 }} />,
-            iconBg: 'rgba(114,46,209,0.12)',
-            hideSubtitleOnMobile: true
-        }
-    ]
     const participantOptions = useMemo(() => {
         const m = new Map<string, string>()
         appointments.forEach(a => {
@@ -5645,707 +5493,1491 @@ const Appointments: React.FC = () => {
     const canCancel = (r: Appt) =>
         !isCoverageOnly(r) && !['completed', 'cancelled', 'postponed'].includes(derivedStatus(r))
 
-    const canPostpone = (r: Appt) => {
-        return derivedStatus(r) === 'scheduled' && !hasStarted(r)
-    }
-
-    const columns = useMemo(() => {
-        const baseColumns: any[] = [
-            {
-                title: 'Intervention & SME',
-                key: 'interventionAndSme',
-                width: 240,
-                render: (_: any, r: any) => (
-                    <Space direction="vertical" size={4} style={{ lineHeight: 1.2, maxWidth: 220 }}>
-                        <Text strong ellipsis={{ tooltip: r.interventionTitle }} style={{ display: 'block', maxWidth: 220 }}>
-                            {r.interventionTitle}
-                        </Text>
-                        <Text type="secondary" ellipsis={{ tooltip: r.participantName }} style={{ display: 'block', maxWidth: 220 }}>
-                            {r._displayType === 'group' ? <TeamOutlined style={{ marginRight: 6 }} /> : <UserOutlined style={{ marginRight: 6 }} />}
-                            {r.participantName}
-                        </Text>
-                        {r._displayType !== 'group' ? (
-                            <Text type="secondary" title={`Assignment: ${r.assignedInterventionId || 'Not linked'}`}>
-                                Assigned: {assignmentDateLabel({ assignedAt: r.assignmentAssignedAt })}
-                            </Text>
-                        ) : null}
-                        {r._displayType === 'group' ? (
-                            <Space wrap size={6}>
-                                <Tag color={(r as any)._groupKind === 'grouped_assignment' ? 'purple' : 'cyan'}>
-                                    {(r as any)._groupKind === 'grouped_assignment'
-                                        ? 'Grouped Assignment'
-                                        : 'Grouped by Cycle'}
-                                </Tag>
-
-                                {(r as any)._cycleKey && formatCycleLabel((r as any)._cycleKey) ? (
-                                    <Tag color="geekblue">
-                                        {formatCycleLabel((r as any)._cycleKey)}
-                                    </Tag>
-                                ) : null}
-                            </Space>
-                        ) : null}
-                    </Space>
-                )
-            }
-        ]
-
-        if (isAllPrograms) {
-            baseColumns.push({
-                title: 'Program',
-                key: 'program',
-                width: 190,
-                ellipsis: true,
-                render: (_: any, r: Appt) => (
-                    <Text ellipsis={{ tooltip: r.programName || r.programId }} style={{ display: 'block', maxWidth: 170 }}>
-                        {r.programName || r.programId || '—'}
-                    </Text>
-                )
-            })
-        }
-
-        if (isOperationsView && isParentDepartmentView) {
-            baseColumns.push({
-                title: 'Department',
-                key: 'department',
-                render: (_: any, r: Appt) => (
-                    <Tag color='purple'>
-                        {departmentNameMap[r.departmentId || ''] || '—'}
-                    </Tag>
-                )
-            })
-        }
-
-        baseColumns.push(
-            {
-                title: 'Date & Time',
-                key: 'date',
-                width: 165,
-                render: (_: any, r: Appt) => (
-                    <Space direction="vertical" size={4} style={{ lineHeight: 1.2 }}>
-                        <Text strong><CalendarOutlined style={{ marginRight: 6, color: '#1677ff' }} />{dayjs(r.date).format('DD MMM YYYY')}</Text>
-                        <Text type="secondary"><ClockCircleOutlined style={{ marginRight: 6 }} />{`${formatTime(r.startTime)} – ${formatTime(r.endTime)}`}</Text>
-                    </Space>
-                )
-            },
-            {
-                title: 'Time',
-                key: 'time',
-                hidden: true,
-                render: (_: any, r: Appt) => (
-                    <Space>
-                        <ClockCircleOutlined /> {`${formatTime(r.startTime)} — ${formatTime(r.endTime)}`}
-                    </Space>
-                )
-            },
-            {
-                title: 'Status',
-                key: 'status',
-                render: (_: any, r: Appt) => {
-                    const s = displayStatus(r)
-                    return <Tag color={s.color} icon={s.icon}>{s.label}</Tag>
-                }
-            },
-            {
-                title: 'Delivery',
-                dataIndex: 'deliveryMethod',
-                key: 'delivery',
-                render: (v: Delivery) => {
-                    const meta = DELIVERY_METHODS.find(m => m.value === v)
-                    return <Tag icon={meta?.icon}>{meta?.label}</Tag>
-                }
-            },
-            {
-                title: 'Appointment RSVP',
-                dataIndex: 'userConfirmation',
-                key: 'userConfirmation',
-                render: (s: UserConfirmation, r: Appt) => {
-                    const members = Array.isArray((r as any)?._groupMembers)
-                        ? ((r as any)._groupMembers as Appt[])
-                        : []
-
-                    if ((r as any)?._displayType === 'group' && members.length) {
-                        const confirmed = members.filter(member =>
-                            String(member.userConfirmation || '').toLowerCase() === 'confirmed'
-                        ).length
-
-                        return (
-                            <Text strong title={`${confirmed} of ${members.length} SMEs confirmed`}>
-                                {confirmed}/{members.length}
-                            </Text>
-                        )
-                    }
-
-                    return memberRsvpTag(r, r, true)
-                }
-            },
-            {
-                title: 'Details',
-                key: 'details',
-                render: (_: any, r: Appt) => {
-                    if (r.deliveryMethod === 'virtual' && r.meetingLink) {
-                        if (isApptDone(r)) {
-                            const latest = r.sessionCoverage?.latest
-                            return (
-                                <Tag color={latest?.held ? 'green' : latest?.held === false ? 'red' : 'default'}>
-                                    {latest?.held ? 'Session completed' : latest?.held === false ? 'Session not held' : 'Meeting ended'}
-                                </Tag>
-                            )
-                        }
-                        return (
-                            <a href={r.meetingLink} target='_blank' rel='noreferrer'>
-                                <LinkOutlined /> Join link
-                            </a>
-                        )
-                    }
-                    if (r.deliveryMethod === 'in_person' && r.location) {
-                        return (
-                            <span>
-                                <EnvironmentOutlined /> {r.location}
-                            </span>
-                        )
-                    }
-                    if (r.deliveryMethod === 'telephonically') {
-                        const phone = participantPhones[r.participantId]
-                        return phone ? (
-                            <span>
-                                <PhoneFilled /> {phone}
-                            </span>
-                        ) : (
-                            <Text type='secondary'>No phone on file</Text>
-                        )
-                    }
-                    return <Text type='secondary'>—</Text>
-                }
-            },
-            {
-                title: 'Actions',
-                key: 'actions',
-                width: 150,
-                render: (_: any, r: Appt) => (
-                    <Space wrap>
-                        <Button
-                            size='small'
-                            shape='round'
-                            color='geekblue'
-                            variant='filled'
-                            style={{ border: '1px solid dodgerblue' }}
-                            icon={<EyeOutlined />}
-                            onClick={() => openAppointmentDetails(r)}
-                        >
-                            View
-                        </Button>
-
-                        {!isCoverageOnly(r) && derivedStatus(r) !== 'completed' && derivedStatus(r) !== 'cancelled' && derivedStatus(r) !== 'postponed' && (
-                            <Button
-                                data-guide="appointment-edit-action"
-                                size='small'
-                                shape='round'
-                                color='orange'
-                                variant='filled'
-                                icon={<EditOutlined />}
-                                onClick={() => openEdit(r)}
-                            >
-                                {hasStarted(r) && canReschedule(r) ? 'Reschedule' : 'Edit'}
-                            </Button>
-                        )}
-
-                        {canViewFoodMenu(r) && (
-                            <Button
-                                size='small'
-                                shape='round'
-                                icon={<BookOutlined />}
-                                onClick={() => openFoodMenu(r)}
-                            >
-                                Food Menu
-                            </Button>
-                        )}
-
-
-                        {canPostpone(r) && (
-                            <Button
-                                data-guide="appointment-postpone-action"
-                                size='small'
-                                shape='round'
-                                icon={<ClockCircleOutlined />}
-                                onClick={() => openPostponeAppointment(r)}
-                            >
-                                Postpone
-                            </Button>
-                        )}
-
-                        {canCancel(r) && (
-                            <Popconfirm
-                                title='Cancel this appointment?'
-                                description='This will hide it from the default view.'
-                                okText='Cancel appointment'
-                                cancelText='Keep'
-                                onConfirm={() => cancelAppointment(r)}
-                            >
-                                <Button size='small' danger>
-                                    Cancel
-                                </Button>
-                            </Popconfirm>
-                        )}
-
-                        {supportsQrAttendance(r) &&
-                            canStartQrWindow(r) &&
-                            derivedStatus(r) !== 'completed' &&
-                            derivedStatus(r) !== 'cancelled' &&
-                            derivedStatus(r) !== 'postponed' &&
-                            derivedStatus(r) !== 'awaiting_coverage' &&
-                            !isQrSessionActive(r) && (
-                                <Button
-                                    size='small'
-                                    shape='round'
-                                    color='cyan'
-                                    variant='filled'
-                                    style={{ border: '1px solid #13c2c2' }}
-                                    icon={<QrcodeOutlined />}
-                                    loading={qrLoading}
-                                    onClick={() => startQrSession(r)}
-                                >
-                                    Start QR
-                                </Button>
-                            )}
-
-                        {supportsQrAttendance(r) && isQrSessionActive(r) && (
-                            <Button
-                                size='small'
-                                shape='round'
-                                color='cyan'
-                                variant='filled'
-                                style={{ border: '1px solid #13c2c2' }}
-                                icon={<QrcodeOutlined />}
-                                onClick={() => openQrModal(r)}
-                            >
-                                QR
-                            </Button>
-                        )}
-
-                        {isApptDone(r) && (
-                            <Button
-                                data-guide="appointment-coverage-action"
-                                shape='round'
-                                danger={!r.sessionCoverage?.latest}
-                                color={r.sessionCoverage?.latest ? 'green' : undefined}
-                                variant='filled'
-                                style={r.sessionCoverage?.latest ? { border: '1px solid green' } : undefined}
-                                size='small'
-                                icon={r.sessionCoverage?.latest ? <EyeOutlined /> : <CheckCircleOutlined />}
-                                onClick={() => openCoverage(r)}
-                            >
-                                Coverage
-                            </Button>
-                        )}
-                    </Space>
-                )
-            }
-        )
-
-        return baseColumns
-    }, [
-        isAllPrograms,
-        isOperationsView,
-        isParentDepartmentView,
-        participantPhones,
-        qrLoading,
-        clockNow,
-        setSelectedAppt
-    ])
 
     const pageLoading = coordinatorLoading || appointmentsLoading || assignedLoading
     const isInitialPageLoading = pageLoading && appointments.length === 0
     const hasAppointmentFilters = Boolean(
         filterDelivery || filterParticipant || filterDateRange || filterStatus !== 'all'
     )
-    const emptyAppointmentsDescription = (() => {
-        if (filterStatus === 'awaiting_coverage') return 'No appointments awaiting coverage.'
-        if (filterStatus === 'in_progress') return 'No appointments are currently in progress.'
-        if (filterStatus === 'scheduled') return 'No scheduled appointments match these filters.'
-        if (filterStatus === 'completed') return 'No completed appointments match these filters.'
-        if (filterStatus === 'cancelled') return 'No cancelled appointments match these filters.'
-        if (filterStatus === 'postponed') return 'No postponed appointments match these filters.'
-        if (hasAppointmentFilters) return 'No appointments match the selected filters.'
-        return 'No appointments have been scheduled for this view.'
-    })()
-    const appointmentsEmptyState = <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyAppointmentsDescription} />
 
-    return (
-        <div style={{ padding: appointmentPagePadding, overflowX: 'hidden' }}>
-            <Helmet>
-                <title>Appointments | Smart Incubation</title>
-            </Helmet>
-
-            <div>
-                {false ? (
-                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                        <Tag color="processing" icon={<SyncOutlined spin />} style={{ marginInlineEnd: 0 }}>
-                            Updating appointments…
-                        </Tag>
-                    </div>
-                ) : null}
-                <div data-guide="appointment-metrics" style={{ marginBottom: 15 }}>
-                    <MetricsGrid metrics={appointmentMetrics} />
-                </div>
-
-                {awaitingCoverageCount > 0 ? (
-                    <Alert
-                        type='warning'
-                        showIcon
-                        message={`${awaitingCoverageCount} ended ${awaitingCoverageCount === 1 ? 'meeting needs' : 'meetings need'} coverage`}
-                        description='Coverage is due within 48 hours after the meeting ends. Record whether it took place; if it did not, select the reason so it is recorded.'
-                        action={
-                            <Button size='small' onClick={() => setFilterStatus('awaiting_coverage')}>
-                                Review now
-                            </Button>
-                        }
-                        style={{ marginBottom: 15 }}
-                    />
-                ) : null}
-
-                {screens.lg ? (
-                    <MotionCard
-                        filterBar={
-                            <Row data-guide="appointment-filters" gutter={[12, 12]} align="middle" wrap={false}>
-                                {isOperationsView && isParentDepartmentView && departmentScopeOptions.length > 0 && (
-                                    <Col {...filterSelectCol}>
-                                        <Select
-                                            value={selectedDepartmentScope}
-                                            onChange={setSelectedDepartmentScope}
-                                            style={{ width: '100%' }}
-                                            placeholder="Select department"
-                                            optionFilterProp="label"
-                                            showSearch
-                                        >
-                                            {departmentScopeOptions.map(opt => (
-                                                <Option key={opt.id} value={opt.id} label={opt.name}>
-                                                    <Space>
-                                                        <span>{opt.name}</span>
-                                                        {opt.isParent ? <Tag color="gold">Parent</Tag> : null}
-                                                    </Space>
-                                                </Option>
-                                            ))}
-                                        </Select>
-                                    </Col>
-                                )}
-                                <Col {...filterSelectCol}>
-                                    <Select
-                                        allowClear
-                                        placeholder="Delivery Method"
-                                        style={{ width: '100%' }}
-                                        value={filterDelivery}
-                                        onChange={(v: Delivery | undefined) => setFilterDelivery(v)}
-                                    >
-                                        {DELIVERY_METHODS.map((m) => (
-                                            <Option key={m.value} value={m.value}>
-                                                {m.icon} {m.label}
-                                            </Option>
-                                        ))}
-                                    </Select>
-                                </Col>
-
-                                <Col {...filterSelectCol}>
-                                    <Select
-                                        allowClear
-                                        placeholder="Participant"
-                                        style={{ width: '100%' }}
-                                        value={filterParticipant}
-                                        onChange={(v: string | undefined) => setFilterParticipant(v)}
-                                        showSearch
-                                        optionFilterProp="children"
-                                    >
-                                        {participantOptions.map((p) => (
-                                            <Option key={p.id} value={p.id}>
-                                                {p.name}
-                                            </Option>
-                                        ))}
-                                    </Select>
-                                </Col>
-
-                                <Col {...filterStatusCol}>
-                                    <Select
-                                        value={filterStatus}
-                                        onChange={(v) => setFilterStatus(v)}
-                                        style={{ width: '100%' }}
-                                        options={[
-                                            { label: 'All', value: 'all' },
-                                            { label: 'Scheduled', value: 'scheduled' },
-                                            { label: 'In Progress', value: 'in_progress' },
-                                            {
-                                                label: awaitingCoverageCount
-                                                    ? `Awaiting Coverage (${awaitingCoverageCount})`
-                                                    : 'Awaiting Coverage',
-                                                value: 'awaiting_coverage'
-                                            },
-                                            { label: 'Completed', value: 'completed' },
-                                            { label: 'Cancelled', value: 'cancelled' },
-                                            { label: 'Postponed', value: 'postponed' }
-                                        ]}
-                                    />
-                                </Col>
-
-                                <Col {...filterDateCol}>
-                                    <RangePicker
-                                        allowClear
-                                        value={filterDateRange as any}
-                                        onChange={(v) => setFilterDateRange((v as any) ?? null)}
-                                        placeholder={['Start date', 'End date']}
-                                        style={{ width: '100%' }}
-                                    />
-                                </Col>
-
-                                <Col {...filterActionCol}>
-                                    <span style={{ display: 'block', width: '100%' }}>
-                                        <Button
-                                            data-guide="schedule-appointment-action"
-                                            type="primary"
-                                            icon={<PlusOutlined />}
-                                            style={{ width: '100%' }}
-                                            onClick={() => setModalOpen(true)}
-                                            disabled={isAddAppointmentDisabled}
-                                        >
-                                            Schedule
-                                        </Button>
-                                    </span>
-                                </Col>
-
-                                <Col {...filterReviewCol}>
-                                    <Button
-                                        data-guide="session-review-action"
-                                        icon={<BarChartOutlined />}
-                                        style={{ width: '100%' }}
-                                        onClick={() => setMonthReviewOpen(true)}
-                                        disabled={pageLoading}
-                                    >
-                                        Review
-                                    </Button>
-                                </Col>
-
-                            </Row>
-                        }
-                    >
-                        {pageLoading ? (
-                            <Skeleton active paragraph={{ rows: 10 }} />
-                        ) : (
-                            <div data-guide="appointment-table">
-                                <Table
-                                    rowKey="id"
-                                    dataSource={groupedDisplayAppointments}
-                                    columns={columns as any}
-                                    pagination={{ pageSize: 3, showSizeChanger: false, position: ['bottomCenter'] }}
-                                    locale={{ emptyText: appointmentsEmptyState }}
-                                    size="middle"
-                                    onRow={(record) => ({ style: rowStatusStyle(record) })}
-                                    tableLayout="auto"
-                                />
-                            </div>
-                        )}
-                    </MotionCard>
-                ) : (
+    /** The open appointment's tabs (overview, members, coverage, food), shown in the side panel. */
+    const detailBody = (
+        <>
+                {selectedAppt ? (
                     <>
-                        <Space direction='vertical' style={{ width: '100%', marginBottom: 12 }}>
-                            <Button
-                                data-guide="schedule-appointment-action"
-                                type="primary"
-                                icon={<PlusOutlined />}
-                                onClick={() => setModalOpen(true)}
-                                disabled={isAddAppointmentDisabled}
-                                block
-                            >
-                                Add Appointment
-                            </Button>
-                            <Button
-                                data-guide="session-review-action"
-                                icon={<BarChartOutlined />}
-                                onClick={() => setMonthReviewOpen(true)}
-                                disabled={pageLoading}
-                                block
-                            >
-                                Review
-                            </Button>
-                        </Space>
+                        <div style={{ marginBottom: 14 }}>
+                            <SetupSegmented
+                                fullWidth
+                                value={detailModalTab}
+                                onChange={value => setDetailModalTab(value)}
+                                options={[
+                                    { label: 'Overview', value: 'overview' as const, icon: <AppstoreOutlined /> },
+                                    {
+                                        label: `Members (${getDisplayRowMembers(selectedAppt).length})`,
+                                        value: 'members' as const,
+                                        icon: <TeamOutlined />
+                                    },
+                                    { label: 'Coverage', value: 'coverage' as const, icon: <FileDoneOutlined /> },
+                                    ...(hasConfiguredFoodMenu(selectedAppt)
+                                        ? [{ label: 'Food Menu', value: 'food' as const, icon: <BookOutlined /> }]
+                                        : [])
+                                ]}
+                            />
+                        </div>
 
-                        {isInitialPageLoading ? (
-                            <Card>
-                                <Skeleton active avatar paragraph={{ rows: 5 }} />
-                            </Card>
-                        ) : (
-                            <div data-guide="appointment-table">
-                                <List
-                                    itemLayout="horizontal"
-                                    dataSource={groupedDisplayAppointments}
-                                    split={false}
-                                    locale={{ emptyText: appointmentsEmptyState }}
-                                    pagination={{
-                                        pageSize: 6,
-                                        hideOnSinglePage: true,
-                                        size: 'small',
-                                        align: 'center',
-                                        showSizeChanger: false
-                                    }}
-                                    renderItem={appt => {
-                                        const s = displayStatus(appt)
+                        {detailModalTab === 'overview' && (selectedAppt as any)?._displayType === 'group' && (() => {
+                            const stats = getAttendanceCounts(selectedAppt)
 
-                                        return (
-                                            <List.Item style={{ padding: 0, border: 'none', marginBottom: 12 }}>
-                                                <div
-                                                    style={{
-                                                        width: '100%',
-                                                        padding: 16,
-                                                        borderRadius: 12,
-                                                        border: '1px solid #f0f0f0',
-                                                        background: '#fff',
-                                                        ...rowStatusStyle(appt),
-                                                        boxShadow: '0 6px 18px rgba(0,0,0,0.06)',
-                                                        transition: 'all 0.25s ease'
-                                                    }}
+                            if (!hasQrAttendance(selectedAppt)) {
+                                return (
+                                    <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+                                        <Col xs={12} md={8}>
+                                            <MetricTile
+                                                icon={<TeamOutlined />}
+                                                tone='info'
+                                                title='RSVP Confirmed'
+                                                value={`${stats.confirmed}/${stats.total}`}
+                                            />
+                                        </Col>
+                                        <Col xs={0} md={8}>
+                                            <MetricTile
+                                                icon={<CheckCircleOutlined />}
+                                                tone='success'
+                                                title='Meeting Outcome'
+                                                value={meetingOutcomeLabel(selectedAppt)}
+                                            />
+                                        </Col>
+                                        <Col xs={12} md={8}>
+                                            <MetricTile
+                                                icon={<UserOutlined />}
+                                                tone='warning'
+                                                title='SME Attendance'
+                                                value={smeAttendanceLabel(getSmeAttendanceOutcome(selectedAppt))}
+                                            />
+                                        </Col>
+                                    </Row>
+                                )
+                            }
+
+                            /*
+                              Each tile is measured against the population the
+                              number actually belongs to.
+
+                              Checked Out previously read "0/29 invited", which
+                              is unanswerable — someone who never arrived cannot
+                              check out. Its denominator is the people who
+                              checked in.
+                            */
+                            const pct = (part: number, whole: number) =>
+                                whole > 0 ? Math.round((part / whole) * 100) : null
+
+                            const turnout = pct(stats.checkedIn, stats.total)
+                            const followThrough = pct(stats.checkedIn, stats.confirmed)
+                            const noShows = Math.max(stats.confirmed - stats.checkedIn, 0)
+                            const isGroupRow = (selectedAppt as any)?._displayType === 'group'
+
+                            return (
+                                <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+                                    <Col xs={12} md={isGroupRow ? 6 : 6}>
+                                        <MetricTile
+                                            icon={<TeamOutlined />}
+                                            tone='info'
+                                            title='RSVP Confirmed'
+                                            value={`${stats.confirmed}/${stats.total}`}
+                                            subtitle='of those invited'
+                                        />
+                                    </Col>
+
+                                    <Col xs={12} md={6}>
+                                        <MetricTile
+                                            icon={<LoginOutlined />}
+                                            tone='success'
+                                            title='Checked In'
+                                            value={`${stats.checkedIn}/${stats.total}`}
+                                            subtitle={turnout === null ? 'of those invited' : `${turnout}% of those invited`}
+                                        />
+                                    </Col>
+
+                                    <Col xs={12} md={6}>
+                                        <MetricTile
+                                            icon={<LogoutOutlined />}
+                                            tone='warning'
+                                            title='Checked Out'
+                                            value={`${stats.checkedOut}/${stats.checkedIn}`}
+                                            subtitle='of those who checked in'
+                                        />
+                                    </Col>
+
+                                    <Col xs={12} md={6}>
+                                        <MetricTile
+                                            icon={<ClockCircleOutlined />}
+                                            tone='info'
+                                            title='Still Present'
+                                            value={stats.currentlyPresent}
+                                            subtitle='checked in, not yet out'
+                                        />
+                                    </Col>
+
+                                    {/*
+                                      Follow-through, for group bookings only.
+
+                                      Measured against SMEs who confirmed rather
+                                      than everyone invited: confirming is the
+                                      commitment, so a confirmed SME who never
+                                      arrived is the one worth chasing. Turnout
+                                      against the full invite list is on the
+                                      Checked In tile, so both readings are
+                                      available without conflating them.
+                                    */}
+                                    {isGroupRow ? (
+                                        <Col xs={24}>
+                                            <MetricTile
+                                                icon={<CheckCircleOutlined />}
+                                                tone={
+                                                    followThrough === null
+                                                        ? 'neutral'
+                                                        : followThrough >= 80
+                                                            ? 'success'
+                                                            : followThrough >= 50
+                                                                ? 'warning'
+                                                                : 'danger'
+                                                }
+                                                title='Attendance follow-through'
+                                                value={followThrough === null ? '—' : `${followThrough}%`}
+                                                subtitle={
+                                                    stats.confirmed === 0
+                                                        ? 'No SME confirmed this session yet'
+                                                        : `${stats.checkedIn} of ${stats.confirmed} who confirmed attended · ${noShows} did not follow through`
+                                                }
+                                            />
+                                        </Col>
+                                    ) : null}
+                                </Row>
+                            )
+                        })()}
+
+                        {detailModalTab === 'overview' && (selectedAppt as any)?._displayType === 'group' ? (
+                            <Space wrap style={{ marginBottom: 12 }}>
+                                <Tag color={(selectedAppt as any)._groupKind === 'grouped_assignment' ? 'purple' : 'cyan'}>
+                                    {(selectedAppt as any)._groupKind === 'grouped_assignment'
+                                        ? 'Grouped Assignment'
+                                        : 'Grouped by Cycle'}
+                                </Tag>
+
+                            </Space>
+                        ) : null}
+
+                        {detailModalTab === 'overview' && (() => {
+                            const st = displayStatus(selectedAppt)
+                            const dStatus = derivedStatus(selectedAppt)
+                            const isGroupRow = (selectedAppt as any)?._displayType === 'group'
+                            const deliveryMeta = DELIVERY_METHODS.find(m => m.value === selectedAppt.deliveryMethod)
+                            const rsvp = String(selectedAppt.userConfirmation || '').toLowerCase()
+                            const tone =
+                                dStatus === 'completed'
+                                    ? 'is-completed'
+                                    : ['cancelled', 'postponed'].includes(dStatus) || rsvp === 'declined'
+                                        ? 'is-cancelled'
+                                        : dStatus === 'awaiting_coverage' || rsvp === 'pending' || !rsvp
+                                            ? 'is-pending'
+                                            : 'is-accepted'
+                            const note =
+                                dStatus === 'completed'
+                                    ? 'This appointment is complete. Add or review its coverage in the Coverage tab.'
+                                    : dStatus === 'cancelled'
+                                        ? 'This appointment was cancelled.'
+                                        : dStatus === 'postponed'
+                                            ? 'This appointment was postponed.'
+                                            : dStatus === 'awaiting_coverage'
+                                                ? 'The meeting has ended. Record what happened in the Coverage tab.'
+                                                : rsvp === 'declined'
+                                                    ? 'The SME declined this appointment. Reschedule it or choose a different time.'
+                                                    : isGroupRow
+                                                        ? 'Each SME in the group confirms individually. See the Members tab for responses.'
+                                                        : rsvp === 'confirmed'
+                                                            ? 'This appointment is confirmed and ready to go ahead.'
+                                                            : 'This appointment is awaiting confirmation from the SME. You can still record the outcome once the meeting takes place.'
+                            return (
+                                <div className={`apt-detail ${tone}`}>
+                                    <div className='apt-detail-head'>
+                                        <span className='apt-detail-icon'>
+                                            {isGroupRow ? (
+                                                <TeamOutlined />
+                                            ) : participantPhotos[selectedAppt.participantId] ? (
+                                                <Avatar shape='square' size={40} src={participantPhotos[selectedAppt.participantId]} />
+                                            ) : (
+                                                deliveryMeta?.icon || <UserOutlined />
+                                            )}
+                                        </span>
+                                        <div style={{ minWidth: 0 }}>
+                                            <h3>{selectedAppt.participantName || '-'}</h3>
+                                            {!isGroupRow && (participantEmails[selectedAppt.participantId] || selectedAppt.participantEmail) ? (
+                                                <small>{participantEmails[selectedAppt.participantId] || selectedAppt.participantEmail}</small>
+                                            ) : null}
+                                        </div>
+                                        <Tag bordered color={st.color} icon={st.icon} style={{ borderRadius: 999, marginInlineEnd: 0 }}>{st.label}</Tag>
+                                    </div>
+
+                                    <dl className='apt-detail-meta'>
+                                        <div>
+                                            <dt><CalendarOutlined />Date</dt>
+                                            <dd>{dayjs(selectedAppt.date).format('dddd, DD MMMM YYYY')}</dd>
+                                        </div>
+                                        <div>
+                                            <dt><ClockCircleOutlined />Time</dt>
+                                            <dd>{formatTime(selectedAppt.startTime)} — {formatTime(selectedAppt.endTime)}</dd>
+                                        </div>
+                                        <div>
+                                            <dt>{deliveryMeta?.icon}Format</dt>
+                                            <dd>{deliveryMeta?.label || '—'}</dd>
+                                        </div>
+                                        <div>
+                                            <dt>{isGroupRow ? <TeamOutlined /> : <UserOutlined />}{isGroupRow ? 'RSVP' : 'Appointment RSVP'}</dt>
+                                            <dd>
+                                                {isGroupRow
+                                                    ? (() => {
+                                                        const stats = getAttendanceCounts(selectedAppt)
+                                                        return `${stats.confirmed}/${stats.total} confirmed`
+                                                    })()
+                                                    : memberRsvpTag(selectedAppt, selectedAppt, true)}
+                                            </dd>
+                                        </div>
+                                        <div className='is-wide'>
+                                            <dt><EnvironmentOutlined />Details</dt>
+                                            <dd>
+                                {selectedAppt.deliveryMethod === 'virtual' ? (
+                                                    isApptDone(selectedAppt) ? (
+                                                        <Tag color={selectedAppt.sessionCoverage?.latest?.held ? 'green' : selectedAppt.sessionCoverage?.latest?.held === false ? 'red' : 'default'}>
+                                                            {selectedAppt.sessionCoverage?.latest?.held
+                                                                ? 'Session completed'
+                                                                : selectedAppt.sessionCoverage?.latest?.held === false
+                                                                    ? 'Session not held'
+                                                                    : 'Meeting ended'}
+                                                        </Tag>
+                                                    ) : selectedAppt.meetingLink ? (
+                                                        <a href={selectedAppt.meetingLink} target='_blank' rel='noreferrer'>
+                                                            <LinkOutlined /> Join link
+                                                        </a>
+                                                    ) : (
+                                                        <Text type='secondary'>No link provided</Text>
+                                                    )
+                                                ) : selectedAppt.deliveryMethod === 'in_person' ? (
+                                                    selectedAppt.location ? (
+                                                        <Space>
+                                                            <EnvironmentOutlined />
+                                                            <span>{selectedAppt.location}</span>
+                                                        </Space>
+                                                    ) : (
+                                                        <Text type='secondary'>No location provided</Text>
+                                                    )
+                                                ) : (
+                                                    <Space>
+                                                        <PhoneFilled />
+                                                        <span>
+                                                            {(selectedAppt as any)?._displayType === 'group'
+                                                                ? 'See participant list below'
+                                                                : participantPhones[selectedAppt.participantId] || 'No phone on file'}
+                                                        </span>
+                                                    </Space>
+                                                )}
+                                            </dd>
+                                        </div>
+                                    </dl>
+
+                                    <p className='apt-detail-note'><InfoCircleOutlined />{note}</p>
+                                </div>
+                            )
+                        })()}
+
+                        {detailModalTab === 'overview' && (selectedAppt as any)?._displayType !== 'group' &&
+                            (selectedAppt as any)?.smeRescheduleRequest?.status === 'proposed' &&
+                            Array.isArray((selectedAppt as any)?.smeRescheduleRequest?.proposals) ? (
+                            <Card
+                                size="small"
+                                title="SME Proposed Times"
+                                style={{ marginTop: 12, borderColor: '#faad14' }}
+                            >
+                                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                                    <Text type="secondary">
+                                        Decline reason: {(selectedAppt as any).smeRescheduleRequest.reasonText || selectedAppt.declineReason || '-'}
+                                    </Text>
+                                    {(selectedAppt as any).smeRescheduleRequest.proposals.map((proposal: any, index: number) => (
+                                        <Card key={proposal.id || index} size="small">
+                                            <Space
+                                                wrap
+                                                style={{ width: '100%', justifyContent: 'space-between' }}
+                                            >
+                                                <Text>
+                                                    <CalendarOutlined /> {proposal.date || '-'}{' '}
+                                                    <ClockCircleOutlined /> {formatTime(proposal.startTime, proposal.date)} — {formatTime(proposal.endTime, proposal.date)}
+                                                </Text>
+                                                <Button
+                                                    type="primary"
+                                                    size="small"
+                                                    loading={rescheduleDecisionLoading === String(proposal.id || '')}
+                                                    onClick={() => acceptProposedAppointmentTime(selectedAppt, proposal)}
                                                 >
+                                                    Accept This Time
+                                                </Button>
+                                            </Space>
+                                        </Card>
+                                    ))}
+                                    <Button
+                                        onClick={() => {
+                                            openEdit(selectedAppt)
+                                            setDetailModalOpen(false)
+                                        }}
+                                    >
+                                        Choose a Different Time
+                                    </Button>
+                                </Space>
+                            </Card>
+                        ) : null}
+
+                        {/*
+                            Decline reasons on the overview tab.
+
+                            This previously only handled a single appointment, so
+                            on a group booking — where each SME confirms or
+                            declines individually — the reasons were recorded but
+                            never shown anywhere. Groups now get one alert
+                            listing who declined and why.
+                        */}
+                        {detailModalTab === 'overview' &&
+                            (selectedAppt as any)?.smeRescheduleRequest?.status !== 'proposed' ? (() => {
+                                const declineReasonOf = (row: Appt) => String(
+                                    row.declineReason ||
+                                    (row as any)?.smeDeclineReason ||
+                                    (row as any)?.smeRescheduleRequest?.reasonText ||
+                                    ''
+                                ).trim()
+
+                                const members: Appt[] = Array.isArray((selectedAppt as any)?._groupMembers)
+                                    ? (selectedAppt as any)._groupMembers
+                                    : []
+
+                                if ((selectedAppt as any)?._displayType === 'group' && members.length) {
+                                    const declined = members.filter(
+                                        m => String(m.userConfirmation || '').toLowerCase() === 'declined'
+                                    )
+                                    if (!declined.length) return null
+
+                                    return (
+                                        <Alert
+                                            type='warning'
+                                            showIcon
+                                            style={{ marginTop: 12 }}
+                                            message={`${declined.length} SME${declined.length === 1 ? '' : 's'} declined this appointment`}
+                                            description={
+                                                <Space direction='vertical' size={4} style={{ width: '100%' }}>
+                                                    {declined.map(m => (
+                                                        <Text key={m.id} style={{ fontSize: 13 }}>
+                                                            <Text strong>{m.participantName || 'SME'}</Text>
+                                                            {' — '}
+                                                            {declineReasonOf(m) || 'No reason was provided.'}
+                                                        </Text>
+                                                    ))}
+                                                </Space>
+                                            }
+                                        />
+                                    )
+                                }
+
+                                if (String(selectedAppt.userConfirmation || '').toLowerCase() !== 'declined') return null
+
+                                return (
+                                    <Alert
+                                        type='warning'
+                                        showIcon
+                                        style={{ marginTop: 12 }}
+                                        message='SME declined this appointment'
+                                        description={declineReasonOf(selectedAppt) || 'No reason was provided.'}
+                                    />
+                                )
+                            })() : null}
+
+                        {detailModalTab === 'overview' && derivedStatus(selectedAppt) === 'completed' && getSmeAttendanceOutcome(selectedAppt) === 'unverified' ? (
+                            <Alert
+                                type='warning'
+                                showIcon
+                                style={{ marginTop: 12 }}
+                                message='Completed session with unverified SME attendance'
+                                description='Completion records the facilitator outcome; it does not prove that the SME attended. Update Meeting Coverage to record an attended or no-show outcome.'
+                            />
+                        ) : null}
+
+                        {detailModalTab === 'members' && (selectedAppt as any)?._displayType !== 'group' ? (
+                            (() => {
+                                const qr = hasQrAttendance(selectedAppt)
+                                const timing = qr ? getAttendanceTimingForMember(selectedAppt, selectedAppt, participantEmails) : null
+                                const checkedIn = Boolean((selectedAppt as any)?.attendance?.checkedInAt) || Number(selectedAppt.attendanceSummary?.count || 0) > 0
+                                const checkedOut = Boolean((selectedAppt as any)?.attendance?.checkedOutAt) || Boolean(getCheckedOutEmails(selectedAppt).length)
+                                const email = selectedAppt.participantEmail || participantEmails[selectedAppt.participantId] || ''
+                                return (
+                                    <div className='apt-detail is-accepted'>
+                                        <div className='apt-detail-head'>
+                                            <span className='apt-detail-icon'>
+                                                <Avatar shape='square' size={40} src={participantPhotos[selectedAppt.participantId]}>
+                                                    {String(selectedAppt.participantName || '?').trim().charAt(0).toUpperCase()}
+                                                </Avatar>
+                                            </span>
+                                            <div style={{ minWidth: 0 }}>
+                                                <h3>{selectedAppt.participantName || 'SME member'}</h3>
+                                                {email ? <small>{email}</small> : null}
+                                            </div>
+                                            <span />
+                                        </div>
+                                        <dl className='apt-detail-meta'>
+                                            <div>
+                                                <dt><CheckCircleOutlined />Appointment RSVP</dt>
+                                                <dd>{memberRsvpTag(selectedAppt, selectedAppt)}</dd>
+                                            </div>
+                                            <div>
+                                                <dt><UserOutlined />Attendance</dt>
+                                                <dd>{memberAttendanceTag(selectedAppt, selectedAppt)}</dd>
+                                            </div>
+                                            {timing ? (
+                                                <>
+                                                    <div>
+                                                        <dt><LoginOutlined />Check-in</dt>
+                                                        <dd>{timing.checkInTime}</dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt><LogoutOutlined />Check-out</dt>
+                                                        <dd>{timing.checkOutTime}</dd>
+                                                    </div>
+                                                    {checkedIn ? (
+                                                        <div className='is-wide'>
+                                                            <dt><ClockCircleOutlined />Time spent</dt>
+                                                            <dd>{formatMinutesSpent(timing.minutesSpent)}</dd>
+                                                        </div>
+                                                    ) : null}
+                                                </>
+                                            ) : null}
+                                        </dl>
+                                        {qr && checkedIn && !checkedOut ? (
+                                            <Button
+                                                block
+                                                shape='round'
+                                                icon={<LogoutOutlined />}
+                                                loading={checkoutLoading === `${selectedAppt.id}-${String(selectedAppt.participantEmail || participantEmails[selectedAppt.participantId] || '').trim().toLowerCase()}`}
+                                                onClick={() => checkOutParticipant(selectedAppt)}
+                                            >
+                                                Check Out
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                )
+                            })()
+                        ) : null}
+
+                        {detailModalTab === 'members' && (selectedAppt as any)?._displayType === 'group' && Array.isArray((selectedAppt as any)?._groupMembers) ? (
+                            <>
+                                <Divider style={{ margin: '14px 0' }} />
+                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
+                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                        <Text strong>Participants in this group</Text>
+                                        <Space wrap>
+                                            <Tag color='purple'>
+                                                {(selectedAppt as any)._groupMembers.length} SME(s)
+                                            </Tag>
+                                            {hasQrAttendance(selectedAppt) ? (() => {
+                                                const eligibility = getBulkCheckoutEligibility(selectedAppt)
+                                                const eligibleCount = eligibility.eligibleMembers.length
+                                                const excludedReasons = [
+                                                    eligibility.notCheckedInCount
+                                                        ? `${eligibility.notCheckedInCount} not checked in`
+                                                        : '',
+                                                    eligibility.alreadyCheckedOutCount
+                                                        ? `${eligibility.alreadyCheckedOutCount} already checked out`
+                                                        : '',
+                                                    eligibility.missingEmailCount
+                                                        ? `${eligibility.missingEmailCount} missing email`
+                                                        : ''
+                                                ].filter(Boolean)
+
+                                                return (
+                                                    <Space direction="vertical" size={2} align="end">
+                                                        <Popconfirm
+                                                            title={`Check out ${eligibleCount} eligible SME${eligibleCount === 1 ? '' : 's'}?`}
+                                                            description='Only checked-in SMEs with an email who have not checked out will be updated.'
+                                                            okText='Check out eligible'
+                                                            cancelText='Cancel'
+                                                            disabled={!eligibleCount}
+                                                            onConfirm={() => checkOutAllPresent(selectedAppt)}
+                                                        >
+                                                            <Button
+                                                                size='small'
+                                                                shape='round'
+                                                                icon={<LogoutOutlined />}
+                                                                disabled={!eligibleCount}
+                                                                loading={checkoutLoading === `${selectedAppt.id}-bulk`}
+                                                            >
+                                                                Check Out Eligible ({eligibleCount})
+                                                            </Button>
+                                                        </Popconfirm>
+                                                        {eligibility.excludedCount > 0 ? (
+                                                            <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
+                                                                {eligibility.excludedCount} excluded: {excludedReasons.join(', ')}
+                                                            </Text>
+                                                        ) : null}
+                                                    </Space>
+                                                )
+                                            })() : null}
+                                        </Space>
+                                    </Space>
+
+                                    {(() => {
+                                    const memberColumns: any[] = [
+                                            {
+                                                title: 'SME',
+                                                dataIndex: 'participantName',
+                                                key: 'participantName',
+                                                width: 220,
+                                                render: (_: any, m: Appt) => (
+                                                    <Space direction="vertical" size={0}>
+                                                        <Text strong>{m.participantName || '-'}</Text>
+                                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                                            {participantEmails[m.participantId] || m.participantEmail || 'No email on file'}
+                                                        </Text>
+                                                    </Space>
+                                                )
+                                            },
+                                            {
+                                                title: 'Appointment RSVP',
+                                                dataIndex: 'userConfirmation',
+                                                key: 'userConfirmation',
+                                                width: 200,
+                                                render: (value: UserConfirmation, m: Appt) => {
+                                                    // A decline is only actionable if you can see why. The
+                                                    // reason was previously stored but never surfaced for
+                                                    // group members.
+                                                    const declined = String(value || '').toLowerCase() === 'declined'
+                                                    const reason = String(
+                                                        m.declineReason ||
+                                                        (m as any)?.smeDeclineReason ||
+                                                        (m as any)?.smeRescheduleRequest?.reasonText ||
+                                                        ''
+                                                    ).trim()
+
+                                                    return (
+                                                        <Space direction="vertical" size={2}>
+                                                            {memberRsvpTag(selectedAppt, m)}
+                                                            {declined ? (
+                                                                <Text
+                                                                    type="danger"
+                                                                    style={{ fontSize: 12 }}
+                                                                    title={reason || undefined}
+                                                                >
+                                                                    {reason || 'No reason given'}
+                                                                </Text>
+                                                            ) : null}
+                                                        </Space>
+                                                    )
+                                                }
+                                            },
+                                            {
+                                                title: 'Attendance',
+                                                key: 'attendanceOutcome',
+                                                width: 170,
+                                                render: (_: any, m: Appt) => memberAttendanceTag(selectedAppt, m)
+                                            },
+                                            {
+                                                title: 'Check-in',
+                                                key: 'checkInTime',
+                                                width: 150,
+                                                hidden: !hasQrAttendance(selectedAppt),
+                                                render: (_: any, m: Appt) => {
+                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
+                                                    const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
+
+                                                    return (
+                                                        <Space direction="vertical" size={2}>
+                                                            {checkedIn ? <Tag color="green">Checked In</Tag> : <Tag>Not checked in</Tag>}
+                                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                {timing.checkInTime}
+                                                            </Text>
+                                                        </Space>
+                                                    )
+                                                }
+                                            },
+                                            {
+                                                title: 'Checkout',
+                                                key: 'checkOutTime',
+                                                width: 150,
+                                                hidden: !hasQrAttendance(selectedAppt),
+                                                render: (_: any, m: Appt) => {
+                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
+                                                    const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
+
+                                                    return (
+                                                        <Space direction="vertical" size={2}>
+                                                            {checkedOut ? <Tag color="default">Checked Out</Tag> : <Tag color="gold">Not Out</Tag>}
+                                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                {timing.checkOutTime}
+                                                            </Text>
+                                                        </Space>
+                                                    )
+                                                }
+                                            },
+                                            {
+                                                title: 'Time Spent',
+                                                key: 'timeSpent',
+                                                width: 120,
+                                                hidden: !hasQrAttendance(selectedAppt),
+                                                render: (_: any, m: Appt) => {
+                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
+
+                                                    return (
+                                                        <Text strong>
+                                                            {formatMinutesSpent(timing.minutesSpent)}
+                                                        </Text>
+                                                    )
+                                                }
+                                            },
+                                            {
+                                                title: 'Action',
+                                                key: 'action',
+                                                width: 140,
+                                                hidden: !hasQrAttendance(selectedAppt),
+                                                fixed: screens.md ? 'right' : undefined,
+                                                render: (_: any, m: Appt) => {
+                                                    const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
+                                                    const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
+
+                                                    const targetEmail = String(
+                                                        participantEmails[m.participantId] ||
+                                                        m.participantEmail ||
+                                                        ''
+                                                    )
+                                                        .trim()
+                                                        .toLowerCase()
+
+                                                    const loadingKey = `${selectedAppt?.id}-${targetEmail}`
+
+                                                    return (
+                                                        <Button
+                                                            size="small"
+                                                            shape="round"
+                                                            icon={<LogoutOutlined />}
+                                                            disabled={!checkedIn || checkedOut || !selectedAppt}
+                                                            loading={checkoutLoading === loadingKey}
+                                                            onClick={() => selectedAppt && checkOutParticipant(selectedAppt, m)}
+                                                        >
+                                                            Check Out
+                                                        </Button>
+                                                    )
+                                                }
+                                            }
+                                    ]
+                                    const colOf = (key: string) => memberColumns.find(c => c.key === key)
+                                    return (
+                                        <List
+                                            dataSource={(selectedAppt as any)._groupMembers as Appt[]}
+                                            pagination={{ pageSize: 6, size: 'small', hideOnSinglePage: true, align: 'center', showSizeChanger: false }}
+                                            renderItem={(m: Appt) => {
+                                                const qr = hasQrAttendance(selectedAppt)
+                                                const timing = qr ? getAttendanceTimingForMember(selectedAppt, m, participantEmails) : null
+                                                const checkedIn = qr && isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
+                                                const checkedOut = qr && isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
+                                                const email = participantEmails[m.participantId] || m.participantEmail || 'No email on file'
+                                                const targetEmail = String(participantEmails[m.participantId] || m.participantEmail || '').trim().toLowerCase()
+                                                return (
                                                     <div
                                                         style={{
+                                                            border: '1px solid rgba(128,128,128,0.28)',
+                                                            borderRadius: 12,
+                                                            padding: '8px 12px',
+                                                            marginBottom: 8,
                                                             display: 'flex',
-                                                            justifyContent: 'space-between',
-                                                            alignItems: 'flex-start',
+                                                            alignItems: 'center',
                                                             gap: 12,
                                                             flexWrap: 'wrap'
                                                         }}
                                                     >
-                                                        <div style={{ flex: 1, minWidth: 220 }}>
-                                                            <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                                                                <Space wrap size={8}>
-                                                                    <Tag color="blue">{appt.interventionTitle}</Tag>
-                                                                    <Tag color={s.color} icon={s.icon}>{s.label}</Tag>
-                                                                    {(appt as any)._displayType === 'group' ? (
-                                                                        <Tag color="purple">Group</Tag>
-                                                                    ) : null}
-                                                                </Space>
-
-                                                                <Space wrap size={6}>
-                                                                    <UserOutlined />
-                                                                    <Text strong>{appt.participantName}</Text>
-                                                                </Space>
-                                                                {(appt as any)._displayType !== 'group' ? (
-                                                                    <Text type="secondary" title={`Assignment: ${appt.assignedInterventionId || 'Not linked'}`}>
-                                                                        Assigned: {assignmentDateLabel({ assignedAt: appt.assignmentAssignedAt })}
-                                                                    </Text>
-                                                                ) : null}
-
-                                                                <Space wrap size={12}>
-                                                                    <Text>
-                                                                        <CalendarOutlined /> {dayjs(appt.date).format('YYYY-MM-DD')}
-                                                                    </Text>
-                                                                    <Text>
-                                                                        <ClockCircleOutlined /> {formatTime(appt.startTime)} — {formatTime(appt.endTime)}
-                                                                    </Text>
-                                                                </Space>
-                                                            </Space>
+                                                        <Avatar size={32} src={participantPhotos[m.participantId]} style={{ flexShrink: 0 }}>
+                                                            {String(m.participantName || '?').trim().charAt(0).toUpperCase()}
+                                                        </Avatar>
+                                                        <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+                                                            <Text strong ellipsis style={{ display: 'block' }}>{m.participantName || '-'}</Text>
+                                                            <Text type='secondary' ellipsis style={{ display: 'block', fontSize: 12 }}>{email}</Text>
                                                         </div>
-
-                                                        <div
-                                                            style={{
-                                                                display: 'flex',
-                                                                gap: 8,
-                                                                flexWrap: 'wrap',
-                                                                justifyContent: 'flex-start'
-                                                            }}
-                                                        >
+                                                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                                            {colOf('userConfirmation')?.render(m.userConfirmation, m)}
+                                                            {memberAttendanceTag(selectedAppt, m)}
+                                                            {timing && (checkedIn || checkedOut) ? (
+                                                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                    {timing.checkInTime} – {timing.checkOutTime} · {formatMinutesSpent(timing.minutesSpent)}
+                                                                </Text>
+                                                            ) : null}
+                                                        </div>
+                                                        {checkedIn && !checkedOut ? (
                                                             <Button
-                                                                type="primary"
-                                                                ghost
-                                                                shape="round"
-                                                                icon={<EyeOutlined />}
-                                                                onClick={() => {
-                                                                    setSelectedAppt(appt)
-                                                                    setDetailModalOpen(true)
-                                                                }}
+                                                                size='small'
+                                                                shape='round'
+                                                                icon={<LogoutOutlined />}
+                                                                style={{ marginLeft: 'auto' }}
+                                                                loading={checkoutLoading === `${selectedAppt?.id}-${targetEmail}`}
+                                                                onClick={() => checkOutParticipant(selectedAppt, m)}
                                                             >
-                                                                View
+                                                                Check Out
                                                             </Button>
-
-                                                            {!hasStarted(appt) && (
-                                                                <Button
-                                                                    data-guide="appointment-edit-action"
-                                                                    shape="round"
-                                                                    icon={<EditOutlined />}
-                                                                    onClick={() => openEdit(appt)}
-                                                                >
-                                                                    Edit
-                                                                </Button>
-                                                            )}
-
-                                                            {canPostpone(appt) && (
-                                                                <Button
-                                                                    data-guide="appointment-postpone-action"
-                                                                    shape="round"
-                                                                    icon={<ClockCircleOutlined />}
-                                                                    onClick={() => openPostponeAppointment(appt)}
-                                                                >
-                                                                    Postpone
-                                                                </Button>
-                                                            )}
-
-                                                            {canViewFoodMenu(appt) && (
-                                                                <Button
-                                                                    shape="round"
-                                                                    icon={<BookOutlined />}
-                                                                    onClick={() => openFoodMenu(appt)}
-                                                                >
-                                                                    Food Menu
-                                                                </Button>
-                                                            )}
-
-
-                                                            {supportsQrAttendance(appt) &&
-                                                                canStartQrWindow(appt) &&
-                                                                derivedStatus(appt) !== 'completed' &&
-                                                                derivedStatus(appt) !== 'cancelled' &&
-                                                                derivedStatus(appt) !== 'postponed' &&
-                                                                derivedStatus(appt) !== 'awaiting_coverage' &&
-                                                                !isQrSessionActive(appt) && (
-                                                                    <Button
-                                                                        shape="round"
-                                                                        icon={<QrcodeOutlined />}
-                                                                        loading={qrLoading}
-                                                                        onClick={() => startQrSession(appt)}
-                                                                    >
-                                                                        Start QR
-                                                                    </Button>
-                                                                )}
-
-                                                            {supportsQrAttendance(appt) && isQrSessionActive(appt) && (
-                                                                <Button
-                                                                    shape="round"
-                                                                    icon={<QrcodeOutlined />}
-                                                                    onClick={() => openQrModal(appt)}
-                                                                >
-                                                                    QR
-                                                                </Button>
-                                                            )}
-
-                                                            {isApptDone(appt) && (
-                                                                <Button
-                                                                    data-guide="appointment-coverage-action"
-                                                                    shape="round"
-                                                                    danger={!appt.sessionCoverage?.latest}
-                                                                    icon={appt.sessionCoverage?.latest ? <EyeOutlined /> : <CheckCircleOutlined />}
-                                                                    onClick={() => openCoverage(appt)}
-                                                                >
-                                                                    {appt.sessionCoverage?.latest ? 'View Coverage' : 'Coverage'}
-                                                                </Button>
-                                                            )}
-                                                        </div>
+                                                        ) : null}
                                                     </div>
+                                                )
+                                            }}
+                                        />
+                                    )
+                                    })()}
+                                </Space>
+                            </>
+                        ) : null}
+
+                        {detailModalTab === 'food' && hasConfiguredFoodMenu(selectedAppt) ? (
+                            <>
+                                <Divider style={{ margin: '14px 0' }} />
+
+                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
+                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                        <Text strong>Food Menu</Text>
+                                        {canManageFoodMenu(selectedAppt) ? (
+                                            <Button
+                                                size={screens.md ? 'middle' : 'small'}
+                                                shape='round'
+                                                icon={<BookOutlined />}
+                                                onClick={() => openFoodMenu(selectedAppt)}
+                                            >
+                                                Manage Menu
+                                            </Button>
+                                        ) : (
+                                            <Tag color='default'>Menu locked</Tag>
+                                        )}
+                                    </Space>
+
+                                    {selectedAppt.foodMenuEnabled && normalizeFoodMenuItems(selectedAppt.foodMenu).length ? (
+                                        <Table
+                                            rowKey='id'
+                                            size='small'
+                                            pagination={false}
+                                            dataSource={normalizeFoodMenuItems(selectedAppt.foodMenu)}
+                                            columns={[
+                                                {
+                                                    title: 'Item',
+                                                    dataIndex: 'name',
+                                                    key: 'name',
+                                                    width: 140,
+                                                    render: (name: string, item: FoodMenuItem) => (
+                                                        <Space direction='vertical' size={0}>
+                                                            <Text strong>{name}</Text>
+                                                            {item.description ? (
+                                                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                    {item.description}
+                                                                </Text>
+                                                            ) : null}
+                                                        </Space>
+                                                    )
+                                                },
+                                                {
+                                                    title: 'Category',
+                                                    dataIndex: 'category',
+                                                    key: 'category',
+                                                    width: 120,
+                                                    render: (category: FoodCategory) => <Tag>{getFoodCategoryLabel(category)}</Tag>
+                                                },
+                                                {
+                                                    title: 'Dietary Note',
+                                                    dataIndex: 'dietaryNote',
+                                                    key: 'dietaryNote',
+                                                    width: 180,
+                                                    hidden: !normalizeFoodMenuItems(selectedAppt.foodMenu).some(item =>
+                                                        Boolean(String(item.dietaryNote || '').trim())
+                                                    ),
+                                                    render: (note: string) => note || <Text type='secondary'>—</Text>
+                                                },
+                                                {
+                                                    title: 'Qty',
+                                                    dataIndex: 'quantityAvailable',
+                                                    key: 'quantityAvailable',
+                                                    width: 80,
+                                                    render: (qty: number | null, item: FoodMenuItem) => (
+                                                        <Space size={4}>
+                                                            <span>{qty ?? '—'}</span>
+                                                            <Text type='secondary'>
+                                                                ({getFoodSelectionCountForItem(selectedAppt, item)} selected)
+                                                            </Text>
+                                                        </Space>
+                                                    )
+                                                }
+                                            ]}
+                                            scroll={{ x: 640 }}
+                                        />
+                                    ) : (
+                                        <Text type='secondary'>No food menu listed for this appointment yet.</Text>
+                                    )}
+                                    {getFoodSelectionsForRecord(selectedAppt).length ? (
+                                        <Card size='small' title='SME selections'>
+                                            <Table
+                                                rowKey={(row: FoodSelection, index?: number) =>
+                                                    `${row.participantId}-${row.itemId}-${index}`
+                                                }
+                                                size='small'
+                                                pagination={{
+                                                    pageSize: 6,
+                                                    showSizeChanger: false,
+                                                    position: ['bottomCenter']
+                                                }}
+                                                scroll={{ x: 640 }}
+                                                dataSource={getFoodSelectionsForRecord(selectedAppt)}
+                                                columns={[
+                                                    {
+                                                        title: 'SME',
+                                                        dataIndex: 'participantName',
+                                                        key: 'participantName',
+                                                        render: (name: string) => <Text strong>{name || 'SME'}</Text>
+                                                    },
+                                                    {
+                                                        title: 'Type',
+                                                        key: 'category',
+                                                        width: 110,
+                                                        render: (_: any, row: FoodSelection) => (
+                                                            <Tag color={String(row.category || row.itemCategory).toLowerCase() === 'drink' ? 'cyan' : 'green'}>
+                                                                {getFoodCategoryLabel((row.category || row.itemCategory || 'meal') as FoodCategory)}
+                                                            </Tag>
+                                                        )
+                                                    },
+                                                    {
+                                                        title: 'Selected Item',
+                                                        dataIndex: 'itemName',
+                                                        key: 'itemName',
+                                                        // Empty rows are filtered out upstream, so a blank
+                                                        // name here means the item was deleted from the menu
+                                                        // after the SME chose it — say that, rather than
+                                                        // inventing a name.
+                                                        render: (name: string) => (
+                                                            name
+                                                                ? <Tag color='blue'>{name}</Tag>
+                                                                : <Text type='secondary'>Item no longer on the menu</Text>
+                                                        )
+                                                    },
+                                                ]}
+                                            />
+                                        </Card>
+                                    ) : (
+                                        <Text type='secondary'>No SME food selections captured yet.</Text>
+                                    )}
+                                </Space>
+                            </>
+                        ) : null}
+
+                        {detailModalTab === 'overview' && hasQrAttendance(selectedAppt) && !isApptDone(selectedAppt) ? (
+                            <>
+                                <Divider style={{ margin: '14px 0' }} />
+
+                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
+                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                        <Text strong>QR Attendance</Text>
+
+                                        {selectedAppt &&
+                                            canStartQrWindow(selectedAppt) &&
+                                            derivedStatus(selectedAppt) !== 'completed' &&
+                                            derivedStatus(selectedAppt) !== 'cancelled' &&
+                                            derivedStatus(selectedAppt) !== 'postponed' &&
+                                            derivedStatus(selectedAppt) !== 'awaiting_coverage' &&
+                                            !isQrSessionActive(selectedAppt) ? (
+                                            <Button
+                                                size={screens.md ? 'middle' : 'small'}
+                                                shape='round'
+                                                icon={<QrcodeOutlined />}
+                                                loading={qrLoading}
+                                                onClick={() => startQrSession(selectedAppt)}
+                                            >
+                                                Start QR
+                                            </Button>
+                                        ) : null}
+
+                                        {selectedAppt && isQrSessionActive(selectedAppt) ? (
+                                            <Button
+                                                size={screens.md ? 'middle' : 'small'}
+                                                shape='round'
+                                                icon={<QrcodeOutlined />}
+                                                onClick={() => openQrModal(selectedAppt)}
+                                            >
+                                                Show QR
+                                            </Button>
+                                        ) : null}
+                                    </Space>
+
+                                    {selectedAppt && isQrSessionActive(selectedAppt) ? (
+                                        <Alert
+                                            type='success'
+                                            showIcon
+                                            message='QR attendance is active'
+                                            description='Participants can scan with their phone camera to open the meeting check-in page.'
+                                        />
+                                    ) : (
+                                        <Text type='secondary'>
+                                            QR attendance becomes available 15 minutes before the meeting and stays active until closed or expired.
+                                        </Text>
+                                    )}
+                                </Space>
+                            </>
+                        ) : null}
+
+                        {detailModalTab === 'coverage' && (() => {
+                            const latest = (selectedAppt as any)?.sessionCoverage?.latest as SessionCoverageEntry | undefined
+                            const done = isApptDone(selectedAppt)
+                            const savedAt = latest ? toDateSafe((latest as any).createdAt) : null
+                            const smeOutcome = getSmeAttendanceOutcome(selectedAppt)
+                            const tone = !latest ? 'is-pending' : latest.held ? 'is-completed' : 'is-cancelled'
+                            const hasText = Boolean(latest && (latest.notes || latest.coveredPoints?.length))
+                            return (
+                                <div className={`apt-detail ${tone}`}>
+                                    <div className='apt-detail-head'>
+                                        <span className='apt-detail-icon'>
+                                            {!latest ? <FileDoneOutlined /> : latest.held ? <CheckCircleOutlined /> : <StopOutlined />}
+                                        </span>
+                                        <div style={{ minWidth: 0 }}>
+                                            <h3>{!latest ? 'No coverage yet' : latest.held ? 'Session held' : 'Session not held'}</h3>
+                                            <small>
+                                                {latest
+                                                    ? latest.title || selectedAppt.sessionTitle || selectedAppt.interventionTitle
+                                                    : done
+                                                        ? 'Record what happened in this meeting'
+                                                        : 'Available after the meeting'}
+                                            </small>
+                                        </div>
+                                        {latest?.held ? (
+                                            <Tag
+                                                bordered
+                                                color={latest.smeAttendance === 'no_show' ? 'red' : latest.smeAttendance === 'unverified' || !latest.smeAttendance ? 'gold' : 'blue'}
+                                                style={{ borderRadius: 999, marginInlineEnd: 0 }}
+                                            >
+                                                SME: {smeAttendanceLabel(smeOutcome)}
+                                            </Tag>
+                                        ) : <span />}
+                                    </div>
+
+                                    {latest ? (
+                                        <dl className='apt-detail-meta'>
+                                            <div>
+                                                <dt><CalendarOutlined />Saved</dt>
+                                                <dd>{savedAt ? dayjs(savedAt).format('DD MMM YYYY, HH:mm') : '—'}</dd>
+                                            </div>
+                                            <div>
+                                                <dt><UserOutlined />Recorded by</dt>
+                                                <dd>{(latest as any).createdByName || '—'}</dd>
+                                            </div>
+                                            {!latest.held ? (
+                                                <div className='is-wide'>
+                                                    <dt><InfoCircleOutlined />Reason</dt>
+                                                    <dd>{latest.reasonNotHeld || (latest as any).notHeldReasonCategory || '—'}</dd>
                                                 </div>
-                                            </List.Item>
-                                        )
-                                    }}
-                                />
+                                            ) : null}
+                                            {latest.held && hasText ? (
+                                                <div className='is-wide'>
+                                                    <dt><FileDoneOutlined />{latest.smeAttendance === 'no_show' || latest.smeAttendance === 'unverified' ? 'Attendance notes' : 'Covered'}</dt>
+                                                    <dd style={{ fontWeight: 500, whiteSpace: 'pre-wrap' }}>{latest.notes || latest.coveredPoints?.join('; ')}</dd>
+                                                    {latest.coveredPoints?.some(point => norm(point) !== norm(latest.notes)) ? (
+                                                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                                            {latest.coveredPoints.map(point => (
+                                                                <Tag key={point} bordered color='blue' style={{ borderRadius: 999, marginInlineEnd: 0 }}>{point}</Tag>
+                                                            ))}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            ) : null}
+                                        </dl>
+                                    ) : (
+                                        <p className='apt-detail-note'>
+                                            <InfoCircleOutlined />
+                                            {done
+                                                ? 'No coverage has been added for this meeting yet.'
+                                                : 'Coverage can be added once the meeting has ended.'}
+                                        </p>
+                                    )}
+
+                                    {latest ? <CoveragePhotoGallery row={selectedAppt} /> : null}
+
+                                    {done ? (
+                                        <Button
+                                            block
+                                            shape='round'
+                                            danger={!latest}
+                                            type={latest ? 'default' : 'primary'}
+                                            icon={latest ? <EyeOutlined /> : <CheckCircleOutlined />}
+                                            onClick={() => openCoverage(selectedAppt)}
+                                        >
+                                            {latest ? 'View or edit coverage' : 'Add coverage'}
+                                        </Button>
+                                    ) : null}
+                                </div>
+                            )
+                        })()}
+                    </>
+                ) : (
+                    <Text type='secondary'>No appointment selected.</Text>
+                )}
+        </>
+    )
+
+    // ---- Workspace: a day-by-day agenda beside the open appointment ----
+
+    const isPhone = !screens.md
+    const [agendaView, setAgendaView] = useState<AgendaView>('action')
+    const [agendaSearch, setAgendaSearch] = useState('')
+    const [agendaPage, setAgendaPage] = useState(1)
+
+    const rowKeyOf = (row: any) =>
+        row?._displayType === 'group' ? `group-${getAppointmentGroupKey(row)}` : String(row?.id || '')
+
+    /** What the facilitator has to do about it now, if anything. */
+    const needsActionReason = (row: Appt): string | null => {
+        const status = derivedStatus(row)
+        if (status === 'awaiting_coverage') return 'Record coverage'
+        if (['cancelled', 'postponed', 'completed', 'not_held'].includes(status)) return null
+        const members = getDisplayRowMembers(row)
+        if (members.some(member => (member as any).rescheduleRequest?.status === 'proposed')) return 'New time proposed'
+        if (members.some(member => String(member.userConfirmation || '').toLowerCase() === 'declined')) return 'SME declined'
+        return null
+    }
+
+    const agendaOf = (row: Appt): Exclude<AgendaView, 'all'> => {
+        const status = derivedStatus(row)
+        if (status === 'cancelled' || status === 'postponed') return 'cancelled'
+        if (status === 'completed' || status === 'not_held') return 'done'
+        if (needsActionReason(row)) return 'action'
+        const start = apptStart(row)
+        if (start.isValid() && start.isAfter(clockNow.endOf('day'))) return 'upcoming'
+        return 'today'
+    }
+
+    const agendaBase = useMemo(() => {
+        const text = agendaSearch.trim().toLowerCase()
+        if (!text) return groupedDisplayAppointments
+        return groupedDisplayAppointments.filter((row: any) =>
+            [row.interventionTitle, row.sessionTitle, row.title, row.participantName, ...getDisplayRowMembers(row).map(member => member.participantName)]
+                .some(value => String(value || '').toLowerCase().includes(text))
+        )
+    }, [groupedDisplayAppointments, agendaSearch]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const agendaCounts = useMemo(() => {
+        const counts: Record<AgendaView, number> = { action: 0, today: 0, upcoming: 0, done: 0, cancelled: 0, all: agendaBase.length }
+        agendaBase.forEach((row: Appt) => { counts[agendaOf(row)] += 1 })
+        return counts
+    }, [agendaBase, clockNow]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const agendaRows = useMemo(() => {
+        const rows = agendaView === 'all' ? agendaBase : agendaBase.filter((row: Appt) => agendaOf(row) === agendaView)
+        // What's coming reads forwards; what's past reads newest first.
+        const forwards = ['action', 'today', 'upcoming'].includes(agendaView)
+        return [...rows].sort((a: Appt, b: Appt) => {
+            const diff = (apptStart(a).valueOf() || 0) - (apptStart(b).valueOf() || 0)
+            return forwards ? diff : -diff
+        })
+    }, [agendaBase, agendaView, clockNow]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Start where the work is: "Needs action" when there's anything in it, else today, else what's next.
+    const [agendaStarted, setAgendaStarted] = useState(false)
+    useEffect(() => {
+        if (agendaStarted || isInitialPageLoading) return
+        setAgendaStarted(true)
+        if (!agendaCounts.action) setAgendaView(agendaCounts.today ? 'today' : agendaCounts.upcoming ? 'upcoming' : 'all')
+    }, [isInitialPageLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => setAgendaPage(1), [agendaView, agendaSearch, filterDelivery, filterParticipant, filterDateRange])
+
+    // The open appointment follows reloads; on wider screens the first row opens by itself.
+    useEffect(() => {
+        if (selectedAppt) {
+            const key = rowKeyOf(selectedAppt)
+            const fresh = groupedDisplayAppointments.find((row: any) => rowKeyOf(row) === key)
+            if (fresh && fresh !== selectedAppt) setSelectedAppt(fresh)
+            if (fresh && agendaRows.some((row: any) => rowKeyOf(row) === key)) return
+        }
+        if (isPhone) return
+        if (agendaRows[0]) {
+            setSelectedAppt(agendaRows[0])
+            setDetailModalTab('overview')
+        } else {
+            setSelectedAppt(null)
+        }
+    }, [groupedDisplayAppointments, agendaRows]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    /** The one thing this appointment is waiting for, then everything else that can be done. */
+    const appointmentActions = (row: Appt) => {
+        const status = derivedStatus(row)
+        const closed = ['completed', 'not_held', 'cancelled', 'postponed'].includes(status)
+        const qrActive = supportsQrAttendance(row) && isQrSessionActive(row)
+        const qrStartable = supportsQrAttendance(row) && canStartQrWindow(row) && !closed && status !== 'awaiting_coverage' && !qrActive
+        const reason = needsActionReason(row)
+        type Action = { key: string; label: string; icon: React.ReactNode; onClick: () => void; danger?: boolean; loading?: boolean }
+        const primary: Action | null =
+            status === 'awaiting_coverage'
+                ? { key: 'coverage', label: 'Record coverage', icon: <CheckCircleOutlined />, onClick: () => openCoverage(row) }
+                : qrActive
+                    ? { key: 'qr', label: 'Show QR', icon: <QrcodeOutlined />, onClick: () => openQrModal(row) }
+                    : qrStartable
+                        ? { key: 'startQr', label: 'Start QR check-in', icon: <QrcodeOutlined />, onClick: () => void startQrSession(row), loading: qrLoading }
+                        : reason === 'New time proposed' || reason === 'SME declined'
+                            ? { key: 'reschedule', label: 'Choose a new time', icon: <ClockCircleOutlined />, onClick: () => openEdit(row) }
+                            : null
+        const secondary: Action[] = []
+        if (row.sessionCoverage?.latest && primary?.key !== 'coverage') {
+            secondary.push({ key: 'coverage', label: 'Coverage', icon: <EyeOutlined />, onClick: () => openCoverage(row) })
+        }
+        if (!isCoverageOnly(row) && !closed && primary?.key !== 'reschedule') {
+            secondary.push({ key: 'edit', label: 'Change time or place', icon: <EditOutlined />, onClick: () => openEdit(row) })
+        }
+        if (canViewFoodMenu(row)) secondary.push({ key: 'food', label: 'Food menu', icon: <BookOutlined />, onClick: () => openFoodMenu(row) })
+        if (canCancel(row)) {
+            secondary.push({
+                key: 'cancel',
+                label: 'Cancel',
+                icon: <CloseCircleOutlined />,
+                danger: true,
+                onClick: () => Modal.confirm({
+                    centered: true,
+                    title: 'Cancel this appointment?',
+                    content: row._displayType === 'group' ? 'Every SME invited to this session is told it’s cancelled.' : 'The SME is told it’s cancelled.',
+                    okText: 'Cancel appointment',
+                    cancelText: 'Keep it',
+                    okButtonProps: { danger: true },
+                    onOk: () => cancelAppointment(row)
+                })
+            })
+        }
+        return { primary, secondary }
+    }
+
+    const STATUS_TONE: Record<string, string> = {
+        scheduled: 'info',
+        in_progress: 'info',
+        awaiting_coverage: 'warning',
+        completed: 'success',
+        not_held: 'danger',
+        cancelled: 'neutral',
+        postponed: 'neutral'
+    }
+    const STATUS_TEXT: Record<string, string> = {
+        scheduled: 'Scheduled',
+        in_progress: 'In progress',
+        awaiting_coverage: 'Needs coverage',
+        completed: 'Held',
+        not_held: 'Not held',
+        cancelled: 'Cancelled',
+        postponed: 'Postponed'
+    }
+
+    const timeRangeOf = (row: Appt) => {
+        const start = apptStart(row)
+        const end = apptEnd(row)
+        return start.isValid() ? `${start.format('HH:mm')}${end.isValid() ? `–${end.format('HH:mm')}` : ''}` : '—'
+    }
+    const whoOf = (row: Appt) => {
+        if (row._displayType !== 'group') return row.participantName || 'SME'
+        const members = getDisplayRowMembers(row)
+        const confirmed = members.filter(member => String(member.userConfirmation || '').toLowerCase() === 'confirmed').length
+        return `${members.length} SMEs · ${confirmed}/${members.length} confirmed`
+    }
+    const dayLabel = (day: Dayjs) =>
+        day.isSame(clockNow, 'day') ? `Today, ${day.format('ddd D MMM')}`
+            : day.isSame(clockNow.add(1, 'day'), 'day') ? `Tomorrow, ${day.format('ddd D MMM')}`
+                : day.isSame(clockNow.subtract(1, 'day'), 'day') ? `Yesterday, ${day.format('ddd D MMM')}`
+                    : day.format('dddd D MMMM YYYY')
+
+    const renderAgenda = () => {
+        const pageRows = agendaRows.slice((agendaPage - 1) * AGENDA_PAGE_SIZE, agendaPage * AGENDA_PAGE_SIZE)
+        const days: { key: string; day: Dayjs; rows: Appt[] }[] = []
+        pageRows.forEach((row: Appt) => {
+            const day = apptStart(row)
+            const key = day.isValid() ? day.format('YYYY-MM-DD') : 'unknown'
+            const last = days[days.length - 1]
+            if (last && last.key === key) last.rows.push(row)
+            else days.push({ key, day, rows: [row] })
+        })
+        return (
+            <div data-guide="appointment-table">
+                <MotionCard loading={isInitialPageLoading} skeleton='list' skeletonRows={6}>
+                    {agendaRows.length === 0 ? (
+                        <Empty
+                            className="ws-list-empty"
+                            description={agendaView === 'action' ? 'Nothing needs your attention.' : agendaView === 'today' ? 'Nothing scheduled today.' : agendaSearch || hasAppointmentFilters ? 'No appointments match.' : 'No appointments here.'}
+                        />
+                    ) : (
+                        <>
+                            {days.map(group => (
+                                <section key={group.key} className="ap-day">
+                                    <h3 className="ap-day-label">{group.key === 'unknown' ? 'No date' : dayLabel(group.day)}</h3>
+                                    <div className="ws-rows" role="listbox" aria-label={group.key}>
+                                        {group.rows.map((row: Appt) => {
+                                            const key = rowKeyOf(row)
+                                            const status = derivedStatus(row)
+                                            const reason = needsActionReason(row)
+                                            const selected = !!selectedAppt && rowKeyOf(selectedAppt) === key
+                                            return (
+                                                <button
+                                                    key={key}
+                                                    type="button"
+                                                    role="option"
+                                                    aria-selected={selected}
+                                                    className={`ws-row ap-row${selected ? ' is-selected' : ''}`}
+                                                    onClick={() => openAppointmentDetails(row)}
+                                                >
+                                                    <span className="ap-time">{timeRangeOf(row)}</span>
+                                                    <div className="ws-row-main">
+                                                        <div className="ws-row-name">{(row as any).sessionTitle || (row as any).title || row.interventionTitle || 'Appointment'}</div>
+                                                        <div className="ws-row-meta">{[whoOf(row), (row as any).sessionTitle || (row as any).title ? row.interventionTitle : null].filter(Boolean).join(' · ')}</div>
+                                                        {(reason || (supportsQrAttendance(row) && isQrSessionActive(row))) && (
+                                                            <div className="mv-row-flags">
+                                                                {reason && <span className="mv-flag is-warning">{reason}</span>}
+                                                                {supportsQrAttendance(row) && isQrSessionActive(row) && <span className="mv-flag is-info">QR check-in open</span>}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="ws-row-side">
+                                                        <StatusPill tone={STATUS_TONE[status] || 'neutral'}>{STATUS_TEXT[status] || status}</StatusPill>
+                                                    </div>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </section>
+                            ))}
+                            {agendaRows.length > AGENDA_PAGE_SIZE && (
+                                <div className="ws-pagination">
+                                    <Pagination size="small" current={agendaPage} pageSize={AGENDA_PAGE_SIZE} total={agendaRows.length} onChange={setAgendaPage} showSizeChanger={false} showLessItems />
+                                </div>
+                            )}
+                        </>
+                    )}
+                </MotionCard>
+            </div>
+        )
+    }
+
+    const renderAppointmentPanel = (row: Appt) => {
+        const { primary, secondary } = appointmentActions(row)
+        const status = derivedStatus(row)
+        const reason = needsActionReason(row)
+        const start = apptStart(row)
+        return (
+            <div className="ws-detail">
+                <MotionCard>
+                    <header className="ws-detail-head">
+                        {row._displayType === 'group'
+                            ? <Avatar size={52} icon={<TeamOutlined />} className="ap-avatar" />
+                            : <Avatar size={52} src={participantPhotos[row.participantId] || undefined} icon={<UserOutlined />} className="ap-avatar" />}
+                        <div className="ws-detail-identity">
+                            <h2 className="ws-detail-name">{(row as any).sessionTitle || (row as any).title || row.interventionTitle || 'Appointment'}</h2>
+                            <div className="ws-detail-sub">
+                                {[start.isValid() ? `${start.format('ddd D MMM')} · ${timeRangeOf(row)}` : null, whoOf(row)].filter(Boolean).join(' · ')}
+                            </div>
+                            <div className="ws-detail-tags">
+                                <StatusPill tone={STATUS_TONE[status] || 'neutral'}>{STATUS_TEXT[status] || status}</StatusPill>
+                                {cycleLabelOf(row) ? <StatusPill tone="neutral">{cycleLabelOf(row)}</StatusPill> : null}
+                            </div>
+                        </div>
+                    </header>
+                    <div className="mv-detail-body">
+                        {(primary || secondary.length > 0) && (
+                            <div className="mv-actions">
+                                {primary && (
+                                    <Button type="primary" icon={primary.icon} loading={primary.loading} onClick={primary.onClick}>
+                                        {primary.label}
+                                    </Button>
+                                )}
+                                {secondary.map(action => (
+                                    <Button key={action.key} icon={action.icon} danger={action.danger} onClick={action.onClick}>
+                                        {action.label}
+                                    </Button>
+                                ))}
                             </div>
                         )}
-                    </>
+                        {reason === 'Record coverage' && (
+                            <Alert type="warning" showIcon message="This meeting has ended" description="Record whether it took place (and who attended) within 48 hours of the end. If it didn’t, choose the reason." />
+                        )}
+                        {(reason === 'New time proposed' || reason === 'SME declined') && (
+                            <Alert type="warning" showIcon message={reason === 'New time proposed' ? 'The SME proposed a new time' : 'The SME declined this time'} description="Open the members or overview below to see their response, then choose a new time." />
+                        )}
+                        {detailBody}
+                    </div>
+                </MotionCard>
+            </div>
+        )
+    }
+
+
+    return (
+        <div className="ws-page">
+            <Helmet>
+                <title>Appointments | Smart Incubation</title>
+            </Helmet>
+
+            <DashboardFilterBar>
+                <div className="ws-toolbar" data-guide="appointment-filters">
+                    {/* Status first: what needs the facilitator is the first thing to see. */}
+                    <Segmented
+                        data-guide="appointment-metrics"
+                        className="ws-toolbar-status mv-status-strip"
+                        block
+                        value={agendaView}
+                        onChange={value => setAgendaView(value as AgendaView)}
+                        aria-label="Show"
+                        options={AGENDA_SEGMENTS.map(segment => ({
+                            value: segment.value,
+                            label: (
+                                <span className="mv-seg">
+                                    {segment.label}
+                                    {!isInitialPageLoading && <span className={`mv-seg-count qtx-tone-${segment.tone}`}>{agendaCounts[segment.value]}</span>}
+                                </span>
+                            )
+                        }))}
+                    />
+                    <Input
+                        className="ws-toolbar-search"
+                        allowClear
+                        prefix={<SearchOutlined />}
+                        placeholder="Search session, intervention or SME"
+                        value={agendaSearch}
+                        onChange={event => setAgendaSearch(event.target.value)}
+                        aria-label="Search appointments"
+                    />
+                    <Popover
+                        trigger="click"
+                        placement="bottomLeft"
+                        title="Filters"
+                        content={
+                            <FilterPanel
+                                canReset={Boolean(filterDelivery || filterParticipant || filterDateRange)}
+                                onReset={() => {
+                                    setFilterDelivery(undefined)
+                                    setFilterParticipant(undefined)
+                                    setFilterDateRange(null)
+                                }}
+                            >
+                                {isOperationsView && isParentDepartmentView && departmentScopeOptions.length > 0 && (
+                                    <div>
+                                        <label className="ws-filter-label" htmlFor="ap-department">Department</label>
+                                        <Select
+                                            id="ap-department"
+                                            value={selectedDepartmentScope}
+                                            onChange={setSelectedDepartmentScope}
+                                            style={{ width: '100%' }}
+                                            optionFilterProp="label"
+                                            showSearch
+                                            options={departmentScopeOptions.map(option => ({ value: option.id, label: option.name }))}
+                                        />
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="ws-filter-label" htmlFor="ap-delivery">Delivery</label>
+                                    <Select
+                                        id="ap-delivery"
+                                        allowClear
+                                        placeholder="Any"
+                                        style={{ width: '100%' }}
+                                        value={filterDelivery}
+                                        onChange={(value: Delivery | undefined) => setFilterDelivery(value)}
+                                        options={DELIVERY_METHODS.map(method => ({ value: method.value, label: method.label }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="ws-filter-label" htmlFor="ap-sme">SME</label>
+                                    <Select
+                                        id="ap-sme"
+                                        allowClear
+                                        showSearch
+                                        placeholder="Any"
+                                        style={{ width: '100%' }}
+                                        value={filterParticipant}
+                                        onChange={(value: string | undefined) => setFilterParticipant(value)}
+                                        optionFilterProp="label"
+                                        options={participantOptions.map(participant => ({ value: participant.id, label: participant.name }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="ws-filter-label" htmlFor="ap-dates">Dates</label>
+                                    <RangePicker
+                                        id="ap-dates"
+                                        allowClear
+                                        value={filterDateRange as any}
+                                        onChange={value => setFilterDateRange((value as any) ?? null)}
+                                        style={{ width: '100%' }}
+                                        format="D MMM YYYY"
+                                    />
+                                </div>
+                            </FilterPanel>
+                        }
+                    >
+                        <Badge className="ws-toolbar-button" count={[filterDelivery, filterParticipant, filterDateRange].filter(Boolean).length} size="small" offset={[-6, 4]}>
+                            <Button block icon={<FilterOutlined />}>Filters</Button>
+                        </Badge>
+                    </Popover>
+                    <Button
+                        data-guide="session-review-action"
+                        className="ws-toolbar-button"
+                        icon={<BarChartOutlined />}
+                        onClick={() => setMonthReviewOpen(true)}
+                        disabled={pageLoading}
+                    >
+                        Review
+                    </Button>
+                    <Button
+                        data-guide="schedule-appointment-action"
+                        className="ws-toolbar-button"
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => activeProgramIsTraining ? setTrainingBookingOpen(true) : setModalOpen(true)}
+                        disabled={isAddAppointmentDisabled}
+                    >
+                        Schedule
+                    </Button>
+                </div>
+            </DashboardFilterBar>
+
+            <div className="ws-layout">
+                {renderAgenda()}
+                {!isPhone && (
+                    <div className="ws-detail-sticky">
+                        {isInitialPageLoading ? (
+                            <MotionCard loading skeleton="text" skeletonRows={10}>{null}</MotionCard>
+                        ) : selectedAppt ? renderAppointmentPanel(selectedAppt) : (
+                            <MotionCard>
+                                <Empty className="ws-detail-empty" description="Select an appointment to see it here." />
+                            </MotionCard>
+                        )}
+                    </div>
                 )}
             </div>
 
+            {isPhone && (
+                <Drawer
+                    className="ws-drawer ws-sheet"
+                    open={detailModalOpen && !!selectedAppt}
+                    onClose={() => setDetailModalOpen(false)}
+                    placement="bottom"
+                    height="92vh"
+                    title={selectedAppt ? (selectedAppt as any).sessionTitle || selectedAppt.interventionTitle : 'Appointment'}
+                >
+                    {selectedAppt && renderAppointmentPanel(selectedAppt)}
+                </Drawer>
+            )}
+
+
+            {activeProgramIsTraining && activeProgramId && (
+                <TrainingPlanAppointmentModal
+                    open={trainingBookingOpen}
+                    trainingId={activeProgramId}
+                    onClose={() => setTrainingBookingOpen(false)}
+                    onBooked={() => {
+                        setTrainingBookingOpen(false)
+                        void loadAppointments()
+                    }}
+                />
+            )}
+
             <Modal
+ wrapClassName="mobile-sheet"
                 className="guide-schedule-appointment-modal"
                 centered
                 title="Schedule Appointment"
@@ -6375,17 +7007,7 @@ const Appointments: React.FC = () => {
                 ) : null}
 
                 {(createDeliveryMethod === 'in_person' || createStep === 1) && (
-                    <div
-                        style={{
-                            width: '100%',
-                            maxWidth: 420,
-                            margin: '0 auto 20px',
-                            padding: '12px 16px 10px',
-                            border: '1px solid #f0f0f0',
-                            borderRadius: 12,
-                            background: '#fafafa'
-                        }}
-                    >
+                    <div className="ap-steps">
                         <Steps
                             current={createStep}
                             size="small"
@@ -6420,40 +7042,38 @@ const Appointments: React.FC = () => {
 
                 {createStep === 0 ? (
                     <>
-                        <div data-guide="schedule-type">
-                            <Card style={{ marginBottom: 12 }}>
-                                <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-                                    <Text strong>Schedule Type</Text>
-
-                                    <Select
+                        <div data-guide="schedule-type" className="ap-schedule-section">
+                            <h4 className="qc-section-title">Who is it for?</h4>
+                                <div>
+                                    <ChoiceCards
+                                        compact
+                                        columns={2}
+                                        label='Who is it for?'
                                         value={scheduleMode}
-                                        onChange={v => {
-                                            const next = v as ScheduleMode
-                                            setScheduleMode(next)
+                                        onChange={(next: string) => {
+                                            setScheduleMode(next as ScheduleMode)
                                             setAppointmentDetailsDraft({})
                                             setPickedParticipantId(undefined)
                                             setPickedGroupKey(undefined)
                                             form.resetFields()
                                         }}
-                                        style={{ width: 180 }}
                                         options={[
-                                            { label: 'Individual', value: 'individual' },
-                                            { label: 'Group', value: 'group' }
+                                            { value: 'individual', label: 'One SME', detail: 'A session for a single SME', icon: <UserOutlined /> },
+                                            { value: 'group', label: 'A group', detail: 'One session for a grouped intervention', icon: <TeamOutlined /> }
                                         ]}
                                     />
-                                </Space>
-                            </Card>
+                                </div>
                         </div>
 
                         <div data-guide="schedule-target">
                             {scheduleMode === 'individual' ? (
                                 <>
-                                    <Form.Item label="Pick Participant" required>
+                                    <Form.Item label="SME" required>
                                         <Select
                                             style={{ width: '100%' }}
                                             showSearch
                                             optionFilterProp="children"
-                                            placeholder="Select participant"
+                                            placeholder="Search for the SME"
                                             value={pickedParticipantId}
                                             onChange={v => {
                                                 setPickedParticipantId(v)
@@ -6476,13 +7096,13 @@ const Appointments: React.FC = () => {
                                     </Form.Item>
                                 </>
                             ) : (
-                                <Form.Item label="Pick Group Assignment" required>
+                                <Form.Item label="Group" required>
                                     <Select
                                         style={{ width: '100%' }}
                                         showSearch
                                         optionFilterProp="label"
                                         optionLabelProp="label"
-                                        placeholder="Select group assignment"
+                                        placeholder="Choose the grouped intervention"
                                         value={pickedGroupKey}
                                         onChange={setPickedGroupKey}
                                         disabled={!activeProgramId}
@@ -6556,51 +7176,23 @@ const Appointments: React.FC = () => {
                                 <>
                                     {pickedGroupKey ? (
                                         <>
-                                            <Alert
-                                                type="info"
-                                                showIcon
-                                                style={{ marginBottom: 12 }}
-                                                message={
-                                                    selectedGroupMeta ? (
-                                                        <Space wrap size={6}>
-                                                            <span>{selectedGroupMeta.title || 'Selected group'}</span>
-                                                            {selectedGroupMeta.cycleLabel ? (
-                                                                <Tag color="geekblue" style={{ marginInlineEnd: 0 }}>
-                                                                    {selectedGroupMeta.cycleLabel}
-                                                                </Tag>
-                                                            ) : null}
-                                                        </Space>
-                                                    ) : (
-                                                        'Selected group'
-                                                    )
-                                                }
-                                                description={`This will schedule appointments for ${selectedScopeParticipants.length || 0} participant(s).`}
-                                            />
-                                            <Table
-                                                rowKey="id"
-                                                size="small"
-                                                pagination={{
-                                                    pageSize: 5,
-                                                    showSizeChanger: false,
-                                                    hideOnSinglePage: true
-                                                }}
-                                                dataSource={selectedScopeParticipants}
-                                                columns={[
-                                                    {
-                                                        title: 'Participant',
-                                                        dataIndex: 'name',
-                                                        key: 'name',
-                                                        render: (name: string) => <Text strong>{name}</Text>
-                                                    }
-                                                ]}
-                                                style={{ marginBottom: 12 }}
-                                            />
+                                            <div className="ap-members">
+                                                <span className="ap-members-title">
+                                                    {selectedScopeParticipants.length || 0} SME{selectedScopeParticipants.length === 1 ? '' : 's'} will be invited
+                                                </span>
+                                                <div className="ap-members-list">
+                                                    {selectedScopeParticipants.map((participant: any) => (
+                                                        <span key={participant.id} className="ap-member">{participant.name}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         </>
                                     ) : null}
                                 </>
                             )}
 
 
+                            <h4 className="qc-section-title ap-schedule-heading">What</h4>
                             <div data-guide="schedule-session-title">
                                 <Form.Item
                                     name="sessionTitle"
@@ -6649,10 +7241,11 @@ const Appointments: React.FC = () => {
                                 )}
                             </div>
 
+                            <h4 className="qc-section-title ap-schedule-heading">When &amp; where</h4>
                             <div data-guide="schedule-delivery">
                                 <Form.Item
                                     name="deliveryMethod"
-                                    label="Delivery Method"
+                                    label="How will it be delivered?"
                                     rules={[
                                         {
                                             required: true,
@@ -6660,9 +7253,8 @@ const Appointments: React.FC = () => {
                                         }
                                     ]}
                                 >
-                                    <Select
-                                        placeholder="Select delivery method"
-                                        onChange={(value: Delivery) => {
+                                    <DeliveryChoice
+                                        onPicked={(value: Delivery) => {
                                             if (value === 'in_person') {
                                                 form.setFieldsValue({
                                                     useDifferentLocation: false,
@@ -6686,13 +7278,7 @@ const Appointments: React.FC = () => {
                                                 meetingLink: undefined
                                             })
                                         }}
-                                    >
-                                        {DELIVERY_METHODS.map(method => (
-                                            <Option key={method.value} value={method.value}>
-                                                {method.icon} {method.label}
-                                            </Option>
-                                        ))}
-                                    </Select>
+                                    />
                                 </Form.Item>
                             </div>
 
@@ -6922,22 +7508,27 @@ const Appointments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 className="guide-edit-appointment-modal"
                 centered
-                title={`Edit Appointment${selectedAppt ? ` — ${selectedAppt.interventionTitle}` : ''}`}
+                title='Change time or place'
                 open={editModalOpen}
                 onCancel={closeEditModal}
-                okText='Save Changes'
-                okButtonProps={{ className: 'guide-edit-appointment-submit' }}
-                onOk={() => editForm.submit()}
-                confirmLoading={editLoading}
+                footer={
+                    <div className='ap-dialog-footer'>
+                        <p className='ap-dialog-note'>SMEs who already confirmed are asked to confirm again when the time or place changes, and get an updated invite.</p>
+                        <Button block type='primary' className='guide-edit-appointment-submit' loading={editLoading} onClick={() => editForm.submit()}>
+                            Save changes
+                        </Button>
+                    </div>
+                }
                 destroyOnClose
             >
                 <Form layout='vertical' form={editForm} onFinish={handleEditAppointment}>
                     <div data-guide="edit-delivery">
                         <Form.Item
                             name="deliveryMethod"
-                            label="Delivery Method"
+                            label="How will it be delivered?"
                             rules={[
                                 {
                                     required: true,
@@ -6945,8 +7536,8 @@ const Appointments: React.FC = () => {
                                 }
                             ]}
                         >
-                            <Select
-                                onChange={(value: Delivery) => {
+                            <DeliveryChoice
+                                onPicked={(value: Delivery) => {
                                     if (value === 'in_person') {
                                         const existingLocation = String(
                                             editForm.getFieldValue('location') || ''
@@ -6975,13 +7566,7 @@ const Appointments: React.FC = () => {
                                         meetingLink: undefined
                                     })
                                 }}
-                            >
-                                {DELIVERY_METHODS.map(method => (
-                                    <Option key={method.value} value={method.value}>
-                                        {method.icon} {method.label}
-                                    </Option>
-                                ))}
-                            </Select>
+                            />
                         </Form.Item>
                         <Form.Item
                             noStyle
@@ -7187,1171 +7772,7 @@ const Appointments: React.FC = () => {
                 </Form>
             </Modal>
 
-            <Modal
-                className="guide-postpone-appointment-modal"
-                centered
-                title={`Postpone Appointment${postponeRecord ? ` — ${postponeRecord.interventionTitle}` : ''}`}
-                open={postponeModalOpen}
-                onCancel={closePostponeModal}
-                okText='Postpone Appointment'
-                okButtonProps={{ className: 'guide-postpone-submit' }}
-                onOk={() => postponeForm.submit()}
-                confirmLoading={postponeLoading}
-                destroyOnClose
-                width={680}
-            >
-                <Alert
-                    type="info"
-                    showIcon
-                    description="The SME(s) will be asked to confirm the updated appointment."
-                    style={{ marginBottom: 8 }}
-                />
 
-                <Form
-                    form={postponeForm}
-                    layout="vertical"
-                    onFinish={handlePostponeAppointment}
-                >
-                    <Row gutter={[16, 0]} align="top">
-                        {/* Delivery Method */}
-                        <Col
-                            xs={24}
-                            md={hasPostponeConnectionDetails ? 12 : 24}
-                        >
-                            <div data-guide="postpone-delivery">
-                                <Form.Item
-                                    name="deliveryMethod"
-                                    label="Delivery Method"
-                                    rules={[
-                                        {
-                                            required: true,
-                                            message: 'Please select a delivery method.'
-                                        }
-                                    ]}
-                                >
-                                    <Select
-                                        placeholder="Select delivery method"
-                                        onChange={(value: Delivery) => {
-                                            if (value === 'in_person') {
-                                                const existingLocation = String(
-                                                    postponeForm.getFieldValue('location') || ''
-                                                ).trim()
-
-                                                postponeForm.setFieldsValue({
-                                                    useDifferentLocation:
-                                                        isDifferentAppointmentLocation(existingLocation),
-                                                    location: existingLocation || 'At Center',
-                                                    meetingLink: undefined
-                                                })
-                                                return
-                                            }
-
-                                            if (value === 'virtual') {
-                                                postponeForm.setFieldsValue({
-                                                    useDifferentLocation: false,
-                                                    location: undefined
-                                                })
-                                                return
-                                            }
-
-                                            postponeForm.setFieldsValue({
-                                                useDifferentLocation: false,
-                                                location: undefined,
-                                                meetingLink: undefined
-                                            })
-                                        }}
-                                    >
-                                        {DELIVERY_METHODS.map(method => (
-                                            <Option key={method.value} value={method.value}>
-                                                {method.icon} {method.label}
-                                            </Option>
-                                        ))}
-                                    </Select>
-                                </Form.Item>
-                            </div>
-                        </Col>
-
-                        {/* Location / Meeting Link */}
-                        {hasPostponeConnectionDetails && (
-                            <Col xs={24} md={12}>
-                                <Form.Item
-                                    noStyle
-                                    shouldUpdate={(prev, cur) =>
-                                        prev.deliveryMethod !== cur.deliveryMethod ||
-                                        prev.useDifferentLocation !== cur.useDifferentLocation
-                                    }
-                                >
-                                    {({ getFieldValue }) => {
-                                        const deliveryMethod = getFieldValue('deliveryMethod')
-                                        const useDifferentLocation =
-                                            !!getFieldValue('useDifferentLocation')
-
-                                        if (deliveryMethod === 'virtual') {
-                                            return (
-                                                <div data-guide="postpone-connection-details">
-                                                    <Form.Item
-                                                        name="meetingLink"
-                                                        label="Meeting Link"
-                                                        extra="Keep the existing link or replace it."
-                                                        rules={[
-                                                            {
-                                                                required: true,
-                                                                message: 'Please provide the meeting link.'
-                                                            }
-                                                        ]}
-                                                    >
-                                                        <Input placeholder="Paste meeting link here" />
-                                                    </Form.Item>
-                                                </div>
-                                            )
-                                        }
-
-                                        if (deliveryMethod === 'in_person') {
-                                            return (
-                                                <div data-guide="postpone-connection-details">
-                                                    <Form.Item
-                                                        name="location"
-                                                        label="Location"
-                                                        rules={[
-                                                            {
-                                                                required: true,
-                                                                whitespace: true,
-                                                                message:
-                                                                    'Please provide the appointment location.'
-                                                            }
-                                                        ]}
-                                                        style={{ marginBottom: 8 }}
-                                                    >
-                                                        <Input
-                                                            disabled={!useDifferentLocation}
-                                                            placeholder={
-                                                                useDifferentLocation
-                                                                    ? 'Enter venue or address'
-                                                                    : 'At Center'
-                                                            }
-                                                        />
-                                                    </Form.Item>
-
-                                                    <Form.Item
-                                                        name="useDifferentLocation"
-                                                        valuePropName="checked"
-                                                        style={{ marginBottom: 24 }}
-                                                    >
-                                                        <Checkbox
-                                                            onChange={event => {
-                                                                postponeForm.setFieldsValue({
-                                                                    location: event.target.checked
-                                                                        ? ''
-                                                                        : 'At Center'
-                                                                })
-                                                            }}
-                                                        >
-                                                            Use different location
-                                                        </Checkbox>
-                                                    </Form.Item>
-                                                </div>
-                                            )
-                                        }
-
-                                        return null
-                                    }}
-                                </Form.Item>
-                            </Col>
-                        )}
-                    </Row>
-
-                    <div data-guide="postpone-datetime">
-                        <AppointmentDateTimeFields form={postponeForm} />
-                    </div>
-
-                    <div data-guide="postpone-reason">
-                        <Form.Item
-                            name="reason"
-                            label="Reason"
-                            extra="Optional — add context if it will help explain why the meeting moved."
-                            style={{ marginBottom: 0 }}
-                        >
-                            <Input.TextArea
-                                rows={3}
-                                maxLength={500}
-                                showCount
-                                placeholder="e.g. SME requested a later date"
-                            />
-                        </Form.Item>
-                    </div>
-                </Form>
-            </Modal>
-
-            <Modal
-                centered
-                title='Appointment Details'
-                open={detailModalOpen}
-                onCancel={() => setDetailModalOpen(false)}
-                width={screens.lg ? 980 : screens.md ? 860 : '100%'}
-                style={screens.md ? undefined : { maxWidth: '100vw' }}
-                bodyStyle={{
-                    paddingTop: 8,
-                    overflowX: 'hidden'
-                }}
-                footer={[
-                    selectedAppt && !['completed', 'cancelled', 'postponed'].includes(derivedStatus(selectedAppt)) ? (
-                        /*
-                          These buttons used to set type='primary' AND
-                          color='orange' variant='filled' together. Those are two
-                          different Ant Design APIs: `type` wins for the base
-                          class, so the button rendered as a primary (blue in
-                          dark mode) while `color` only tinted the label — hence
-                          orange text on a blue gradient. Using the colour/variant
-                          API alone lets Ant Design derive both themes properly,
-                          and drops the hardcoded `orange` / `crimson` borders
-                          that ignored the theme entirely.
-                        */
-                        <Button
-                            data-guide="appointment-edit-action"
-                            key='edit'
-                            shape='round'
-                            color='orange'
-                            variant='solid'
-                            icon={<EditOutlined />}
-                            onClick={() => {
-                                openEdit(selectedAppt)
-                                setDetailModalOpen(false)
-                            }}
-                        >
-                            {hasStarted(selectedAppt) && canReschedule(selectedAppt) ? 'Reschedule' : 'Edit'}
-                        </Button>
-                    ) : null,
-                    <Button
-                        key='close'
-                        shape='round'
-                        color='danger'
-                        variant='outlined'
-                        onClick={() => setDetailModalOpen(false)}
-                    >
-                        Close
-                    </Button>
-                ].filter(Boolean)}
-            >
-                {selectedAppt ? (
-                    <>
-                        <Text strong style={{ fontSize: 16 }}>
-                            {selectedAppt.interventionTitle}
-                        </Text>
-                        {(selectedAppt as any)._displayType !== 'group' ? (
-                            <div style={{ marginTop: 6 }}>
-                                <Text type="secondary">
-                                    Assigned: {assignmentDateLabel({ assignedAt: selectedAppt.assignmentAssignedAt })}
-                                    {' · '}
-                                </Text>
-                            </div>
-                        ) : null}
-                        <Divider style={{ margin: '10px 0' }} />
-                        <Segmented
-                            block
-                            value={detailModalTab}
-                            onChange={value => setDetailModalTab(value as 'overview' | 'members' | 'food')}
-                            options={[
-                                { label: 'Overview', value: 'overview' },
-                                {
-                                    label: `Members (${getDisplayRowMembers(selectedAppt).length})`,
-                                    value: 'members'
-                                },
-                                ...(hasConfiguredFoodMenu(selectedAppt)
-                                    ? [{ label: 'Food Menu', value: 'food' }]
-                                    : [])
-                            ]}
-                            style={{ marginBottom: 14 }}
-                        />
-
-                        {detailModalTab === 'overview' && (() => {
-                            const stats = getAttendanceCounts(selectedAppt)
-
-                            if (!hasQrAttendance(selectedAppt)) {
-                                return (
-                                    <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-                                        <Col xs={24} md={8}>
-                                            <Card size='small'>
-                                                <Text type='secondary'>RSVP Confirmed</Text>
-                                                <div style={{ fontSize: 20, fontWeight: 700 }}>
-                                                    {stats.confirmed}/{stats.total}
-                                                </div>
-                                            </Card>
-                                        </Col>
-                                        <Col xs={24} md={8}>
-                                            <Card size='small'>
-                                                <Text type='secondary'>Meeting Outcome</Text>
-                                                <div style={{ fontSize: 20, fontWeight: 700 }}>
-                                                    {meetingOutcomeLabel(selectedAppt)}
-                                                </div>
-                                            </Card>
-                                        </Col>
-                                        <Col xs={24} md={8}>
-                                            <Card size='small'>
-                                                <Text type='secondary'>SME Attendance</Text>
-                                                <div style={{ fontSize: 20, fontWeight: 700 }}>
-                                                    {smeAttendanceLabel(getSmeAttendanceOutcome(selectedAppt))}
-                                                </div>
-                                            </Card>
-                                        </Col>
-                                    </Row>
-                                )
-                            }
-
-                            /*
-                              Each tile is measured against the population the
-                              number actually belongs to.
-
-                              Checked Out previously read "0/29 invited", which
-                              is unanswerable — someone who never arrived cannot
-                              check out. Its denominator is the people who
-                              checked in.
-                            */
-                            const pct = (part: number, whole: number) =>
-                                whole > 0 ? Math.round((part / whole) * 100) : null
-
-                            const turnout = pct(stats.checkedIn, stats.total)
-                            const followThrough = pct(stats.checkedIn, stats.confirmed)
-                            const noShows = Math.max(stats.confirmed - stats.checkedIn, 0)
-                            const isGroupRow = (selectedAppt as any)?._displayType === 'group'
-
-                            return (
-                                <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-                                    <Col xs={12} md={isGroupRow ? 6 : 6}>
-                                        <MotionCard.Metric
-                                            icon={<TeamOutlined />}
-                                            iconBg='rgba(22,119,255,.12)'
-                                            title='RSVP Confirmed'
-                                            value={`${stats.confirmed}/${stats.total}`}
-                                            subtitle='of those invited'
-                                        />
-                                    </Col>
-
-                                    <Col xs={12} md={6}>
-                                        <MotionCard.Metric
-                                            icon={<LoginOutlined />}
-                                            iconBg='rgba(82,196,26,.12)'
-                                            title='Checked In'
-                                            value={`${stats.checkedIn}/${stats.total}`}
-                                            subtitle={turnout === null ? 'of those invited' : `${turnout}% of those invited`}
-                                        />
-                                    </Col>
-
-                                    <Col xs={12} md={6}>
-                                        <MotionCard.Metric
-                                            icon={<LogoutOutlined />}
-                                            iconBg='rgba(250,173,20,.12)'
-                                            title='Checked Out'
-                                            value={`${stats.checkedOut}/${stats.checkedIn}`}
-                                            subtitle='of those who checked in'
-                                        />
-                                    </Col>
-
-                                    <Col xs={12} md={6}>
-                                        <MotionCard.Metric
-                                            icon={<ClockCircleOutlined />}
-                                            iconBg='rgba(19,194,194,.12)'
-                                            title='Still Present'
-                                            value={stats.currentlyPresent}
-                                            subtitle='checked in, not yet out'
-                                        />
-                                    </Col>
-
-                                    {/*
-                                      Follow-through, for group bookings only.
-
-                                      Measured against SMEs who confirmed rather
-                                      than everyone invited: confirming is the
-                                      commitment, so a confirmed SME who never
-                                      arrived is the one worth chasing. Turnout
-                                      against the full invite list is on the
-                                      Checked In tile, so both readings are
-                                      available without conflating them.
-                                    */}
-                                    {isGroupRow ? (
-                                        <Col xs={24}>
-                                            <MotionCard.Metric
-                                                icon={<CheckCircleOutlined />}
-                                                iconBg={
-                                                    followThrough === null
-                                                        ? 'rgba(140,140,140,.12)'
-                                                        : followThrough >= 80
-                                                            ? 'rgba(82,196,26,.12)'
-                                                            : followThrough >= 50
-                                                                ? 'rgba(250,173,20,.12)'
-                                                                : 'rgba(255,77,79,.12)'
-                                                }
-                                                title='Attendance follow-through'
-                                                value={followThrough === null ? '—' : `${followThrough}%`}
-                                                subtitle={
-                                                    stats.confirmed === 0
-                                                        ? 'No SME confirmed this session yet'
-                                                        : `${stats.checkedIn} of ${stats.confirmed} who confirmed attended · ${noShows} did not follow through`
-                                                }
-                                            />
-                                        </Col>
-                                    ) : null}
-                                </Row>
-                            )
-                        })()}
-
-                        {detailModalTab === 'overview' && (selectedAppt as any)?._displayType === 'group' ? (
-                            <Space wrap style={{ marginBottom: 12 }}>
-                                <Tag color={(selectedAppt as any)._groupKind === 'grouped_assignment' ? 'purple' : 'cyan'}>
-                                    {(selectedAppt as any)._groupKind === 'grouped_assignment'
-                                        ? 'Grouped Assignment'
-                                        : 'Grouped by Cycle'}
-                                </Tag>
-
-                                {(selectedAppt as any)._cycleKey && formatCycleLabel((selectedAppt as any)._cycleKey) ? (
-                                    <Tag color="geekblue">
-                                        {formatCycleLabel((selectedAppt as any)._cycleKey)}
-                                    </Tag>
-                                ) : null}
-                            </Space>
-                        ) : null}
-
-                        {detailModalTab === 'overview' && <Descriptions
-                            bordered
-                            size={screens.md ? 'middle' : 'small'}
-                            column={screens.md ? 2 : 1}
-                            labelStyle={{ width: screens.md ? 160 : undefined }}
-                        >
-                            <Descriptions.Item label='SME'>
-                                <Space>
-                                    <UserOutlined />
-                                    <span>{selectedAppt.participantName || '-'}</span>
-                                </Space>
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Appointment RSVP'>
-                                {memberRsvpTag(selectedAppt, selectedAppt, true)}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Date'>
-                                <Space>
-                                    <CalendarOutlined />
-                                    <span>{dayjs(selectedAppt.date).format('YYYY-MM-DD')}</span>
-                                </Space>
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Time'>
-                                <Space>
-                                    <ClockCircleOutlined />
-                                    <span>
-                                        {formatTime(selectedAppt.startTime)} — {formatTime(selectedAppt.endTime)}
-                                    </span>
-                                </Space>
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Delivery Method'>
-                                <Tag icon={DELIVERY_METHODS.find(m => m.value === selectedAppt.deliveryMethod)?.icon}>
-                                    {DELIVERY_METHODS.find(m => m.value === selectedAppt.deliveryMethod)?.label || '—'}
-                                </Tag>
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Details'>
-                                {selectedAppt.deliveryMethod === 'virtual' ? (
-                                    isApptDone(selectedAppt) ? (
-                                        <Tag color={selectedAppt.sessionCoverage?.latest?.held ? 'green' : selectedAppt.sessionCoverage?.latest?.held === false ? 'red' : 'default'}>
-                                            {selectedAppt.sessionCoverage?.latest?.held
-                                                ? 'Session completed'
-                                                : selectedAppt.sessionCoverage?.latest?.held === false
-                                                    ? 'Session not held'
-                                                    : 'Meeting ended'}
-                                        </Tag>
-                                    ) : selectedAppt.meetingLink ? (
-                                        <a href={selectedAppt.meetingLink} target='_blank' rel='noreferrer'>
-                                            <LinkOutlined /> Join link
-                                        </a>
-                                    ) : (
-                                        <Text type='secondary'>No link provided</Text>
-                                    )
-                                ) : selectedAppt.deliveryMethod === 'in_person' ? (
-                                    selectedAppt.location ? (
-                                        <Space>
-                                            <EnvironmentOutlined />
-                                            <span>{selectedAppt.location}</span>
-                                        </Space>
-                                    ) : (
-                                        <Text type='secondary'>No location provided</Text>
-                                    )
-                                ) : (
-                                    <Space>
-                                        <PhoneFilled />
-                                        <span>
-                                            {(selectedAppt as any)?._displayType === 'group'
-                                                ? 'See participant list below'
-                                                : participantPhones[selectedAppt.participantId] || 'No phone on file'}
-                                        </span>
-                                    </Space>
-                                )}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Status'>
-                                {(() => {
-                                    const s = displayStatus(selectedAppt)
-                                    return <Tag color={s.color} icon={s.icon}>{s.label}</Tag>
-                                })()}
-                            </Descriptions.Item>
-                        </Descriptions>}
-
-                        {detailModalTab === 'overview' && (selectedAppt as any)?._displayType !== 'group' &&
-                            (selectedAppt as any)?.smeRescheduleRequest?.status === 'proposed' &&
-                            Array.isArray((selectedAppt as any)?.smeRescheduleRequest?.proposals) ? (
-                            <Card
-                                size="small"
-                                title="SME Proposed Times"
-                                style={{ marginTop: 12, borderColor: '#faad14' }}
-                            >
-                                <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                                    <Text type="secondary">
-                                        Decline reason: {(selectedAppt as any).smeRescheduleRequest.reasonText || selectedAppt.declineReason || '-'}
-                                    </Text>
-                                    {(selectedAppt as any).smeRescheduleRequest.proposals.map((proposal: any, index: number) => (
-                                        <Card key={proposal.id || index} size="small">
-                                            <Space
-                                                wrap
-                                                style={{ width: '100%', justifyContent: 'space-between' }}
-                                            >
-                                                <Text>
-                                                    <CalendarOutlined /> {proposal.date || '-'}{' '}
-                                                    <ClockCircleOutlined /> {formatTime(proposal.startTime, proposal.date)} — {formatTime(proposal.endTime, proposal.date)}
-                                                </Text>
-                                                <Button
-                                                    type="primary"
-                                                    size="small"
-                                                    loading={rescheduleDecisionLoading === String(proposal.id || '')}
-                                                    onClick={() => acceptProposedAppointmentTime(selectedAppt, proposal)}
-                                                >
-                                                    Accept This Time
-                                                </Button>
-                                            </Space>
-                                        </Card>
-                                    ))}
-                                    <Button
-                                        onClick={() => {
-                                            openEdit(selectedAppt)
-                                            setDetailModalOpen(false)
-                                        }}
-                                    >
-                                        Choose a Different Time
-                                    </Button>
-                                </Space>
-                            </Card>
-                        ) : null}
-
-                        {/*
-                            Decline reasons on the overview tab.
-
-                            This previously only handled a single appointment, so
-                            on a group booking — where each SME confirms or
-                            declines individually — the reasons were recorded but
-                            never shown anywhere. Groups now get one alert
-                            listing who declined and why.
-                        */}
-                        {detailModalTab === 'overview' &&
-                            (selectedAppt as any)?.smeRescheduleRequest?.status !== 'proposed' ? (() => {
-                                const declineReasonOf = (row: Appt) => String(
-                                    row.declineReason ||
-                                    (row as any)?.smeDeclineReason ||
-                                    (row as any)?.smeRescheduleRequest?.reasonText ||
-                                    ''
-                                ).trim()
-
-                                const members: Appt[] = Array.isArray((selectedAppt as any)?._groupMembers)
-                                    ? (selectedAppt as any)._groupMembers
-                                    : []
-
-                                if ((selectedAppt as any)?._displayType === 'group' && members.length) {
-                                    const declined = members.filter(
-                                        m => String(m.userConfirmation || '').toLowerCase() === 'declined'
-                                    )
-                                    if (!declined.length) return null
-
-                                    return (
-                                        <Alert
-                                            type='warning'
-                                            showIcon
-                                            style={{ marginTop: 12 }}
-                                            message={`${declined.length} SME${declined.length === 1 ? '' : 's'} declined this appointment`}
-                                            description={
-                                                <Space direction='vertical' size={4} style={{ width: '100%' }}>
-                                                    {declined.map(m => (
-                                                        <Text key={m.id} style={{ fontSize: 13 }}>
-                                                            <Text strong>{m.participantName || 'SME'}</Text>
-                                                            {' — '}
-                                                            {declineReasonOf(m) || 'No reason was provided.'}
-                                                        </Text>
-                                                    ))}
-                                                </Space>
-                                            }
-                                        />
-                                    )
-                                }
-
-                                if (String(selectedAppt.userConfirmation || '').toLowerCase() !== 'declined') return null
-
-                                return (
-                                    <Alert
-                                        type='warning'
-                                        showIcon
-                                        style={{ marginTop: 12 }}
-                                        message='SME declined this appointment'
-                                        description={declineReasonOf(selectedAppt) || 'No reason was provided.'}
-                                    />
-                                )
-                            })() : null}
-
-                        {detailModalTab === 'overview' && derivedStatus(selectedAppt) === 'completed' && getSmeAttendanceOutcome(selectedAppt) === 'unverified' ? (
-                            <Alert
-                                type='warning'
-                                showIcon
-                                style={{ marginTop: 12 }}
-                                message='Completed session with unverified SME attendance'
-                                description='Completion records the facilitator outcome; it does not prove that the SME attended. Update Meeting Coverage to record an attended or no-show outcome.'
-                            />
-                        ) : null}
-
-                        {detailModalTab === 'members' && (selectedAppt as any)?._displayType !== 'group' ? (
-                            <>
-                                <Divider style={{ margin: '14px 0' }} />
-                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
-                                    <Card
-                                        size='small'
-                                        title={selectedAppt.participantName || 'SME member'}
-                                        extra={selectedAppt.participantEmail || participantEmails[selectedAppt.participantId] || null}
-                                    >
-                                        <Descriptions bordered size='small' column={screens.md ? 2 : 1}>
-                                            <Descriptions.Item label='Appointment RSVP'>
-                                                {memberRsvpTag(selectedAppt, selectedAppt)}
-                                            </Descriptions.Item>
-                                            <Descriptions.Item label='Attendance'>
-                                                {memberAttendanceTag(selectedAppt, selectedAppt)}
-                                            </Descriptions.Item>
-                                            {hasQrAttendance(selectedAppt) ? (() => {
-                                                const timing = getAttendanceTimingForMember(selectedAppt, selectedAppt, participantEmails)
-                                                return (
-                                                    <>
-                                                        <Descriptions.Item label='Check-in'>{timing.checkInTime}</Descriptions.Item>
-                                                        <Descriptions.Item label='Checkout'>{timing.checkOutTime}</Descriptions.Item>
-                                                        <Descriptions.Item label='Time Spent'>{formatMinutesSpent(timing.minutesSpent)}</Descriptions.Item>
-                                                    </>
-                                                )
-                                            })() : null}
-                                        </Descriptions>
-                                    </Card>
-                                    {hasQrAttendance(selectedAppt) ? (() => {
-                                        const checkedIn = Boolean((selectedAppt as any)?.attendance?.checkedInAt) || Number(selectedAppt.attendanceSummary?.count || 0) > 0
-                                        const checkedOut = Boolean((selectedAppt as any)?.attendance?.checkedOutAt) || Boolean(getCheckedOutEmails(selectedAppt).length)
-                                        return (
-                                            <Button
-                                                size={screens.md ? 'middle' : 'small'}
-                                                shape='round'
-                                                icon={<LogoutOutlined />}
-                                                disabled={!checkedIn || checkedOut}
-                                                loading={checkoutLoading === `${selectedAppt.id}-${String(selectedAppt.participantEmail || participantEmails[selectedAppt.participantId] || '').trim().toLowerCase()}`}
-                                                onClick={() => checkOutParticipant(selectedAppt)}
-                                            >
-                                                Check Out
-                                            </Button>
-                                        )
-                                    })() : null}
-                                </Space>
-                            </>
-                        ) : null}
-
-                        {detailModalTab === 'members' && (selectedAppt as any)?._displayType === 'group' && Array.isArray((selectedAppt as any)?._groupMembers) ? (
-                            <>
-                                <Divider style={{ margin: '14px 0' }} />
-                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
-                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                                        <Text strong>Participants in this group</Text>
-                                        <Space wrap>
-                                            <Tag color='purple'>
-                                                {(selectedAppt as any)._groupMembers.length} SME(s)
-                                            </Tag>
-                                            {hasQrAttendance(selectedAppt) ? (() => {
-                                                const eligibility = getBulkCheckoutEligibility(selectedAppt)
-                                                const eligibleCount = eligibility.eligibleMembers.length
-                                                const excludedReasons = [
-                                                    eligibility.notCheckedInCount
-                                                        ? `${eligibility.notCheckedInCount} not checked in`
-                                                        : '',
-                                                    eligibility.alreadyCheckedOutCount
-                                                        ? `${eligibility.alreadyCheckedOutCount} already checked out`
-                                                        : '',
-                                                    eligibility.missingEmailCount
-                                                        ? `${eligibility.missingEmailCount} missing email`
-                                                        : ''
-                                                ].filter(Boolean)
-
-                                                return (
-                                                    <Space direction="vertical" size={2} align="end">
-                                                        <Popconfirm
-                                                            title={`Check out ${eligibleCount} eligible SME${eligibleCount === 1 ? '' : 's'}?`}
-                                                            description='Only checked-in SMEs with an email who have not checked out will be updated.'
-                                                            okText='Check out eligible'
-                                                            cancelText='Cancel'
-                                                            disabled={!eligibleCount}
-                                                            onConfirm={() => checkOutAllPresent(selectedAppt)}
-                                                        >
-                                                            <Button
-                                                                size='small'
-                                                                shape='round'
-                                                                icon={<LogoutOutlined />}
-                                                                disabled={!eligibleCount}
-                                                                loading={checkoutLoading === `${selectedAppt.id}-bulk`}
-                                                            >
-                                                                Check Out Eligible ({eligibleCount})
-                                                            </Button>
-                                                        </Popconfirm>
-                                                        {eligibility.excludedCount > 0 ? (
-                                                            <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
-                                                                {eligibility.excludedCount} excluded: {excludedReasons.join(', ')}
-                                                            </Text>
-                                                        ) : null}
-                                                    </Space>
-                                                )
-                                            })() : null}
-                                        </Space>
-                                    </Space>
-
-                                    <Table
-                                        rowKey="id"
-                                        size="small"
-                                        pagination={{
-                                            pageSize: 5,
-                                            showSizeChanger: false,
-                                            hideOnSinglePage: true,
-                                            position: ['bottomCenter']
-                                        }}
-                                        scroll={screens.md ? undefined : { x: 920 }}
-                                        dataSource={(selectedAppt as any)._groupMembers}
-                                        columns={[
-                                            {
-                                                title: 'SME',
-                                                dataIndex: 'participantName',
-                                                key: 'participantName',
-                                                width: 220,
-                                                render: (_: any, m: Appt) => (
-                                                    <Space direction="vertical" size={0}>
-                                                        <Text strong>{m.participantName || '-'}</Text>
-                                                        <Text type="secondary" style={{ fontSize: 12 }}>
-                                                            {participantEmails[m.participantId] || m.participantEmail || 'No email on file'}
-                                                        </Text>
-                                                    </Space>
-                                                )
-                                            },
-                                            {
-                                                title: 'Appointment RSVP',
-                                                dataIndex: 'userConfirmation',
-                                                key: 'userConfirmation',
-                                                width: 200,
-                                                render: (value: UserConfirmation, m: Appt) => {
-                                                    // A decline is only actionable if you can see why. The
-                                                    // reason was previously stored but never surfaced for
-                                                    // group members.
-                                                    const declined = String(value || '').toLowerCase() === 'declined'
-                                                    const reason = String(
-                                                        m.declineReason ||
-                                                        (m as any)?.smeDeclineReason ||
-                                                        (m as any)?.smeRescheduleRequest?.reasonText ||
-                                                        ''
-                                                    ).trim()
-
-                                                    return (
-                                                        <Space direction="vertical" size={2}>
-                                                            {memberRsvpTag(selectedAppt, m)}
-                                                            {declined ? (
-                                                                <Text
-                                                                    type="danger"
-                                                                    style={{ fontSize: 12 }}
-                                                                    title={reason || undefined}
-                                                                >
-                                                                    {reason || 'No reason given'}
-                                                                </Text>
-                                                            ) : null}
-                                                        </Space>
-                                                    )
-                                                }
-                                            },
-                                            {
-                                                title: 'Attendance',
-                                                key: 'attendanceOutcome',
-                                                width: 170,
-                                                render: (_: any, m: Appt) => memberAttendanceTag(selectedAppt, m)
-                                            },
-                                            {
-                                                title: 'Check-in',
-                                                key: 'checkInTime',
-                                                width: 150,
-                                                hidden: !hasQrAttendance(selectedAppt),
-                                                render: (_: any, m: Appt) => {
-                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
-                                                    const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
-
-                                                    return (
-                                                        <Space direction="vertical" size={2}>
-                                                            {checkedIn ? <Tag color="green">Checked In</Tag> : <Tag>Not checked in</Tag>}
-                                                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                                                {timing.checkInTime}
-                                                            </Text>
-                                                        </Space>
-                                                    )
-                                                }
-                                            },
-                                            {
-                                                title: 'Checkout',
-                                                key: 'checkOutTime',
-                                                width: 150,
-                                                hidden: !hasQrAttendance(selectedAppt),
-                                                render: (_: any, m: Appt) => {
-                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
-                                                    const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
-
-                                                    return (
-                                                        <Space direction="vertical" size={2}>
-                                                            {checkedOut ? <Tag color="default">Checked Out</Tag> : <Tag color="gold">Not Out</Tag>}
-                                                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                                                {timing.checkOutTime}
-                                                            </Text>
-                                                        </Space>
-                                                    )
-                                                }
-                                            },
-                                            {
-                                                title: 'Time Spent',
-                                                key: 'timeSpent',
-                                                width: 120,
-                                                hidden: !hasQrAttendance(selectedAppt),
-                                                render: (_: any, m: Appt) => {
-                                                    const timing = getAttendanceTimingForMember(selectedAppt, m, participantEmails)
-
-                                                    return (
-                                                        <Text strong>
-                                                            {formatMinutesSpent(timing.minutesSpent)}
-                                                        </Text>
-                                                    )
-                                                }
-                                            },
-                                            {
-                                                title: 'Action',
-                                                key: 'action',
-                                                width: 140,
-                                                hidden: !hasQrAttendance(selectedAppt),
-                                                fixed: screens.md ? 'right' : undefined,
-                                                render: (_: any, m: Appt) => {
-                                                    const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
-                                                    const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
-
-                                                    const targetEmail = String(
-                                                        participantEmails[m.participantId] ||
-                                                        m.participantEmail ||
-                                                        ''
-                                                    )
-                                                        .trim()
-                                                        .toLowerCase()
-
-                                                    const loadingKey = `${selectedAppt?.id}-${targetEmail}`
-
-                                                    return (
-                                                        <Button
-                                                            size="small"
-                                                            shape="round"
-                                                            icon={<LogoutOutlined />}
-                                                            disabled={!checkedIn || checkedOut || !selectedAppt}
-                                                            loading={checkoutLoading === loadingKey}
-                                                            onClick={() => selectedAppt && checkOutParticipant(selectedAppt, m)}
-                                                        >
-                                                            Check Out
-                                                        </Button>
-                                                    )
-                                                }
-                                            }
-                                        ]}
-                                    />
-                                </Space>
-                            </>
-                        ) : null}
-
-                        {detailModalTab === 'food' && hasConfiguredFoodMenu(selectedAppt) ? (
-                            <>
-                                <Divider style={{ margin: '14px 0' }} />
-
-                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
-                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                                        <Text strong>Food Menu</Text>
-                                        {canManageFoodMenu(selectedAppt) ? (
-                                            <Button
-                                                size={screens.md ? 'middle' : 'small'}
-                                                shape='round'
-                                                icon={<BookOutlined />}
-                                                onClick={() => openFoodMenu(selectedAppt)}
-                                            >
-                                                Manage Menu
-                                            </Button>
-                                        ) : (
-                                            <Tag color='default'>Menu locked</Tag>
-                                        )}
-                                    </Space>
-
-                                    {selectedAppt.foodMenuEnabled && normalizeFoodMenuItems(selectedAppt.foodMenu).length ? (
-                                        <Table
-                                            rowKey='id'
-                                            size='small'
-                                            pagination={false}
-                                            dataSource={normalizeFoodMenuItems(selectedAppt.foodMenu)}
-                                            columns={[
-                                                {
-                                                    title: 'Item',
-                                                    dataIndex: 'name',
-                                                    key: 'name',
-                                                    width: 140,
-                                                    render: (name: string, item: FoodMenuItem) => (
-                                                        <Space direction='vertical' size={0}>
-                                                            <Text strong>{name}</Text>
-                                                            {item.description ? (
-                                                                <Text type='secondary' style={{ fontSize: 12 }}>
-                                                                    {item.description}
-                                                                </Text>
-                                                            ) : null}
-                                                        </Space>
-                                                    )
-                                                },
-                                                {
-                                                    title: 'Category',
-                                                    dataIndex: 'category',
-                                                    key: 'category',
-                                                    width: 120,
-                                                    render: (category: FoodCategory) => <Tag>{getFoodCategoryLabel(category)}</Tag>
-                                                },
-                                                {
-                                                    title: 'Dietary Note',
-                                                    dataIndex: 'dietaryNote',
-                                                    key: 'dietaryNote',
-                                                    width: 180,
-                                                    hidden: !normalizeFoodMenuItems(selectedAppt.foodMenu).some(item =>
-                                                        Boolean(String(item.dietaryNote || '').trim())
-                                                    ),
-                                                    render: (note: string) => note || <Text type='secondary'>—</Text>
-                                                },
-                                                {
-                                                    title: 'Qty',
-                                                    dataIndex: 'quantityAvailable',
-                                                    key: 'quantityAvailable',
-                                                    width: 80,
-                                                    render: (qty: number | null, item: FoodMenuItem) => (
-                                                        <Space size={4}>
-                                                            <span>{qty ?? '—'}</span>
-                                                            <Text type='secondary'>
-                                                                ({getFoodSelectionCountForItem(selectedAppt, item)} selected)
-                                                            </Text>
-                                                        </Space>
-                                                    )
-                                                }
-                                            ]}
-                                            scroll={{ x: 640 }}
-                                        />
-                                    ) : (
-                                        <Text type='secondary'>No food menu listed for this appointment yet.</Text>
-                                    )}
-                                    {getFoodSelectionsForRecord(selectedAppt).length ? (
-                                        <Card size='small' title='SME selections'>
-                                            <Table
-                                                rowKey={(row: FoodSelection, index?: number) =>
-                                                    `${row.participantId}-${row.itemId}-${index}`
-                                                }
-                                                size='small'
-                                                pagination={{
-                                                    pageSize: 6,
-                                                    showSizeChanger: false,
-                                                    position: ['bottomCenter']
-                                                }}
-                                                scroll={{ x: 640 }}
-                                                dataSource={getFoodSelectionsForRecord(selectedAppt)}
-                                                columns={[
-                                                    {
-                                                        title: 'SME',
-                                                        dataIndex: 'participantName',
-                                                        key: 'participantName',
-                                                        render: (name: string) => <Text strong>{name || 'SME'}</Text>
-                                                    },
-                                                    {
-                                                        title: 'Type',
-                                                        key: 'category',
-                                                        width: 110,
-                                                        render: (_: any, row: FoodSelection) => (
-                                                            <Tag color={String(row.category || row.itemCategory).toLowerCase() === 'drink' ? 'cyan' : 'green'}>
-                                                                {getFoodCategoryLabel((row.category || row.itemCategory || 'meal') as FoodCategory)}
-                                                            </Tag>
-                                                        )
-                                                    },
-                                                    {
-                                                        title: 'Selected Item',
-                                                        dataIndex: 'itemName',
-                                                        key: 'itemName',
-                                                        // Empty rows are filtered out upstream, so a blank
-                                                        // name here means the item was deleted from the menu
-                                                        // after the SME chose it — say that, rather than
-                                                        // inventing a name.
-                                                        render: (name: string) => (
-                                                            name
-                                                                ? <Tag color='blue'>{name}</Tag>
-                                                                : <Text type='secondary'>Item no longer on the menu</Text>
-                                                        )
-                                                    },
-                                                ]}
-                                            />
-                                        </Card>
-                                    ) : (
-                                        <Text type='secondary'>No SME food selections captured yet.</Text>
-                                    )}
-                                </Space>
-                            </>
-                        ) : null}
-
-                        {detailModalTab === 'overview' && hasQrAttendance(selectedAppt) && !isApptDone(selectedAppt) ? (
-                            <>
-                                <Divider style={{ margin: '14px 0' }} />
-
-                                <Space direction='vertical' style={{ width: '100%' }} size={10}>
-                                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                                        <Text strong>QR Attendance</Text>
-
-                                        {selectedAppt &&
-                                            canStartQrWindow(selectedAppt) &&
-                                            derivedStatus(selectedAppt) !== 'completed' &&
-                                            derivedStatus(selectedAppt) !== 'cancelled' &&
-                                            derivedStatus(selectedAppt) !== 'postponed' &&
-                                            derivedStatus(selectedAppt) !== 'awaiting_coverage' &&
-                                            !isQrSessionActive(selectedAppt) ? (
-                                            <Button
-                                                size={screens.md ? 'middle' : 'small'}
-                                                shape='round'
-                                                icon={<QrcodeOutlined />}
-                                                loading={qrLoading}
-                                                onClick={() => startQrSession(selectedAppt)}
-                                            >
-                                                Start QR
-                                            </Button>
-                                        ) : null}
-
-                                        {selectedAppt && isQrSessionActive(selectedAppt) ? (
-                                            <Button
-                                                size={screens.md ? 'middle' : 'small'}
-                                                shape='round'
-                                                icon={<QrcodeOutlined />}
-                                                onClick={() => openQrModal(selectedAppt)}
-                                            >
-                                                Show QR
-                                            </Button>
-                                        ) : null}
-                                    </Space>
-
-                                    {selectedAppt && isQrSessionActive(selectedAppt) ? (
-                                        <Alert
-                                            type='success'
-                                            showIcon
-                                            message='QR attendance is active'
-                                            description='Participants can scan with their phone camera to open the meeting check-in page.'
-                                        />
-                                    ) : (
-                                        <Text type='secondary'>
-                                            QR attendance becomes available 15 minutes before the meeting and stays active until closed or expired.
-                                        </Text>
-                                    )}
-                                </Space>
-                            </>
-                        ) : null}
-
-                        {detailModalTab === 'overview' && <Divider style={{ margin: '14px 0' }} />}
-
-                        {detailModalTab === 'overview' && <Space direction='vertical' style={{ width: '100%' }} size={10}>
-                            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                                <Text strong>Meeting Coverage</Text>
-
-                                {isApptDone(selectedAppt) ? (
-                                    <Button
-                                        size={screens.md ? 'middle' : 'small'}
-                                        shape='round'
-                                        danger={!selectedAppt.sessionCoverage?.latest}
-                                        color={selectedAppt.sessionCoverage?.latest ? 'green' : undefined}
-                                        variant='filled'
-                                        style={selectedAppt.sessionCoverage?.latest ? { border: '1px solid green' } : undefined}
-                                        icon={selectedAppt.sessionCoverage?.latest ? <EyeOutlined /> : <CheckCircleOutlined />}
-                                        onClick={() => openCoverage(selectedAppt)}
-                                    >
-                                        {selectedAppt.sessionCoverage?.latest ? 'View Coverage' : 'Add Coverage'}
-                                    </Button>
-                                ) : (
-                                    <Tag color='gold'>Available after meeting</Tag>
-                                )}
-                            </Space>
-
-                            {(selectedAppt as any)?.sessionCoverage?.latest ? (
-                                <div style={{ background: '#fafafa', borderRadius: 10, padding: 12 }}>
-                                    {(() => {
-                                        const latest = (selectedAppt as any).sessionCoverage.latest as SessionCoverageEntry
-                                        if (!latest.held) {
-                                            return (
-                                                <>
-                                                    <Tag color='red'>NOT HELD</Tag>
-                                                    <div style={{ marginTop: 8 }}>
-                                                        <Text type='secondary'>
-                                                            <b>Reason:</b> {latest.reasonNotHeld || '-'}
-                                                        </Text>
-                                                    </div>
-                                                </>
-                                            )
-                                        }
-                                        return (
-                                            <>
-                                                <Space wrap>
-                                                    <Tag color='green'>HELD</Tag>
-                                                    <Tag color={latest.smeAttendance === 'no_show' ? 'red' : latest.smeAttendance === 'unverified' || !latest.smeAttendance ? 'gold' : 'blue'}>
-                                                        SME: {smeAttendanceLabel(getSmeAttendanceOutcome(selectedAppt))}
-                                                    </Tag>
-                                                    <Text strong>{latest.title || selectedAppt.sessionTitle || selectedAppt.interventionTitle}</Text>
-                                                </Space>
-
-                                                {latest.smeAttendance === 'no_show' || latest.smeAttendance === 'unverified' ? (
-                                                    <div style={{ marginTop: 8 }}>
-                                                        <Text type='secondary'>
-                                                            <b>Attendance notes:</b> {latest.notes || '-'}
-                                                        </Text>
-                                                    </div>
-                                                ) : latest.notes || latest.coveredPoints?.length ? (
-                                                    <div style={{ marginTop: 8 }}>
-                                                        <Text>
-                                                            {latest.notes || latest.coveredPoints?.join('; ')}
-                                                        </Text>
-                                                        {latest.coveredPoints?.some(point =>
-                                                            norm(point) !== norm(latest.notes)
-                                                        ) ? (
-                                                            <Space wrap style={{ display: 'flex', marginTop: 8 }}>
-                                                                {latest.coveredPoints.map(point => (
-                                                                    <Tag key={point} color='blue'>{point}</Tag>
-                                                                ))}
-                                                            </Space>
-                                                        ) : null}
-                                                    </div>
-                                                ) : (
-                                                    <Text type='secondary'>No coverage summary captured.</Text>
-                                                )}
-                                            </>
-                                        )
-                                    })()}
-                                    <div style={{ marginTop: 10 }}><CoveragePhotoGallery row={selectedAppt} /></div>
-                                </div>
-                            ) : (
-                                <Text type='secondary'>No coverage added yet.</Text>
-                            )}
-                        </Space>}
-                    </>
-                ) : (
-                    <Text type='secondary'>No appointment selected.</Text>
-                )}
-            </Modal>
 
             <SessionReviewModal
                 open={monthReviewOpen}
@@ -8360,7 +7781,8 @@ const Appointments: React.FC = () => {
                 reviewDate={reviewDate}
                 onRangeChange={setReviewRange}
                 onDateChange={value => setReviewDate(value || dayjs())}
-                groupedDisplayAppointments={groupedDisplayAppointments}
+                // All sessions: the review has its own date range, and the list's filters mustn't narrow the report.
+                groupedDisplayAppointments={allDisplayAppointments}
                 derivedStatus={derivedStatus as any}
                 getDisplayRowMembers={getDisplayRowMembers as any}
                 getAttendanceCounts={getAttendanceCounts as any}
@@ -8371,14 +7793,14 @@ const Appointments: React.FC = () => {
 
 
             <Modal
+ wrapClassName="mobile-sheet"
                 centered
                 title={foodMenuRecord ? `Food Menu — ${foodMenuRecord.interventionTitle}` : 'Food Menu'}
                 open={foodMenuModalOpen}
                 onCancel={closeFoodMenuModal}
-                onOk={foodMenuTab === 'setup' ? () => foodMenuForm.submit() : undefined}
-                okText='Save Food Menu'
-                confirmLoading={savingFoodMenu}
-                okButtonProps={{ style: { display: foodMenuTab === 'setup' && canManageFoodMenu(foodMenuRecord) ? undefined : 'none' } }}
+                footer={foodMenuTab === 'setup' && canManageFoodMenu(foodMenuRecord) ? (
+                    <Button block type='primary' loading={savingFoodMenu} onClick={() => foodMenuForm.submit()}>Save food menu</Button>
+                ) : null}
                 width={screens.lg ? 900 : screens.md ? 760 : '100%'}
                 style={screens.md ? undefined : { maxWidth: '100vw' }}
                 destroyOnClose
@@ -8574,6 +7996,7 @@ const Appointments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 centered
                 title='Attendance QR'
                 open={qrModalOpen}
@@ -8594,22 +8017,7 @@ const Appointments: React.FC = () => {
                                         }
                                     }}
                                 >
-                                    Copy Link
-                                </Button>
-                            ) : null,
-                            qrRecord.attendanceSession?.qrUrl ? (
-                                <Button
-                                    key='open-link'
-                                    icon={<LinkOutlined />}
-                                    onClick={() =>
-                                        window.open(
-                                            qrRecord.attendanceSession?.qrUrl,
-                                            '_blank',
-                                            'noopener,noreferrer'
-                                        )
-                                    }
-                                >
-                                    Open Link
+                                    Copy link
                                 </Button>
                             ) : null,
                             isQrSessionActive(qrRecord) ? (
@@ -8620,12 +8028,9 @@ const Appointments: React.FC = () => {
                                     loading={qrLoading}
                                     onClick={() => closeQrSession(qrRecord)}
                                 >
-                                    Close QR
+                                    Close check-in
                                 </Button>
                             ) : null,
-                            <Button key='done' type='primary' onClick={closeQrModal}>
-                                Done
-                            </Button>
                         ].filter(Boolean)
                         : null
                 }
@@ -8642,115 +8047,22 @@ const Appointments: React.FC = () => {
                                     : 'This QR session is not active.'
                             }
                         />
-                        <Segmented
-                            block
-                            value={qrModalTab}
-                            onChange={value => setQrModalTab(value as 'overview' | 'attendance' | 'code')}
-                            options={[
-                                { label: 'Overview', value: 'overview' },
-                                { label: `Attendance (${getAttendanceCounts(qrRecord).checkedIn}/${getAttendanceCounts(qrRecord).total})`, value: 'attendance' },
-                                { label: 'QR Code', value: 'code' }
-                            ]}
-                        />
-
-                        {qrModalTab === 'code' && <div
-                            style={{
-                                display: 'flex',
-                                justifyContent: 'center',
-                                padding: '12px 0'
-                            }}
-                        >
+                        <div className='ap-qr'>
                             {qrRecord.attendanceSession?.qrUrl ? (
                                 <QRCode
                                     value={qrRecord.attendanceSession.qrUrl}
-                                    size={220}
+                                    size={260}
                                     errorLevel='M'
                                     status={isQrSessionActive(qrRecord) ? 'active' : 'expired'}
                                 />
                             ) : (
                                 <Text type='secondary'>No QR available.</Text>
                             )}
-                        </div>}
-                        {qrModalTab === 'overview' && <Descriptions bordered size='small' column={1}>
-                            {(qrRecord as any)?._displayType === 'group' ? (
-                                <>
-                                    <Descriptions.Item label='Group Participants'>
-                                        <Tag color='purple'>
-                                            {Array.isArray((qrRecord as any)?._groupMembers)
-                                                ? `${(qrRecord as any)._groupMembers.length} SME(s)`
-                                                : qrRecord.participantName || '-'}
-                                        </Tag>
-                                    </Descriptions.Item>
-
-                                </>
-                            ) : (
-                                <>
-                                    <Descriptions.Item label='Participant'>
-                                        {qrRecord.participantName || '-'}
-                                    </Descriptions.Item>
-
-                                </>
-                            )}
-
-                            <Descriptions.Item label='Intervention'>
-                                {qrRecord.interventionTitle || '-'}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Date'>
-                                {dayjs(qrRecord.date).format('YYYY-MM-DD')}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Time'>
-                                {formatTime(qrRecord.startTime)} — {formatTime(qrRecord.endTime)}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='RSVP Confirmed'>
-                                {getAttendanceCounts(qrRecord).confirmed}/{getAttendanceCounts(qrRecord).total}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Checked In'>
-                                {getAttendanceCounts(qrRecord).checkedIn}/{getAttendanceCounts(qrRecord).total}
-                            </Descriptions.Item>
-
-                            {/* Measured against arrivals, not invitations — see the
-                                overview tiles. Someone who never arrived cannot
-                                check out, so the invite list is the wrong whole. */}
-                            <Descriptions.Item label='Checked Out'>
-                                {getAttendanceCounts(qrRecord).checkedOut}/{getAttendanceCounts(qrRecord).checkedIn}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label='Still Present'>
-                                {getAttendanceCounts(qrRecord).currentlyPresent}
-                            </Descriptions.Item>
-                        </Descriptions>}
-                        {qrModalTab === 'attendance' && (
-                            <List
-                                size='small'
-                                bordered
-                                dataSource={getDisplayRowMembers(qrRecord)}
-                                locale={{ emptyText: 'No participants found.' }}
-                                renderItem={member => {
-                                    const checkedInAt = toDateSafe((member as any)?.attendance?.checkedInAt)
-                                    const checkedOutAt = toDateSafe((member as any)?.attendance?.checkedOutAt)
-                                    const checkedIn = isMemberCheckedIn(qrRecord, member)
-                                    return (
-                                        <List.Item>
-                                            <List.Item.Meta
-                                                title={member.participantName || 'Unnamed SME'}
-                                                description={checkedInAt
-                                                    ? `Checked in ${dayjs(checkedInAt).format('HH:mm')}${checkedOutAt ? ` · out ${dayjs(checkedOutAt).format('HH:mm')}` : ''}`
-                                                    : 'Not checked in'}
-                                            />
-                                            <Tag color={checkedOutAt ? 'default' : checkedIn ? 'green' : 'gold'}>
-                                                {checkedOutAt ? 'Checked out' : checkedIn ? 'Checked in' : 'Not checked in'}
-                                            </Tag>
-                                        </List.Item>
-                                    )
-                                }}
-                                style={{ maxHeight: 420, overflowY: 'auto' }}
-                            />
-                        )}
-
+                        </div>
+                        <p className='ap-qr-count'>
+                            {getAttendanceCounts(qrRecord).checkedIn} of {getAttendanceCounts(qrRecord).total} checked in
+                            {getAttendanceCounts(qrRecord).checkedIn ? ` · ${getAttendanceCounts(qrRecord).currentlyPresent} still here` : ''}
+                        </p>
                     </Space>
                 ) : (
                     <Text type='secondary'>No appointment selected.</Text>
@@ -8758,6 +8070,7 @@ const Appointments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 centered
                 open={Boolean(completionPrompt)}
                 title={null}
@@ -8816,6 +8129,7 @@ const Appointments: React.FC = () => {
                 {appointmentCompletionStep === 0 ? (
                     <>
                         <style>{`
+                    @media (prefers-reduced-motion: reduce) { [aria-hidden='true'][style*='completionRibbonFall'] { animation: none !important; display: none; } }
                     @keyframes completionRibbonFall {
                         0% { transform: translateY(-32px) rotate(0deg); opacity: 0; }
                         18% { opacity: 1; }
@@ -8837,7 +8151,7 @@ const Appointments: React.FC = () => {
                                             height: 20,
                                             borderRadius: 3,
                                             background: color,
-                                            animation: `completionRibbonFall ${2.2 + copy * 0.45}s ease-in ${colorIndex * 0.12}s infinite`
+                                            animation: `completionRibbonFall ${2.2 + copy * 0.45}s ease-in ${colorIndex * 0.12}s 1 both`
                                         }}
                                     />
                                 ))
@@ -8847,7 +8161,7 @@ const Appointments: React.FC = () => {
                                 <div style={{ textAlign: 'center', marginBottom: 20 }}>
                                     <CheckCircleOutlined style={{ fontSize: 48, color: '#52c41a' }} />
                                     <Title level={3} style={{ margin: '10px 0 4px' }}>
-                                        Intervention progress reached 100%
+                                        Planned sessions delivered
                                     </Title>
                                     <Text type='secondary'>
                                         {completionPrompt?.interventionTitle}
@@ -8855,10 +8169,9 @@ const Appointments: React.FC = () => {
                                 </div>
 
                                 <Progress
-                                    percent={100}
+                                    percent={Math.min(100, Math.round(((completionPrompt?.sessionsCompleted || 0) / Math.max(1, completionPrompt?.plannedSessions || 1)) * 100))}
                                     status='success'
                                     strokeWidth={12}
-                                    format={() => '100%'}
                                 />
                                 <Text type='secondary' style={{ display: 'block', textAlign: 'center' }}>
                                     {completionPrompt?.sessionsCompleted || 0}/{completionPrompt?.plannedSessions || 1} planned sessions attended
@@ -8871,7 +8184,7 @@ const Appointments: React.FC = () => {
                                         ['3', 'Confirm delivery details to create the MOV and request SME confirmation.']
                                     ].map(([step, text]) => (
                                         <Col xs={24} sm={8} key={step}>
-                                            <Card size='small' style={{ height: '100%', background: '#f7faff' }}>
+                                            <Card size='small' style={{ height: '100%', background: 'var(--app-surface-sunken)' }}>
                                                 <Tag color='blue' style={{ marginBottom: 8 }}>Step {step}</Tag>
                                                 <Paragraph style={{ marginBottom: 0 }}>{text}</Paragraph>
                                             </Card>
@@ -8916,29 +8229,32 @@ const Appointments: React.FC = () => {
             </Modal>
 
             <Modal
+ wrapClassName="mobile-sheet"
                 className="guide-coverage-modal"
                 centered
+                width={600}
                 title={coverageRecord?.sessionCoverage?.latest && coverageViewMode === 'summary'
                     ? 'Coverage saved'
                     : coverageRecord?.sessionCoverage?.latest
                         ? 'Update meeting coverage'
                         : 'Add meeting coverage'}
                 open={coverageModalOpen}
-                onOk={coverageViewMode === 'summary'
-                    ? () => setCoverageViewMode('edit')
-                    : () => coverageForm.submit()}
-                okText={coverageViewMode === 'summary' ? 'Edit Coverage' : coverageRecord?.sessionCoverage?.latest ? 'Save Update' : 'Save Coverage'}
-                okButtonProps={{
-                    className: 'guide-coverage-submit',
-                    icon: coverageViewMode === 'summary' ? <EditOutlined /> : <CheckCircleOutlined />
-                }}
-                cancelText={coverageViewMode === 'summary' ? 'Close' : 'Cancel'}
+                footer={coverageRecord && isApptDone(coverageRecord) ? (
+                    <Button
+                        block
+                        type='primary'
+                        className='guide-coverage-submit'
+                        icon={coverageViewMode === 'summary' ? <EditOutlined /> : <CheckCircleOutlined />}
+                        loading={savingCoverage}
+                        onClick={coverageViewMode === 'summary' ? () => setCoverageViewMode('edit') : () => coverageForm.submit()}
+                    >
+                        {coverageViewMode === 'summary' ? 'Edit coverage' : coverageRecord?.sessionCoverage?.latest ? 'Save changes' : 'Save coverage'}
+                    </Button>
+                ) : null}
                 onCancel={() => { if (!savingCoverageRef.current) closeCoverageModal() }}
                 closable={!savingCoverage}
                 maskClosable={!savingCoverage}
                 keyboard={!savingCoverage}
-                cancelButtonProps={{ disabled: savingCoverage }}
-                confirmLoading={savingCoverage}
                 destroyOnClose
             >
                 {coverageRecord && !isApptDone(coverageRecord) ? (
@@ -8952,13 +8268,6 @@ const Appointments: React.FC = () => {
 
                 {coverageViewMode === 'summary' && coverageRecord?.sessionCoverage?.latest ? (
                     <div>
-                        <Alert
-                            type='success'
-                            showIcon
-                            message='Coverage saved successfully.'
-                            style={{ marginBottom: 16 }}
-                        />
-
                         {(() => {
                             const latest = coverageRecord.sessionCoverage?.latest as SessionCoverageEntry
                             const appointmentAttendance = String(coverageRecord.attendance?.status || '').toLowerCase()
@@ -8984,34 +8293,55 @@ const Appointments: React.FC = () => {
 
                             return (
                                 <Space direction='vertical' size={16} style={{ width: '100%' }}>
-                                    <Card size='small' style={{ borderColor: latest.held ? '#b7eb8f' : '#ffccc7' }}>
-                                        <Space direction='vertical' size={10} style={{ width: '100%' }}>
-                                            <Space wrap>
-                                                <Tag color={latest.held ? 'green' : 'red'}>{latest.held ? 'SESSION HELD' : 'SESSION NOT HELD'}</Tag>
-                                                {latest.held ? (
-                                                    <Tag color={participated ? 'blue' : displayedSmeAttendance === 'no_show' ? 'red' : 'gold'}>
-                                                        SME: {smeAttendanceLabel(displayedSmeAttendance)}
-                                                    </Tag>
-                                                ) : null}
-                                            </Space>
-                                            <Typography.Title level={5} style={{ margin: 0 }}>
-                                                {latest.title || coverageRecord.sessionTitle || coverageRecord.interventionTitle}
-                                            </Typography.Title>
-                                            {savedAt ? (
-                                                <Text type='secondary'>Saved {dayjs(savedAt).format('DD MMM YYYY, HH:mm')}{latest.createdByName ? ` by ${latest.createdByName}` : ''}</Text>
+                                    <div
+                                        style={{
+                                            border: `1px solid ${latest.held ? '#b7eb8f' : '#ffccc7'}`,
+                                            borderRadius: 12,
+                                            padding: '12px 14px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 8
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                            <Tag bordered color={latest.held ? 'green' : 'red'} style={{ borderRadius: 999, marginInlineEnd: 0 }}>{latest.held ? 'Session held' : 'Session not held'}</Tag>
+                                            {latest.held ? (
+                                                <Tag bordered color={participated ? 'blue' : displayedSmeAttendance === 'no_show' ? 'red' : 'gold'} style={{ borderRadius: 999, marginInlineEnd: 0 }}>
+                                                    SME: {smeAttendanceLabel(displayedSmeAttendance)}
+                                                </Tag>
                                             ) : null}
-                                        </Space>
-                                    </Card>
+                                        </div>
+                                        <Typography.Title level={5} style={{ margin: 0 }}>
+                                            {latest.title || coverageRecord.sessionTitle || coverageRecord.interventionTitle}
+                                        </Typography.Title>
+                                        {savedAt ? (
+                                            <Text type='secondary' style={{ fontSize: 12 }}>
+                                                <CheckCircleOutlined style={{ color: '#52c41a' }} /> Saved {dayjs(savedAt).format('DD MMM YYYY, HH:mm')}{latest.createdByName ? ` by ${latest.createdByName}` : ''}
+                                            </Text>
+                                        ) : null}
+                                    </div>
 
                                     {isReadyForCompletion ? (
-                                        <Card size='small'>
-                                            <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-                                                <div>
-                                                    <Tag color='gold'>Ready for completion</Tag>
-                                                    <Text type='secondary'>Finish the completion checks and MOV setup, or add another session.</Text>
+                                        <div
+                                            style={{
+                                                border: '1px solid #ffe58f',
+                                                borderRadius: 12,
+                                                padding: '10px 14px',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                gap: 12,
+                                                flexWrap: 'wrap'
+                                            }}
+                                        >
+                                                <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                                                    <Text strong style={{ display: 'block' }}>Ready for completion</Text>
+                                                    <Text type='secondary' style={{ fontSize: 12 }}>Finish the completion checks and MOV setup, or add another session.</Text>
                                                 </div>
                                                 <Button
                                                     type='primary'
+                                                    shape='round'
+                                                    style={{ flex: '1 1 160px' }}
                                                     onClick={() => {
                                                         const assignmentIds = latest.completionAssignmentIds?.length
                                                             ? latest.completionAssignmentIds
@@ -9035,8 +8365,7 @@ const Appointments: React.FC = () => {
                                                 >
                                                     Complete Intervention
                                                 </Button>
-                                            </Space>
-                                        </Card>
+                                        </div>
                                     ) : null}
 
                                     {latest.held && latest.attendanceByParticipant?.length ? (
@@ -9082,27 +8411,44 @@ const Appointments: React.FC = () => {
                                         </Descriptions>
                                     ) : participated ? (
                                         <>
-                                            <Descriptions size='small' column={1} bordered>
-                                                <Descriptions.Item label='Intervention progress'>
-                                                    {(() => {
-                                                        const pct = Number(linkedAssignment?.computedProgress ?? linkedAssignment?.progress)
-                                                        return Number.isFinite(pct) ? `${Math.round(pct)}% (${linkedAssignment?.tracking?.sessionsLogged ?? 0}/${linkedAssignment?.plannedSessions ?? 1} sessions)` : 'Not recorded'
-                                                    })()}
-                                                </Descriptions.Item>
-                                                <Descriptions.Item label='What was covered and achieved'>
+                                            {(() => {
+                                                const pct = Number(linkedAssignment?.computedProgress ?? linkedAssignment?.progress)
+                                                const hasPct = Number.isFinite(pct)
+                                                return (
+                                                    <div style={{ border: '1px solid rgba(128,128,128,0.28)', borderRadius: 12, padding: '10px 14px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                                                            <Text type='secondary'>Intervention progress</Text>
+                                                            <Text strong>
+                                                                {hasPct ? `${Math.round(pct)}%` : 'Not recorded'}
+                                                                {hasPct ? (
+                                                                    <Text type='secondary' style={{ fontWeight: 400, fontSize: 12 }}>
+                                                                        {' '}· {linkedAssignment?.tracking?.sessionsLogged ?? 0}/{linkedAssignment?.plannedSessions ?? 1} sessions
+                                                                    </Text>
+                                                                ) : null}
+                                                            </Text>
+                                                        </div>
+                                                        {hasPct ? (
+                                                            <Progress percent={Math.round(pct)} showInfo={false} size='small' style={{ margin: 0 }} />
+                                                        ) : null}
+                                                    </div>
+                                                )
+                                            })()}
+                                            <div style={{ border: '1px solid rgba(128,128,128,0.28)', borderRadius: 12, padding: '10px 14px' }}>
+                                                <Text type='secondary' style={{ display: 'block', marginBottom: 4 }}>What was covered and achieved</Text>
+                                                <Text style={{ whiteSpace: 'pre-wrap' }}>
                                                     {latest.notes || latest.coveredPoints?.join('; ') || '-'}
-                                                </Descriptions.Item>
-                                            </Descriptions>
+                                                </Text>
+                                            </div>
                                             {latest.coveredPoints?.some(point =>
                                                 norm(point) !== norm(latest.notes)
                                             ) ? (
                                                 <div>
-                                                    <Text strong>Formal topics covered</Text>
-                                                    <Space wrap style={{ display: 'flex', marginTop: 8 }}>
+                                                    <Text type='secondary' style={{ display: 'block', marginBottom: 6 }}>Formal topics covered</Text>
+                                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                                         {latest.coveredPoints.map(point => (
-                                                            <Tag key={point} color='blue'>{point}</Tag>
+                                                            <Tag key={point} bordered color='blue' style={{ borderRadius: 999, marginInlineEnd: 0 }}>{point}</Tag>
                                                         ))}
-                                                    </Space>
+                                                    </div>
                                                 </div>
                                             ) : null}
                                         </>
@@ -9127,11 +8473,13 @@ const Appointments: React.FC = () => {
                                 label='Was the session held?'
                                 rules={[{ required: true, message: 'Please select yes or no.' }]}
                             >
-                                <Select
-                                    placeholder='Select'
+                                <ChoiceCards
+                                    compact
+                                    columns={2}
+                                    label='Was the session held?'
                                     options={[
-                                        { label: 'Yes, it was held', value: 'yes' },
-                                        { label: 'No, it was not held', value: 'no' }
+                                        { value: 'yes', label: 'Yes, it was held', icon: <CheckCircleOutlined /> },
+                                        { value: 'no', label: 'No, it wasn’t', icon: <StopOutlined /> }
                                     ]}
                                 />
                             </Form.Item>
@@ -9153,15 +8501,17 @@ const Appointments: React.FC = () => {
                                         <>
                                             <Form.Item
                                                 name='notHeldReasonCategory'
-                                                label='Reason (meeting not held)'
+                                                label='Why wasn’t it held?'
                                                 rules={[{ required: true, message: 'Please select a reason.' }]}
                                             >
-                                                <Select
-                                                    placeholder='Select a reason'
+                                                <ChoiceCards
+                                                    compact
+                                                    columns={3}
+                                                    label='Why wasn’t it held?'
                                                     options={[
-                                                        { label: 'No-show', value: 'no-show' },
-                                                        { label: 'Cancelled', value: 'cancelled' },
-                                                        { label: 'Other', value: 'other' }
+                                                        { value: 'no-show', label: 'Nobody came', icon: <UserOutlined /> },
+                                                        { value: 'cancelled', label: 'Called off', icon: <StopOutlined /> },
+                                                        { value: 'other', label: 'Something else', icon: <InfoCircleOutlined /> }
                                                     ]}
                                                 />
                                             </Form.Item>
@@ -9186,7 +8536,7 @@ const Appointments: React.FC = () => {
                                                 <Space direction='vertical' size={8} style={{ width: '100%', marginBottom: 10 }}>
                                                     <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
                                                         <Text strong>Attendance by SME</Text>
-                                                        {getCoverageAttendanceMode(coverageRecord) === 'manual' ? (
+                                                        {(
                                                             <Button
                                                                 size='small'
                                                                 icon={<CheckCircleOutlined />}
@@ -9205,12 +8555,12 @@ const Appointments: React.FC = () => {
                                                                     })
                                                                 }}
                                                             >
-                                                                Mark All Attended
+                                                                Mark all attended
                                                             </Button>
-                                                        ) : null}
+                                                        )}
                                                     </Space>
-                                                    {getCoverageAttendanceMode(coverageRecord) === 'manual' ? (
-                                                        <Text type='secondary'>QR check-ins are pre-filled and can be corrected.</Text>
+                                                    {getCoverageAttendanceMode(coverageRecord) === 'qr' ? (
+                                                        <Text type='secondary'>Filled in from QR check-in. Correct anyone who was there but didn’t scan.</Text>
                                                     ) : null}
                                                 </Space>
                                                 <Table<Appt>
@@ -9240,44 +8590,44 @@ const Appointments: React.FC = () => {
                                                         },
                                                         {
                                                             title: 'Attendance', key: 'attendance', width: 220,
-                                                            render: (_: unknown, member: Appt) => getCoverageAttendanceMode(coverageRecord) === 'manual' ? (
+                                                            render: (_: unknown, member: Appt) => (
                                                                 <Form.Item
                                                                     name={['participantAttendance', member.id]}
                                                                     preserve
-                                                                    rules={[{ required: true, message: 'Select an attendance outcome.' }]}
+                                                                    rules={[{ required: true, message: 'Choose one.' }]}
                                                                     style={{ marginBottom: 0 }}
+                                                                    extra={getCoverageAttendanceMode(coverageRecord) === 'qr' && isGroupMemberCheckedIn(coverageRecord, member, participantEmails) ? 'Checked in by QR' : undefined}
                                                                 >
-                                                                    <Select
+                                                                    <Segmented
+                                                                        size='small'
                                                                         aria-label={'Attendance for ' + (member.participantName || 'SME')}
                                                                         options={[
                                                                             { label: 'Attended', value: 'attended' },
-                                                                            { label: 'Did not attend (no-show)', value: 'no_show' }
+                                                                            { label: 'No-show', value: 'no_show' }
                                                                         ]}
                                                                     />
                                                                 </Form.Item>
-                                                            ) : isGroupMemberCheckedIn(coverageRecord, member, participantEmails) ? (
-                                                                <Tag color='green'>Attended (QR)</Tag>
-                                                            ) : <Tag>No-show</Tag>
+                                                            )
                                                         }
                                                     ]}
                                                 />
                                             </div>
-                                        ) : getCoverageAttendanceMode(coverageRecord) === 'manual' ? (
+                                        ) : (
                                             <Form.Item
                                                 name='smeAttendance'
-                                                label='SME attendance outcome'
-                                                rules={[{ required: true, message: 'Please record the SME attendance outcome.' }]}
+                                                label='Did the SME attend?'
+                                                rules={[{ required: true, message: 'Please record whether the SME attended.' }]}
+                                                extra={getCoverageAttendanceMode(coverageRecord) === 'qr' ? 'Filled in from QR check-in.' : undefined}
                                             >
-                                                <Select
+                                                <ChoiceCards
+                                                    compact
+                                                    columns={2}
+                                                    label='Did the SME attend?'
                                                     options={[
-                                                        { label: 'SME attended', value: 'attended' },
-                                                        { label: 'SME did not attend (no-show)', value: 'no_show' }
+                                                        { value: 'attended', label: 'Attended', icon: <CheckCircleOutlined /> },
+                                                        { value: 'no_show', label: 'No-show', icon: <StopOutlined /> }
                                                     ]}
                                                 />
-                                            </Form.Item>
-                                        ) : (
-                                            <Form.Item label='SME attendance outcome'>
-                                                <Tag color='green'>Attended (QR)</Tag>
                                             </Form.Item>
                                         )}
 
@@ -9343,17 +8693,27 @@ const Appointments: React.FC = () => {
                                                             </Form.Item>
                                                         ) : null}
 
-                                                        {!isTrainingAcademyCoverage && coverageNoteWordCount(
-                                                            normalizePointList(
+                                                        {(() => {
+                                                            const planned = normalizePointList(
                                                                 coverageRecord?.plannedCoverage || coverageRecord?.sessionCoverage?.plannedCoverage || []
-                                                            ).join(' ')
-                                                        ) > 5 ? (
-                                                            <Form.Item name='usePlannedCoverage' valuePropName='checked'>
-                                                                <Checkbox>
-                                                                    Use the planned coverage as the coverage record
-                                                                </Checkbox>
-                                                            </Form.Item>
-                                                        ) : null}
+                                                            ).join(' ').trim()
+                                                            if (!planned) return null
+                                                            return (
+                                                                <div className='qc-quote ap-planned'>
+                                                                    <div className='qc-quote-head'>
+                                                                        <span className='qc-quote-who'>What was planned</span>
+                                                                        <Button
+                                                                            size='small'
+                                                                            type='link'
+                                                                            onClick={() => coverageForm.setFieldsValue({ notes: planned, usePlannedCoverage: false })}
+                                                                        >
+                                                                            Start from the plan
+                                                                        </Button>
+                                                                    </div>
+                                                                    <p className='qc-quote-text'>{planned}</p>
+                                                                </div>
+                                                            )
+                                                        })()}
 
                                                         <Form.Item noStyle shouldUpdate={(prev, cur) =>
                                                             prev.usePlannedCoverage !== cur.usePlannedCoverage
@@ -9394,7 +8754,7 @@ const Appointments: React.FC = () => {
                                         {(coverageRecord?.deliveryMethod === 'in_person' || coverageRecord?.sessionCoverage?.latest?.photos?.length) ? (
                                             <Form.Item
                                                 label='Photos (optional)'
-                                                extra={`${coveragePhotoFiles.length} selected, ${existingCoveragePhotoUrls.length} saved photos retained. Additions and removals apply when you click Save Coverage or Save Update. Cancel discards these changes.`}
+                                                extra={`${coveragePhotoFiles.length} new, ${existingCoveragePhotoUrls.length} saved. Changes apply when you save; closing discards them. Up to 8.`}
                                             >
                                                 <Upload
                                                     listType='picture-card'
@@ -9408,7 +8768,7 @@ const Appointments: React.FC = () => {
                                                     multiple
                                                     accept='image/*'
                                                 >
-                                                    {coveragePhotoFiles.length >= 8 ? null : (
+                                                    {coveragePhotoFiles.length + existingCoveragePhotoUrls.length >= 8 ? null : (
                                                         <div>
                                                             <UploadOutlined />
                                                             <div style={{ marginTop: 8 }}>Add photo</div>

@@ -29,8 +29,10 @@ import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import {
+    buildGroupRequirements,
     evaluateGroupEligibility,
     groupLabel,
+    isAgreementCountersigned,
     resolveApplicationGroup,
     type GroupEligibility,
     type GroupEvidence,
@@ -63,9 +65,14 @@ const toDate = (value: any): Date | null => {
     return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-async function loadEvidence(application: any): Promise<GroupEvidence[]> {
-    const flat: GroupEvidence[] = Array.isArray(application.complianceDocuments)
-        ? application.complianceDocuments.map((item: any, index: number) => ({
+async function loadEvidence(application: any, participant: any = {}): Promise<GroupEvidence[]> {
+    // Same source the Compliance pages read: the participant's array when it
+    // has entries, otherwise the application's.
+    const embedded: any[] | null = Array.isArray(participant?.complianceDocuments) && participant.complianceDocuments.length
+        ? participant.complianceDocuments
+        : Array.isArray(application.complianceDocuments) ? application.complianceDocuments : null
+    const flat: GroupEvidence[] = embedded
+        ? embedded.map((item: any, index: number) => ({
             id: item.agreementId || item.presetId || item.id || `flat-${index}`,
             agreementId: item.agreementId,
             title: item.title || item.documentName || item.name || item.type || '',
@@ -105,6 +112,7 @@ async function loadEvidence(application: any): Promise<GroupEvidence[]> {
             agreementId: slug,
             title: item.title || slug,
             kind: 'agreement',
+            status: isAgreementCountersigned(item) ? 'valid' : 'pending',
             signed: isIncubateeAgreementSigned(item, slug),
             raw: item
         }
@@ -189,7 +197,7 @@ export default function GroupProgressForm() {
                 const program = programSnapshot?.exists() ? programSnapshot.data() as any : {}
 
                 const [loadedEvidence, interventionSnapshot, resolvedCompliance] = await Promise.all([
-                    loadEvidence(applicationRecord),
+                    loadEvidence(applicationRecord, participantRecord || {}),
                     participantRecord?.id
                         ? getDocs(query(collection(db, 'assignedInterventions'), where('participantId', '==', participantRecord.id)))
                         : getDocs(query(collection(db, 'assignedInterventions'), where('applicationId', '==', applicationRecord.id))),
@@ -211,12 +219,7 @@ export default function GroupProgressForm() {
                 if (!disposed) {
                     setApplication(applicationRecord)
                     setParticipant(participantRecord)
-                    setRequirements(resolvedCompliance.requirements.map(requirement => ({
-                        id: requirement.id,
-                        title: requirement.title,
-                        kind: requirement.kind,
-                        agreementId: requirement.agreementId
-                    })))
+                    setRequirements(buildGroupRequirements(resolvedCompliance.requirements))
                     setRules(program.groupProgressionRules || {})
                     setEvidence(loadedEvidence)
                     setInterventions(loadedInterventions)
@@ -300,7 +303,7 @@ export default function GroupProgressForm() {
                         block
                         type='primary'
                         style={{ marginTop: 12 }}
-                        onClick={() => navigate('/incubatee/documents/compliance')}
+                        onClick={() => navigate('/incubatee/compliance')}
                     >
                         Open compliance
                     </Button>}

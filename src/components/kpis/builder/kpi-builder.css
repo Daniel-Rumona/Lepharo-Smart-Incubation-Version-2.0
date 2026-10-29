@@ -1,0 +1,610 @@
+/* KPI create/edit modal (kb-). Colours come from the --app-* tokens and the
+   metric tones (qtx-tone-*), so light, dark and every accent work. Choices use
+   the shared pill-strip Segmented and buttons. */
+
+.kb-modal .ant-modal-body {
+    padding-top: 4px;
+}
+
+/* --- Entry -------------------------------------------------------------------- */
+
+.kb-entry-lead {
+    margin: 0 0 12px;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.kb-entry-options {
+    display: grid;
+    gap: 10px;
+}
+
+.kb-entry-option {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 14px 16px;
+    text-align: start;
+    font: inherit;
+    color: var(--app-text);
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease, transform 140ms ease, box-shadow 160ms ease;
+}
+
+.kb-entry-option:hover {
+    border-color: var(--app-accent-border-strong);
+    background: var(--app-accent-wash);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--app-accent) 10%, transparent);
+    transform: translateY(-1px);
+}
+
+.kb-entry-option:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.kb-entry-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    font-size: 18px;
+    color: var(--qtx-tone-fg);
+    background: var(--qtx-tone-bg);
+    border-radius: 12px;
+}
+
+.kb-entry-text {
+    display: grid;
+    flex: 1 1 auto;
+    gap: 2px;
+    min-width: 0;
+}
+
+.kb-entry-title {
+    font-weight: 700;
+}
+
+.kb-entry-detail {
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.kb-entry-chevron {
+    color: var(--app-text-subtle);
+}
+
+.kb-entry-foot {
+    margin: 14px 0 0;
+    font-size: 12.5px;
+}
+
+/* --- Steps + layout --------------------------------------------------------------- */
+
+/* Step name beside the modal title (there is no separate stepper). */
+.kb-title {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+}
+
+.kb-title-step {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.kb-modal .ant-modal-header {
+    margin-bottom: 16px;
+}
+
+/* Form on the left, live summary on the right; stacked on narrow screens. */
+.kb-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 20px;
+    align-items: start;
+}
+
+@media (max-width: 860px) {
+    .kb-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.kb-main {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+
+.kb-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.kb-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.kb-sub-label {
+    margin: 10px 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.kb-hint {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.kb-muted {
+    color: var(--app-text-muted);
+}
+
+.kb-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-weight: 600;
+    color: var(--app-text);
+    background: var(--app-surface-sunken);
+    border-radius: 10px;
+}
+
+.kb-group {
+    display: grid;
+    gap: 14px;
+    padding: 14px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.kb-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+@media (max-width: 560px) {
+    .kb-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.kb-errors ul {
+    margin: 0;
+    padding-inline-start: 18px;
+}
+
+.kb-callout {
+    display: flex;
+    gap: 14px;
+    padding: 16px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.kb-callout > .anticon {
+    margin-top: 3px;
+    font-size: 18px;
+    color: var(--app-accent);
+}
+
+.kb-callout strong {
+    color: var(--app-text);
+}
+
+.kb-callout p {
+    margin: 4px 0 10px;
+    color: var(--app-text-muted);
+}
+
+/* --- Conditions + percentage -------------------------------------------------------- */
+
+.kb-conditions {
+    display: grid;
+    gap: 8px;
+}
+
+.kb-condition {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) 120px minmax(0, 1.4fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+@media (max-width: 640px) {
+    .kb-condition {
+        grid-template-columns: minmax(0, 1fr) 110px auto;
+    }
+
+    .kb-condition-value {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+}
+
+.kb-condition-add.ant-btn {
+    justify-self: start;
+}
+
+.kb-ratio {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+@media (max-width: 720px) {
+    .kb-ratio {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.kb-ratio-part {
+    padding: 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.kb-ratio-title {
+    margin-bottom: 8px;
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+/* The condition grid is too wide inside a half-width ratio box; stack it. */
+.kb-ratio-part .kb-condition {
+    grid-template-columns: minmax(0, 1fr) 100px auto;
+}
+
+.kb-ratio-part .kb-condition-value {
+    grid-column: 1 / -1;
+    grid-row: 2;
+}
+
+/* --- Live summary -------------------------------------------------------------------- */
+
+.kb-summary {
+    position: sticky;
+    top: 0;
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 14px;
+}
+
+.kb-summary-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--app-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.kb-summary-title {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--app-text);
+    overflow-wrap: anywhere;
+}
+
+.kb-summary-sentence {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--app-text);
+}
+
+.kb-summary-rows {
+    display: grid;
+    gap: 8px;
+    margin: 4px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--app-border);
+}
+
+.kb-summary-rows dt {
+    font-size: 11.5px;
+    color: var(--app-text-muted);
+}
+
+.kb-summary-rows dd {
+    margin: 1px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--app-text);
+    overflow-wrap: anywhere;
+}
+
+.kb-summary-rows .is-pending dd {
+    font-weight: 500;
+    font-style: italic;
+    color: var(--app-text-subtle);
+}
+
+/* --- Footer actions -------------------------------------------------------------------- */
+
+/* Footer buttons share the full row equally. */
+.kb-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--app-border);
+}
+
+.kb-actions > .ant-btn,
+.kb-actions > .ant-tooltip-open,
+.kb-actions > span:has(> .ant-btn) {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.kb-actions > span:has(> .ant-btn) > .ant-btn {
+    width: 100%;
+}
+
+/* --- Assistant ----------------------------------------------------------------------- */
+
+.kb-assistant {
+    display: grid;
+    gap: 14px;
+}
+
+.kb-dropzone.ant-upload-wrapper .ant-upload-drag {
+    border-radius: 14px;
+}
+
+.kb-dropzone-busy {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 120px;
+    color: var(--app-text-muted);
+}
+
+.kb-chat {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 220px;
+    max-height: 360px;
+    padding: 12px;
+    overflow-y: auto;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+}
+
+.kb-bubble {
+    max-width: 82%;
+    padding: 8px 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    border-radius: 14px;
+}
+
+.kb-bubble.is-assistant {
+    align-self: flex-start;
+    color: var(--app-text);
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-bottom-left-radius: 4px;
+}
+
+.kb-bubble.is-user {
+    align-self: flex-end;
+    color: var(--app-accent-contrast);
+    background: var(--app-accent);
+    border-bottom-right-radius: 4px;
+}
+
+.kb-chat-input {
+    display: flex;
+    gap: 8px;
+}
+
+.kb-review-bar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+@media (max-width: 720px) {
+    .kb-review-bar {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.kb-review-counts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.kb-review-list {
+    display: grid;
+    gap: 10px;
+    max-height: 52vh;
+    margin: 0;
+    padding: 0 4px 0 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.kb-review-row {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    transition: opacity 140ms ease;
+}
+
+.kb-review-row.is-skipped {
+    opacity: 0.55;
+}
+
+.kb-review-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kb-review-head .ant-input {
+    font-weight: 600;
+}
+
+.kb-review-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 4px;
+}
+
+.kb-review-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+}
+
+.kb-review-meta .ant-tag {
+    margin-inline-end: 0;
+}
+
+.kb-review-targets {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.kb-review-targets .kb-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--app-text-muted);
+}
+
+@media (max-width: 640px) {
+    .kb-review-targets {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.kb-review-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.kb-review-note.is-warning {
+    color: #b45309;
+}
+
+html[data-theme="dark"] .kb-review-note.is-warning {
+    color: #fbbf24;
+}
+
+/* --- Department pickers ------------------------------------------------------- */
+/* 40px rounded selects to match the form; each option carries the
+   department's initials badge so long lists scan quickly. */
+.kb-select.ant-select-single,
+.kb-select.ant-select-multiple {
+    width: 100%;
+}
+
+.kb-select.ant-select-single {
+    height: 40px;
+}
+
+.kb-select.ant-select .ant-select-selector {
+    min-height: 40px;
+    border-radius: 12px !important;
+}
+
+.kb-select.ant-select-multiple .ant-select-selector {
+    padding-block: 4px;
+}
+
+.kb-select-prefix {
+    color: var(--app-text-muted);
+}
+
+.kb-dept-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 2px 0;
+}
+
+.kb-dept-option-text {
+    display: grid;
+    min-width: 0;
+}
+
+.kb-dept-option-name {
+    overflow: hidden;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.kb-dept-option-note {
+    font-size: 11.5px;
+    color: var(--app-accent-strong);
+}
+
+.kb-select-popup .ant-select-item-option {
+    padding: 6px 10px;
+    border-radius: 10px;
+}
+
+.kb-select-popup .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+    background: var(--app-accent-wash);
+}
+
+/* Chosen departments in the multi-select. */
+.kb-dept-chip.ant-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 4px 2px 0;
+    padding: 2px 8px 2px 3px;
+    font-weight: 600;
+    color: var(--app-text);
+    background: var(--app-surface-sunken);
+    border-radius: 999px;
+}
+
+.kb-dept-chip .ws-avatar.ant-avatar {
+    font-size: 9px !important;
+}

@@ -55,8 +55,12 @@ export const toAppointmentView = (
   departmentId: appointment.departmentId,
   assignedInterventionId: appointment.assignedInterventionId,
   participantId: appointment.smeId,
-  participantName: appointment.smeName,
+  // A Training Academy invitation names the person the SME sent.
+  participantName: appointment.attendeeName ? `${appointment.attendeeName} · ${appointment.smeName}` : appointment.smeName,
   participantEmail: appointment.smeEmail || '',
+  attendeeId: appointment.attendeeId || null,
+  attendeeName: appointment.attendeeName || null,
+  companyName: appointment.attendeeName ? appointment.smeName : undefined,
   interventionId: appointment.interventionId,
   interventionTitle: appointment.interventionTitle,
   subInterventionId: appointment.subInterventionId,

@@ -27,9 +27,10 @@ exports.notifyInquirySpecialist = void 0;
 const https_1 = require("firebase-functions/v2/https");
 const logger = __importStar(require("firebase-functions/logger"));
 const emailShared_1 = require("./emailShared");
+const syntheticData_1 = require("./syntheticData");
 const SUPPORT_FROM_NAME = "Lepharo Smart Incubation Support";
 const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const STAFF_ROLES = ["receptionist", "projectadmin", "director", "admin", "coordinator", "operations"];
+const STAFF_ROLES = ["receptionist", "projectadmin", "director", "system_admin", "coordinator", "operations"];
 const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -109,6 +110,10 @@ exports.notifyInquirySpecialist = (0, https_1.onRequest)({ region: "us-central1"
             res.status(403).json({ ok: false, error: "different_branch" });
             return;
         }
+        if ((0, syntheticData_1.suppressRecordNotifications)(inquiry, inquiryId)) {
+            res.status(200).json({ ok: true, emailed: false, notified: false, suppressed: true });
+            return;
+        }
         // The specialist may or may not have an account.
         let specialistUid = null;
         try {
@@ -135,7 +140,6 @@ exports.notifyInquirySpecialist = (0, https_1.onRequest)({ region: "us-central1"
                 type: "inquiry_referral",
                 message: `${caller.name || "A colleague"} referred an inquiry to you: ${inquiry.inquiryDetails?.inquiryType || "Inquiry"} from ${who}. Please contact them within 24 hours.`,
                 recipientIds: [specialistUid],
-                recipientRoles: [],
                 inquiryId,
                 referredBy: callerUid,
                 referredByName: caller.name || "",

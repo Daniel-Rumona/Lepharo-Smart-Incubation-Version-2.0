@@ -390,8 +390,8 @@ const DepartmentRisksBottlenecksCard: React.FC<Props> = ({
                                     title='Bottlenecks'
                                     value={stats.totalBottlenecks}
                                     subtitle='Overdue or waiting on action'
-                                    icon={<AlertOutlined style={{ color: '#dc2626' }} />}
-                                    iconBg='rgba(220,38,38,0.12)'
+                                    icon={<AlertOutlined />}
+                                    tone='danger'
                                 />
                             </MotionCard>
                         </Col>
@@ -409,8 +409,8 @@ const DepartmentRisksBottlenecksCard: React.FC<Props> = ({
                                     title='Total Unserviced'
                                     value={stats.totalUnservicedSMEs}
                                     subtitle='SMEs with no recorded service progress'
-                                    icon={<StopOutlined style={{ color: '#d97706' }} />}
-                                    iconBg='rgba(217,119,6,0.12)'
+                                    icon={<StopOutlined />}
+                                    tone='warning'
                                 />
                             </MotionCard>
                         </Col>

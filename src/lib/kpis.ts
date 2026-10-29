@@ -88,7 +88,7 @@ type Context = {
   participantId: string
   programId?: string
 
-  areaOfSupport?: string
+  departmentId?: string
   quarter?: string
   payload?: any
 }
@@ -168,7 +168,7 @@ export async function applyKpiDeltas(
           unit,
           deltaRaw: mode === 'increment' ? value : (nextRawP - prevRawP),
           percentAfter: nextPctP,
-          department: ctx.areaOfSupport || null,
+          departmentId: ctx.departmentId || null,
           programId,
           periodKey
         }))
@@ -192,7 +192,7 @@ export async function applyKpiDeltas(
           kpiId,
           unit,
           delta: mode === 'increment' ? value : (nextP - prevP),
-          department: ctx.areaOfSupport || null,
+          departmentId: ctx.departmentId || null,
           programId,
           periodKey
         }))

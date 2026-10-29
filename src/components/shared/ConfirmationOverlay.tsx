@@ -205,7 +205,7 @@ const DPConfirmationOverlay: React.FC<DPConfirmationOverlayProps> = ({
             {children}
 
             {checking && (
-                <DashboardLoader overlay label='Checking Developmental Plans status…' />
+                <DashboardLoader overlay backdrop='translucent' label='Checking Developmental Plans status…' />
             )}
 
             {!checking && !allConfirmed && (

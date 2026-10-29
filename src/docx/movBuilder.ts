@@ -367,15 +367,17 @@ const MOV_LANDSCAPE_PAGE = {
   margin: { top: 720, bottom: 720, left: 720, right: 720 }
 }
 
+/** Lepharo's logo, then the programme's funder logo (or the funder's name when there's no logo). */
 export async function headerTable(
   lepharoUrl?: string,
-  sibanyeUrl?: string,
+  funderLogoUrl?: string | null,
   titleTop = "CONFIRMATION SHEET FOR RECEIVING",
-  titleSub?: string
+  titleSub?: string,
+  funderName?: string | null
 ) {
   const [l, s, movTemplate] = await Promise.all([
     fetchBytes(lepharoUrl),
-    fetchBytes(sibanyeUrl),
+    fetchBytes(funderLogoUrl || undefined),
     getAgreementTemplate("mov").catch(() => null)
   ])
 
@@ -385,7 +387,7 @@ export async function headerTable(
         l ? new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ data: l, transformation: { width: 140, height: 40 } })] }) : "Lepharo"
       ], { width: 18, alignment: AlignmentType.CENTER }),
       styledCell([
-        s ? new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ data: s, transformation: { width: 160, height: 42 } })] }) : "SMALL ENTERPRISE DEVELOPMENT AGENCY"
+        s ? new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ data: s, transformation: { width: 160, height: 42 } })] }) : (funderName || "")
       ], { width: 18, alignment: AlignmentType.CENTER }),
       styledCell([
         new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: titleTop, bold: true, size: 28 })] }),
@@ -658,7 +660,9 @@ export async function buildMovDoc(
   m: any,
   opts: {
     lepharoUrl?: string
-    sibanyeUrl?: string
+    /** The programme's funder logo; the funder's name is shown when there is none. */
+    funderLogoUrl?: string | null
+    funderName?: string | null
     headerTop: string
     headerSub?: string
     officeDept: string
@@ -668,7 +672,7 @@ export async function buildMovDoc(
   const smmeSig = await fetchBytes(m.smmeSignatureUrl)
   const list = buildMovInterventionRows(m)
 
-  const hdr = await headerTable(opts.lepharoUrl, opts.sibanyeUrl, opts.headerTop, opts.headerSub)
+  const hdr = await headerTable(opts.lepharoUrl, opts.funderLogoUrl, opts.headerTop, opts.headerSub, opts.funderName)
 
   return new Document({
     sections: [
@@ -704,15 +708,17 @@ export async function buildConsolidatedDoc(
   pack: any,
   opts: {
     lepharoUrl?: string
-    sibanyeUrl?: string
+    funderLogoUrl?: string | null
+    funderName?: string | null
     deptName: string
   }
 ) {
   const hdr = await headerTable(
     opts.lepharoUrl,
-    opts.sibanyeUrl,
+    opts.funderLogoUrl,
     "CONFIRMATION SHEET FOR RECEIVING",
-    `${opts.deptName} Interventions`
+    `${opts.deptName} Interventions`,
+    opts.funderName
   )
 
   const rows = (pack.interventions || pack.interventionsSnapshot || []).map((x: any, i: number) =>

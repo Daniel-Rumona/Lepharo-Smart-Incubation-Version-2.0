@@ -325,8 +325,8 @@ html[data-theme='dark'] .guide-launcher-fab.ant-float-btn .anticon {
 
 html[data-theme='dark'] .guide-selection-modal .ant-modal-content,
 html[data-theme='dark'] .guide-selection-modal .ant-modal-header {
-    border-color: #39424f;
-    background: #1f242d;
+    border-color: #4a5058;
+    background: #2e3238;
 }
 
 html[data-theme='dark'] .guide-selection-modal .ant-modal-title,
@@ -335,8 +335,8 @@ html[data-theme='dark'] .guide-selection-modal .ant-modal-close {
 }
 
 html[data-theme='dark'] .guide-selection-card.ant-btn {
-    border-color: #39424f !important;
-    background: #171b22 !important;
+    border-color: #4a5058 !important;
+    background: #26292e !important;
 }
 
 html[data-theme='dark'] .guide-selection-card.ant-btn:not(:disabled):hover,
@@ -346,7 +346,7 @@ html[data-theme='dark'] .guide-selection-card.ant-btn:not(:disabled):focus-visib
 }
 
 html[data-theme='dark'] .guide-selection-card.ant-btn:disabled {
-    border-color: #2a313c !important;
+    border-color: #3b4047 !important;
     background: #14181e !important;
 }
 
@@ -355,7 +355,7 @@ html[data-theme='dark'] .guide-selection-arrow {
 }
 
 html[data-theme='dark'] .driver-popover.lph-guide-popover {
-    border-color: #39424f;
+    border-color: #4a5058;
     background: rgba(31, 36, 45, 0.99);
     box-shadow: 0 20px 54px rgba(0, 0, 0, 0.58);
 }
@@ -380,7 +380,7 @@ html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-progre
 
 html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-prev-btn {
     border-color: #4a5565;
-    background: #171b22;
+    background: #26292e;
     color: rgba(255, 255, 255, 0.86);
 }
 

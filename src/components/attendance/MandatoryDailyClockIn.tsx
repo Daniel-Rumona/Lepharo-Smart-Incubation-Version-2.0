@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Modal, Space, Spin, Typography } from 'antd'
+import { Alert, Button, Input, InputNumber, Modal, Space, Spin, Tag, Typography } from 'antd'
 import {
     CheckCircleOutlined,
     ClockCircleOutlined,
     CoffeeOutlined,
     EnvironmentOutlined,
+    HomeOutlined,
     LogoutOutlined,
     ReloadOutlined
 } from '@ant-design/icons'
-import { addDoc, collection, doc, onSnapshot, query, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { addDoc, collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { useLocation } from 'react-router-dom'
 import { auth, db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -17,10 +18,17 @@ import { useBranchOperatingHours } from '@/hooks/useBranchOperatingHours'
 import { clockMinutes, getDayHours, lateMinutes } from '@/utils/branchOperatingHours'
 import './mandatory-daily-clock-in.css'
 import { signOutApp } from '@/lib/firestoreCache'
+import {
+    buildCenterDocId,
+    CenterLocation,
+    DEFAULT_CENTER_RADIUS_METERS,
+    isCenterConfigured,
+    resolveCenterLocationForUser
+} from '@/services/attendanceCenters'
 
 const { Text, Title } = Typography
 
-const REQUIRED_ROLES = new Set(['employee', 'coordinator'])
+const REQUIRED_ROLES = new Set(['employee', 'coordinator', 'projectadmin'])
 const PUBLIC_PATHS = new Set(['/', '/login', '/reset-password'])
 
 type LocationState = {
@@ -87,19 +95,55 @@ const MandatoryDailyClockIn = () => {
     })
     const initializedSnapshotUser = useRef<string | null>(null)
 
+    const isProjectAdmin = normalizedRole === 'projectadmin'
+    const [centerLocation, setCenterLocation] = useState<CenterLocation | null>(null)
+    const [centerLoading, setCenterLoading] = useState(false)
+    const [centerDismissed, setCenterDismissed] = useState(false)
+    const [savingCenter, setSavingCenter] = useState(false)
+    const [capturingCenter, setCapturingCenter] = useState(false)
+    const [centerLabel, setCenterLabel] = useState('')
+    const [centerRadius, setCenterRadius] = useState<number>(DEFAULT_CENTER_RADIUS_METERS)
+    const [centerCoords, setCenterCoords] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null)
+    const [centerError, setCenterError] = useState('')
+
     const today = dateKey(currentDate)
-    const gateOpen = requiresDailyClockIn && !isPublicRoute && !checkingEntry &&
+    const baseGateOpen = requiresDailyClockIn && !isPublicRoute && !checkingEntry &&
         !branchSchedule.loading && (!hasClockedInToday || resumeBreakRequired || !!branchSchedule.error)
 
+    // Project admins are asked to set the branch center once they have clocked in.
+    const showCenterStep = requiresDailyClockIn && isProjectAdmin && !!branchSchedule.branchId &&
+        !isPublicRoute && !checkingEntry && !centerLoading && !branchSchedule.loading &&
+        !branchSchedule.error && hasClockedInToday && !resumeBreakRequired &&
+        !centerDismissed && !isCenterConfigured(centerLocation)
+    const gateOpen = baseGateOpen || showCenterStep
+
     useEffect(() => {
-        if (identityLoading || (requiresDailyClockIn && (checkingEntry || branchSchedule.loading))) {
+        if (!requiresDailyClockIn || !isProjectAdmin || !user?.uid || !branchSchedule.branchId) {
+            setCenterLoading(false)
+            return
+        }
+        let active = true
+        setCenterLoading(true)
+        resolveCenterLocationForUser(db, user)
+            .then(center => { if (active) setCenterLocation(center) })
+            .catch(error => {
+                console.error('[MandatoryDailyClockIn] center lookup failed', error)
+                // Do not trap the user in a setup prompt if the lookup itself failed.
+                if (active) setCenterDismissed(true)
+            })
+            .finally(() => { if (active) setCenterLoading(false) })
+        return () => { active = false }
+    }, [requiresDailyClockIn, isProjectAdmin, user?.uid, branchSchedule.branchId])
+
+    useEffect(() => {
+        if (identityLoading || (requiresDailyClockIn && (checkingEntry || branchSchedule.loading || centerLoading))) {
             setClockGateState('checking')
         } else if (gateOpen) {
             setClockGateState('open')
         } else {
             setClockGateState('complete')
         }
-    }, [checkingEntry, gateOpen, identityLoading, requiresDailyClockIn, setClockGateState, branchSchedule.loading])
+    }, [checkingEntry, centerLoading, gateOpen, identityLoading, requiresDailyClockIn, setClockGateState, branchSchedule.loading])
 
     useEffect(() => {
         if (identityLoading) return
@@ -333,6 +377,84 @@ const MandatoryDailyClockIn = () => {
         }
     }
 
+    const captureCenter = () => {
+        if (!navigator.geolocation) {
+            setCenterError('Location is not supported on this device.')
+            return
+        }
+        setCapturingCenter(true)
+        setCenterError('')
+        navigator.geolocation.getCurrentPosition(
+            position => {
+                setCapturingCenter(false)
+                setCenterCoords({
+                    latitude: Number(position.coords.latitude.toFixed(7)),
+                    longitude: Number(position.coords.longitude.toFixed(7)),
+                    accuracy: Math.round(position.coords.accuracy)
+                })
+            },
+            () => {
+                setCapturingCenter(false)
+                setCenterError('Could not capture the center. Allow location and try again while at the center.')
+            },
+            { enableHighAccuracy: true, timeout: 18_000, maximumAge: 0 }
+        )
+    }
+
+    const saveCenter = async () => {
+        const branchId = branchSchedule.branchId
+        const label = centerLabel.trim()
+        if (!branchId || savingCenter) return
+        if (!label) {
+            setCenterError('Enter the official address to display for this center.')
+            return
+        }
+        if (!centerCoords) {
+            setCenterError('Capture the center GPS while you are at the center.')
+            return
+        }
+
+        setSavingCenter(true)
+        setCenterError('')
+        try {
+            const branchName = branchSchedule.branchName ||
+                String((await getDoc(doc(db, 'branches', branchId))).data()?.name || '').trim()
+            if (!branchName) {
+                setCenterError('Your assigned branch could not be found.')
+                return
+            }
+
+            const centerDocId = buildCenterDocId({ branchId })
+            const payload: CenterLocation = {
+                branchId,
+                branchName,
+                centerName: branchName,
+                locationLabel: label,
+                radiusMeters: centerRadius || DEFAULT_CENTER_RADIUS_METERS,
+                latitude: centerCoords.latitude,
+                longitude: centerCoords.longitude
+            }
+            await setDoc(
+                doc(db, 'attendanceCenters', centerDocId),
+                {
+                    ...payload,
+                    coordinateAccuracyMeters: centerCoords.accuracy,
+                    updatedBy: user?.uid || '',
+                    updatedByEmail: user?.email || '',
+                    updatedByName: user?.name || user?.displayName || user?.email || '',
+                    updatedAt: serverTimestamp()
+                },
+                { merge: true }
+            )
+            setCenterLocation({ id: centerDocId, ...payload })
+        } catch (error) {
+            console.error('[MandatoryDailyClockIn] center save failed', error)
+            setCenterError('Failed to save center. Check your connection and try again.')
+        } finally {
+            setSavingCenter(false)
+        }
+    }
+
     const logout = async () => {
         setHasClockedInToday(false)
         setLocation({ status: 'idle', message: 'Location permission is required to continue.' })
@@ -363,6 +485,75 @@ const MandatoryDailyClockIn = () => {
                 body: { padding: '10px 4px 4px' }
             }}
         >
+            {showCenterStep ? (
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                    <div style={{ textAlign: 'center' }}>
+                        <HomeOutlined style={{ color: '#1677ff', fontSize: 34 }} />
+                        <Title level={3} style={{ margin: '10px 0 2px' }}>Set up your center</Title>
+                        <Text type="secondary">
+                            You&rsquo;re clocked in. Your branch has no center yet, so clock-ins can&rsquo;t be marked as at or outside the center.
+                        </Text>
+                    </div>
+
+                    <div>
+                        <Text strong>Displayed location label</Text>
+                        <Input
+                            style={{ marginTop: 6 }}
+                            value={centerLabel}
+                            onChange={event => setCenterLabel(event.target.value)}
+                            placeholder="Example: 37 Benoni Street"
+                        />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            Shown to staff and in reports only — never used to verify a clock-in.
+                        </Text>
+                    </div>
+
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Capture the GPS while you are physically at the center"
+                        action={
+                            <Button loading={capturingCenter} onClick={captureCenter}>
+                                {centerCoords ? 'Recapture' : 'Capture location'}
+                            </Button>
+                        }
+                    />
+
+                    <Space size={[6, 6]} wrap style={{ justifyContent: 'space-between', width: '100%' }}>
+                        {centerCoords ? (
+                            <Space size={6} wrap>
+                                <Tag color="green">GPS point captured</Tag>
+                                <Tag color={centerCoords.accuracy <= 30 ? 'green' : centerCoords.accuracy <= 100 ? 'gold' : 'orange'}>
+                                    Device accuracy ±{centerCoords.accuracy}m
+                                </Tag>
+                            </Space>
+                        ) : (
+                            <Tag color="orange">GPS point not captured</Tag>
+                        )}
+                        <Space size={6}>
+                            <Text type="secondary">Allowed radius (m)</Text>
+                            <InputNumber
+                                min={50}
+                                max={2000}
+                                step={50}
+                                value={centerRadius}
+                                onChange={value => setCenterRadius(Number(value) || DEFAULT_CENTER_RADIUS_METERS)}
+                            />
+                        </Space>
+                    </Space>
+
+                    {centerError ? <Alert type="error" showIcon message={centerError} /> : null}
+
+                    <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                        <Button onClick={() => setCenterDismissed(true)} disabled={savingCenter}>
+                            Set up later
+                        </Button>
+                        <Button type="primary" loading={savingCenter} onClick={saveCenter}>
+                            Save center
+                        </Button>
+                    </Space>
+                </Space>
+            ) : (
             <Space direction="vertical" size={18} style={{ width: '100%', textAlign: 'center' }}>
                 <div>
                     <ClockCircleOutlined style={{ color: '#1677ff', fontSize: 34 }} />
@@ -448,6 +639,7 @@ const MandatoryDailyClockIn = () => {
                     Logout
                 </Button>
             </Space>
+            )}
         </Modal>
     )
 }

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.notificationAction = exports.onNotificationCreatedEmail = exports.brevoApiKeepAlive = exports.brevoEmailWebhook = exports.sendComplianceReminderEmail = exports.sendApplicationReceivedEmail = exports.resendAccountCreationEmails = exports.sendAdminTestEmail = exports.queueSystemStatusBroadcast = exports.onMailCampaignQueued = exports.sendInterventionReminderEmail = exports.movReminderCron = exports.onMovDocumentWorkflowEmails = exports.devPlanReminderCron = exports.sendDevPlanReminders = exports.onDevPlanEditRequestEmail = exports.remindSmmeDpConfirmation = exports.appointmentCompletionNotifier = exports.onAppointmentWriteNotifyIncubatee = exports.taskDeadlineNotifier = exports.onTaskWriteSendEmails = exports.onApplicationDecisionEmail = exports.sendEmail = void 0;
+exports.notificationAction = exports.onNotificationCreatedEmail = exports.brevoApiKeepAlive = exports.brevoEmailWebhook = exports.sendComplianceReminderEmail = exports.sendApplicationReceivedEmail = exports.resendAccountCreationEmails = exports.sendAdminTestEmail = exports.queueSystemStatusBroadcast = exports.onMailCampaignQueued = exports.sendInterventionReminderEmail = exports.movReminderCron = exports.devPlanReminderCron = exports.sendDevPlanReminders = exports.onDevPlanEditRequestEmail = exports.remindSmmeDpConfirmation = exports.appointmentCompletionNotifier = exports.onAppointmentSessionChangedNotifySmes = exports.onAppointmentWriteNotifyIncubatee = exports.taskDeadlineNotifier = exports.onTaskWriteSendEmails = exports.onApplicationDecisionEmail = exports.sendEmail = void 0;
 var emailApplications_1 = require("./emailApplications");
 Object.defineProperty(exports, "sendEmail", { enumerable: true, get: function () { return emailApplications_1.sendEmail; } });
 Object.defineProperty(exports, "onApplicationDecisionEmail", { enumerable: true, get: function () { return emailApplications_1.onApplicationDecisionEmail; } });
@@ -8,6 +8,7 @@ Object.defineProperty(exports, "onTaskWriteSendEmails", { enumerable: true, get:
 Object.defineProperty(exports, "taskDeadlineNotifier", { enumerable: true, get: function () { return emailApplications_1.taskDeadlineNotifier; } });
 var emailAppointments_1 = require("./emailAppointments");
 Object.defineProperty(exports, "onAppointmentWriteNotifyIncubatee", { enumerable: true, get: function () { return emailAppointments_1.onAppointmentWriteNotifyIncubatee; } });
+Object.defineProperty(exports, "onAppointmentSessionChangedNotifySmes", { enumerable: true, get: function () { return emailAppointments_1.onAppointmentSessionChangedNotifySmes; } });
 Object.defineProperty(exports, "appointmentCompletionNotifier", { enumerable: true, get: function () { return emailAppointments_1.appointmentCompletionNotifier; } });
 var emailDevPlan_1 = require("./emailDevPlan");
 Object.defineProperty(exports, "remindSmmeDpConfirmation", { enumerable: true, get: function () { return emailDevPlan_1.remindSmmeDpConfirmation; } });
@@ -15,7 +16,6 @@ Object.defineProperty(exports, "onDevPlanEditRequestEmail", { enumerable: true, 
 Object.defineProperty(exports, "sendDevPlanReminders", { enumerable: true, get: function () { return emailDevPlan_1.sendDevPlanReminders; } });
 Object.defineProperty(exports, "devPlanReminderCron", { enumerable: true, get: function () { return emailDevPlan_1.devPlanReminderCron; } });
 var emailMov_1 = require("./emailMov");
-Object.defineProperty(exports, "onMovDocumentWorkflowEmails", { enumerable: true, get: function () { return emailMov_1.onMovDocumentWorkflowEmails; } });
 Object.defineProperty(exports, "movReminderCron", { enumerable: true, get: function () { return emailMov_1.movReminderCron; } });
 var workflowEmailFunctions_1 = require("./workflowEmailFunctions");
 Object.defineProperty(exports, "sendInterventionReminderEmail", { enumerable: true, get: function () { return workflowEmailFunctions_1.sendInterventionReminderEmail; } });

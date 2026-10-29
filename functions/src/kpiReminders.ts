@@ -1,6 +1,7 @@
 import * as logger from "firebase-functions/logger";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { APP_BASE_URL, db, sendStatusChangeNotification } from "./emailShared";
+import { suppressRecordNotifications } from "./syntheticData";
 
 // Chases manually-tracked KPIs (kpiDefinitions.trackingMode === "manual") that
 // have a target set for the current reporting period but no recorded actual
@@ -68,6 +69,8 @@ export const kpiManualUpdateReminderCron = onSchedule(
 
     for (const kpiSnap of kpiSnapshot.docs) {
       const kpi = kpiSnap.data() as any;
+      // Seeded demo KPIs (dataOrigin: synthetic) never chase real department heads.
+      if (suppressRecordNotifications(kpi, kpiSnap.id)) continue;
       const cadence = kpi.reminderCadence === "monthly" ? "monthly" : "quarterly";
       const periodKey = cadence === "monthly" ? currentMonthKey(now) : currentQuarterKey(now);
 
@@ -124,7 +127,6 @@ export const kpiManualUpdateReminderCron = onSchedule(
         type: "kpi_manual_update_reminder",
         message: `Update needed: ${kpiLabel} has no recorded actual for ${periodKey}.`,
         recipientIds: uids,
-        recipientRoles: ["operations"],
         kpiId: kpiSnap.id,
         kpiLabel,
         periodKey,

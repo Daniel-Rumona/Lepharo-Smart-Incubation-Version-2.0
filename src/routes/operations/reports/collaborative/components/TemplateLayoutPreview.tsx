@@ -48,7 +48,7 @@ const BlockPreview: React.FC<{
             ? block.defaultContent
             : block.contentType === 'static'
               ? 'Static content will appear here.'
-              : 'Contributors will enter the narrative for this block here.'}
+              : 'The writer’s text goes here.'}
         </Paragraph>
       ) : (
         <Table
@@ -79,7 +79,7 @@ const TemplateLayoutPreview: React.FC<Props> = ({ template, selectedBlockId, onS
       type="info"
       showIcon
       message="Configuration preview"
-      description="Each outlined box below is one block — the smallest part of the report that can be assigned, edited, carried forward and approved independently. This is generated from the configuration and is not yet a pixel-for-pixel rendering of the uploaded Word document."
+      description="Each box is one section: written by one department, and reviewed and approved on its own."
     />
 
     {template.sourceFile?.url ? (
@@ -110,9 +110,9 @@ const TemplateLayoutPreview: React.FC<Props> = ({ template, selectedBlockId, onS
               active={block.id === selectedBlockId}
               onClick={onSelectBlock ? () => onSelectBlock(section.id, block.id) : undefined}
             />
-          )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No blocks in this section" />}
+          )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No sections under this heading" />}
         </section>
-      )) : <Empty description="Add sections and blocks to build the template preview" />}
+      )) : <Empty description="Add headings and sections to see the template here" />}
     </div>
   </Space>
 )

@@ -9,17 +9,36 @@ import React, {
     useState
 } from 'react'
 import { message as AntdMessage } from 'antd'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { collection, getDocs, orderBy, query, where } from 'firebase/firestore'
 import { auth, db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { askAssistant, type ChartSpec } from '@/services/aiAssistantService'
+import {
+    askAssistant,
+    composeTour,
+    type AgentProposalDraft,
+    type AssistantAction,
+    type ChartSpec,
+    type ShowMeRequest
+} from '@/services/aiAssistantService'
+import type { CatalogGuide } from '@/components/guide-me/guideCatalog'
+import { useOptionalGuide } from '@/components/guide-me/GuideContext'
+import { getNavDestinations } from '@/components/guide-me/navDestinations'
+import { toDriveSteps, waitForGuideTargets } from '@/components/guide-me/showMe'
 
 export type ChatMessage = {
     id: string
     sender: 'user' | 'assistant'
     content: string
     chart?: ChartSpec | null
+    /** An interactive flow this reply proposes. Transient — never saved to history. */
+    action?: AssistantAction | null
+    /** A curated walkthrough this reply offers. Transient. */
+    guide?: CatalogGuide | null
+    /** A page this reply offers to open and walk through. Transient. */
+    showMe?: ShowMeRequest | null
+    /** A change this reply drafted for the user to confirm. Transient. */
+    proposal?: AgentProposalDraft | null
     timestamp: string
 }
 
@@ -59,6 +78,15 @@ type ChatSessionValue = ChatState & {
     historyLoading: boolean
     refreshHistory: () => Promise<void>
     switchToSession: (sessionId: string) => Promise<void>
+    /** The newest interactive flow a reply asked to open, until the chat page consumes it. */
+    pendingAction: AssistantAction | null
+    clearPendingAction: () => void
+    /** Adds an assistant-style message that did not come from the model (not persisted). */
+    appendLocalMessage: (content: string) => void
+    /** Opens a page and walks the user through it. Resolves once the tour starts (or can't). */
+    showMe: (request: ShowMeRequest) => Promise<void>
+    /** Opens a curated walkthrough's page and starts it there. */
+    openGuide: (guide: CatalogGuide) => void
 }
 
 export const MAX_MESSAGE_LENGTH = 4000
@@ -133,32 +161,46 @@ const fetchTodaysSessions = async (uid: string): Promise<ChatSessionSummary[]> =
     })
 }
 
-const fetchSessionMessages = async (sessionId: string): Promise<ChatMessage[]> => {
+const fetchSessionMessages = async (sessionId: string, uid: string): Promise<ChatMessage[]> => {
+    // The rules only allow reading messages whose userId is the caller's, and
+    // Firestore rejects a list query that doesn't itself filter on that field.
+    // Sorting happens client-side so the query needs no composite index.
     const snapshot = await getDocs(
-        query(collection(db, 'chatSessions', sessionId, 'messages'), orderBy('createdAt', 'asc'))
+        query(collection(db, 'chatSessions', sessionId, 'messages'), where('userId', '==', uid))
     )
-    return snapshot.docs.map(item => {
-        const data = item.data() as Record<string, any>
-        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() as Date : null
-        return {
+    return snapshot.docs
+        .map(item => {
+            const data = item.data() as Record<string, any>
+            const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() as Date : null
+            return { item, data, createdAt }
+        })
+        .sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0))
+        .map(({ item, data, createdAt }) => ({
             id: item.id,
-            sender: data.sender === 'assistant' ? 'assistant' : 'user',
+            sender: data.sender === 'assistant' ? 'assistant' as const : 'user' as const,
             content: String(data.content || ''),
             chart: data.chart || null,
             timestamp: createdAt ? timestamp(createdAt) : ''
-        }
-    })
+        }))
 }
+
+// Rules compare against the Firebase Auth uid, so queries must use it too.
+const currentUid = (fallback?: string) => auth.currentUser?.uid || fallback || ''
 
 export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
     const { user } = useFullIdentity()
     const location = useLocation()
+    const navigate = useNavigate()
+    const guideContext = useOptionalGuide()
+    const guideRef = useRef(guideContext)
+    guideRef.current = guideContext
     const [state, dispatch] = useReducer(chatReducer, initialState)
     const [unreadCount, setUnreadCount] = useState(0)
     const [todaysSessions, setTodaysSessions] = useState<ChatSessionSummary[]>([])
     const [activeSessionId, setActiveSessionId] = useState('')
     const [isResuming, setIsResuming] = useState(true)
     const [historyLoading, setHistoryLoading] = useState(false)
+    const [pendingAction, setPendingAction] = useState<AssistantAction | null>(null)
     const stateRef = useRef(state)
     const locationRef = useRef(location.pathname)
     const sessionIdRef = useRef('')
@@ -182,13 +224,14 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
     const clearUnread = useCallback(() => setUnreadCount(0), [])
 
     const refreshHistory = useCallback(async () => {
-        const uid = user?.uid || user?.id
+        const uid = currentUid(user?.uid || user?.id)
         if (!uid) return
         setHistoryLoading(true)
         try {
             const sessions = await fetchTodaysSessions(uid)
             setTodaysSessions(sessions)
-        } catch {
+        } catch (error) {
+            console.error('Could not load chat history', error)
             // History is a convenience layer over data that's already safely
             // persisted server-side — a failed read here shouldn't be a hard error.
         } finally {
@@ -201,7 +244,7 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
     // screen. A previous day's conversation is never auto-resumed — it stays
     // reachable only as history (and forever, server-side, for training).
     useEffect(() => {
-        const uid = user?.uid || user?.id
+        const uid = currentUid(user?.uid || user?.id)
         if (!uid || resumedRef.current) return
         resumedRef.current = true
 
@@ -211,7 +254,7 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
                 setTodaysSessions(sessions)
                 const mostRecent = sessions[0]
                 if (mostRecent) {
-                    const messages = await fetchSessionMessages(mostRecent.id)
+                    const messages = await fetchSessionMessages(mostRecent.id, uid)
                     sessionIdRef.current = mostRecent.id
                     setActiveSessionId(mostRecent.id)
                     dispatch({ type: 'LOAD_MESSAGES', payload: messages })
@@ -226,24 +269,28 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
 
     const switchToSession = useCallback(async (sessionId: string) => {
         if (sessionId === sessionIdRef.current) return
+        const uid = currentUid(user?.uid || user?.id)
+        if (!uid) return
         setHistoryLoading(true)
         try {
-            const messages = await fetchSessionMessages(sessionId)
+            const messages = await fetchSessionMessages(sessionId, uid)
             sessionIdRef.current = sessionId
             setActiveSessionId(sessionId)
             dispatch({ type: 'LOAD_MESSAGES', payload: messages })
-        } catch {
+        } catch (error) {
+            console.error('Could not load chat session', sessionId, error)
             AntdMessage.error('Could not load that conversation.')
         } finally {
             setHistoryLoading(false)
         }
-    }, [])
+    }, [user?.uid, user?.id])
 
     const startNewChat = useCallback(() => {
         abortControllerRef.current?.abort()
         runningRef.current = false
         sessionIdRef.current = ''
         setActiveSessionId('')
+        setPendingAction(null)
         dispatch({ type: 'RESET' })
     }, [])
 
@@ -274,7 +321,10 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
                 departmentId: user?.departmentId || null,
                 programId: activeProgramId
             },
-            pageContext: { activeProgramId },
+            pageContext: {
+                activeProgramId,
+                availableRoutes: getNavDestinations().slice(0, 150)
+            },
             sessionId: sessionIdRef.current || undefined,
             history: previousMessages.slice(-10).map(item => ({
                 role: item.sender === 'assistant' ? ('assistant' as const) : ('user' as const),
@@ -316,7 +366,7 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
         dispatch({ type: 'SET_TYPING', payload: true })
 
         void runAssistant(content, previousMessages, requestRoute)
-            .then(({ answer, chart }) => {
+            .then(({ answer, chart, action, guide, showMe, proposal }) => {
                 dispatch({
                     type: 'ADD_MESSAGE',
                     payload: {
@@ -324,9 +374,14 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
                         sender: 'assistant',
                         content: answer,
                         chart,
+                        action,
+                        guide,
+                        showMe,
+                        proposal,
                         timestamp: timestamp()
                     }
                 })
+                if (action) setPendingAction(action)
                 if (locationRef.current !== '/chat') {
                     setUnreadCount(current => current + 1)
                 }
@@ -349,8 +404,68 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
         return true
     }, [runAssistant, refreshHistory])
 
+    const clearPendingAction = useCallback(() => setPendingAction(null), [])
+
+    const appendLocalMessage = useCallback((content: string) => {
+        dispatch({
+            type: 'ADD_MESSAGE',
+            payload: {
+                id: `assistant-local-${Date.now()}-${messageIdRef.current++}`,
+                sender: 'assistant',
+                content,
+                timestamp: timestamp()
+            }
+        })
+    }, [])
+
+    const openGuide = useCallback((guide: CatalogGuide) => {
+        guideRef.current?.startGuideOnPage(guide.pageId, guide.guideId)
+        navigate(guide.route)
+    }, [navigate])
+
+    const showMe = useCallback(async (request: ShowMeRequest) => {
+        navigate(request.route)
+        const targets = await waitForGuideTargets(request.route)
+        const registration = guideRef.current?.registration || null
+        const pageGuides = (registration?.guides || [])
+            .filter(guide => !guide.disabled)
+            .map(guide => ({ id: guide.id, title: guide.title, description: guide.description }))
+
+        try {
+            const tour = await composeTour({
+                goal: request.goal || `find my way around ${request.label || 'this page'}`,
+                route: request.route,
+                pageTitle: registration?.pageTitle || request.label,
+                targets,
+                guides: pageGuides
+            })
+            if (tour.guideId) {
+                guideRef.current?.startGuide(tour.guideId)
+                return
+            }
+            if (tour.steps.length) {
+                const steps = toDriveSteps(tour.steps)
+                if (tour.intro) {
+                    steps.unshift({ popover: { title: request.label || 'Here you go', description: tour.intro } })
+                }
+                guideRef.current?.runSteps(request.label || 'Show me how', steps)
+                return
+            }
+            AntdMessage.info(tour.intro || `This is ${request.label || 'the page'}.`)
+        } catch (error) {
+            console.error('Show me tour failed', error)
+            // The page is already open, which is most of the help; say so quietly.
+            AntdMessage.info(`Opened ${request.label || 'the page'}. A guided tour isn't available right now.`)
+        }
+    }, [navigate])
+
     const value = useMemo<ChatSessionValue>(() => ({
         ...state,
+        pendingAction,
+        clearPendingAction,
+        appendLocalMessage,
+        showMe,
+        openGuide,
         unreadCount,
         startMessage,
         clearUnread,
@@ -363,6 +478,11 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
         switchToSession
     }), [
         state,
+        pendingAction,
+        clearPendingAction,
+        appendLocalMessage,
+        showMe,
+        openGuide,
         unreadCount,
         startMessage,
         clearUnread,

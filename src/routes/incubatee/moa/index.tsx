@@ -1,5 +1,5 @@
 // src/pages/incubatee/MOAForm.tsx
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import {
     Alert,
     Button,
@@ -32,6 +32,8 @@ import {
 } from '@/components/modals/Contracts/moa.pages'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { DownloadOutlined } from '@ant-design/icons'
+import { SignatureAnimation } from '@/components/shared/SignatureAnimation'
+import { prefersReducedMotion } from '@/utils/signatureReplay'
 import '@/styles/contract-paper.css'
 
 const { Title, Text } = Typography
@@ -56,6 +58,9 @@ export default function MOAForm() {
     const [vars, setVars] = useState<MoaVars | null>(null)
     const [loadingVars, setLoadingVars] = useState<boolean>(true)
     const [signedAgreementMeta, setSignedAgreementMeta] = useState<any>(null)
+    // Set for the signature placed by this visit's Sign click, which is animated.
+    const [justSigned, setJustSigned] = useState(false)
+    const signatureBlockRef = useRef<HTMLElement | null>(null)
 
     // Load "signed" status
     useEffect(() => {
@@ -335,6 +340,14 @@ export default function MOAForm() {
         })
         setAlreadySigned(true)
         setMoaStatus(current => ({ ...current, incubateeSigned: true }))
+        setJustSigned(true)
+        // The signature page is at the end of the agreement: bring it into view to watch it being signed.
+        requestAnimationFrame(() =>
+            signatureBlockRef.current?.scrollIntoView({
+                behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+                block: 'center'
+            })
+        )
         try {
             setSigning(true)
             const payload = {
@@ -365,6 +378,7 @@ export default function MOAForm() {
         } catch (e) {
             console.error(e)
             setSignedAgreementMeta(previousMeta)
+            setJustSigned(false)
             setAlreadySigned(false)
             setMoaStatus(current => ({ ...current, incubateeSigned: false }))
             message.error('Could not sign the MOA. Please try again.')
@@ -498,10 +512,15 @@ export default function MOAForm() {
                                 <Title level={4}>Execution of the Agreement</Title>
                                 <Text>This page records the signatures held against this Memorandum of Agreement.</Text>
                                 <div className='contract-paper__signature-grid'>
-                                    <section className='contract-paper__signature-block'>
+                                    <section ref={signatureBlockRef} className='contract-paper__signature-block'>
                                         <h3>For the Incubatee</h3>
                                         {signedAgreementMeta?.signatureURL ? (
-                                            <img className='contract-paper__signature-image' src={signedAgreementMeta.signatureURL} alt='Incubatee signature' />
+                                            <SignatureAnimation
+                                                className='contract-paper__signature-image'
+                                                src={signedAgreementMeta.signatureURL}
+                                                alt='Incubatee signature'
+                                                animate={justSigned}
+                                            />
                                         ) : <div className='contract-paper__signature-line' />}
                                         <p className='contract-paper__signature-name'>
                                             {signedAgreementMeta?.signerName || vars?.participantName || 'Name not recorded'}

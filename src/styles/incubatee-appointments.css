@@ -128,6 +128,20 @@
 }
 
 @media (max-width: 767px) {
+  .appointments-range-picker-popup {
+    max-width: calc(100vw - 24px);
+  }
+
+  .appointments-range-picker-popup .ant-picker-panels {
+    flex-direction: column;
+  }
+
+  .appointments-range-picker-popup .ant-picker-panel {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
   .incubatee-appointments-page {
     padding: 14px;
   }
@@ -184,7 +198,7 @@
 }
 
 html[data-theme="dark"] .appointment-mobile-card {
-    --appt-card-bg: #171b22;
+    --appt-card-bg: #26292e;
     --appt-card-border: rgba(74, 155, 255, 0.22);
     --appt-card-divider: rgba(255, 255, 255, 0.10);
     --appt-card-shadow: 0 8px 22px rgba(0, 0, 0, 0.40);

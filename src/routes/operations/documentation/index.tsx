@@ -12,12 +12,19 @@ import {
     Upload,
     Input,
     message,
-    Statistic,
     Popconfirm,
     Tag,
     Segmented,
     DatePicker,
-    Result
+    Result,
+    Empty,
+    Badge,
+    Drawer,
+    Grid,
+    Skeleton,
+    Pagination,
+    Popover,
+    Tooltip
 } from 'antd'
 import {
     UploadOutlined,
@@ -29,13 +36,20 @@ import {
     ExclamationCircleOutlined,
     MessageOutlined,
     SettingOutlined,
-    CalendarOutlined
+    CalendarOutlined,
+    BellOutlined,
+    InboxOutlined,
+    FilterOutlined,
+    CheckCircleOutlined,
+    CloseCircleOutlined,
+    ClockCircleOutlined
 } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { Helmet } from 'react-helmet'
 
 // hooks
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 
 // firebase
@@ -51,6 +65,7 @@ import {
     where,
     updateDoc,
     doc,
+    getDoc,
     deleteDoc
 } from 'firebase/firestore'
 import {
@@ -61,11 +76,10 @@ import {
 } from 'firebase/storage'
 
 // UI
-import {
-    DashboardHeaderCard,
-    MotionCard
-} from '@/components/dashboards/metrics/Header'
-import { PageSkeleton } from '@/components/shared/PageSkeleton'
+import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+import { sendNotification } from '@/utils/sendNotification'
+import ResponsiveSheet from '@/components/common/ResponsiveSheet'
 
 const { Text } = Typography
 const { RangePicker } = DatePicker
@@ -174,6 +188,94 @@ const triggerEmail = async (
     }
 }
 
+/*
+ * Loading state that mirrors the real layout: metric tiles, one-line filter
+ * bar, then the stacked department cards (or the table for department users).
+ */
+const DocumentationSkeleton: React.FC<{
+    tiles: number
+    asCards: boolean
+    isMobile: boolean
+}> = ({ tiles, asCards, isMobile }) => (
+    <div aria-busy='true' role='status'>
+        <Row gutter={[16, 16]}>
+            {Array.from({ length: tiles }).map((_, index) => (
+                <Col
+                    key={index}
+                    xs={12}
+                    md={12}
+                    xl={tiles === 2 ? 12 : 6}
+                >
+                    <MetricTile loading title='' value='' />
+                </Col>
+            ))}
+        </Row>
+
+        <DashboardFilterBar style={{ marginTop: 16, marginBottom: 16 }}>
+            {isMobile ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+                    <Skeleton.Button active block style={{ height: 40, borderRadius: 12 }} />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <Skeleton.Button active block style={{ flex: 1, height: 32 }} />
+                        <Skeleton.Button active block shape='round' style={{ flex: 1, height: 32 }} />
+                    </div>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'nowrap', width: '100%' }}>
+                    <Skeleton.Button active style={{ width: 360, minWidth: 0, height: 40, borderRadius: 12 }} />
+                    <Skeleton.Input active style={{ flex: '1 1 160px', width: '100%', minWidth: 0 }} />
+                    <Skeleton.Input active style={{ width: 140, minWidth: 0 }} />
+                    <Skeleton.Input active style={{ width: 170, minWidth: 0 }} />
+                    <Skeleton.Input active style={{ width: 250, minWidth: 0 }} />
+                    <Skeleton.Button active shape='round' style={{ width: 150, minWidth: 0 }} />
+                </div>
+            )}
+        </DashboardFilterBar>
+
+        {asCards ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {Array.from({ length: isMobile ? 4 : 5 }).map((_, index) => (
+                    <MotionCard key={index}>
+                        {isMobile ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                    <Skeleton.Input active size='small' style={{ width: 130, minWidth: 0, height: 18 }} />
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <Skeleton.Button active size='small' style={{ width: 44, minWidth: 0, borderRadius: 8 }} />
+                                        <Skeleton.Button active size='small' style={{ width: 44, minWidth: 0, borderRadius: 8 }} />
+                                    </div>
+                                </div>
+                                <Skeleton.Input active size='small' style={{ width: 110, minWidth: 0, height: 12 }} />
+                                <Skeleton.Button active block style={{ height: 32 }} />
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                <div style={{ flex: '0 0 220px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <Skeleton.Input active size='small' style={{ width: 160, minWidth: 0, height: 18 }} />
+                                    <Skeleton.Input active size='small' style={{ width: 110, minWidth: 0, height: 12 }} />
+                                </div>
+                                <div style={{ flex: '1 1 auto', display: 'flex', gap: 8 }}>
+                                    {Array.from({ length: 4 }).map((__, marker) => (
+                                        <Skeleton.Button
+                                            key={marker}
+                                            active
+                                            size='small'
+                                            style={{ width: 96, minWidth: 0, borderRadius: 8 }}
+                                        />
+                                    ))}
+                                </div>
+                                <Skeleton.Button active style={{ width: 130, minWidth: 0 }} />
+                            </div>
+                        )}
+                    </MotionCard>
+                ))}
+            </div>
+        ) : (
+            <MotionCard loading skeleton='table' skeletonRows={6} skeletonColumns={5} />
+        )}
+    </div>
+)
+
 const DocumentationHub: React.FC = () => {
     const { user } =
         useFullIdentity()
@@ -198,16 +300,11 @@ const DocumentationHub: React.FC = () => {
             user?.role || ''
         ).toLowerCase()
 
-    const deptStr =
-        String(
-            user?.departmentName ||
-            (user as any)?.department ||
-            ''
-        ).toLowerCase()
+    const { hasRole } = useDepartmentRoles()
 
     const isME =
         roleStr === 'me' ||
-        deptStr.includes('m&e')
+        hasRole(myDeptId, 'monitoring')
 
     const isDirector =
         roleStr === 'director'
@@ -676,6 +773,31 @@ const DocumentationHub: React.FC = () => {
                             }
                         )
 
+                    // A program can declare its participating departments
+                    // (Programs > Coverage). When it does, only those are
+                    // expected to submit; otherwise fall back to every department.
+                    let participatingIds: string[] = []
+
+                    if (activeProgramId) {
+                        const programSnapshot =
+                            await getDoc(
+                                doc(
+                                    db,
+                                    'programs',
+                                    activeProgramId
+                                )
+                            )
+
+                        const declared =
+                            (programSnapshot.data() as any)
+                                ?.participatingDepartmentIds
+
+                        if (Array.isArray(declared)) {
+                            participatingIds =
+                                declared.map(String)
+                        }
+                    }
+
                     const filtered =
                         rows.filter(
                             row =>
@@ -685,6 +807,12 @@ const DocumentationHub: React.FC = () => {
                                         'IhF',
                                         'HRM'
                                     ]
+                                ) &&
+                                (
+                                    !participatingIds.length ||
+                                    participatingIds.includes(
+                                        row.id
+                                    )
                                 )
                         )
 
@@ -2507,23 +2635,449 @@ const DocumentationHub: React.FC = () => {
             }
         ]
 
-    const headerTitle =
-        activeSegment ===
-            'implementation_plan'
-            ? 'Implementation Plans'
-            : activeSegment ===
-                'weekly_report'
-                ? 'Weekly Reports'
-                : 'Internal Operations'
+    /*
+     * ---------------------------------------------------------
+     * IMPLEMENTATION PLAN CARDS (one per participating department)
+     * ---------------------------------------------------------
+     */
+    const isPlanSegment = activeSegment === 'implementation_plan'
+    const isWeeklySegment = activeSegment === 'weekly_report'
+    const showCards =
+        (isPlanSegment || isWeeklySegment) && isGlobalViewer
 
-    const headerSubtitle =
-        activeSegment ===
-            'implementation_plan'
-            ? 'Departmental implementation plan documents'
-            : activeSegment ===
-                'weekly_report'
-                ? 'Weekly departmental performance reports'
-                : 'Internal documents not tied to a program'
+    const screens = Grid.useBreakpoint()
+    const isMobile = screens.md === false
+    // Internal Operations is a table on desktop and the same card design on mobile.
+    const showInternalCards = isInternalOps && isMobile
+
+    const [remindingDeptId, setRemindingDeptId] = useState<string | null>(null)
+    const [remindedKeys, setRemindedKeys] = useState<Set<string>>(new Set())
+    const [cardPage, setCardPage] = useState(1)
+    const [cardPageSize, setCardPageSize] = useState(6)
+
+    useEffect(() => {
+        setCardPage(1)
+    }, [activeSegment, searchText, statusFilter, deptFilter, dateRange, activeProgramId])
+
+    // Weekly report windows. No range = the current week (still in progress).
+    // With a range: consecutive 7-day blocks from its start, counting only
+    // blocks that have fully ended (and fit in the range), so mid-month we show
+    // the weeks that have passed - never future ones.
+    const weekWindows = useMemo(() => {
+        if (!isWeeklySegment) return []
+
+        if (!dateRange || !dateRange[0] || !dateRange[1]) {
+            return [{
+                start: dayjs().startOf('week'),
+                end: dayjs().endOf('week'),
+                inProgress: true
+            }]
+        }
+
+        const windows: { start: Dayjs; end: Dayjs; inProgress: boolean }[] = []
+        const rangeEnd = dateRange[1].endOf('day')
+        const limit = rangeEnd.isBefore(dayjs()) ? rangeEnd : dayjs()
+
+        for (
+            let start = dateRange[0].startOf('day');
+            !start.add(7, 'day').subtract(1, 'millisecond').isAfter(limit);
+            start = start.add(7, 'day')
+        ) {
+            windows.push({
+                start,
+                end: start.add(7, 'day').subtract(1, 'millisecond'),
+                inProgress: false
+            })
+        }
+
+        return windows
+    }, [isWeeklySegment, dateRange])
+
+    const cardMillis = (plan: ImplPlanDoc) => plan.createdAt?.toMillis?.() ?? 0
+
+    const buildCard = (id: string, name: string, deptDocs: ImplPlanDoc[], isSelf = false) => {
+        const docs = deptDocs.slice().sort((a, b) => cardMillis(b) - cardMillis(a))
+        const weeks = weekWindows.map(window => {
+            const inWindow = docs.filter(plan => {
+                const at = cardMillis(plan)
+                return at >= window.start.valueOf() && at <= window.end.valueOf()
+            })
+            return { ...window, docs: inWindow, doc: inWindow[0] ?? null }
+        })
+
+        return {
+            id,
+            name,
+            isSelf,
+            latest: docs[0] ?? null,
+            count: docs.length,
+            weeks,
+            missingWeeks: weeks.filter(week => !week.doc).length
+        }
+    }
+
+    const docsByDept = useMemo(() => {
+        const map = new Map<string, ImplPlanDoc[]>()
+        docPlans.forEach(plan => {
+            if (!plan.departmentId) return
+            const id = String(plan.departmentId)
+            const list = map.get(id) ?? []
+            list.push(plan)
+            map.set(id, list)
+        })
+        return map
+    }, [docPlans])
+
+    // The project admin submits their own plan/report too: pinned card with an
+    // Upload button (instead of a reminder) above the department list.
+    const selfCard = useMemo(() => {
+        if (!showCards || !isProjectAdmin) return null
+        const ownDocs = docPlans.filter(plan =>
+            (myDeptId && String(plan.departmentId) === String(myDeptId)) ||
+            (!myDeptId && plan.createdById === ((user as any)?.uid || (user as any)?.id))
+        )
+        return buildCard(
+            String(myDeptId || 'self'),
+            `${myDeptName || 'Project Administration'} (You)`,
+            ownDocs,
+            true
+        )
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showCards, isProjectAdmin, docPlans, myDeptId, myDeptName, user, weekWindows])
+
+    const planCards = useMemo(() => {
+        if (!showCards) return []
+
+        const needle = searchText.trim().toLowerCase()
+
+        return expectedDeptIds
+            .filter(id => !(isProjectAdmin && myDeptId && id === String(myDeptId)))
+            .map(id => buildCard(id, expectedDeptMap[id] || id, docsByDept.get(id) ?? []))
+            .filter(card => {
+                if (deptFilter !== 'all' && card.id !== deptFilter) return false
+
+                if (needle) {
+                    const haystack = `${card.name} ${card.latest?.title ?? ''}`.toLowerCase()
+                    if (!haystack.includes(needle)) return false
+                }
+
+                if (isWeeklySegment) {
+                    if (statusFilter !== 'all') {
+                        return card.weeks.some(week => (week.doc?.status ?? 'pending') === statusFilter && week.doc)
+                    }
+                    return true
+                }
+
+                if (statusFilter !== 'all') {
+                    if (!card.latest || (card.latest.status ?? 'pending') !== statusFilter) return false
+                }
+
+                if (dateRange && dateRange[0] && dateRange[1]) {
+                    const created = card.latest?.createdAt?.toDate?.()
+                    if (!created) return false
+                    if (created < dateRange[0].startOf('day').toDate() || created > dateRange[1].endOf('day').toDate()) {
+                        return false
+                    }
+                }
+
+                return true
+            })
+            .sort((a, b) =>
+                isWeeklySegment
+                    ? b.missingWeeks - a.missingWeeks || a.name.localeCompare(b.name)
+                    : Number(Boolean(a.latest)) - Number(Boolean(b.latest)) || a.name.localeCompare(b.name)
+            )
+    }, [showCards, isWeeklySegment, isProjectAdmin, myDeptId, docsByDept, expectedDeptIds, expectedDeptMap, searchText, deptFilter, statusFilter, dateRange, weekWindows])
+
+    const pagedCards = useMemo(
+        () => planCards.slice((cardPage - 1) * cardPageSize, cardPage * cardPageSize),
+        [planCards, cardPage, cardPageSize]
+    )
+
+    const pagedInternal = useMemo(
+        () => filteredDocs.slice((cardPage - 1) * cardPageSize, cardPage * cardPageSize),
+        [filteredDocs, cardPage, cardPageSize]
+    )
+
+    // Nudge a department's HOD(s) in-app to upload for the active program.
+    const remindDepartment = async (departmentId: string, departmentName: string, detail?: string) => {
+        const key = `${activeSegment}:${departmentId}`
+        const noun = isWeeklySegment ? 'weekly report' : 'implementation plan'
+
+        try {
+            setRemindingDeptId(departmentId)
+
+            const hodSnapshot = await getDocs(
+                query(collection(db, 'users'), where('departmentId', '==', departmentId))
+            )
+            const recipientIds = hodSnapshot.docs
+                .filter(snapshot => {
+                    const data = snapshot.data() as any
+                    return (
+                        String(data.role || '').toLowerCase() === 'operations' &&
+                        !['inactive', 'disabled', 'deleted'].includes(String(data.status || '').toLowerCase())
+                    )
+                })
+                .map(snapshot => snapshot.id)
+
+            if (!recipientIds.length) {
+                message.warning(`No active HOD found for ${departmentName}.`)
+                return
+            }
+
+            await sendNotification({
+                type: isWeeklySegment ? 'weekly_report_reminder' : 'implementation_plan_reminder',
+                message: `Reminder: please upload the ${departmentName} ${noun}${detail ? ` (${detail})` : ''} in the Documentation Hub.`,
+                recipientIds,
+                programId: activeProgramId ?? null,
+                departmentId,
+                link: '/documentation',
+                requestedByName: user?.name || user?.email || ''
+            })
+
+            setRemindedKeys(previous => new Set(previous).add(key))
+            message.success(`Reminder sent to ${departmentName}.`)
+        } catch (error) {
+            console.error('Failed to send reminder:', error)
+            message.error('Failed to send reminder.')
+        } finally {
+            setRemindingDeptId(null)
+        }
+    }
+
+    // Card border colour reflects submission state.
+    const cardTone = (card: {
+        latest: ImplPlanDoc | null
+        weeks: { doc: ImplPlanDoc | null; inProgress: boolean }[]
+    }) => {
+        const RED = '#ff4d4f'
+        const AMBER = '#faad14'
+        const GREEN = '#52c41a'
+        const ORANGE = '#fa8c16'
+        const BLUE = '#1677ff'
+
+        if (isWeeklySegment) {
+            if (!card.weeks.length) return undefined
+            if (card.weeks.some(week => !week.doc && !week.inProgress)) return RED
+            if (card.weeks.some(week => !week.doc)) return AMBER
+            const docs = card.weeks.map(week => week.doc!)
+            if (docs.some(item => item.status === 'queried')) return ORANGE
+            return docs.every(item => item.status === 'ratified') ? GREEN : BLUE
+        }
+
+        if (!card.latest) return RED
+        const status = card.latest.status ?? 'pending'
+        return status === 'ratified' ? GREEN : status === 'queried' ? ORANGE : BLUE
+    }
+
+    const planStatusColor: Record<string, string> = {
+        ratified: 'green',
+        queried: 'orange',
+        pending: 'blue'
+    }
+
+    const planCardActions = (record: ImplPlanDoc) => {
+        const actionsColumn: any = (docCols as any[]).find(column => column.key === 'actions')
+        return actionsColumn?.render?.(null, record)
+    }
+
+    const formatWeek = (start: Dayjs, end: Dayjs) =>
+        start.month() === end.month()
+            ? `${start.format('D')}–${end.format('D MMM')}`
+            : `${start.format('D MMM')}–${end.format('D MMM')}`
+
+    const internalMetrics = useMemo(() => {
+        const monthStart = dayjs().startOf('month')
+        const departments = new Set<string>()
+        let thisMonth = 0
+        let awaitingReview = 0
+
+        docPlans.forEach(document => {
+            if (document.departmentId) departments.add(String(document.departmentId))
+            if (document.createdAt?.toDate && !dayjs(document.createdAt.toDate()).isBefore(monthStart)) {
+                thisMonth += 1
+            }
+            if (document.status === 'pending' || document.status === 'queried') awaitingReview += 1
+        })
+
+        return { total: docPlans.length, departments: departments.size, thisMonth, awaitingReview }
+    }, [docPlans])
+
+    const [filtersOpen, setFiltersOpen] = useState(false)
+
+    const activeFilterCount =
+        (searchText.trim() ? 1 : 0) +
+        (statusFilter !== 'all' ? 1 : 0) +
+        (isGlobalViewer && !isInternalOps && deptFilter !== 'all' ? 1 : 0) +
+        (dateRange ? 1 : 0)
+
+    const resetFilters = () => {
+        setSearchText('')
+        setStatusFilter('all')
+        setDeptFilter('all')
+        setDateRange(null)
+    }
+
+    const segmentedSwitcher = (
+        <Segmented
+            block={isMobile}
+            style={isMobile ? undefined : { flex: '0 0 auto' }}
+            value={activeSegment}
+            onChange={value => {
+                setActiveSegment(value as DocType)
+                resetFilters()
+            }}
+            options={[
+                { label: isMobile ? 'Weekly' : 'Weekly Reports', value: 'weekly_report', icon: <CalendarOutlined /> },
+                { label: isMobile ? 'Plans' : 'Implementation Plans', value: 'implementation_plan', icon: <FileTextOutlined /> },
+                { label: isMobile ? 'Internal' : 'Internal Operations', value: 'internal_operations', icon: <SettingOutlined /> }
+            ]}
+        />
+    )
+
+    // Same four controls in the desktop one-line bar and the mobile filters drawer.
+    const filterControls = (stacked: boolean) => {
+        const cell = (style: React.CSSProperties, node: React.ReactNode, label: string, key: string) =>
+            stacked ? (
+                <div key={key}>
+                    <Text type='secondary' style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>{label}</Text>
+                    {node}
+                </div>
+            ) : (
+                <div key={key} style={style}>{node}</div>
+            )
+
+        return [
+            cell(
+                { flex: '1 1 160px', minWidth: 140 },
+                <Input.Search
+                    allowClear
+                    placeholder='Search by title, department/uploader…'
+                    value={searchText}
+                    onChange={event => setSearchText(event.target.value)}
+                    style={{ width: '100%' }}
+                />,
+                'Search', 'search'
+            ),
+            cell(
+                { flex: '0 1 140px', minWidth: 120 },
+                stacked ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {[
+                            { value: 'all', label: 'All', color: '#8c8c8c' },
+                            { value: 'pending', label: 'Pending', color: '#1677ff' },
+                            { value: 'ratified', label: 'Ratified', color: '#52c41a' },
+                            { value: 'queried', label: 'Queried', color: '#fa8c16' }
+                        ].map(option => {
+                            const selected = statusFilter === option.value
+
+                            return (
+                                <button
+                                    key={option.value}
+                                    type='button'
+                                    aria-pressed={selected}
+                                    onClick={() => setStatusFilter(option.value as typeof statusFilter)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '10px 12px',
+                                        borderRadius: 12,
+                                        cursor: 'pointer',
+                                        font: 'inherit',
+                                        fontWeight: selected ? 600 : 500,
+                                        color: selected ? option.color : 'inherit',
+                                        border: `1px solid ${selected ? option.color : 'rgba(128, 128, 128, 0.28)'}`,
+                                        background: selected ? `${option.color}14` : 'transparent',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    <span
+                                        style={{
+                                            width: 8,
+                                            height: 8,
+                                            borderRadius: '50%',
+                                            background: option.color,
+                                            flex: '0 0 auto'
+                                        }}
+                                    />
+                                    {option.label}
+                                </button>
+                            )
+                        })}
+                    </div>
+                ) : (
+                    <Select
+                        style={{ width: '100%' }}
+                        value={statusFilter}
+                        onChange={value => setStatusFilter(value)}
+                        options={[
+                            { label: 'All statuses', value: 'all' },
+                            { label: 'Pending', value: 'pending' },
+                            { label: 'Ratified', value: 'ratified' },
+                            { label: 'Queried', value: 'queried' }
+                        ]}
+                    />
+                ),
+                'Status', 'status'
+            ),
+            ...(isGlobalViewer && !isInternalOps
+                ? [cell(
+                    { flex: '0 1 170px', minWidth: 130 },
+                    <Select
+                        style={{ width: '100%' }}
+                        value={deptFilter}
+                        onChange={value => setDeptFilter(value)}
+                        placeholder='Department'
+                        options={[
+                            { label: 'All departments', value: 'all' },
+                            ...departmentOptions.map(department => ({
+                                label: department.name,
+                                value: department.id
+                            }))
+                        ]}
+                    />,
+                    'Department', 'dept'
+                )]
+                : []),
+            cell(
+                { flex: '0 1 250px', minWidth: 210 },
+                <RangePicker
+                    style={{ width: '100%' }}
+                    presets={[
+                        { label: 'This Week', value: [dayjs().startOf('week'), dayjs().endOf('week')] },
+                        { label: 'This Month', value: [dayjs().startOf('month'), dayjs().endOf('month')] },
+                        { label: 'Last Month', value: [dayjs().subtract(1, 'month').startOf('month'), dayjs().subtract(1, 'month').endOf('month')] }
+                    ]}
+                    value={dateRange as any}
+                    onChange={values =>
+                        setDateRange(
+                            values && values.length === 2
+                                ? values as [Dayjs, Dayjs]
+                                : null
+                        )
+                    }
+                />,
+                'Date range', 'range'
+            )
+        ]
+    }
+
+    const showUploadInBar = !isDirector && !(isProjectAdmin && showCards)
+
+    const uploadButton = (
+        <Button
+            variant='filled'
+            shape='round'
+            color='primary'
+            style={{ flex: '0 0 auto' }}
+            icon={<UploadOutlined />}
+            onClick={openUploadDoc}
+            disabled={!isInternalOps && isAllPrograms}
+        >
+            Upload
+        </Button>
+    )
 
     const uploadModalTitle =
         activeSegment ===
@@ -2569,7 +3123,20 @@ const DocumentationHub: React.FC = () => {
             </Helmet>
 
             {isPageLoading ? (
-                <PageSkeleton variant='cards' />
+                <DocumentationSkeleton
+                    asCards={
+                        ((activeSegment === 'implementation_plan' ||
+                            activeSegment === 'weekly_report') &&
+                            isGlobalViewer) ||
+                        showInternalCards
+                    }
+                    isMobile={isMobile}
+                    tiles={
+                        isMobile || activeSegment === 'implementation_plan'
+                            ? 2
+                            : 4
+                    }
+                />
             ) : missingState ? (
                 <Result
                     status={
@@ -2611,580 +3178,445 @@ const DocumentationHub: React.FC = () => {
                 />
             ) : (
                 <>
-                    <DashboardHeaderCard
-                        title={
-                            headerTitle
-                        }
-                        subtitle={
-                            headerSubtitle
-                        }
-                        extraRight={
-                            <Space>
-                                <Segmented
-                                    value={
-                                        activeSegment
-                                    }
-                                    onChange={
-                                        value => {
-                                            setActiveSegment(
-                                                value as DocType
-                                            )
-
-                                            setSearchText(
-                                                ''
-                                            )
-
-                                            setStatusFilter(
-                                                'all'
-                                            )
-
-                                            setDeptFilter(
-                                                'all'
-                                            )
-
-                                            setDateRange(
-                                                null
-                                            )
-                                        }
-                                    }
-                                    options={[
-                                        {
-                                            label:
-                                                (
-                                                    <Space>
-                                                        <CalendarOutlined />
-                                                        Weekly
-                                                        Reports
-                                                    </Space>
-                                                ),
-
-                                            value:
-                                                'weekly_report'
-                                        },
-
-                                        {
-                                            label:
-                                                (
-                                                    <Space>
-                                                        <FileTextOutlined />
-                                                        Implementation
-                                                        Plans
-                                                    </Space>
-                                                ),
-
-                                            value:
-                                                'implementation_plan'
-                                        },
-
-                                        {
-                                            label:
-                                                (
-                                                    <Space>
-                                                        <SettingOutlined />
-                                                        Internal
-                                                        Operations
-                                                    </Space>
-                                                ),
-
-                                            value:
-                                                'internal_operations'
-                                        }
-                                    ]}
+                    {activeSegment === 'implementation_plan' && !isDepartmentView && (
+                        <Row gutter={[16, 16]}>
+                            <Col xs={12} md={12}>
+                                <MetricTile
+                                    icon={<FileTextOutlined />}
+                                    title='Total Plans'
+                                    value={totalPlans}
                                 />
+                            </Col>
+                            <Col xs={12} md={12}>
+                                <MetricTile
+                                    icon={<TeamOutlined />}
+                                    title={isMobile ? 'Submitted' : 'Departments Submitted (any period)'}
+                                    value={departmentsSubmitted}
+                                />
+                            </Col>
+                        </Row>
+                    )}
 
-                                {!isDirector && (
+                    {activeSegment === 'weekly_report' && (isDirector || isProjectAdmin) && (
+                        <Row gutter={[16, 16]}>
+                            <Col xs={12} md={12} xl={6}>
+                                <MetricTile
+                                    icon={<FileTextOutlined />}
+                                    title={isMobile ? 'Reports' : 'Reports Submitted This Week'}
+                                    value={weeklyTotal}
+                                />
+                            </Col>
+                            <Col xs={12} md={12} xl={6}>
+                                <MetricTile
+                                    icon={<TeamOutlined />}
+                                    title={isMobile ? 'Depts Submitted' : 'Departments Submitted (This Week)'}
+                                    value={weeklyDeptSubmitted}
+                                />
+                            </Col>
+                            <Col xs={12} md={12} xl={6} style={{ display: isMobile ? 'none' : undefined }}>
+                                <MetricTile
+                                    icon={<WarningOutlined />}
+                                    title='Missing Departments (This Week)'
+                                    value={weeklyDeptMissing}
+                                />
+                            </Col>
+                            <Col xs={12} md={12} xl={6} style={{ display: isMobile ? 'none' : undefined }}>
+                                <MetricTile
+                                    icon={<FileTextOutlined />}
+                                    title='Ratified / Pending+Queried (This Week)'
+                                    value={`${weeklyRatified} / ${weeklyPendingOrQueried}`}
+                                />
+                            </Col>
+                        </Row>
+                    )}
+
+                    {isInternalOps && (
+                        <Row gutter={[16, 16]}>
+                            <Col xs={12} md={12} xl={6}>
+                                <MetricTile
+                                    icon={<SettingOutlined />}
+                                    title={isMobile ? 'Documents' : 'Total Documents'}
+                                    value={internalMetrics.total}
+                                />
+                            </Col>
+                            <Col xs={12} md={12} xl={6}>
+                                <MetricTile
+                                    icon={<TeamOutlined />}
+                                    title={isMobile ? 'Departments' : 'Departments Contributing'}
+                                    value={internalMetrics.departments}
+                                />
+                            </Col>
+                            <Col xs={12} md={12} xl={6} style={{ display: isMobile ? 'none' : undefined }}>
+                                <MetricTile
+                                    icon={<CalendarOutlined />}
+                                    title='Added This Month'
+                                    value={internalMetrics.thisMonth}
+                                />
+                            </Col>
+                            <Col xs={12} md={12} xl={6} style={{ display: isMobile ? 'none' : undefined }}>
+                                <MetricTile
+                                    icon={<ExclamationCircleOutlined />}
+                                    title='Pending / Queried'
+                                    value={internalMetrics.awaitingReview}
+                                />
+                            </Col>
+                        </Row>
+                    )}
+
+                    <DashboardFilterBar style={{ marginTop: 16, marginBottom: 16 }}>
+                        {isMobile ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+                                {segmentedSwitcher}
+                                <div style={{ display: 'flex', gap: 8 }}>
                                     <Button
-                                        variant='filled'
-                                        shape='round'
-                                        color='geekblue'
-                                        style={{
-                                            border:
-                                                '1px solid dodgerblue'
-                                        }}
-                                        icon={
-                                            <UploadOutlined />
-                                        }
-                                        onClick={
-                                            openUploadDoc
-                                        }
-                                        disabled={
-                                            !isInternalOps &&
-                                            isAllPrograms
-                                        }
+                                        block
+                                        icon={<FilterOutlined />}
+                                        onClick={() => setFiltersOpen(true)}
+                                        style={{ flex: 1 }}
                                     >
-                                        {activeSegment ===
-                                            'implementation_plan'
-                                            ? 'Upload Plan Document'
-                                            : activeSegment ===
-                                                'weekly_report'
-                                                ? 'Upload Weekly Report'
-                                                : 'Upload Internal Document'}
+                                        Filters
+                                        {activeFilterCount > 0 && (
+                                            <Badge count={activeFilterCount} size='small' style={{ marginInlineStart: 8 }} />
+                                        )}
                                     </Button>
-                                )}
-                            </Space>
-                        }
-                    />
-
-                    {activeSegment ===
-                        'implementation_plan' &&
-                        !isDepartmentView && (
-                            <>
-                                <Row
-                                    gutter={[
-                                        16,
-                                        16
-                                    ]}
-                                    style={{
-                                        marginTop:
-                                            12
-                                    }}
-                                >
-                                    <Col
-                                        xs={
-                                            24
-                                        }
-                                        md={
-                                            8
-                                        }
-                                    >
-                                        <MotionCard>
-                                            <Space align='center'>
-                                                <FileTextOutlined
-                                                    style={{
-                                                        fontSize:
-                                                            24
-                                                    }}
-                                                />
-
-                                                <Statistic
-                                                    title='Total Plans'
-                                                    value={
-                                                        totalPlans
-                                                    }
-                                                />
-                                            </Space>
-                                        </MotionCard>
-                                    </Col>
-
-                                    <Col
-                                        xs={
-                                            24
-                                        }
-                                        md={
-                                            8
-                                        }
-                                    >
-                                        <MotionCard>
-                                            <Space align='center'>
-                                                <TeamOutlined
-                                                    style={{
-                                                        fontSize:
-                                                            24
-                                                    }}
-                                                />
-
-                                                <Statistic
-                                                    title='Departments Submitted (any period)'
-                                                    value={
-                                                        departmentsSubmitted
-                                                    }
-                                                />
-                                            </Space>
-                                        </MotionCard>
-                                    </Col>
-
-                                    <Col
-                                        xs={
-                                            24
-                                        }
-                                        md={
-                                            8
-                                        }
-                                    >
-                                        <MotionCard>
-                                            <Space align='center'>
-                                                <WarningOutlined
-                                                    style={{
-                                                        fontSize:
-                                                            24
-                                                    }}
-                                                />
-
-                                                <Statistic
-                                                    title='Missing Departments (overall)'
-                                                    value={
-                                                        missingDepartments
-                                                    }
-                                                />
-                                            </Space>
-                                        </MotionCard>
-                                    </Col>
-                                </Row>
-
-                                {missingDepartments >
-                                    0 && (
-                                        <div
-                                            style={{
-                                                marginTop:
-                                                    8
-                                            }}
-                                        >
-                                            <MotionCard>
-                                                <Text type='secondary'>
-                                                    Missing:{' '}
-                                                    {expectedDeptIds
-                                                        .filter(
-                                                            id =>
-                                                                !submittedDeptIds.has(
-                                                                    id
-                                                                )
-                                                        )
-                                                        .map(
-                                                            id =>
-                                                                expectedDeptMap[
-                                                                id
-                                                                ] ||
-                                                                id
-                                                        )
-                                                        .join(
-                                                            ', '
-                                                        ) ||
-                                                        '—'}
-                                                </Text>
-                                            </MotionCard>
-                                        </div>
-                                    )}
-                            </>
+                                    {showUploadInBar && <div style={{ flex: 1 }}>{React.cloneElement(uploadButton, { block: true })}</div>}
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'nowrap', width: '100%' }}>
+                                {segmentedSwitcher}
+                                {filterControls(false)}
+                                {showUploadInBar && uploadButton}
+                            </div>
                         )}
+                    </DashboardFilterBar>
 
-                    {activeSegment ===
-                        'weekly_report' &&
-                        (
-                            isDirector ||
-                            isProjectAdmin
-                        ) && (
-                            <Row
-                                gutter={[
-                                    16,
-                                    16
-                                ]}
-                                style={{
-                                    marginTop:
-                                        12
-                                }}
-                            >
-                                <Col
-                                    xs={
-                                        24
-                                    }
-                                    md={
-                                        6
-                                    }
-                                >
-                                    <MotionCard>
-                                        <Space align='center'>
-                                            <FileTextOutlined
-                                                style={{
-                                                    fontSize:
-                                                        24
-                                                }}
-                                            />
-
-                                            <Statistic
-                                                title='Reports Submitted This Week'
-                                                value={
-                                                    weeklyTotal
-                                                }
-                                            />
-                                        </Space>
-                                    </MotionCard>
-                                </Col>
-
-                                <Col
-                                    xs={
-                                        24
-                                    }
-                                    md={
-                                        6
-                                    }
-                                >
-                                    <MotionCard>
-                                        <Space align='center'>
-                                            <TeamOutlined
-                                                style={{
-                                                    fontSize:
-                                                        24
-                                                }}
-                                            />
-
-                                            <Statistic
-                                                title='Departments Submitted (This Week)'
-                                                value={
-                                                    weeklyDeptSubmitted
-                                                }
-                                            />
-                                        </Space>
-                                    </MotionCard>
-                                </Col>
-
-                                <Col
-                                    xs={
-                                        24
-                                    }
-                                    md={
-                                        6
-                                    }
-                                >
-                                    <MotionCard>
-                                        <Space align='center'>
-                                            <WarningOutlined
-                                                style={{
-                                                    fontSize:
-                                                        24
-                                                }}
-                                            />
-
-                                            <Statistic
-                                                title='Missing Departments (This Week)'
-                                                value={
-                                                    weeklyDeptMissing
-                                                }
-                                            />
-                                        </Space>
-                                    </MotionCard>
-                                </Col>
-
-                                <Col
-                                    xs={
-                                        24
-                                    }
-                                    md={
-                                        6
-                                    }
-                                >
-                                    <MotionCard>
-                                        <Space align='center'>
-                                            <FileTextOutlined
-                                                style={{
-                                                    fontSize:
-                                                        24
-                                                }}
-                                            />
-
-                                            <Statistic
-                                                title='Ratified / Pending+Queried (This Week)'
-                                                value={`${weeklyRatified} / ${weeklyPendingOrQueried}`}
-                                            />
-                                        </Space>
-                                    </MotionCard>
-                                </Col>
-                            </Row>
-                        )}
-
-                    <MotionCard
-                        style={{
-                            marginTop:
-                                16
+                    <Drawer
+                        open={isMobile && filtersOpen}
+                        title='Filters'
+                        placement='bottom'
+                        height='auto'
+                        onClose={() => setFiltersOpen(false)}
+                        rootClassName='modal-style-drawer responsive-sheet-drawer'
+                        styles={{
+                            body: { padding: '4px 16px 8px' },
+                            footer: { padding: '12px 16px calc(12px + env(safe-area-inset-bottom))' }
                         }}
-                        filterBar={
-                            <Row
-                                gutter={
-                                    12
-                                }
-                                align='middle'
-                                wrap={
-                                    false
-                                }
-                            >
-                                <Col flex='auto'>
-                                    <Input.Search
-                                        allowClear
-                                        placeholder='Search by title, department/uploader…'
-                                        value={
-                                            searchText
-                                        }
-                                        onChange={
-                                            event =>
-                                                setSearchText(
-                                                    event.target.value
-                                                )
-                                        }
-                                        style={{
-                                            width:
-                                                '100%'
-                                        }}
-                                    />
-                                </Col>
-
-                                <Col flex='180px'>
-                                    <Select
-                                        style={{
-                                            width:
-                                                '100%'
-                                        }}
-                                        value={
-                                            statusFilter
-                                        }
-                                        onChange={
-                                            value =>
-                                                setStatusFilter(
-                                                    value
-                                                )
-                                        }
-                                        options={[
-                                            {
-                                                label:
-                                                    'All statuses',
-                                                value:
-                                                    'all'
-                                            },
-                                            {
-                                                label:
-                                                    'Pending',
-                                                value:
-                                                    'pending'
-                                            },
-                                            {
-                                                label:
-                                                    'Ratified',
-                                                value:
-                                                    'ratified'
-                                            },
-                                            {
-                                                label:
-                                                    'Queried',
-                                                value:
-                                                    'queried'
-                                            }
-                                        ]}
-                                    />
-                                </Col>
-
-                                {isGlobalViewer &&
-                                    !isInternalOps && (
-                                        <Col flex='200px'>
-                                            <Select
-                                                style={{
-                                                    width:
-                                                        '100%'
-                                                }}
-                                                value={
-                                                    deptFilter
-                                                }
-                                                onChange={
-                                                    value =>
-                                                        setDeptFilter(
-                                                            value
-                                                        )
-                                                }
-                                                placeholder='Department'
-                                                options={[
-                                                    {
-                                                        label:
-                                                            'All departments',
-                                                        value:
-                                                            'all'
-                                                    },
-
-                                                    ...departmentOptions.map(
-                                                        department => ({
-                                                            label:
-                                                                department.name,
-
-                                                            value:
-                                                                department.id
-                                                        })
-                                                    )
-                                                ]}
-                                            />
-                                        </Col>
-                                    )}
-
-                                <Col flex='260px'>
-                                    <RangePicker
-                                        style={{
-                                            width:
-                                                '100%'
-                                        }}
-                                        value={
-                                            dateRange as any
-                                        }
-                                        onChange={
-                                            values =>
-                                                setDateRange(
-                                                    values &&
-                                                        values.length ===
-                                                        2
-                                                        ? values as [
-                                                            Dayjs,
-                                                            Dayjs
-                                                        ]
-                                                        : null
-                                                )
-                                        }
-                                    />
-                                </Col>
-                            </Row>
+                        footer={
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <Button block disabled={activeFilterCount === 0} onClick={resetFilters}>
+                                    Reset
+                                </Button>
+                                <Button block type='primary' onClick={() => setFiltersOpen(false)}>
+                                    Show results
+                                </Button>
+                            </div>
                         }
-                        filterBarProps={{
-                            padding:
-                                14,
-
-                            borderRadius:
-                                10,
-
-                            background:
-                                '#fafafa',
-
-                            borderColor:
-                                '#f0f0f0',
-
-                            boxShadow:
-                                'inset 0 1px 2px rgba(0,0,0,0.04)'
-                        }}
                     >
-                        <Table
-                            rowKey='id'
-                            dataSource={
-                                filteredDocs
-                            }
-                            columns={
-                                docCols as any
-                            }
-                            loading={
-                                loadingDocs
-                            }
-                            pagination={{
-                                pageSize:
-                                    10
-                            }}
-                        />
-                    </MotionCard>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {filterControls(true)}
+                        </div>
+                    </Drawer>
 
-                    <Modal
-                        open={
-                            docOpen
-                        }
-                        title={
-                            uploadModalTitle
-                        }
-                        onCancel={() =>
-                            setDocOpen(
-                                false
-                            )
-                        }
-                        onOk={
-                            saveDoc
-                        }
-                        okText='Upload'
-                        okButtonProps={{
-                            loading:
-                                isUploadingDoc,
+                    {showCards ? (
+                        planCards.length === 0 && !selfCard ? (
+                            <MotionCard>
+                                <Empty description='No participating departments match these filters.' />
+                            </MotionCard>
+                        ) : (
+                            <>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {[...(selfCard ? [selfCard] : []), ...pagedCards].map(card => {
+                                        const reminded = remindedKeys.has(`${activeSegment}:${card.id}`)
+                                        const reminding = remindingDeptId === card.id
 
-                            disabled:
-                                isUploadingDoc
-                        }}
-                        destroyOnClose
+                                        const tone = cardTone(card)
+                                        const cardStyle: React.CSSProperties = tone
+                                            ? { border: `1px solid ${tone}` }
+                                            : {}
+
+                                        const reminderButton = (detail?: string) => card.isSelf ? (
+                                            <Button
+                                                type='primary'
+                                                shape='round'
+                                                icon={<UploadOutlined />}
+                                                onClick={openUploadDoc}
+                                                disabled={isAllPrograms}
+                                            >
+                                                {isAllPrograms ? 'Select a program to upload' : 'Upload'}
+                                            </Button>
+                                        ) : (
+                                            <Popconfirm
+                                                title={`Remind ${card.name}'s HOD to upload?`}
+                                                okText='Send reminder'
+                                                onConfirm={() => remindDepartment(card.id, card.name, detail)}
+                                            >
+                                                <Button icon={<BellOutlined />} loading={reminding} disabled={reminded}>
+                                                    {reminded ? 'Reminder sent' : 'Send reminder'}
+                                                </Button>
+                                            </Popconfirm>
+                                        )
+
+                                        if (isWeeklySegment) {
+                                            const missing = card.weeks.filter(week => !week.doc)
+                                            const detail = missing.map(week => formatWeek(week.start, week.end)).join(', ')
+
+                                            return (
+                                                <MotionCard key={card.id} style={cardStyle}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                                                        <div style={{ flex: isMobile ? '1 1 auto' : '0 0 220px', minWidth: isMobile ? 0 : 180 }}>
+                                                            <Text strong style={{ fontSize: 15 }}>{card.name}</Text>
+                                                            <div>
+                                                                <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                    {card.weeks.length
+                                                                        ? `${card.weeks.length - card.missingWeeks} of ${card.weeks.length} week${card.weeks.length === 1 ? '' : 's'} uploaded`
+                                                                        : 'No completed weeks in this range yet'}
+                                                                </Text>
+                                                            </div>
+                                                        </div>
+
+                                                        <div style={{ flex: isMobile ? '0 1 auto' : '1 1 280px', maxWidth: '100%', display: 'flex', gap: isMobile ? 6 : 8, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : undefined }}>
+                                                            {card.weeks.map((week, index) => {
+                                                                const uploaded = Boolean(week.doc)
+                                                                const color = uploaded ? '#52c41a' : week.inProgress ? '#faad14' : '#ff4d4f'
+                                                                const label = week.inProgress ? 'This week' : isMobile ? `W${index + 1}` : `Wk ${index + 1}`
+                                                                const marker = (
+                                                                    <div
+                                                                        style={{
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: 6,
+                                                                            padding: isMobile ? '4px 8px' : '4px 10px',
+                                                                            flex: '0 0 auto',
+                                                                            borderRadius: 8,
+                                                                            fontSize: 12,
+                                                                            color,
+                                                                            border: `1px solid ${color}`,
+                                                                            background: `${color}14`,
+                                                                            cursor: uploaded ? 'pointer' : 'default'
+                                                                        }}
+                                                                    >
+                                                                        {uploaded
+                                                                            ? <CheckCircleOutlined />
+                                                                            : week.inProgress
+                                                                                ? <ClockCircleOutlined />
+                                                                                : <CloseCircleOutlined />}
+                                                                        <span>
+                                                                            <strong>{label}</strong>{isMobile && !week.inProgress ? '' : <> · {formatWeek(week.start, week.end)}</>}
+                                                                        </span>
+                                                                    </div>
+                                                                )
+
+                                                                if (!week.doc) {
+                                                                    return (
+                                                                        <Tooltip
+                                                                            key={index}
+                                                                            title={week.inProgress ? 'Not uploaded yet - still due this week' : 'Not uploaded'}
+                                                                        >
+                                                                            {marker}
+                                                                        </Tooltip>
+                                                                    )
+                                                                }
+
+                                                                const weekDoc = week.doc
+                                                                const weekStatus = weekDoc.status ?? 'pending'
+
+                                                                return (
+                                                                    <Popover
+                                                                        key={index}
+                                                                        trigger='click'
+                                                                        content={
+                                                                            <Space direction='vertical' size={8}>
+                                                                                <a href={weekDoc.attachment?.url} target='_blank' rel='noreferrer'>
+                                                                                    <FileTextOutlined /> {weekDoc.title || weekDoc.attachment?.name}
+                                                                                </a>
+                                                                                <Space size={8} wrap>
+                                                                                    <Tag color={planStatusColor[weekStatus] ?? 'default'}>
+                                                                                        {weekStatus.charAt(0).toUpperCase() + weekStatus.slice(1)}
+                                                                                    </Tag>
+                                                                                    <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                                        {weekDoc.createdAt?.toDate
+                                                                                            ? dayjs(weekDoc.createdAt.toDate()).format('DD MMM YYYY')
+                                                                                            : ''}
+                                                                                        {weekDoc.createdByName ? ` · ${weekDoc.createdByName}` : ''}
+                                                                                    </Text>
+                                                                                </Space>
+                                                                                {planCardActions(weekDoc)}
+                                                                            </Space>
+                                                                        }
+                                                                    >
+                                                                        {marker}
+                                                                    </Popover>
+                                                                )
+                                                            })}
+                                                        </div>
+
+                                                        {(missing.length > 0 || card.isSelf) && (
+                                                            <div className='doc-card-actions' style={isMobile ? { flex: '1 1 100%', width: '100%' } : { flex: '0 0 auto' }}>{reminderButton(detail)}</div>
+                                                        )}
+                                                    </div>
+                                                </MotionCard>
+                                            )
+                                        }
+
+                                        const uploaded = Boolean(card.latest)
+                                        const latestStatus = card.latest?.status ?? 'pending'
+
+                                        return (
+                                            <MotionCard key={card.id} style={cardStyle}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                                                    <div style={{ flex: isMobile ? '1 1 auto' : '0 0 220px', minWidth: isMobile ? 0 : 180 }}>
+                                                        <Text strong style={{ fontSize: 15 }}>{card.name}</Text>
+                                                        <div style={{ display: 'inline-block', marginLeft: 8 }}>
+                                                            <Tag
+                                                                color={uploaded ? 'success' : 'error'}
+                                                                icon={uploaded ? <CheckCircleOutlined /> : <WarningOutlined />}
+                                                            >
+                                                                {uploaded ? 'Uploaded' : 'Not uploaded'}
+                                                            </Tag>
+                                                        </div>
+                                                    </div>
+
+                                                    <div style={{ flex: isMobile ? '1 1 100%' : '1 1 280px', minWidth: 0 }}>
+                                                        {uploaded && card.latest ? (
+                                                            <Space direction='vertical' size={4}>
+                                                                <a href={card.latest.attachment?.url} target='_blank' rel='noreferrer'>
+                                                                    <FileTextOutlined /> {card.latest.title || card.latest.attachment?.name}
+                                                                </a>
+                                                                <Space size={8} wrap>
+                                                                    <Tag color={planStatusColor[latestStatus] ?? 'default'} style={{ marginInlineEnd: 0 }}>
+                                                                        {latestStatus.charAt(0).toUpperCase() + latestStatus.slice(1)}
+                                                                    </Tag>
+                                                                    <Text type='secondary' style={{ fontSize: 12 }}>
+                                                                        {card.latest.createdAt?.toDate
+                                                                            ? dayjs(card.latest.createdAt.toDate()).format('DD MMM YYYY')
+                                                                            : ''}
+                                                                        {card.latest.createdByName ? ` · ${card.latest.createdByName}` : ''}
+                                                                        {card.count > 1 ? ` · latest of ${card.count} uploads` : ''}
+                                                                    </Text>
+                                                                </Space>
+                                                            </Space>
+                                                        ) : (
+                                                            <Text type='secondary'>
+                                                                No implementation plan has been uploaded for this program yet.
+                                                            </Text>
+                                                        )}
+                                                    </div>
+
+                                                    <div className='doc-card-actions' style={isMobile ? { flex: '1 1 100%', width: '100%' } : { flex: '0 0 auto' }}>
+                                                        {card.isSelf
+                                                            ? <Space>{uploaded && card.latest ? planCardActions(card.latest) : null}{reminderButton()}</Space>
+                                                            : uploaded && card.latest ? planCardActions(card.latest) : reminderButton()}
+                                                    </div>
+                                                </div>
+                                            </MotionCard>
+                                        )
+                                    })}
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+                                    <Pagination
+                                        current={cardPage}
+                                        pageSize={cardPageSize}
+                                        total={planCards.length}
+                                        showSizeChanger={false}
+                                        onChange={(page, size) => {
+                                            setCardPage(page)
+                                            setCardPageSize(size)
+                                        }}
+                                    />
+                                </div>
+                            </>
+                        )
+                    ) : showInternalCards ? (
+                        filteredDocs.length === 0 ? (
+                            <MotionCard>
+                                <Empty description='No documents match these filters.' />
+                            </MotionCard>
+                        ) : (
+                            <>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {pagedInternal.map(record => {
+                                        const status = record.status ?? 'pending'
+                                        const tone = status === 'ratified' ? '#52c41a' : status === 'queried' ? '#fa8c16' : '#1677ff'
+
+                                        return (
+                                            <MotionCard key={record.id} style={{ border: `1px solid ${tone}` }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                                    <a href={record.attachment?.url} target='_blank' rel='noreferrer'>
+                                                        <FileTextOutlined /> {record.title || record.attachment?.name}
+                                                    </a>
+                                                    <Space size={8} wrap>
+                                                        <Tag color={planStatusColor[status] ?? 'default'} style={{ marginInlineEnd: 0 }}>
+                                                            {status.charAt(0).toUpperCase() + status.slice(1)}
+                                                        </Tag>
+                                                        {record.replacementRequest?.status === 'requested' && (
+                                                            <Tag color='gold' style={{ marginInlineEnd: 0 }}>Replacement requested</Tag>
+                                                        )}
+                                                        <Text type='secondary' style={{ fontSize: 12 }}>
+                                                            {record.createdAt?.toDate
+                                                                ? dayjs(record.createdAt.toDate()).format('DD MMM YYYY')
+                                                                : ''}
+                                                            {record.createdByName ? ` · ${record.createdByName}` : ''}
+                                                        </Text>
+                                                    </Space>
+                                                    <div className='doc-card-actions' style={{ width: '100%' }}>
+                                                        {planCardActions(record)}
+                                                    </div>
+                                                </div>
+                                            </MotionCard>
+                                        )
+                                    })}
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+                                    <Pagination
+                                        current={cardPage}
+                                        pageSize={cardPageSize}
+                                        total={filteredDocs.length}
+                                        showSizeChanger={false}
+                                        onChange={page => setCardPage(page)}
+                                    />
+                                </div>
+                            </>
+                        )
+                    ) : (
+                        <MotionCard>
+                            <Table
+                                rowKey='id'
+                                dataSource={filteredDocs}
+                                columns={docCols as any}
+                                loading={loadingDocs}
+                                pagination={{ pageSize: 10, position: ['bottomCenter'], showSizeChanger: false }}
+                            />
+                        </MotionCard>
+                    )}
+
+                    <style>{`
+                        @media (max-width: 767.98px) {
+                            .doc-card-actions .ant-space { display: flex; flex-direction: column; width: 100%; }
+                            .doc-card-actions .ant-space-item { width: 100%; }
+                            .doc-card-actions .ant-btn { width: 100%; }
+                        }
+                    `}</style>
+
+                    <ResponsiveSheet
+                        modalStyle
+                        open={docOpen}
+                        title={uploadModalTitle}
+                        onClose={() => setDocOpen(false)}
+                        footer={
+                            <Button
+                                type='primary'
+                                size='large'
+                                block
+                                loading={isUploadingDoc}
+                                disabled={isUploadingDoc}
+                                onClick={saveDoc}
+                            >
+                                Submit
+                            </Button>
+                        }
                     >
                         <Form
                             form={
@@ -3259,54 +3691,45 @@ const DocumentationHub: React.FC = () => {
                                     }
                                 ]}
                             >
-                                <Upload
-                                    beforeUpload={() =>
-                                        false
-                                    }
-                                    maxCount={
-                                        1
-                                    }
+                                <Upload.Dragger
+                                    beforeUpload={() => false}
+                                    maxCount={1}
                                     accept='.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx'
                                 >
-                                    <Button
-                                        icon={
-                                            <UploadOutlined />
-                                        }
-                                    >
-                                        Select
-                                        File
-                                    </Button>
-                                </Upload>
+                                    <p className='ant-upload-drag-icon'>
+                                        <InboxOutlined />
+                                    </p>
+                                    <p className='ant-upload-text'>
+                                        Click or drag a file here to upload
+                                    </p>
+                                    <p className='ant-upload-hint'>
+                                        PDF, Word, Excel or PowerPoint
+                                    </p>
+                                </Upload.Dragger>
                             </Form.Item>
                         </Form>
-                    </Modal>
+                    </ResponsiveSheet>
 
-                    <Modal
-                        open={
-                            replaceOpen
-                        }
+                    <ResponsiveSheet
+                        modalStyle
+                        open={replaceOpen}
                         title='Replace Document'
-                        onCancel={() => {
-                            setReplaceOpen(
-                                false
-                            )
-
-                            setReplacingId(
-                                null
-                            )
+                        onClose={() => {
+                            setReplaceOpen(false)
+                            setReplacingId(null)
                         }}
-                        onOk={
-                            saveReplace
+                        footer={
+                            <Button
+                                type='primary'
+                                size='large'
+                                block
+                                loading={isReplacing}
+                                disabled={isReplacing}
+                                onClick={saveReplace}
+                            >
+                                Submit
+                            </Button>
                         }
-                        okText='Replace'
-                        okButtonProps={{
-                            loading:
-                                isReplacing,
-
-                            disabled:
-                                isReplacing
-                        }}
-                        destroyOnClose
                     >
                         <Form
                             form={
@@ -3351,27 +3774,24 @@ const DocumentationHub: React.FC = () => {
                                     }
                                 ]}
                             >
-                                <Upload
-                                    beforeUpload={() =>
-                                        false
-                                    }
-                                    maxCount={
-                                        1
-                                    }
+                                <Upload.Dragger
+                                    beforeUpload={() => false}
+                                    maxCount={1}
                                     accept='.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx'
                                 >
-                                    <Button
-                                        icon={
-                                            <UploadOutlined />
-                                        }
-                                    >
-                                        Select
-                                        File
-                                    </Button>
-                                </Upload>
+                                    <p className='ant-upload-drag-icon'>
+                                        <InboxOutlined />
+                                    </p>
+                                    <p className='ant-upload-text'>
+                                        Click or drag a file here to upload
+                                    </p>
+                                    <p className='ant-upload-hint'>
+                                        PDF, Word, Excel or PowerPoint
+                                    </p>
+                                </Upload.Dragger>
                             </Form.Item>
                         </Form>
-                    </Modal>
+                    </ResponsiveSheet>
 
                     <Modal
                         open={

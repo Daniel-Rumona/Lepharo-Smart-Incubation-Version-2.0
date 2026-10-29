@@ -26,14 +26,14 @@ import {
 } from '@ant-design/icons'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import DrilldownModule from 'highcharts/modules/drilldown'
+import 'highcharts/modules/drilldown'
 import dayjs from 'dayjs'
 
 // Ensure drilldown safe-init
-if (typeof DrilldownModule === 'function') DrilldownModule(Highcharts)
 
 // Firebase
 import { db } from '@/firebase'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import {
     collection,
     doc,
@@ -55,6 +55,7 @@ import {
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { Helmet } from 'react-helmet'
 
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 const { Text, Title } = Typography
 const { Option } = Select
 
@@ -133,13 +134,14 @@ type AssignedIntervention = {
     programId?: string | null
     participantId?: string | null
     interventionId?: string | null
+    departmentId?: string | null
     status?: string | null
 }
 
 type InterventionMeta = {
     id: string
     interventionId?: string | null
-    areaOfSupport?: string | null
+    departmentId?: string | null
     interventionTitle?: string | null
     hasSubInterventions?: boolean
     subInterventions?: any[]
@@ -179,48 +181,10 @@ function monthlyRevenueSeries(p: Participant) {
 }
 
 // --- Metric Card ---
-const MetricCard: React.FC<{
-    title: string
-    value: React.ReactNode
-    icon: React.ReactNode
-    iconBg?: string
-}> = ({ title, value, icon, iconBg = '#e6f4ff' }) => (
-    <MotionCard
-        style={{ borderRadius: 16 }}
-        bodyStyle={{ padding: 16 }}
-        initial={{ y: 0, opacity: 0.96 }}
-        whileHover={{ y: -4, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 240, damping: 20 }}
-    >
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div
-                style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 12,
-                    background: iconBg,
-                    display: 'grid',
-                    placeItems: 'center',
-                    flex: '0 0 auto'
-                }}
-            >
-                {icon}
-            </div>
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)' }}>
-                    {title}
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>
-                    {value}
-                </div>
-            </div>
-        </div>
-    </MotionCard>
-)
-
 // ---------- Component ----------
 const IncubateesOverview: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
+    const { nameOf } = useDepartmentRoles()
     const { activeProgramId } = useActiveProgramId()
     const [programName, setProgramName] = useState<string | null>(null)
 
@@ -442,12 +406,7 @@ const IncubateesOverview: React.FC = () => {
                                 allMetas[interventionId] = {
                                     id: snap.id,
                                     interventionId,
-                                    areaOfSupport:
-                                        data.areaOfSupport ||
-                                        data.departmentName ||
-                                        data.department ||
-                                        data.departmentDisplayName ||
-                                        'Unknown',
+                                    departmentId: data.departmentId || null,
                                     interventionTitle:
                                         data.interventionTitle ||
                                         data.title ||
@@ -655,7 +614,7 @@ const IncubateesOverview: React.FC = () => {
 
         for (const ai of items) {
             const meta = metaByInterventionId[ai.interventionId || '']
-            const dept = meta?.areaOfSupport || 'Unknown'
+            const dept = ai.departmentId || meta?.departmentId || ''
 
             if (!deptMap.has(dept)) deptMap.set(dept, [])
             deptMap.get(dept)!.push(ai)
@@ -664,7 +623,8 @@ const IncubateesOverview: React.FC = () => {
         const departmentData: Highcharts.PointOptionsObject[] = []
         const drilldownSeries: Highcharts.SeriesOptionsType[] = []
 
-        Array.from(deptMap.entries()).forEach(([dept, deptItems], index) => {
+        Array.from(deptMap.entries()).forEach(([deptId, deptItems], index) => {
+            const dept = nameOf(deptId, 'Unknown')
             const total = deptItems.length
             const drilldownId = `dept-${index}`
 
@@ -793,7 +753,7 @@ const IncubateesOverview: React.FC = () => {
             },
             credits: { enabled: false }
         }
-    }, [selected, aiByParticipant, metaByInterventionId])
+    }, [selected, aiByParticipant, metaByInterventionId, nameOf])
 
     // ---------- Overlay gate ----------
     const allReady = !identityLoading && readyProgram && readyRows && readyAI
@@ -815,16 +775,16 @@ const IncubateesOverview: React.FC = () => {
             {/* Metrics */}
             <Row gutter={[16, 16]} style={{ marginTop: 4 }}>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title='Total SMEs'
                         value={totalSMEs}
                         icon={<TeamOutlined style={{ fontSize: 22 }} />}
-                        iconBg='#f6ffed'
+                        tone='success'
                     />
                 </Col>
 
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title='Most Common Sector'
                         value={
                             <>
@@ -833,16 +793,16 @@ const IncubateesOverview: React.FC = () => {
                             </>
                         }
                         icon={<ApartmentOutlined style={{ fontSize: 22 }} />}
-                        iconBg='#fff7e6'
+                        tone='warning'
                     />
                 </Col>
 
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title='Interventions (Required : Completed)'
                         value={`${interventionsSummary.required} : ${interventionsSummary.completed}`}
                         icon={<FieldTimeOutlined style={{ fontSize: 22 }} />}
-                        iconBg='#e6f7ff'
+                        tone='info'
                     />
                 </Col>
             </Row>
@@ -900,7 +860,6 @@ const IncubateesOverview: React.FC = () => {
                                 shape='round'
                                 icon={<ReloadOutlined />}
                                 onClick={refresh}
-                                style={{ border: '1px solid dodgerblue' }}
                             >
                                 Refresh
                             </Button>

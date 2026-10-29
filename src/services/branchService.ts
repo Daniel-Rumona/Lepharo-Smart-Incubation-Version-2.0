@@ -43,9 +43,9 @@ export const branchService = {
         name: branchData.name,
         code: branchData.name.toLowerCase().replace(/\s+/g, '-'),
         location: {
-          address: branchData.location,
-          city: branchData.location.split(',')[1]?.trim() || branchData.location,
-          province: branchData.location.split(',')[1]?.trim() || '',
+          address: branchData.location.address,
+          city: branchData.location.city,
+          province: branchData.location.province,
           postalCode: '',
           country: 'South Africa'
         },
@@ -168,9 +168,17 @@ export const branchService = {
       }
 
       const docRef = doc(db, 'branches', branchId)
-      const { contactEmail, contactPhone, ...fields } = updates
+      const { contactEmail, contactPhone, location, ...fields } = updates
       await updateDoc(docRef, {
         ...fields,
+        ...(location !== undefined
+          ? {
+              'location.address': location.address,
+              'location.city': location.city,
+              'location.province': location.province,
+              'location.country': 'South Africa'
+            }
+          : {}),
         ...(contactEmail !== undefined ? { 'contact.email': contactEmail } : {}),
         ...(contactPhone !== undefined ? { 'contact.phone': contactPhone } : {}),
         updatedAt: serverTimestamp()

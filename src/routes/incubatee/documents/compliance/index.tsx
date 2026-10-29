@@ -1,21 +1,19 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import {
     Card,
     Typography,
     Tag,
-    Table,
     Upload,
     Button,
+    Input,
     message,
-    Layout,
     Space,
+    Drawer,
     Modal,
-    Select,
     List,
     Grid,
     Segmented,
     DatePicker,
-    Switch,
     Skeleton,
     Alert
 } from 'antd'
@@ -24,10 +22,12 @@ import {
     ExclamationCircleOutlined,
     ClockCircleOutlined,
     CheckCircleOutlined,
-    FileTextOutlined,
     EyeOutlined,
     DownloadOutlined,
-    EditOutlined
+    EditOutlined,
+    FileProtectOutlined,
+    SafetyCertificateOutlined,
+    SearchOutlined
 } from '@ant-design/icons'
 import {
     collection,
@@ -40,7 +40,9 @@ import {
     serverTimestamp,
     setDoc,
     updateDoc,
-    getDoc
+    getDoc,
+    arrayUnion,
+    deleteField
 } from 'firebase/firestore'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
@@ -49,23 +51,26 @@ import { motion } from 'framer-motion'
 import { PreIncubationContractModal } from '@/components/modals/Contracts/PreIncubationContract'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { requestOpenAccountSettings } from '@/lib/accountSettings'
 import GapAnalysisViewModal from '@/routes/gap/view/GapModal'
-import { hasSmeGapSubmission, isIncubateeAgreementSigned, mergeAgreementSources } from '@/utils/agreementStatus'
+import { hasSmeGapSubmission, isAgreementAvailable, isIncubateeAgreementSigned, mergeAgreementSources } from '@/utils/agreementStatus'
 import MetricsGrid from '@/components/dashboards/metrics/MetricsGrid'
 import '@/styles/incubatee-compliance.css'
 import {
     type AgreementTemplate,
     canonicalAgreementId,
+    complianceDocumentKey as sharedComplianceDocumentKey,
+    complianceEffectiveExpiry,
     resolveComplianceDocumentStatus,
     resolveComplianceRequirements
 } from '@/services/complianceResolver'
 import { verifyComplianceDocument } from '@/services/complianceVerificationService'
+import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
 
-const { Text, Paragraph } = Typography
-const { Option } = Select
+
+const { Text } = Typography
 const { useBreakpoint } = Grid
 
 const normalize = (s?: string) => (s || '').toString().trim().toLowerCase()
@@ -74,18 +79,70 @@ const ESIGN_AGREEMENT_SLUGS = new Set([
     'pre-incubation-contract'
 ])
 
-const complianceDocumentKey = (value?: unknown) => String(value ?? '').toLowerCase()
+type RequiredUpload = {
+    id: string
+    title: string
+    type?: 'upload' | 'agreement'
+    hasExpiry?: boolean
+    expiryMonths?: number | null
+}
+
+// Loose title comparison, for older uploads saved with only a title.
+const titleMatchKey = (value?: unknown) => String(value ?? '').toLowerCase()
     .replace(/\(signed\)/g, '')
     .replace(/\b(docs|documents)\b/g, 'document')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 
-const canShowMOA = (app: any, delayMonths: number | null) => {
-    if (delayMonths == null) return false
-    const accepted = asDate(app?.acceptedAt)
-    if (!accepted) return false
-    return moment().diff(moment(accepted), 'months') >= delayMonths
+// The application compliance documents belong to: an accepted/active one
+// (for the selected programme when there is one), then any application that
+// is still open, and only then whatever exists.
+const pickComplianceApplication = <T extends { data: () => any }>(
+    applications: T[],
+    activeProgramId?: string | null
+): T | undefined => {
+    const status = (item: T) => String(item.data()?.applicationStatus || '').toLowerCase()
+    const eligible = applications.filter(item => ['accepted', 'active'].includes(status(item)))
+    const open = applications.filter(item =>
+        !['rejected', 'declined', 'withdrawn', 'cancelled'].includes(status(item))
+    )
+    return (
+        (activeProgramId
+            ? eligible.find(item => String(item.data()?.programId || '') === String(activeProgramId))
+            : undefined) ||
+        eligible[0] ||
+        open[0] ||
+        applications[0]
+    )
 }
+
+const documentTime = (item: any) =>
+    asDate(item?.updatedAt)?.getTime() ??
+    asDate(item?.createdAt)?.getTime() ??
+    asDate(item?.uploadedAt)?.getTime() ??
+    0
+
+// The upload that satisfies a requirement: matched on the shared requirement
+// key (presetId) as the staff pages do, or on the title for older uploads.
+// The newest wins; on a tie the subcollection copy beats the embedded one.
+const latestDocumentFor = (requirement: RequiredUpload, candidates: any[]) => {
+    const requirementKey = `upload:${requirement.id}`
+    const titleKey = titleMatchKey(requirement.title)
+    const matches = candidates.filter(item =>
+        (item?.kind ?? 'upload') !== 'agreement' && !item?.agreementId && (
+            sharedComplianceDocumentKey(item) === requirementKey ||
+            titleMatchKey(item?.type || item?.title || item?.documentName || item?.name) === titleKey
+        )
+    )
+    return matches.sort((a, b) =>
+        documentTime(b) - documentTime(a) ||
+        (b._source === 'subcollection' ? 1 : 0) - (a._source === 'subcollection' ? 1 : 0)
+    )[0] || null
+}
+
+// Shared with the dashboard's "waiting for you" list, so both agree on when the MOA opens.
+const canShowMOA = (app: any, delayMonths: number | null) =>
+    isAgreementAvailable('moa', asDate(app?.acceptedAt), delayMonths)
 
 // Firestore Timestamp | Date | ISO string -> Date | null
 const asDate = (v: any): Date | null => {
@@ -105,25 +162,14 @@ const formatYMD = (v: any) => {
     return d ? moment(d).format('YYYY-MM-DD') : '—'
 }
 
-const slugify = (s?: string) =>
-    (s || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[\s_]+/g, '-') // spaces/underscores → hyphens
-        .replace(/[^a-z0-9-]/g, '') // strip punctuation
-        .replace(/-+/g, '-')
-
 export const ComplianceDocuments: React.FC = () => {
     const screens = useBreakpoint()
     const { activeProgramId } = useActiveProgramId()
-    const [requiredDocs, setRequiredDocs] = useState<
-        {
-            title: string
-            type?: 'upload' | 'agreement'
-            hasExpiry?: boolean
-            expiryMonths?: number | null
-        }[]
-    >([])
+    const [requiredDocs, setRequiredDocs] = useState<RequiredUpload[]>([])
+    // Bumped after an upload so the loader re-reads the page from Firestore.
+    const [reloadToken, setReloadToken] = useState(0)
+    const [savingUpload, setSavingUpload] = useState(false)
+    const savingUploadRef = useRef(false)
 
     // ids + app meta
     const [participantId, setParticipantId] = useState<string>('')
@@ -161,6 +207,10 @@ export const ComplianceDocuments: React.FC = () => {
     }
 
     const navigate = useNavigate()
+    // The dashboard links here with { view: 'agreements' } and, for one agreement,
+    // { openAgreement: id } to open it straight away.
+    const location = useLocation()
+    const linkState = (location.state || {}) as { view?: string; openAgreement?: string }
 
     const ensureSignatureBefore = (fn: () => void) => {
         if (isViewingAs) return fn()
@@ -246,8 +296,19 @@ export const ComplianceDocuments: React.FC = () => {
     const [missingCount, setMissingCount] = useState(0)
     const [expiredCount, setExpiredCount] = useState(0)
     const [invalidCount, setInvalidCount] = useState(0)
-    const [missingDocsList, setMissingDocsList] = useState<string[]>([])
-    const [agreementView, setAgreementView] = useState<'todo' | 'signed'>('todo')
+    const [workspaceView, setWorkspaceView] = useState<'agreements' | 'compliance'>(
+        linkState.view === 'agreements' || linkState.openAgreement ? 'agreements' : 'compliance'
+    )
+    const openedFromLink = useRef(false)
+    useEffect(() => {
+        if (!linkState.openAgreement || openedFromLink.current || loading) return
+        openedFromLink.current = true
+        openAgreement(linkState.openAgreement)
+        // Cleared so going back or refreshing does not open it again.
+        navigate(location.pathname, { replace: true, state: { view: 'agreements' } })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [linkState.openAgreement, loading])
+    const [searchTerm, setSearchTerm] = useState('')
 
     // add/replace uploads
     const [isModalVisible, setIsModalVisible] = useState(false)
@@ -300,10 +361,10 @@ export const ComplianceDocuments: React.FC = () => {
     const [cryptographicSignature, setCryptographicSignature] = useState('')
 
     // helper
-    const toRow = (d: any, index: number) => {
+    const toRow = (d: any, index: number, requirement?: RequiredUpload) => {
         const issued = asDate(d.issueDate) || asDate(d.createdAt)
         const effectiveExpiry =
-            d?.status === 'missing' ? null : d.expiryDate ?? computePolicyExpiry(d)
+            d?.status === 'missing' ? null : complianceEffectiveExpiry(d, requirement)
         return {
             key: `${d.type}-${index}`,
             type: d.type,
@@ -388,17 +449,7 @@ export const ComplianceDocuments: React.FC = () => {
                     setLoading(false)
                     return
                 }
-                const eligibleApplications = applicationDocs.filter(snapshot =>
-                    ['accepted', 'active'].includes(String(snapshot.data()?.applicationStatus || '').toLowerCase())
-                )
-                const selectedApp = (
-                    activeProgramId
-                        ? eligibleApplications.find(snapshot =>
-                            String(snapshot.data()?.programId || '') === String(activeProgramId)
-                        )
-                        : null
-                ) || eligibleApplications[0] || applicationDocs[0]
-                const appRef = selectedApp.ref
+                const selectedApp = pickComplianceApplication(applicationDocs, activeProgramId)!
                 const appId = selectedApp.id
                 const appData = selectedApp.data() as any
                 setCryptographicSignature(appData?.digitalSignature ?? '')
@@ -407,13 +458,10 @@ export const ComplianceDocuments: React.FC = () => {
 
 
                 // 2.5) Resolve the same program + department requirements used by staff.
-                let reqUploadsLocal: {
-                    title: string
-                    type?: 'upload' | 'agreement'
-                    hasExpiry?: boolean
-                    expiryMonths?: number | null
-                }[] = []
+                let reqUploadsLocal: RequiredUpload[] = []
                 let reqAgreementsLocal: { agreementId: string; title: string }[] = []
+                // The MOA's opening rule, for leaving a not-yet-open MOA out of the counts.
+                let moaDelayLocal: number | null = null
 
                 if (appData?.programId) {
                     const resolved = await resolveComplianceRequirements(
@@ -424,12 +472,14 @@ export const ComplianceDocuments: React.FC = () => {
                         agreement => agreement.agreementId === 'moa'
                     )
                     setAgreementTemplates(resolved.agreements)
-                    setMoaDelayMonths(moaTemplate?.availabilityDelayMonths ?? null)
+                    moaDelayLocal = moaTemplate?.availabilityDelayMonths ?? null
+                    setMoaDelayMonths(moaDelayLocal)
                     reqUploadsLocal = resolved.requirements
                         .filter(requirement => requirement.kind === 'upload')
                         .map(requirement => ({
+                            id: requirement.id,
                             title: requirement.title,
-                            type: 'upload',
+                            type: 'upload' as const,
                             hasExpiry: requirement.hasExpiry,
                             expiryMonths: requirement.expiryMonths
                         }))
@@ -446,45 +496,28 @@ export const ComplianceDocuments: React.FC = () => {
                     collection(db, 'applications', appId, 'complianceDocuments')
                 )
 
-                // build an array of plain objects (NOT snapshots)
+                // Embedded documents come from the same place the staff page reads
+                // them: the participant's array when it has entries, else the
+                // application's.
+                const fromParticipant = participantDoc?.data()?.complianceDocuments
+                const flatCompliance: any[] = Array.isArray(fromParticipant) && fromParticipant.length
+                    ? fromParticipant
+                    : Array.isArray(appData?.complianceDocuments)
+                        ? appData.complianceDocuments
+                        : []
+                const candidates = [
+                    ...flatCompliance.map((obj: any) => ({ ...obj, _source: 'embedded' })),
+                    ...compSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data(), _source: 'subcollection' }))
+                ]
 
-                const rawCompliance: any[] = []
-                compSnap.forEach(docSnap =>
-                    rawCompliance.push({ id: docSnap.id, ...docSnap.data() })
-                )
-
-                // KEEP LATEST BY NORMALIZED TYPE
-                const latestByType: Record<string, any> = {}
-                const flatCompliance = Array.isArray(appData?.complianceDocuments)
-                    ? appData.complianceDocuments
-                    : []
-                    ;[
-                        ...flatCompliance.map((obj: any) => ({ ...obj, _source: 'embedded' })),
-                        ...rawCompliance.map((obj: any) => ({ ...obj, _source: 'subcollection' }))
-                    ].forEach(obj => {
-                        const key = complianceDocumentKey(obj?.type || obj?.title || obj?.documentName || obj?.name)
-                        if (!key) return
-                        latestByType[key] = {
-                            ...obj,
-                            type: obj?.type || obj?.title || obj?.documentName || obj?.name
-                        }
-                    })
-
-                const latestCompliance = Object.values(latestByType)
-
-                const requiredTitlesLocal = reqUploadsLocal
-                    .filter(d => (d.type ?? 'upload') !== 'agreement')
-                    .map(d => d.title)
-
-                // rows = ALL required uploads, filled with upload if present, otherwise "missing"
-                const fullRows = requiredTitlesLocal.map((title, idx) => {
-                    const hit = latestByType[complianceDocumentKey(title)]
-                    const model = hit || {
-                        id: `missing-${idx}`,
-                        type: title,
-                        status: 'missing'
-                    }
-                    return toRow(model, idx)
+                // rows = ALL required uploads, filled with the newest matching
+                // upload if present, otherwise "missing"
+                const fullRows = reqUploadsLocal.map((requirement, idx) => {
+                    const hit = latestDocumentFor(requirement, candidates)
+                    const model = hit
+                        ? { ...hit, type: requirement.title }
+                        : { id: `missing-${idx}`, type: requirement.title, status: 'missing' }
+                    return toRow(model, idx, requirement)
                 })
 
                 // 4) Agreements
@@ -569,11 +602,16 @@ export const ComplianceDocuments: React.FC = () => {
 
                 // ✅ NOW compute unsignedContractsCount AFTER backfill,
                 // and use the actual list shown in UI (filteredAgreements), not reqAgreementsLocal
+                // Same test as the agreement lists (isAgreementSigned): a record
+                // existing is not enough, the SME must have signed it.
                 const unsignedContractsCount = filteredAgreements.filter(c => {
-                    if (isGapSlug(c.agreementId) && isGapDone) return false
-                    // if it's a gap slug variant, check canonical key
-                    if (isGapSlug(c.agreementId)) return !agreements['gap-analysis']
-                    return !agreements[canonicalAgreementId(c.agreementId)]
+                    if (isGapSlug(c.agreementId)) {
+                        return !(isGapDone || isIncubateeAgreementSigned(agreements['gap-analysis'], 'gap-analysis'))
+                    }
+                    const slug = canonicalAgreementId(c.agreementId)
+                    // An MOA that has not opened yet is not something to do now.
+                    if (slug === 'moa' && !canShowMOA(appData, moaDelayLocal)) return false
+                    return !isIncubateeAgreementSigned(agreements[slug], slug)
                 }).length
 
 
@@ -588,40 +626,15 @@ export const ComplianceDocuments: React.FC = () => {
 
 
 
-                // 5) KPI/stat preparation – compute from local arrays, not state
-                // present types we already have
-                let _missing = 0,
-                    _expired = 0,
-                    _invalid = 0
-                const now = moment()
-                requiredTitlesLocal.forEach(title => {
-                    const d = latestByType[complianceDocumentKey(title)]
-                    if (!d) {
-                        _missing++
-                        return
-                    }
-                    const effectiveExpiry = d.expiryDate ?? computePolicyExpiry(d)
-                    const isExpired =
-                        !!effectiveExpiry && moment(effectiveExpiry).isBefore(now)
-                    const status = String(d.status || 'pending').toLowerCase()
+                // 5) KPI/stat preparation – counted from the same resolved
+                // statuses the table shows, so the two always agree.
+                const missingTypes = fullRows.filter(row => row.status === 'missing').map(row => row.type)
 
-                    if (status === 'missing') _missing++
-                    else if (isExpired || status === 'expired') _expired++
-                    else if (!['valid', 'approved', 'pending'].includes(status))
-                        _invalid++
-                })
-
-                const presentTypes = Object.keys(latestByType) // already normalized
-                const missingTypes = requiredTitlesLocal.filter(
-                    t => !presentTypes.includes(complianceDocumentKey(t))
+                setMissingCount(missingTypes.length + unsignedContractsCount)
+                setExpiredCount(fullRows.filter(row => row.status === 'expired').length)
+                setInvalidCount(
+                    fullRows.filter(row => ['invalid', 'rejected', 'queried'].includes(String(row.status))).length
                 )
-                setMissingDocsList(missingTypes)
-
-
-
-                setMissingCount(_missing + unsignedContractsCount)
-                setExpiredCount(_expired)
-                setInvalidCount(_invalid)
 
                 // finally set BOTH pieces of state from the local data
                 setComplianceDocs(fullRows)
@@ -639,7 +652,7 @@ export const ComplianceDocuments: React.FC = () => {
 
         void loadCompliance()
         return () => { cancelled = true }
-    }, [activeProgramId, user?.email, user?.participantId, user?.uid])
+    }, [activeProgramId, user?.email, user?.participantId, user?.uid, reloadToken])
 
     const uploadToStorage = async (file: File, path: string) => {
         const storage = getStorage()
@@ -660,24 +673,8 @@ export const ComplianceDocuments: React.FC = () => {
         )
 
         if (snap.empty) throw new Error('Application not found for participant.')
-        const eligibleApplications = snap.docs.filter(snapshot =>
-            ['accepted', 'active'].includes(String(snapshot.data()?.applicationStatus || '').toLowerCase())
-        )
-        return ((activeProgramId
-            ? eligibleApplications.find(snapshot =>
-                String(snapshot.data()?.programId || '') === String(activeProgramId)
-            )
-            : null) || eligibleApplications[0] || snap.docs[0]).ref
+        return pickComplianceApplication(snap.docs, activeProgramId)!.ref
     }
-
-    // Only uploads matter here
-    const requiredUploadTitles = useMemo(
-        () =>
-            requiredDocs
-                .filter(d => (d.type ?? 'upload') !== 'agreement')
-                .map(d => d.title),
-        [requiredDocs]
-    )
 
     const getExpiryMonthsFor = (type: string) => {
         const row = requiredDocs.find(
@@ -686,14 +683,6 @@ export const ComplianceDocuments: React.FC = () => {
                 normalize(d.title) === normalize(type)
         )
         return row?.hasExpiry ? row.expiryMonths ?? null : null
-    }
-
-    const computePolicyExpiry = (docAny: any): Date | null => {
-        const months = getExpiryMonthsFor(docAny?.type)
-        if (!months) return null
-        const issue = asDate(docAny.issueDate) || asDate(docAny.createdAt)
-        if (!issue) return null // ← don’t invent an issue date for missing rows
-        return moment(issue).add(months, 'months').toDate()
     }
 
     const isGapDoneUI = useMemo(() => {
@@ -724,17 +713,30 @@ export const ComplianceDocuments: React.FC = () => {
         [requiredAgreements, signedAgreements, isGapDoneUI]
     )
 
+    // Unsigned and open for signing now; a scheduled MOA is not counted as pending.
+    const contractsToSign = unsignedContracts.filter(c =>
+        canonicalAgreementId(c.agreementId) !== 'moa' || canShowMOA(applicationData, moaDelayMonths)
+    )
+
     const signedContracts = useMemo(
         () => requiredAgreements.filter(c => isAgreementSigned(c.agreementId)),
         [requiredAgreements, signedAgreements, isGapDoneUI]
     )
 
+    const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+    const filteredComplianceDocs = useMemo(
+        () => complianceDocs.filter(item => !normalizedSearchTerm || String(item.type || '').toLowerCase().includes(normalizedSearchTerm)),
+        [complianceDocs, normalizedSearchTerm]
+    )
+    const filteredUnsignedContracts = useMemo(
+        () => unsignedContracts.filter(item => !normalizedSearchTerm || item.title.toLowerCase().includes(normalizedSearchTerm)),
+        [unsignedContracts, normalizedSearchTerm]
+    )
+    const filteredSignedContracts = useMemo(
+        () => signedContracts.filter(item => !normalizedSearchTerm || item.title.toLowerCase().includes(normalizedSearchTerm)),
+        [signedContracts, normalizedSearchTerm]
+    )
 
-    const formatExpiryDate = (expiry: any) => {
-        if (!expiry) return '—'
-        const d = asDate(expiry)
-        return d ? moment(d).format('YYYY-MM-DD') : '—'
-    }
 
     const formatDateAny = (val: any) => {
         if (!val) return '—'
@@ -910,8 +912,11 @@ export const ComplianceDocuments: React.FC = () => {
             if (editingDocument._source === 'subcollection' && editingDocument._id) {
                 await updateDoc(doc(appRef, 'complianceDocuments', editingDocument._id), payload)
             } else {
+                const requirement = requiredDocs.find(item => normalize(item.title) === normalize(editingDocument.type))
                 const created = await addDoc(collection(appRef, 'complianceDocuments'), {
                     type: editingDocument.type,
+                    documentName: editingDocument.type,
+                    ...(requirement ? { presetId: requirement.id } : {}),
                     url: editingDocument._url,
                     ...(editingDocument._raw?.fileName ? { fileName: editingDocument._raw.fileName } : {}),
                     status: editingDocument.status || 'pending',
@@ -934,6 +939,8 @@ export const ComplianceDocuments: React.FC = () => {
                 : row))
             message.success('Document details updated.')
             setEditingDocument(null)
+            // Re-read so status and the policy-based expiry reflect the new dates.
+            setReloadToken(token => token + 1)
         } catch (error) {
             console.error(error)
             message.error('Could not update the document details.')
@@ -942,46 +949,15 @@ export const ComplianceDocuments: React.FC = () => {
         }
     }
 
-    // Table (desktop) columns
-    const columns = [
-        { title: 'Document', dataIndex: 'type', key: 'type', ellipsis: true },
-        { title: 'Issued', dataIndex: 'issued', key: 'issued', width: 130 },
-        { title: 'Expiry', dataIndex: 'expiry', key: 'expiry', width: 130 },
-        {
-            title: 'Status',
-            dataIndex: 'status',
-            key: 'status',
-            render: getStatusTag,
-            width: 120
-        },
-        {
-            title: 'Actions',
-            key: 'actions',
-            width: 260,
-            render: (row: any) => (
-                <Space size='small' wrap>
-                    {row._url && <Button size='small' icon={<EyeOutlined />} onClick={() => viewComplianceDocument(row)}>View</Button>}
-                    {row._url && <Button size='small' icon={<DownloadOutlined />} onClick={() => downloadComplianceDocument(row)}>Download</Button>}
-                    {row._url && <Button size='small' icon={<EditOutlined />} onClick={() => openDocumentDetailsEditor(row)}>Edit details</Button>}
-                    <Button size='small' icon={<UploadOutlined />} onClick={() => openUploadModal(row.type)}>
-                        {row._url ? 'Replace' : 'Upload'}
-                    </Button>
-                </Space>
-            )
-        }
-    ]
-
     const handleSaveUpload = async () => {
+        if (savingUploadRef.current) return
+        savingUploadRef.current = true
+        setSavingUpload(true)
         try {
             if (!selectedType) return message.error('Please select a document type.')
             if (!uploadFile) return message.error('Please select a file to upload.')
 
-            const appRef = await getAppRefForParticipant(participantId)
-
-            const safeName = uploadFile.name?.replace(/\s+/g, '_') || 'file'
-            const path = `compliance/${appRef.id}/${Date.now()}_${safeName}`
-            const url = await uploadToStorage(uploadFile, path)
-
+            const requirement = requiredDocs.find(item => normalize(item.title) === normalize(selectedType))
             const issueDate = issueDateInput ? issueDateInput.toDate() : null
             const policyMonths = getExpiryMonthsFor(selectedType)
 
@@ -1002,80 +978,99 @@ export const ComplianceDocuments: React.FC = () => {
                 expiryDate = expiryDateInput ? expiryDateInput.toDate() : null
             }
 
-            // upsert by type
-            const cur = await getDocs(
-                query(
+            // Validated above, so a rejected form never leaves an orphaned file.
+            const appRef = await getAppRefForParticipant(participantId)
+            const safeName = uploadFile.name?.replace(/\s+/g, '_') || 'file'
+            const path = `compliance/${appRef.id}/${Date.now()}_${safeName}`
+            const url = await uploadToStorage(uploadFile, path)
+
+            // Replace the document this row shows; otherwise look it up by the
+            // shared requirement id, then by title for older uploads.
+            const row = complianceDocs.find(item => normalize(item.type) === normalize(selectedType))
+            let existingId: string | null = row?._source === 'subcollection' && row?._id ? row._id : null
+            if (!existingId && requirement) {
+                const byPreset = await getDocs(query(
+                    collection(appRef, 'complianceDocuments'),
+                    where('presetId', '==', requirement.id),
+                    limit(1)
+                ))
+                existingId = byPreset.docs[0]?.id ?? null
+            }
+            if (!existingId) {
+                const byType = await getDocs(query(
                     collection(appRef, 'complianceDocuments'),
                     where('type', '==', selectedType),
                     limit(1)
-                )
-            )
+                ))
+                existingId = byType.docs[0]?.id ?? null
+            }
 
+            const uploadedBy = user?.name || user?.email || 'SME'
+            const atISO = new Date().toISOString()
             const payload: any = {
                 type: selectedType,
+                documentName: selectedType,
+                ...(requirement ? { presetId: requirement.id } : {}),
                 status: 'pending',
                 url,
                 fileName: uploadFile.name ?? safeName,
-                ...(issueDate ? { issueDate } : {}),
-                ...(expiryDate ? { expiryDate } : {}),
+                uploadedBy,
+                // Dates and review state always reflect the new file, never the one it replaces.
+                issueDate: issueDate ?? null,
+                expiryDate: expiryDate ?? null,
+                queryOpen: false,
+                queryReason: '',
                 updatedAt: serverTimestamp()
             }
 
             let savedDocId: string
-            if (cur.empty) {
+            if (existingId) {
+                const previousUrl = row?._id === existingId ? row?._url || '' : ''
+                await updateDoc(doc(appRef, 'complianceDocuments', existingId), {
+                    ...payload,
+                    aiVerificationNote: deleteField(),
+                    replacedAt: atISO,
+                    previousFileUrl: previousUrl,
+                    statusHistory: arrayUnion({
+                        status: 'pending',
+                        by: uploadedBy,
+                        atISO,
+                        reason: 'Document replaced by the SME.'
+                    })
+                })
+                savedDocId = existingId
+            } else {
                 const created = await addDoc(collection(appRef, 'complianceDocuments'), {
                     ...payload,
+                    statusHistory: [{ status: 'pending', by: uploadedBy, atISO, reason: 'Document uploaded by the SME.' }],
                     createdAt: serverTimestamp()
                 })
                 savedDocId = created.id
-            } else {
-                await updateDoc(cur.docs[0].ref, payload)
-                savedDocId = cur.docs[0].ref.id
             }
 
             message.success(`Saved ${selectedType}`)
-
-            // AI verification runs automatically here — there's no separate
-            // button on the incubatee side. Fire-and-forget: it usually takes
-            // longer than the table refresh below, so the status shown here
-            // may still say "pending" until the next reload/refresh picks it up.
-            void verifyComplianceDocument(appRef.id, savedDocId).catch(error => {
-                console.error('AI compliance verification failed:', error)
-            })
             setIsModalVisible(false)
             setSelectedType('')
             setUploadFile(null)
             setIssueDateInput(null)
             setExpiryDateInput(null)
+            setReloadToken(token => token + 1)
 
-            // refresh table
-            setLoading(true)
-            const compSnap = await getDocs(collection(appRef, 'complianceDocuments'))
-            const rows = compSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-            setComplianceDocs(
-                rows.map((docAny: any, i: number) => {
-                    const issued = asDate(docAny.issueDate) || asDate(docAny.createdAt)
-                    const effectiveExpiry =
-                        docAny.expiryDate ?? computePolicyExpiry(docAny)
-                    return {
-                        key: `${docAny.type}-${i}`,
-                        type: docAny.type,
-                        status: docAny.status || 'pending',
-                        issued: formatYMD(issued),
-                        expiry: formatYMD(effectiveExpiry),
-                        _id: docAny.id,
-                        _url: docAny.url ?? null,
-                        _issueDate: docAny.issueDate ?? docAny.createdAt ?? null,
-                        _expiryDate: effectiveExpiry,
-                        _source: 'subcollection',
-                        _raw: docAny
-                    }
+            // AI verification runs automatically here — there's no separate
+            // button on the incubatee side. When it lands, reload so the table
+            // shows its result; if it fails, staff still review the document.
+            void verifyComplianceDocument(appRef.id, savedDocId)
+                .then(() => setReloadToken(token => token + 1))
+                .catch(error => {
+                    console.error('AI compliance verification failed:', error)
+                    message.info('Automatic checking is unavailable right now. Your document will be reviewed by staff.')
                 })
-            )
-            setLoading(false)
         } catch (err) {
             console.error(err)
             message.error('Save failed.')
+        } finally {
+            savingUploadRef.current = false
+            setSavingUpload(false)
         }
     }
 
@@ -1102,7 +1097,7 @@ export const ComplianceDocuments: React.FC = () => {
     }
 
     const renderPendingAgreements = () => {
-        if (unsignedContracts.length === 0) {
+        if (filteredUnsignedContracts.length === 0) {
             return (
                 <Space direction='vertical' style={{ width: '100%' }}>
                     <Space>
@@ -1117,13 +1112,14 @@ export const ComplianceDocuments: React.FC = () => {
             <List
                 className='compliance-agreement-list'
                 itemLayout='horizontal'
-                dataSource={unsignedContracts}
+                dataSource={filteredUnsignedContracts}
                 loading={loading}
                 renderItem={contract => {
                     const slug = canonicalAgreementId(contract.agreementId)
                     const isGap = slug === 'gap-analysis'
                     const isMoaWaiting = slug === 'moa' && !canShowMOA(applicationData, moaDelayMonths)
-                    const availableAt = asDate(applicationData?.acceptedAt)
+                    // No date to give until the MOA's opening rule is configured.
+                    const availableAt = asDate(applicationData?.acceptedAt) && moaDelayMonths != null
                         ? moment(asDate(applicationData.acceptedAt))
                             .add(moaDelayMonths ?? 0, 'months')
                             .format('DD MMM YYYY')
@@ -1131,59 +1127,30 @@ export const ComplianceDocuments: React.FC = () => {
                     const hasProfileSignature = !!user?.signatureURL
 
                     return (
-                        <List.Item
-                            actions={[
+                        <Card className='compliance-document-card compliance-agreement-card' size='small'>
+                            <div className='compliance-document-card-head'>
+                                <Text strong>{contract.title}</Text>
+                            </div>
+                            <div className='compliance-document-card-details'>
+                                <Text type='secondary'>
+                                    Available: {isMoaWaiting ? (availableAt || 'Not scheduled') : formatDateAny(applicationData?.acceptedAt)}
+                                </Text>
+                            </div>
+                            <Tag color={isMoaWaiting ? 'default' : isGap || hasProfileSignature ? 'orange' : 'red'}>
+                                {isGap ? 'Pending completion' : isMoaWaiting ? 'Scheduled' : hasProfileSignature ? 'Ready to sign' : 'Signature required'}
+                            </Tag>
+                            <div className='compliance-document-icon-actions compliance-agreement-actions'>
                                 <Button
-                                    key='sign'
                                     type='primary'
+                                    shape='round'
                                     disabled={isMoaWaiting}
                                     loading={isGap && gapViewerLoading}
                                     onClick={() => openAgreement(slug)}
                                 >
-                                    {isGap
-                                        ? 'Open GAP Analysis'
-                                        : isMoaWaiting
-                                            ? 'Not available yet'
-                                            : 'Review and Sign'}
+                                    {isGap ? 'Open GAP Analysis' : isMoaWaiting ? 'Not available yet' : 'Review and Sign'}
                                 </Button>
-                            ]}
-                        >
-                            <List.Item.Meta
-                                title={
-                                    <Space wrap>
-                                        <Text strong>{contract.title}</Text>
-                                        <Tag
-                                            color={
-                                                isMoaWaiting
-                                                    ? 'default'
-                                                    : isGap || hasProfileSignature
-                                                        ? 'orange'
-                                                        : 'red'
-                                            }
-                                        >
-                                            {isGap
-                                                ? 'Pending completion'
-                                                : isMoaWaiting
-                                                    ? 'Scheduled'
-                                                    : hasProfileSignature
-                                                        ? 'Ready to sign'
-                                                        : 'Signature required'}
-                                        </Tag>
-                                    </Space>
-                                }
-                                description={
-                                    isGap
-                                        ? 'Complete the GAP analysis to satisfy this requirement.'
-                                        : isMoaWaiting
-                                            ? moaDelayMonths == null
-                                                ? 'Availability rule not configured. Please contact support.'
-                                                : `Available ${moaDelayMonths} months after acceptance${availableAt ? `, on ${availableAt}` : ''}.`
-                                            : hasProfileSignature
-                                                ? 'Pending your review and e-signature.'
-                                                : 'Add your signature in Account Settings, then return here to sign.'
-                                }
-                            />
-                        </List.Item>
+                            </div>
+                        </Card>
                     )
                 }}
             />
@@ -1191,7 +1158,7 @@ export const ComplianceDocuments: React.FC = () => {
     }
 
     const renderSignedAgreements = () => {
-        if (signedContracts.length === 0) {
+        if (filteredSignedContracts.length === 0) {
             return <Text type='secondary'>No completed agreements yet.</Text>
         }
 
@@ -1199,7 +1166,7 @@ export const ComplianceDocuments: React.FC = () => {
             <List
                 className='compliance-agreement-list'
                 itemLayout='horizontal'
-                dataSource={signedContracts}
+                dataSource={filteredSignedContracts}
                 renderItem={contract => {
                     const meta =
                         signedAgreements[
@@ -1212,6 +1179,7 @@ export const ComplianceDocuments: React.FC = () => {
                         <Button
                             key='view'
                             size='small'
+                            shape='round'
                             icon={<EyeOutlined />}
                             onClick={() => openAgreement(contract.agreementId)}
                         >
@@ -1227,10 +1195,10 @@ export const ComplianceDocuments: React.FC = () => {
                                 target='_blank'
                                 rel='noopener noreferrer'
                             >
-                                <Button size='small'>Open PDF</Button>
+                                <Button size='small' shape='round'>Open PDF</Button>
                             </a>,
                             <a key='download' href={pdfUrl} download>
-                                <Button size='small' icon={<DownloadOutlined />}>
+                                <Button size='small' shape='round' icon={<DownloadOutlined />}>
                                     Download
                                 </Button>
                             </a>
@@ -1238,38 +1206,19 @@ export const ComplianceDocuments: React.FC = () => {
                     }
 
                     return (
-                        <List.Item actions={actions}>
-                            <List.Item.Meta
-                                title={
-                                    <Space wrap>
-                                        <Text strong>{contract.title}</Text>
-                                        <Tag color='green'>Signed</Tag>
-                                    </Space>
-                                }
-                                description={
-                                    <Space direction='vertical' size={2}>
-                                        <Text type='secondary'>
-                                            {acceptedAt
-                                                ? `Signed: ${formatDateAny(acceptedAt)}`
-                                                : 'Signed'}
-                                        </Text>
-                                        {(meta.signatureUrl ||
-                                            meta.userSignatureUrl ||
-                                            meta.smmeSignatureUrl) && (
-                                                <Text type='secondary'>
-                                                    Signature image attached
-                                                </Text>
-                                            )}
-                                        {(meta.digitalSignature ||
-                                            meta.smmeDigitalSignature) && (
-                                                <Text type='secondary'>
-                                                    Digital signature present
-                                                </Text>
-                                            )}
-                                    </Space>
-                                }
-                            />
-                        </List.Item>
+                        <Card className='compliance-document-card compliance-agreement-card' size='small'>
+                            <div className='compliance-document-card-head'>
+                                <Text strong>{contract.title}</Text>
+                            </div>
+                            <div className='compliance-document-card-details'>
+                                <Text type='secondary'>Available: {formatDateAny(applicationData?.acceptedAt)}</Text>
+                                <Text type='secondary'>{acceptedAt ? `Signed: ${formatDateAny(acceptedAt)}` : 'Not signed'}</Text>
+                            </div>
+                            <Tag color='green'>Signed</Tag>
+                            <div className='compliance-document-icon-actions compliance-agreement-actions'>
+                                {actions}
+                            </div>
+                        </Card>
                     )
                 }}
             />
@@ -1284,8 +1233,10 @@ export const ComplianceDocuments: React.FC = () => {
         width: '100%'
     }
 
+    const UploadSurface: any = screens.md ? Modal : Drawer
+
     return (
-        <Layout
+        <div
             style={{
                 padding: screens.md ? '10px 24px' : '10px 12px'
             }}
@@ -1314,10 +1265,9 @@ export const ComplianceDocuments: React.FC = () => {
                             mobileSubtitle: 'Still required',
                             icon: (
                                 <ExclamationCircleOutlined
-                                    style={{ color: '#cf1322' }}
                                 />
                             ),
-                            iconBg: '#fff1f0',
+                            tone: 'danger' as const,
                             important: true
                         },
                         {
@@ -1328,10 +1278,9 @@ export const ComplianceDocuments: React.FC = () => {
                             mobileSubtitle: 'Past expiry',
                             icon: (
                                 <ClockCircleOutlined
-                                    style={{ color: '#d46b08' }}
                                 />
                             ),
-                            iconBg: '#fff7e6',
+                            tone: 'warning' as const,
                             important: true
                         },
                         {
@@ -1342,10 +1291,9 @@ export const ComplianceDocuments: React.FC = () => {
                             mobileSubtitle: 'Needs correction',
                             icon: (
                                 <CheckCircleOutlined
-                                    style={{ color: '#cf1322' }}
                                 />
                             ),
-                            iconBg: '#fff1f0',
+                            tone: 'danger' as const,
                             important: false
                         }
                     ]}
@@ -1353,241 +1301,94 @@ export const ComplianceDocuments: React.FC = () => {
                     desktopSpan={8}
                 />
             </div>
+            <DashboardFilterBar>
+                <div className='compliance-dashboard-filter-content'>
+                    <Input
+                        allowClear
+                        prefix={<SearchOutlined />}
+                        value={searchTerm}
+                        onChange={event => setSearchTerm(event.target.value)}
+                        placeholder='Search agreements and compliance documents'
+                    />
+                    <Segmented
+                        className='dashboard-filter-segmented'
+                        value={workspaceView}
+                        onChange={value => setWorkspaceView(value as 'agreements' | 'compliance')}
+                        options={[
+                            { value: 'agreements', label: 'Agreements', icon: <FileProtectOutlined /> },
+                            { value: 'compliance', label: 'Compliance', icon: <SafetyCertificateOutlined /> }
+                        ]}
+                    />
+                </div>
+            </DashboardFilterBar>
             {/* Required Signatures & Policies */}
-            <motion.div
+            {workspaceView === 'agreements' && <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35 }}
             >
                 <Card
                     style={{ ...cardStyle, marginBottom: 12 }}
-                    title='Required Agreements'
                     extra={
-                        loading ? <Tag>Loading…</Tag> : <Tag color={unsignedContracts.length ? 'red' : 'green'}>
-                            {unsignedContracts.length
-                                ? `${unsignedContracts.length} pending`
-                                : 'All signed'}
+                        loading ? <Tag>Loading…</Tag> : <Tag color={contractsToSign.length ? 'red' : unsignedContracts.length ? 'default' : 'green'}>
+                            {contractsToSign.length
+                                ? `${contractsToSign.length} to sign`
+                                : unsignedContracts.length
+                                    ? 'Nothing to sign yet'
+                                    : 'All signed'}
                         </Tag>
                     }
                 >
                     {loading ? (
                         <Skeleton active paragraph={{ rows: 3 }} />
                     ) : (
-                        <>
-                            <Segmented
-                                className='compliance-agreement-segmented'
-                                block
-                                value={agreementView}
-                                onChange={value =>
-                                    setAgreementView(value as 'todo' | 'signed')
-                                }
-                                options={[
-                                    {
-                                        value: 'todo',
-                                        label: `To Do (${unsignedContracts.length})`
-                                    },
-                                    {
-                                        value: 'signed',
-                                        label: `Signed (${signedContracts.length})`
-                                    }
-                                ]}
-                            />
-                            <div className='compliance-agreement-content'>
-                                {agreementView === 'todo'
-                                    ? renderPendingAgreements()
-                                    : renderSignedAgreements()}
-                            </div>
-                        </>
+                        <div className='compliance-agreement-content'>
+                            {renderPendingAgreements()}
+                            {renderSignedAgreements()}
+                        </div>
                     )}
-                    {/* Previous tab implementation retained temporarily for reference.
-                    <Tabs
-                        centered
-                        defaultActiveKey={unsignedContracts.length ? 'todo' : 'signed'}
-                        items={[
-                            {
-                                key: 'todo',
-                                label: `To Do (${unsignedContracts.length})`,
-                                children:
-                                    unsignedContracts.length === 0 ? (
-                                        <Space direction='vertical' style={{ width: '100%' }}>
-                                            <Space>
-                                                <CheckCircleOutlined style={{ color: 'green' }} />
-                                            <Text>All required agreements have been completed.</Text>
-                                            </Space>
-                                        </Space>
-                                    ) : (
-                                        <List
-                                            itemLayout='horizontal'
-                                            dataSource={unsignedContracts}
-                                            loading={loading}
-                                            renderItem={c => {
-                                                const slug = canonicalAgreementId(c.agreementId)
-                                                const isGap = slug === 'gap-analysis'
-                                                const isMoaWaiting = slug === 'moa' && !canShowMOA(applicationData, moaDelayMonths)
-                                                const availableAt = asDate(applicationData?.acceptedAt)
-                                                    ? moment(asDate(applicationData.acceptedAt)).add(moaDelayMonths ?? 0, 'months').format('DD MMM YYYY')
-                                                    : null
-                                                const hasProfileSignature = !!user?.signatureURL
-                                                return <List.Item
-                                                    actions={[<Button
-                                                        key='sign'
-                                                        type='primary'
-                                                        disabled={isMoaWaiting}
-                                                        loading={isGap && gapViewerLoading}
-                                                        onClick={() => openAgreement(slug)}
-                                                    >
-                                                        {isGap ? 'Open GAP Analysis' : isMoaWaiting ? 'Not available yet' : 'Review & Sign'}
-                                                    </Button>]}
-                                                >
-                                                    <List.Item.Meta
-                                                        title={
-                                                            <Space wrap>
-                                                                <Text strong>{c.title}</Text>
-                                                                <Tag color={isMoaWaiting ? 'default' : isGap || hasProfileSignature ? 'orange' : 'red'}>
-                                                                    {isGap
-                                                                        ? 'Pending completion'
-                                                                        : isMoaWaiting
-                                                                            ? 'Scheduled'
-                                                                            : hasProfileSignature ? 'Ready to sign' : 'Signature required'}
-                                                                </Tag>
-                                                            </Space>
-                                                        }
-                                                        description={
-                                                            isGap
-                                                                ? 'Complete the GAP analysis to satisfy this requirement.'
-                                                                : isMoaWaiting
-                                                                    ? moaDelayMonths == null
-                                                                        ? 'Availability rule not configured. Please contact support.'
-                                                                        : `Available ${moaDelayMonths} months after acceptance${availableAt ? `, on ${availableAt}` : ''}.`
-                                                                    : hasProfileSignature
-                                                                        ? 'Pending your review and e-signature.'
-                                                                        : 'Add your signature in Account Settings, then return here to sign.'
-                                                        }
-                                                    />
-                                                </List.Item>
-                                            }}
-                                        />
-                                    )
-                            },
-                            {
-                                key: 'signed',
-                                label: `Signed (${signedContracts.length})`,
-                                children:
-                                    signedContracts.length === 0 ? (
-                                        <Text type='secondary'>No completed agreements yet.</Text>
-                                    ) : (
-                                        <List
-                                            itemLayout='horizontal'
-                                            dataSource={signedContracts}
-                                            renderItem={c => {
-                                                const meta = signedAgreements[canonicalAgreementId(c.agreementId)] || {}
-                                                const acceptedAt =
-                                                    meta.acceptedAt || meta.signedAt || meta.date || null
-                                                const pdfUrl: string | undefined = meta.pdfUrl
-
-                                                return (
-                                                    <List.Item
-                                                        actions={[
-                                                            <Button
-                                                                key='view'
-                                                                size='small'
-                                                                icon={<EyeOutlined />}
-                                                                onClick={() => openAgreement(c.agreementId)}
-                                                            >
-                                                                View
-                                                            </Button>,
-                                                            pdfUrl ? (
-                                                                <a
-                                                                    key='open'
-                                                                    href={pdfUrl}
-                                                                    target='_blank'
-                                                                    rel='noopener noreferrer'
-                                                                >
-                                                                    <Button size='small' type='link'>
-                                                                        Open PDF
-                                                                    </Button>
-                                                                </a>
-                                                            ) : null,
-                                                            pdfUrl ? (
-                                                                <a key='dl' href={pdfUrl} download>
-                                                                    <Button
-                                                                        size='small'
-                                                                        type='link'
-                                                                        icon={<DownloadOutlined />}
-                                                                    >
-                                                                        Download
-                                                                    </Button>
-                                                                </a>
-                                                            ) : null
-                                                        ].filter(Boolean as any)}
-                                                    >
-                                                        <List.Item.Meta
-                                                            title={
-                                                                <>
-                                                                    {c.title} <Tag color='green'>Signed</Tag>
-                                                                </>
-                                                            }
-                                                            description={
-                                                                <>
-                                                                    {acceptedAt
-                                                                        ? `Signed: ${formatDateAny(acceptedAt)}`
-                                                                        : 'Signed'}
-                                                                    {meta.signatureUrl ||
-                                                                        meta.userSignatureUrl ||
-                                                                        meta.smmeSignatureUrl
-                                                                        ? ' • Signature image attached'
-                                                                        : ''}
-                                                                    {meta.digitalSignature ||
-                                                                        meta.smmeDigitalSignature
-                                                                        ? ' • Digital signature present'
-                                                                        : ''}
-                                                                </>
-                                                            }
-                                                        />
-                                                    </List.Item>
-                                                )
-                                            }}
-                                        />
-                                    )
-                            }
-                        ]}
-                    /> */}
                 </Card>
-            </motion.div>
+            </motion.div>}
             {/* Compliance documents list: table on md+, stacked cards on mobile */}
-            <motion.div
+            {workspaceView === 'compliance' && <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35 }}
             >
                 <Card
                     style={cardStyle}
-                    title='Compliance Documents'
-                    extra={
-                        <Button
-                            type='primary'
-                            icon={<UploadOutlined />}
-                            disabled={isViewingAs}
-                            onClick={() => openUploadModal()}
-                        >
-                            {screens.md ? 'Upload Document' : 'Upload'}
-                        </Button>
-                    }
                 >
                     {loading ? (
                         <Skeleton active paragraph={{ rows: screens.md ? 6 : 10 }} />
                     ) : screens.md ? (
-                        <Table
-                            columns={columns as any}
-                            dataSource={complianceDocs}
-                            size='small'
-                            pagination={false}
-                            scroll={{ x: 720 }}
-                            rowKey='key'
+                        <List
+                            className='compliance-document-list'
+                            dataSource={filteredComplianceDocs}
+                            locale={{ emptyText: 'No matching compliance documents.' }}
+                            renderItem={(item: any) => (
+                                <Card className='compliance-document-card' size='small'>
+                                    <div className='compliance-document-card-head'>
+                                        <Text strong>{item.type}</Text>
+                                        {getStatusTag(item.status)}
+                                    </div>
+                                    <div className='compliance-document-card-details'>
+                                        <Text type='secondary'>Issued: {item.issued}</Text>
+                                        <Text type='secondary'>Expiry: {item.expiry}</Text>
+                                    </div>
+                                    <div className='compliance-document-icon-actions'>
+                                        {item._url && <Button aria-label='View document' shape='circle' icon={<EyeOutlined />} onClick={() => viewComplianceDocument(item)} />}
+                                        {item._url && <Button aria-label='Download document' shape='circle' icon={<DownloadOutlined />} onClick={() => downloadComplianceDocument(item)} />}
+                                        {item._url && <Button aria-label='Edit document details' shape='circle' icon={<EditOutlined />} onClick={() => openDocumentDetailsEditor(item)} />}
+                                        <Button className='compliance-upload-action' aria-label={item._url ? 'Replace document' : 'Upload document'} shape='circle' icon={<UploadOutlined />} onClick={() => openUploadModal(item.type)}>
+                                            <span className='compliance-upload-label'>Upload</span>
+                                        </Button>
+                                    </div>
+                                </Card>
+                            )}
                         />
                     ) : (
                         <List
-                            dataSource={complianceDocs}
+                            dataSource={filteredComplianceDocs}
                             renderItem={(item: any) => (
                                 <Card
                                     className='compliance-document-card'
@@ -1600,6 +1401,7 @@ export const ComplianceDocuments: React.FC = () => {
                                 >
                                     <Space direction='vertical' style={{ width: '100%' }}>
                                         <Space
+                                            className='compliance-mobile-card-header'
                                             align='baseline'
                                             style={{ justifyContent: 'space-between' }}
                                         >
@@ -1609,17 +1411,20 @@ export const ComplianceDocuments: React.FC = () => {
                                         <Space
                                             style={{ justifyContent: 'space-between', width: '100%' }}
                                         >
-                                            <Text type='secondary'>Expiry: {item.expiry}</Text>
+                                            <Space className='compliance-mobile-date-details' size={12}>
+                                                <Text type='secondary'>Issued: {item.issued}</Text>
+                                                <Text type='secondary'>Expiry: {item.expiry}</Text>
+                                            </Space>
                                         </Space>
                                         <Space
-                                            className={`compliance-document-actions ${item._url ? '' : 'is-upload-only'}`}
+                                            className={`compliance-document-icon-actions ${item._url ? '' : 'is-upload-only'}`}
                                             wrap
                                         >
-                                            {item._url && <Button size='small' icon={<EyeOutlined />} onClick={() => viewComplianceDocument(item)}>View</Button>}
-                                            {item._url && <Button size='small' icon={<DownloadOutlined />} onClick={() => downloadComplianceDocument(item)}>Download</Button>}
-                                            {item._url && <Button size='small' icon={<EditOutlined />} onClick={() => openDocumentDetailsEditor(item)}>Edit</Button>}
-                                            <Button size='small' icon={<UploadOutlined />} onClick={() => openUploadModal(item.type)}>
-                                                {item._url ? 'Replace' : 'Upload'}
+                                            {item._url && <Button aria-label='View document' shape='circle' icon={<EyeOutlined />} onClick={() => viewComplianceDocument(item)} />}
+                                            {item._url && <Button aria-label='Download document' shape='circle' icon={<DownloadOutlined />} onClick={() => downloadComplianceDocument(item)} />}
+                                            {item._url && <Button aria-label='Edit document details' shape='circle' icon={<EditOutlined />} onClick={() => openDocumentDetailsEditor(item)} />}
+                                            <Button className='compliance-upload-action' aria-label={item._url ? 'Replace document' : 'Upload document'} shape='round' icon={<UploadOutlined />} onClick={() => openUploadModal(item.type)}>
+                                                <span className='compliance-upload-label'>Upload</span>
                                             </Button>
                                         </Space>
                                     </Space>
@@ -1628,7 +1433,7 @@ export const ComplianceDocuments: React.FC = () => {
                         />
                     )}
                 </Card>
-            </motion.div>
+            </motion.div>}
             <Modal
                 title={`Edit document details${editingDocument?.type ? `: ${editingDocument.type}` : ''}`}
                 open={!!editingDocument}
@@ -1663,44 +1468,33 @@ export const ComplianceDocuments: React.FC = () => {
                     <Text type='secondary'>Changing these dates does not replace the uploaded file.</Text>
                 </Space>
             </Modal>
-            {/* Upload new doc modal */}
-            <Modal
+            {/* Upload surface: bottom drawer on mobile, centered modal on desktop/tablet. */}
+            <UploadSurface
                 title={
                     selectedType
                         ? `Upload/Replace: ${selectedType}`
                         : 'Upload New Document'
                 }
                 open={isModalVisible}
-                onOk={handleSaveUpload}
-                onCancel={() => setIsModalVisible(false)}
-                okText='Save'
+                {...(screens.md
+                    ? {
+                        width: 520,
+                        onOk: handleSaveUpload,
+                        confirmLoading: savingUpload,
+                        onCancel: () => setIsModalVisible(false),
+                        okText: 'Save'
+                    }
+                    : {
+                        placement: 'bottom',
+                        height: 'auto',
+                        onClose: () => setIsModalVisible(false),
+                        footer: <Button type='primary' block loading={savingUpload} onClick={handleSaveUpload}>Save</Button>
+                    })}
             >
                 <Space direction='vertical' style={{ width: '100%' }}>
-                    <div>
-                        <Text strong>Document Type</Text>
-                        <Select
-                            placeholder='Select document type'
-                            style={{ width: '100%', marginTop: 6 }}
-                            value={selectedType}
-                            onChange={val => {
-                                setSelectedType(val)
-                                setIssueDateInput(null)
-                                setExpiryDateInput(null)
-                            }}
-                            showSearch
-                            optionFilterProp='children'
-                        >
-                            {requiredUploadTitles.map(title => (
-                                <Option key={title} value={title}>
-                                    {title}
-                                </Option>
-                            ))}
-                        </Select>
-                    </div>
-
-                    <div>
-                        <Text strong>Issue Date</Text>
-                        <div style={{ marginTop: 6 }}>
+                    <div className='compliance-upload-date-row'>
+                        <div>
+                            <Text strong>Issue Date</Text>
                             <DatePicker
                                 style={{ width: '100%' }}
                                 value={issueDateInput as any}
@@ -1713,71 +1507,53 @@ export const ComplianceDocuments: React.FC = () => {
                                     current && current > moment().endOf('day')
                                 }
                             />
-                        </div>
-                        {selectedType && getExpiryMonthsFor(selectedType) ? (
-                            <Text type='secondary'>
-                                Policy: {getExpiryMonthsFor(selectedType)}-month validity
-                            </Text>
-                        ) : (
-                            <Text type='secondary'>No policy expiry (optional)</Text>
-                        )}
-                    </div>
-
-                    <div>
-                        <Text strong>Expiry</Text>
-                        <DatePicker
-                            style={{ width: '100%', marginTop: 6 }}
-                            value={expiryDateInput as any}
-                            onChange={val => setExpiryDateInput(val)}
-                            // disable when AUTO (issueDate+policy exists)
-                            disabled={
-                                !selectedType ||
-                                (!!issueDateInput && !!getExpiryMonthsFor(selectedType))
-                            }
-                            disabledDate={manualExpiryDisabledDate as any}
-                            format='YYYY-MM-DD'
-                            placeholder={
-                                !selectedType
-                                    ? 'Select document type first'
-                                    : issueDateInput && getExpiryMonthsFor(selectedType)
-                                        ? 'Auto-calculated'
-                                        : getExpiryMonthsFor(selectedType)
-                                            ? `Pick expiry (≤ today + ${getExpiryMonthsFor(
-                                                selectedType
-                                            )} months)`
-                                            : 'Optional'
-                            }
-                            allowClear
-                        />
-                        {issueDateInput &&
-                            getExpiryMonthsFor(selectedType) &&
-                            expiryDateInput && (
+                            {selectedType && getExpiryMonthsFor(selectedType) ? (
                                 <Text type='secondary'>
-                                    Auto: {expiryDateInput.format('YYYY-MM-DD')}
+                                    Policy: {getExpiryMonthsFor(selectedType)}-month validity
                                 </Text>
+                            ) : <Text type='secondary'>No policy expiry (optional)</Text>}
+                        </div>
+                        <div>
+                            <Text strong>Expiry</Text>
+                            <DatePicker
+                                style={{ width: '100%' }}
+                                value={expiryDateInput as any}
+                                onChange={val => setExpiryDateInput(val)}
+                                disabled={!!issueDateInput && !!getExpiryMonthsFor(selectedType)}
+                                disabledDate={manualExpiryDisabledDate as any}
+                                format='YYYY-MM-DD'
+                                placeholder={issueDateInput && getExpiryMonthsFor(selectedType) ? 'Auto-calculated' : 'Optional'}
+                                allowClear
+                            />
+                            {issueDateInput && getExpiryMonthsFor(selectedType) && expiryDateInput && (
+                                <Text type='secondary'>Auto: {expiryDateInput.format('YYYY-MM-DD')}</Text>
                             )}
+                        </div>
                     </div>
 
                     <div>
-                        <Text style={{ marginRight: 10 }} strong>
-                            Upload File:
-                        </Text>
-                        <Upload
+                        <Upload.Dragger
+                            name='file'
+                            accept='image/*,.pdf,.doc,.docx,.xls,.xlsx'
                             beforeUpload={file => {
+                                // Matches the size limit on compliance/ in storage.rules.
+                                if (file.size > 10 * 1024 * 1024) {
+                                    message.error('File is too large. The maximum size is 10 MB.')
+                                    return Upload.LIST_IGNORE
+                                }
                                 setUploadFile(file)
                                 return false
                             }}
                             maxCount={1}
-                            style={{ marginTop: 6 }}
+                            multiple={false}
                         >
-                            <Button icon={<UploadOutlined />}>Select File</Button>
-                        </Upload>
-                        {uploadFile ? (
-                            <Text type='secondary'>Selected: {uploadFile.name}</Text>
-                        ) : null}
+                            <p className='ant-upload-drag-icon'><UploadOutlined /></p>
+                            <p className='ant-upload-text'>Click or drag a file to upload</p>
+                            <p className='ant-upload-hint'>Upload the selected document as PDF or image.</p>
+                        </Upload.Dragger>
                     </div>
                 </Space>
-            </Modal>
+            </UploadSurface>
 
             <GapAnalysisViewModal
                 open={gapViewerOpen}
@@ -1808,16 +1584,6 @@ export const ComplianceDocuments: React.FC = () => {
                     message.success('Pre-Incubation Contract signed.')
                     setViewer(null)
                 }}
-                /* Read-only once *this SME* has signed -- not merely because an
-                   agreement record exists. Staff counter-signing
-                   (routes/shared/compliance handleRomSign) creates
-                   signedAgreements['pre-incubation-contract'] with ROM fields
-                   only, and the bare truthiness of that object used to put the
-                   modal into read-only and hide the Sign button, while the
-                   To Do list above still listed the agreement as outstanding
-                   because it asks isIncubateeAgreementSigned. The SME was left
-                   with a task they could open but not complete. Both now ask
-                   the same question. */
                 readOnly={
                     isViewingAs ||
                     Boolean(
@@ -1830,6 +1596,6 @@ export const ComplianceDocuments: React.FC = () => {
                 }
                 signedMeta={viewer?.meta}
             />
-        </Layout>
+        </div>
     )
 }

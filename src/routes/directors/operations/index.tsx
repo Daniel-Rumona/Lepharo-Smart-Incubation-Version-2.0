@@ -309,7 +309,7 @@ export const OperationsOnboardingDashboard: React.FC = () => {
         setEditingStaff(record)
         form.setFieldsValue({
             ...record,
-            department: record.departmentId || record.department // prefer id
+            department: record.departmentId
         })
         setAddModalVisible(true)
     }

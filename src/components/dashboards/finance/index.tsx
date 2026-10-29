@@ -21,12 +21,13 @@ import {
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import Highcharts from 'highcharts'
-import DrilldownModule from 'highcharts/modules/drilldown'
+import 'highcharts/modules/drilldown'
 import HighchartsReact from 'highcharts-react-official'
 import dayjs from 'dayjs'
 import axios from 'axios'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { MotionCard } from '../metrics/Header'
+import { MetricTile } from '../metrics/MetricTile'
 import DepartmentInterventionsStatus from '../charts/InterventionsBreakdown'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
 import AppointmentsCalendarModal from '@/components/modals/AppointmentsCalender'
@@ -40,7 +41,6 @@ import {
 import { loadInterventionMetrics, type InterventionMetricSummary } from '@/services/interventionMetricsService'
 import InterventionMetricsGrid from '../metrics/InterventionMetricsGrid'
 
-if (typeof DrilldownModule === 'function') DrilldownModule(Highcharts)
 
 const { Text } = Typography
 const API_BASE_URL = 'https://quantnow-sa1e.onrender.com'
@@ -96,7 +96,6 @@ type AssignedIntervention = {
     id: string
     participantId?: string
     participantName?: string
-    areaOfSupport?: string
     departmentId?: string
     interventionTitle?: string
     status?: string
@@ -294,8 +293,6 @@ const FinanceDashboard: React.FC = () => {
     const [pageLoading, setPageLoading] = useState(false)
     const loadTokenRef = useRef(0)
 
-
-    const deptName = (user?.departmentName || '').toLowerCase().trim()
 
     /* ---------------- program requirements (dept + active program) ---------------- */
     useEffect(() => {
@@ -585,12 +582,7 @@ const FinanceDashboard: React.FC = () => {
                     })) as AssignedIntervention[]
 
                     const deptId = user?.departmentId || ''
-                    const filtered = rows.filter(r => {
-                        if (deptId && r.departmentId) return r.departmentId === deptId
-                        if (deptName)
-                            return (r.areaOfSupport || '').toLowerCase().trim() === deptName
-                        return true
-                    })
+                    const filtered = rows.filter(r => !deptId || r.departmentId === deptId)
 
                     return filtered
                 })()
@@ -615,7 +607,7 @@ const FinanceDashboard: React.FC = () => {
         }
 
         run()
-    }, [user?.departmentId, programId, deptName])
+    }, [user?.departmentId, programId])
 
     useEffect(() => {
         const run = async () => {
@@ -633,18 +625,8 @@ const FinanceDashboard: React.FC = () => {
             try {
                 const metrics = await loadInterventionMetrics({
                     programId,
-                    assignedMatches: row => {
-                        if (user?.departmentId && row.departmentId) return row.departmentId === user.departmentId
-                        if (deptName) return String(row.areaOfSupport || '').toLowerCase().trim() === deptName
-                        return true
-                    },
-                    requiredMatches: entry => {
-                        if (user?.departmentId && String(entry.departmentId || '') === user.departmentId) return true
-                        if (deptName) {
-                            return String(entry.areaOfSupport || entry.area || '').toLowerCase().trim() === deptName
-                        }
-                        return true
-                    }
+                    assignedMatches: row => !user?.departmentId || row.departmentId === user.departmentId,
+                    requiredMatches: entry => !user?.departmentId || String(entry.departmentId || '') === user.departmentId
                 })
                 setInterventionMetrics(metrics)
             } catch (error) {
@@ -660,7 +642,7 @@ const FinanceDashboard: React.FC = () => {
         }
 
         run()
-    }, [user?.departmentId, programId, deptName])
+    }, [user?.departmentId, programId])
 
     useEffect(() => {
         let cancelled = false
@@ -969,7 +951,7 @@ const FinanceDashboard: React.FC = () => {
                 <Col xs={24} lg={12}>
                     {/* Pass programId down */}
                     <DepartmentInterventionsStatus
-                        departmentName={user?.departmentName}
+                        departmentId={user?.departmentId}
                         programId={programId || undefined}
                     />
                 </Col>
@@ -982,27 +964,27 @@ const FinanceDashboard: React.FC = () => {
                             <div>
                                 <Row gutter={[12, 12]}>
                                     <Col xs={24} md={8}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             title='Clients'
                                             value={financeSummary.clients}
                                             icon={<TeamOutlined />}
-                                            iconBg='rgba(22,119,255,.12)'
+                                            tone='info'
                                         />
                                     </Col>
                                     <Col xs={24} md={8}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             title='Total Revenue'
                                             value={money(financeSummary.totalRevenue)}
                                             icon={<DollarOutlined />}
-                                            iconBg='rgba(82,196,26,.14)'
+                                            tone='success'
                                         />
                                     </Col>
                                     <Col xs={24} md={8}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             title='Growing SMEs'
                                             value={financeSummary.growingSmes}
                                             icon={<RiseOutlined />}
-                                            iconBg='rgba(114,46,209,.12)'
+                                            tone='info'
                                         />
                                     </Col>
                                 </Row>

@@ -57,12 +57,12 @@
 }
 
 html[data-theme="dark"] {
-    --app-bg: #0e1117;
-    --app-surface: #171b22;
-    --app-surface-raised: #1f242d;
-    --app-surface-sunken: #12161c;
-    --app-border: #2a313c;
-    --app-border-strong: #39424f;
+    --app-bg: #1e2024;
+    --app-surface: #26292e;
+    --app-surface-raised: #2e3238;
+    --app-surface-sunken: #1a1c20;
+    --app-border: #3b4047;
+    --app-border-strong: #4a5058;
     --app-text: rgba(255, 255, 255, 0.88);
     --app-text-muted: rgba(255, 255, 255, 0.62);
     --app-text-subtle: rgba(255, 255, 255, 0.42);
@@ -256,17 +256,6 @@ html[data-theme="dark"] .workspace-program-control-error {
 html[data-theme="dark"] .workspace-program-control-error .workspace-program-icon,
 html[data-theme="dark"] .workspace-program-control-error strong {
     color: #ff8f8a;
-}
-
-html[data-theme="dark"] .workspace-logout-button {
-    border-color: rgba(255, 107, 107, 0.35) !important;
-    background: rgba(255, 255, 255, 0.04) !important;
-}
-
-html[data-theme="dark"] .workspace-logout-button:hover,
-html[data-theme="dark"] .workspace-logout-button:focus-visible {
-    border-color: rgba(255, 107, 107, 0.6) !important;
-    background: var(--app-wash-error) !important;
 }
 
 html[data-theme="dark"] .workspace-assistant-button {
@@ -528,15 +517,16 @@ html[data-theme="dark"] [style*="background: rgb(217, 217, 217)"]:not(.keep-ligh
 
 /* --- 4c. Tinted surfaces ------------------------------------------------- */
 /*
-   Two conventions for the same thing coexist in this codebase:
+   Inline tints come in two forms:
 
-     iconBg="rgba(22,119,255,.12)"   translucent — already correct on dark
-     iconBg="#e6f7ff"                opaque pale — a flat light block on dark
+     background: 'rgba(22,119,255,.12)'   translucent — already correct on dark
+     background: '#e6f7ff'                opaque pale — a flat light block on dark
 
-   Roughly 150 call sites use the first and 130 use the second, often side by
-   side in the same row of cards, which is what makes the icon chips look
-   inconsistent. Mapping each opaque tint to the translucent form of *its own
-   hue* at the same .12–.16 alpha makes the two families render identically.
+   MetricTile chips no longer use either (they take a `tone`, see
+   components/dashboards/metrics/metrics.css), but other inline surfaces -
+   IconChip `bg`, tags, panels - still do. Mapping each opaque tint to the
+   translucent form of *its own hue* at the same .12–.16 alpha makes the two
+   forms render identically.
 
    Hue matters here: these are semantic (blue = info, green = healthy, amber =
    attention, red = risk), so collapsing them all onto one accent would lose the
@@ -599,6 +589,10 @@ html[data-theme="dark"] [style*="background: rgb(220, 252, 231)"]:not(.keep-ligh
 }
 
 /* amber — attention */
+html[data-theme="dark"] [style*="background: rgb(255, 247, 237)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 247, 237)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background: rgb(255, 237, 213)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(255, 237, 213)"]:not(.keep-light):not(.keep-light *),
 html[data-theme="dark"] [style*="background: rgb(255, 247, 230)"]:not(.keep-light):not(.keep-light *),
 html[data-theme="dark"] [style*="background-color: rgb(255, 247, 230)"]:not(.keep-light):not(.keep-light *),
 html[data-theme="dark"] [style*="background: rgb(255, 231, 186)"]:not(.keep-light):not(.keep-light *),
@@ -615,6 +609,8 @@ html[data-theme="dark"] [style*="background: rgb(255, 244, 206)"]:not(.keep-ligh
 }
 
 /* red — risk */
+html[data-theme="dark"] [style*="background: rgb(254, 242, 242)"]:not(.keep-light):not(.keep-light *),
+html[data-theme="dark"] [style*="background-color: rgb(254, 242, 242)"]:not(.keep-light):not(.keep-light *),
 html[data-theme="dark"] [style*="background: rgb(255, 242, 240)"]:not(.keep-light):not(.keep-light *),
 html[data-theme="dark"] [style*="background-color: rgb(255, 242, 240)"]:not(.keep-light):not(.keep-light *),
 html[data-theme="dark"] [style*="background: rgb(255, 241, 240)"]:not(.keep-light):not(.keep-light *),
@@ -713,7 +709,7 @@ html[data-theme="dark"] [style*="color: rgba(0, 0, 0, 0.25)"]:not(.keep-light):n
 
 /* --- 4g. Brand and status text, lifted for contrast --------------------- */
 /* Mid-tone hues that clear 4.5:1 against white do not clear it against a dark
-   panel — #1677ff manages only ~3:1 on #171b22. These keep their hue and gain
+   panel — #1677ff manages only ~3:1 on #26292e. These keep their hue and gain
    lightness. Colours that already pass (#52c41a, #faad14, #fa8c16, #ff4d4f,
    #13c2c2) are deliberately left alone. */
 
@@ -729,7 +725,7 @@ html[data-theme="dark"] [style*="color: rgb(22, 93, 159)"]:not(.keep-light):not(
 html[data-theme="dark"] [style*="color: rgb(14, 87, 163)"]:not(.keep-light):not(.keep-light *),
 html[data-theme="dark"] [style*="color: rgb(21, 69, 123)"]:not(.keep-light):not(.keep-light *),
 html[data-theme="dark"] [style*="color: rgb(18, 61, 112)"]:not(.keep-light):not(.keep-light *) {
-    color: #6aa9ff !important;
+    color: #4a9bff !important;
 }
 
 /* purple */
@@ -861,182 +857,86 @@ html[data-theme="dark"] [style*="box-shadow: rgba"]:not(.keep-light):not(.keep-l
 /* ---------------------------------------------------------------------------
    5. Buttons
    ---------------------------------------------------------------------------
-   Dark mode only. Ant Design's dark buttons are flat and a little lifeless, so
-   these add a light source: a gradient top-to-bottom, a 1px inner highlight on
-   the top edge, and a coloured glow that only appears on hover. The glow alphas
-   are deliberately low — a strong halo reads as cheap rather than sharp.
+   Shape, elevation, hover, focus and footers are shared with light mode in
+   styles/buttons.css. These only swap the surfaces: antd's dark buttons are
+   flat, so outlined buttons get a faint top-lit gradient and primaries an
+   accent gradient.
 
-   Everything here is :not(.keep-light *) scoped so the sign-in and landing
-   buttons keep their existing look.
+   :not(.keep-light *) keeps the light islands (landing, sign-in) light.
    ------------------------------------------------------------------------- */
 
-html[data-theme="dark"] .ant-btn:not(.keep-light *) {
-    transition:
-        background 180ms ease,
-        border-color 180ms ease,
-        box-shadow 220ms ease,
-        transform 140ms ease;
-}
-
-/* --- Default / outlined -------------------------------------------------- */
-
-html[data-theme="dark"] .ant-btn-default:not(.keep-light *) {
+html[data-theme="dark"] .ant-btn-variant-outlined.ant-btn-color-default:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):not(.keep-light *),
+html[data-theme="dark"] .ant-btn-variant-dashed.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
     border-color: rgba(255, 255, 255, 0.14);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-html[data-theme="dark"] .ant-btn-default:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
-    background: linear-gradient(180deg, var(--app-accent-active-bg), var(--app-accent-wash));
-    border-color: var(--app-accent-border-strong);
-    color: var(--app-accent-strong);
+/* Neutral hover, as in light mode: brighter surface and border, no accent. */
+html[data-theme="dark"] .ant-btn-variant-outlined.ant-btn-color-default:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *),
+html[data-theme="dark"] .ant-btn-variant-dashed.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.12));
+    border-color: rgba(255, 255, 255, 0.42);
+    color: #fff;
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.10),
-        0 0 0 1px var(--app-accent-wash),
-        0 4px 16px var(--app-accent-glow);
-    transform: translateY(-1px);
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 6px 16px rgba(0, 0, 0, 0.45);
 }
 
-/* --- Primary -------------------------------------------------------------- */
+html[data-theme="dark"] .ant-btn-variant-outlined.ant-btn-color-default:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):active:not(.keep-light *),
+html[data-theme="dark"] .ant-btn-variant-dashed.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled):active:not(.keep-light *) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.34);
+    color: rgba(255, 255, 255, 0.96);
+}
+
+html[data-theme="dark"] .ant-btn-variant-text.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
+}
 
 /*
-   :not(.ant-btn-background-ghost) is load-bearing. A ghost primary
-   (<Button type="primary" ghost>) is meant to be transparent with a coloured
-   border and coloured label — filling it with the primary gradient left blue
-   text on a blue field, which is what made "View calendar" unreadable.
+   :not(.ant-btn-background-ghost) is load-bearing. A ghost primary is meant to
+   be transparent with a coloured border and label — filling it with the
+   gradient left accent text on an accent field.
 */
-html[data-theme="dark"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
+html[data-theme="dark"] .ant-btn-variant-solid.ant-btn-color-primary:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
     background: linear-gradient(180deg, var(--app-accent), var(--app-accent-deep));
     border-color: var(--app-accent-border-strong);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.22),
-        0 2px 10px var(--app-accent-glow);
 }
 
-html[data-theme="dark"] .ant-btn-primary:not(.ant-btn-dangerous):not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+html[data-theme="dark"] .ant-btn-variant-solid.ant-btn-color-primary:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
     background: linear-gradient(180deg, var(--app-accent-strong), var(--app-accent));
     border-color: var(--app-accent-strong);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.3),
-        0 0 0 1px var(--app-accent-wash),
-        0 6px 22px var(--app-accent-glow-strong);
-    transform: translateY(-1px);
 }
-
-/* --- Ghost --------------------------------------------------------------- */
-/* Outline-style buttons: the accent belongs on the border and the label, never
-   on the fill. */
 
 html[data-theme="dark"] .ant-btn-background-ghost:not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
     background: transparent;
     box-shadow: none;
 }
 
-html[data-theme="dark"] .ant-btn-background-ghost.ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
-    border-color: var(--app-accent-border-strong);
-    color: var(--app-accent-strong);
-}
-
-html[data-theme="dark"] .ant-btn-background-ghost.ant-btn-primary:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
-    border-color: var(--app-accent-strong);
-    color: var(--app-accent-strong);
-    background: var(--app-accent-wash);
-    box-shadow: 0 4px 16px var(--app-accent-glow);
-    transform: translateY(-1px);
-}
-
-/* --- Danger --------------------------------------------------------------- */
-
-html[data-theme="dark"] .ant-btn-dangerous.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
+html[data-theme="dark"] .ant-btn-variant-solid.ant-btn-color-dangerous:not(:disabled):not(.ant-btn-disabled):not(.keep-light *) {
     background: linear-gradient(180deg, #ff7875, #e04a49);
     border-color: rgba(255, 160, 158, 0.45);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.2),
-        0 2px 10px rgba(224, 74, 73, 0.35);
 }
 
-html[data-theme="dark"] .ant-btn-dangerous.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+html[data-theme="dark"] .ant-btn-variant-solid.ant-btn-color-dangerous:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
     background: linear-gradient(180deg, #ff9997, #ef5f5d);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.28),
-        0 6px 22px rgba(255, 107, 107, 0.42);
-    transform: translateY(-1px);
 }
 
-html[data-theme="dark"] .ant-btn-dangerous:not(.ant-btn-primary):not(.ant-btn-text):not(.ant-btn-link):not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+html[data-theme="dark"] .ant-btn-variant-outlined.ant-btn-color-dangerous:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
     border-color: rgba(255, 107, 107, 0.6);
     background: rgba(255, 107, 107, 0.14);
-    box-shadow: 0 4px 16px rgba(255, 107, 107, 0.22);
-    transform: translateY(-1px);
 }
 
-/* --- Text and link -------------------------------------------------------- */
-/* Kept quiet: these appear inside tables and toolbars, where a glow on every row
-   would be noise. */
-
-html[data-theme="dark"] .ant-btn-text:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
-    background: rgba(255, 255, 255, 0.09);
-}
-
-html[data-theme="dark"] .ant-btn-dangerous.ant-btn-text:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
+html[data-theme="dark"] .ant-btn-variant-text.ant-btn-color-dangerous:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
     background: rgba(255, 107, 107, 0.16);
-}
-
-html[data-theme="dark"] .ant-btn-link:not(:disabled):not(.ant-btn-disabled):hover:not(.keep-light *) {
-    color: var(--app-accent-strong);
-    text-shadow: 0 0 12px var(--app-accent-glow-strong);
-}
-
-/* --- Modal cancel --------------------------------------------------------- */
-/*
-   styles/modal-footer.css already paints the cancel button red, but the generic
-   .ant-btn-default hover above is more specific and was repainting it blue —
-   making Cancel hover identically to the primary action beside it. These
-   restate the red at a specificity that wins.
-
-   The second selector covers footers that wrap their buttons in a div, which
-   modal-footer.css also accounts for.
-*/
-html[data-theme="dark"] .ant-modal-footer > .ant-btn-default:first-child:has(+ .ant-btn-primary):not(:disabled):hover:not(.keep-light *),
-html[data-theme="dark"] .ant-modal-footer > div > .ant-btn-default:first-child:has(+ .ant-btn-primary):not(:disabled):hover:not(.keep-light *) {
-    color: #ff7875;
-    border-color: #ff7875;
-    background: rgba(255, 77, 79, 0.14);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.06),
-        0 4px 16px rgba(255, 77, 79, 0.22);
-}
-
-/* --- Pressed and focus ---------------------------------------------------- */
-
-html[data-theme="dark"] .ant-btn:not(:disabled):not(.ant-btn-disabled):active:not(.keep-light *) {
-    transform: translateY(0);
-    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-
-/* Keyboard focus stays a visible ring rather than a glow — a glow alone is not a
-   reliable focus indicator. */
-html[data-theme="dark"] .ant-btn:focus-visible:not(.keep-light *) {
-    outline: 2px solid var(--app-accent-strong);
-    outline-offset: 2px;
 }
 
 html[data-theme="dark"] .ant-btn:disabled:not(.keep-light *),
 html[data-theme="dark"] .ant-btn-disabled:not(.keep-light *) {
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(255, 255, 255, 0.09);
-    box-shadow: none;
-    transform: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    html[data-theme="dark"] .ant-btn:not(.keep-light *) {
-        transition: none;
-    }
-
-    html[data-theme="dark"] .ant-btn:not(:disabled):hover:not(.keep-light *) {
-        transform: none;
-    }
 }
 
 /* ---------------------------------------------------------------------------

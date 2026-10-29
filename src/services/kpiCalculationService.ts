@@ -97,7 +97,8 @@ export async function computeKpi(params: ComputeParams): Promise<ComputeResult> 
   /* ================= HARD RULES ================= */
 
   if (kpi.sourceType === 'interventions') {
-    data = data.filter(d => d.status === 'completed')
+    // Assignments record their state in assignmentStatus; `status` is the legacy name.
+    data = data.filter(d => (d.assignmentStatus ?? d.status) === 'completed')
 
     if (kpi.interventionIds?.length) {
       data = data.filter(d => kpi.interventionIds!.includes(d.interventionId))

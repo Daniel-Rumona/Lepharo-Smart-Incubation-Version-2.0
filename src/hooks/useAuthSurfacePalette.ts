@@ -20,12 +20,12 @@ export const useAuthSurfacePalette = () => {
 
         /** The full-viewport wash behind the card. */
         pageWash: isDark
-            ? 'linear-gradient(135deg, #0e1117 0%, #141922 100%)'
+            ? 'linear-gradient(135deg, #1e2024 0%, #22252a 100%)'
             : 'linear-gradient(135deg, #f5f7fa 0%, #e4e7eb 100%)',
 
         /** Blurred decorative blob, top-left. */
         blobCool: isDark
-            ? 'radial-gradient(circle, rgba(74,155,255,0.20) 0%, transparent 70%)'
+            ? 'radial-gradient(circle, rgba(74, 155, 255,0.20) 0%, transparent 70%)'
             : 'radial-gradient(circle, rgba(200,230,255,0.6) 0%, transparent 70%)',
 
         /** Blurred decorative blob, bottom-right. Carries the brand coral. */
@@ -114,7 +114,7 @@ export const useAuthSurfacePalette = () => {
          * page's own dark and dropping the artwork's opacity lets the whole
          * medallion recede without touching the asset itself.
          */
-        discBg: isDark ? '#141922' : '#f0f4f8',
+        discBg: isDark ? '#22252a' : '#f0f4f8',
         discBorder: isDark ? '3px solid rgba(255,255,255,0.08)' : '3px solid #fff',
         discImageOpacity: isDark ? 0.5 : 1,
 

@@ -97,7 +97,7 @@ export default function EmailTemplateModal ({
     {
       key: 'signedDocs',
       label: 'Signed Documents',
-      path: '/incubatee/documents/compliance'
+      path: '/incubatee/compliance'
     },
     {
       key: 'docsHub',

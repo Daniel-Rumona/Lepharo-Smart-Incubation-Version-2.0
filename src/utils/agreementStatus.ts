@@ -13,7 +13,25 @@ export const isIncubateeAgreementSigned = (value: any, agreementIdValue?: unknow
     return participantFlag || (value.signed === true && (hasSignature || Boolean(value.signerName)))
 }
 
-const hasCompletedGapMarker = (value: any) => {
+/**
+ * Whether an agreement can be signed yet. Some open a set number of months after
+ * acceptance (availabilityDelayMonths on the template). The MOA has to have that
+ * rule configured: until it does, the MOA stays closed rather than opening on day one.
+ */
+export const isAgreementAvailable = (
+    agreementIdValue: unknown,
+    acceptedAt: Date | null,
+    delayMonths: number | null | undefined
+) => {
+    if (typeof delayMonths !== 'number') return canonicalAgreementId(agreementIdValue) !== 'moa'
+    if (delayMonths <= 0) return true
+    if (!acceptedAt) return false
+    const opensAt = new Date(acceptedAt)
+    opensAt.setMonth(opensAt.getMonth() + delayMonths)
+    return Date.now() >= opensAt.getTime()
+}
+
+const hasCompletedGapMarker =(value: any) => {
     if (!value || typeof value !== 'object') return false
     return String(value.gapAnalysisStatus || '').trim().toLowerCase() === 'completed' ||
         Boolean(value.gapSubmittedAt)

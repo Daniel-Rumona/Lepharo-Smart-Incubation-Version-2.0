@@ -47,6 +47,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { MotionCard } from "@/components/dashboards/metrics/Header";
+import { MetricTile } from "@/components/dashboards/metrics/MetricTile";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import CountUp from "react-countup";
 
@@ -1664,9 +1665,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 align="stretch"
             >
                 <Col xs={24} sm={12} md={8} xl={5}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<TeamOutlined />}
-                        iconBg="rgba(22, 119, 255, 0.12)"
+                        tone='info'
                         title="Clients"
                         value={
                             <CountUp
@@ -1680,9 +1681,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} md={8} xl={5}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<DollarOutlined />}
-                        iconBg="rgba(82, 196, 26, 0.12)"
+                        tone='success'
                         title="Total Revenue"
                         value={
                             <CountUp
@@ -1696,9 +1697,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} md={8} xl={5}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<DollarOutlined />}
-                        iconBg="rgba(19, 194, 194, 0.12)"
+                        tone='info'
                         title="Current Month Revenue"
                         value={
                             <CountUp
@@ -1712,9 +1713,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} md={8} xl={4}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<RiseOutlined />}
-                        iconBg="rgba(114, 46, 209, 0.12)"
+                        tone='info'
                         title="Growing SMEs"
                         value={
                             <CountUp
@@ -1728,9 +1729,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} md={8} xl={5}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<FileTextOutlined />}
-                        iconBg="rgba(47, 84, 235, 0.12)"
+                        tone='info'
                         title="Financial Documents"
                         value={
                             <CountUp

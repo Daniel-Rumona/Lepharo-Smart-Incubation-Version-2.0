@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import * as logger from 'firebase-functions/logger';
 import { onCall, type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import { getTransporter, APP_BASE_URL } from './emailShared';
+import { isHrManagerProfile } from './departmentRoles';
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -14,99 +15,6 @@ const DEFAULT_PASSWORD = 'Password@1';
 const ALLOWLIST_EMAILS = new Set<string>([
   'daniel@quantilytix.co.za',
 ]);
-
-function assertAllowed(req: CallableRequest<any>) {
-  const email = req.auth?.token?.email as string | undefined;
-  if (!email || !ALLOWLIST_EMAILS.has(email)) {
-    throw new HttpsError(
-      'permission-denied',
-      'You are not authorized to use this function.',
-    );
-  }
-}
-
-// Helper: load /users docs for a set of uids in batches of 10
-async function loadUserDocsByUid(uids: string[]) {
-  const db = admin.firestore();
-  const map = new Map<string, admin.firestore.DocumentData>();
-
-  if (!uids.length) return map;
-
-  const chunkSize = 10; // Firestore "in" limit
-  for (let i = 0; i < uids.length; i += chunkSize) {
-    const chunk = uids.slice(i, i + chunkSize);
-    const snap = await db
-      .collection('users')
-      .where(admin.firestore.FieldPath.documentId(), 'in', chunk)
-      .get();
-
-    snap.docs.forEach((docSnap) => {
-      map.set(docSnap.id, docSnap.data());
-    });
-  }
-
-  return map;
-}
-
-/**
- * listAuthUsers: returns auth users + merged Firestore `/users/{uid}` info
- */
-export const listAuthUsers = onCall(async (req) => {
-  assertAllowed(req);
-  const pageSize = Math.min(Number(req.data?.pageSize) || 1000, 1000);
-  const pageToken = req.data?.pageToken as string | undefined;
-
-  const result = await admin.auth().listUsers(pageSize, pageToken);
-
-  const uids = result.users.map((u) => u.uid);
-  const userDocsMap = await loadUserDocsByUid(uids);
-
-  const users = result.users.map((u) => {
-    const fsData = userDocsMap.get(u.uid) || {};
-
-    const fsCreatedAt =
-      (fsData.createdAt as any)?.toDate?.()?.toISOString?.() ?? null;
-
-    const fsName =
-      (fsData.name as string | undefined) ||
-      (fsData.displayName as string | undefined) ||
-      null;
-
-    const fsRole = (fsData.role as string | undefined) || null;
-    const claimsRole =
-      (u.customClaims?.role as string | undefined) ||
-      (u.customClaims?.userRole as string | undefined) ||
-      null;
-
-    const role = fsRole || claimsRole || null;
-
-    const firstLoginComplete =
-      (fsData.firstLoginComplete as boolean | undefined) ?? null;
-
-    return {
-      uid: u.uid,
-      email: u.email || null,
-      displayName: u.displayName || null,
-      disabled: u.disabled,
-      creationTime: u.metadata.creationTime,
-      lastSignInTime: u.metadata.lastSignInTime,
-      customClaims: u.customClaims || {},
-      providerData:
-        u.providerData?.map((p) => ({
-          providerId: p.providerId,
-          uid: p.uid,
-        })) || [],
-
-      // Firestore-enriched fields
-      fsName,
-      role,
-      firstLoginComplete,
-      fsCreatedAt,
-    };
-  });
-
-  return { users, pageToken: result.pageToken || null };
-});
 
 type EmailDocumentChange = {
   ref: FirebaseFirestore.DocumentReference;
@@ -160,16 +68,6 @@ const HR_EMPLOYEE_ROLES = new Set([
   'employee',
 ]);
 
-function isHrManager(profile: FirebaseFirestore.DocumentData) {
-  const role = String(profile.role || '').trim().toLowerCase();
-  const departmentName = String(
-    profile.departmentName || profile.department || '',
-  ).trim().toLowerCase();
-  return role === 'hr' || (
-    role === 'operations' &&
-    (departmentName.startsWith('hrm') || departmentName.includes('human resources'))
-  );
-}
 
 function isHrEmployeeTarget(target: FirebaseFirestore.DocumentData) {
   return HR_EMPLOYEE_ROLES.has(String(target.role || '').trim().toLowerCase());
@@ -193,7 +91,7 @@ async function assertUserDeletionAllowed(
   const callerRole = String(caller.role || '').trim().toLowerCase();
   const allowedRoles = new Set([
     'director',
-    'admin',
+    'system_admin',
     'superadmin',
     'hr',
     'operations',
@@ -225,13 +123,13 @@ async function assertUserDeletionAllowed(
     throw new HttpsError('permission-denied', 'You cannot delete your own account.');
   }
 
-  if (!['director', 'admin', 'superadmin'].includes(callerRole)) {
+  if (!['director', 'system_admin', 'superadmin'].includes(callerRole)) {
     const target = targetSnap.data() || {};
     const targetRole = String(target.role || '').trim().toLowerCase();
     const sameDepartment =
       Boolean(caller.departmentId) && caller.departmentId === target.departmentId;
     const canManageAsHr =
-      isHrManager(caller) && isHrEmployeeTarget(target);
+      (await isHrManagerProfile(caller)) && isHrEmployeeTarget(target);
     const canManageCoordinator =
       targetRole === 'coordinator' &&
       ['operations', 'projectadmin', 'coordinator', 'center coordinator'].includes(callerRole) &&
@@ -312,7 +210,7 @@ async function assertCanUpdateUserEmail(req: CallableRequest<any>, targetUid: st
   const callerRole = String(caller.role || '').trim().toLowerCase();
   const targetRole = String(target.role || '').trim().toLowerCase();
 
-  if (['system_admin', 'admin', 'superadmin'].includes(callerRole)) return;
+  if (['system_admin', 'superadmin'].includes(callerRole)) return;
 
   const coordinatorManagerRoles = new Set([
     'director',
@@ -325,7 +223,7 @@ async function assertCanUpdateUserEmail(req: CallableRequest<any>, targetUid: st
     Boolean(caller.departmentId) && caller.departmentId === target.departmentId;
   const departmentAllowed = callerRole !== 'operations' || sameDepartment;
   const hrEmployeeAllowed =
-    isHrManager(caller) &&
+    (await isHrManagerProfile(caller)) &&
     isHrEmployeeTarget(target);
 
   if (
@@ -449,9 +347,9 @@ export const setEmployeeAccountStatus = onCall(async (req) => {
   const caller = callerSnap.data() || {};
   const target = targetSnap.data() || {};
   const callerRole = String(caller.role || '').trim().toLowerCase();
-  const isAdministrator = ['system_admin', 'admin', 'superadmin', 'director'].includes(callerRole);
+  const isAdministrator = ['system_admin', 'superadmin', 'director'].includes(callerRole);
   const canManageAsHr =
-    isHrManager(caller) && isHrEmployeeTarget(target);
+    (await isHrManagerProfile(caller)) && isHrEmployeeTarget(target);
 
   if (!isAdministrator && !canManageAsHr) {
     throw new HttpsError(
@@ -499,8 +397,8 @@ export const resendWelcomeEmail = onCall(async (req) => {
   const caller = callerSnap.data() || {};
   const target = targetSnap.data() || {};
   const callerRole = String(caller.role || '').trim().toLowerCase();
-  const isAdministrator = ['system_admin', 'admin', 'superadmin', 'director'].includes(callerRole);
-  const canManageAsHr = isHrManager(caller) && isHrEmployeeTarget(target);
+  const isAdministrator = ['system_admin', 'superadmin', 'director'].includes(callerRole);
+  const canManageAsHr = (await isHrManagerProfile(caller)) && isHrEmployeeTarget(target);
 
   if (!isAdministrator && !canManageAsHr) {
     throw new HttpsError(
@@ -574,103 +472,6 @@ export const resendWelcomeEmail = onCall(async (req) => {
   }
 
   return { ok: true, uid, email: authUser.email };
-});
-
-const hasInterventionActivity = (assignment: FirebaseFirestore.DocumentData) => {
-  const progress = Number(assignment.computedProgress ?? assignment.progress ?? 0);
-  const updates = Array.isArray(assignment.progressUpdates) ? assignment.progressUpdates.length : 0;
-  return Boolean(
-    progress > 0 || updates > 0 || assignment.movDocumentId || assignment.completedAt ||
-    ['completed', 'submitted', 'done'].includes(String(assignment.completionStatus || '').toLowerCase()) ||
-    ['completed', 'done'].includes(String(
-      assignment.assigneeCompletionStatus || assignment.assigneeCompletionStatus || ''
-    ).toLowerCase())
-  );
-};
-
-/** Preview or repair assignments that have activity but no operational intervention record. */
-export const repairMissingInterventionRecords = onCall(async (req) => {
-  assertAllowed(req);
-  const commit = req.data?.commit === true;
-  const requestedLimit = Number(req.data?.limit || 500);
-  const repairLimit = Math.max(1, Math.min(requestedLimit, 2000));
-  const db = admin.firestore();
-
-  const [assignmentsSnap, interventionRecordsSnap] = await Promise.all([
-    db.collection('assignedInterventions').get(),
-    db.collection('interventionsDatabase').get(),
-  ]);
-
-  const linkedAssignmentIds = new Set<string>();
-  const assignmentIds = new Set(assignmentsSnap.docs.map((item) => item.id));
-  interventionRecordsSnap.docs.forEach((item) => {
-    const data = item.data();
-    const linkedId = String(data.assignedInterventionId || data.interventionKey || '').trim();
-    if (linkedId) linkedAssignmentIds.add(linkedId);
-    else if (assignmentIds.has(item.id)) linkedAssignmentIds.add(item.id);
-  });
-
-  const missing = assignmentsSnap.docs
-    .filter((item) => hasInterventionActivity(item.data()))
-    .filter((item) => !linkedAssignmentIds.has(item.id))
-    .slice(0, repairLimit);
-
-  const preview = missing.map((item) => {
-    const data = item.data();
-    return {
-      assignedInterventionId: item.id,
-      participantId: data.participantId || null,
-      beneficiaryName: data.beneficiaryName || data.participantName || '',
-      interventionId: data.interventionId || null,
-      interventionTitle: data.interventionTitle || data.title || 'Intervention',
-      progress: Number(data.computedProgress ?? data.progress ?? 0),
-      movDocumentId: data.movDocumentId || null,
-    };
-  });
-
-  if (commit && missing.length) {
-    for (let offset = 0; offset < missing.length; offset += 400) {
-      const batch = db.batch();
-      missing.slice(offset, offset + 400).forEach((item) => {
-        const data = item.data();
-        const ref = db.collection('interventionsDatabase').doc(item.id);
-        batch.create(ref, {
-          assignedInterventionId: item.id,
-          interventionId: data.interventionId || null,
-          interventionTitle: data.interventionTitle || data.title || 'Intervention',
-          areaOfSupport: data.areaOfSupport || data.departmentName || '',
-          programId: data.programId || null,
-          programName: data.programName || '',
-          departmentId: data.departmentId || null,
-          departmentName: data.departmentName || '',
-          participantId: data.participantId || null,
-          beneficiaryName: data.beneficiaryName || data.participantName || '',
-          interventionType: data.type || 'singular',
-          assigneeRole: data.assigneeRole || null,
-          coordinatorIds: [data.assigneeId].filter(Boolean),
-          tracking: data.tracking || {},
-          progress: Number(data.computedProgress ?? data.progress ?? 0),
-          resources: Array.isArray(data.resources) ? data.resources : [],
-          createdAt: data.createdAt || admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          confirmedAt: null,
-          feedback: null,
-        });
-      });
-      await batch.commit();
-    }
-  }
-
-  return {
-    ok: true,
-    mode: commit ? 'commit' : 'preview',
-    scannedAssignments: assignmentsSnap.size,
-    existingInterventionRecords: interventionRecordsSnap.size,
-    missingCount: missing.length,
-    limited: missing.length === repairLimit,
-    repairedCount: commit ? missing.length : 0,
-    preview,
-  };
 });
 
 /**

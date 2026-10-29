@@ -23,7 +23,7 @@ class MenuItem:
 
 
 def role_group(identity: Optional[dict[str, Any]]) -> str:
-    """admin | director | hod | coordinator | receptionist | employee | external | sme | unknown"""
+    """system_admin | director | hod | coordinator | receptionist | employee | external | sme | unknown"""
     if not identity:
         return "unknown"
     if identity.get("kind") == "sme":
@@ -46,7 +46,7 @@ def is_greeting(text: str) -> bool:
 _APPOINTMENTS_SUBMENU = "appointments"
 
 MENUS: dict[str, list[MenuItem]] = {
-    "admin": [
+    "system_admin": [
         MenuItem("Feature governance", "Log a meeting or a feature, see the pipeline", "submenu:governance"),
         MenuItem("User stats", "How many users, by role, and SMEs on the programme", "tool:staff_overview:users"),
         MenuItem("Appointments", "What's coming up across the organisation", "tool:my_appointments"),

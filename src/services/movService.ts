@@ -35,6 +35,7 @@ export type MovUserContext = {
 
 export type MovAssignmentInput = {
     id: string
+    dueDate?: any
     participantId?: string | null
     beneficiaryName?: string
     smmeNo?: string
@@ -50,7 +51,6 @@ export type MovAssignmentInput = {
 
     departmentId?: string
     departmentName?: string
-    areaOfSupport?: string
 
     deliveryMethod?: string
     recurrencePreset?: string | null
@@ -89,6 +89,8 @@ const stripUndefined = <T extends Record<string, any>>(obj: T): Partial<T> =>
 // smmeSignedAt set, or participantCompletionStatus already confirmed) -
 // checking only the boolean flag silently drops those MOVs from a list.
 export const isSmeConfirmedMov = (mov: any): boolean =>
+    // An SME delivery dispute the HOD decided in the facilitator's favour.
+    !!mov?.confirmationOverride ||
     mov?.smmeAccepted === true ||
     ['confirmed', 'accepted', 'complete', 'completed'].includes(
         String(mov?.participantCompletionStatus || '').toLowerCase()
@@ -208,7 +210,7 @@ const normalizeMovDeliveryMethod = (value: any) => {
     if (!raw) return ''
     if (raw.includes('in person') || raw === 'inperson') return 'in-person'
     if (raw.includes('online') || raw.includes('virtual')) return 'online'
-    if (raw.includes('telephon')) return 'telephonic'
+    if (raw.includes('telephon') || raw === 'phone') return 'telephonic'
     return raw
 }
 
@@ -938,9 +940,7 @@ export const createMovDraftFromAssignment = async ({
         // ops/admin user on a facilitator's behalf (e.g. from the shared
         // Appointments department view), and their own departmentName is not
         // the right value for someone else's assignment.
-        departmentName:
-            assignment.departmentName || assignment.areaOfSupport || user.departmentName || '',
-        areaOfSupport: assignment.areaOfSupport || assignment.departmentName || '',
+        departmentName: assignment.departmentName || user.departmentName || '',
         kpiServiced,
 
         interventionId: assignment.interventionId || null,
@@ -969,6 +969,8 @@ export const createMovDraftFromAssignment = async ({
         interventionDate: appointmentInterventionDate,
         periodStart: resolvedAssignment.createdAt || null,
         periodEnd: smmeConfirmedAt,
+        // The due date decides which monthly consolidated pack the MOV belongs to.
+        dueDate: resolvedAssignment.dueDate || assignment.dueDate || null,
         appointmentInterventions,
         progressUpdates: resolvedAssignment.progressUpdates || [],
         resources: Array.isArray(resolvedAssignment.resources)
@@ -1223,12 +1225,12 @@ export const createOrUpdateDiagnosticPlanMovDraft = async ({
 
         departmentId,
         departmentName,
-        areaOfSupport: departmentName,
 
         interventionId: null,
         interventionTitle: 'Developmental Plan',
 
-        deliveryMethod,
+        // Same words the MOV document reads (in-person / online / telephonic).
+        deliveryMethod: normalizeMovDeliveryMethod(deliveryMethod),
 
         status: finalStatus,
         smmeAccepted: smeAlreadyConfirmed,

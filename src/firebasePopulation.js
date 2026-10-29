@@ -296,33 +296,51 @@ const seedLPH = async () => {
   // }
   // Define department-specific interventions
 
+  // Seed departments are matched by name only to avoid creating duplicates;
+  // everything below links to them by id.
+  const ensureDepartment = async name => {
+    const existing = await db.collection('departments').where('name', '==', name).limit(1).get()
+    if (!existing.empty) return existing.docs[0].id
+    const ref = await db.collection('departments').add({
+      name,
+      description: name,
+      isActive: true,
+      createdAt: Timestamp.now(),
+      createdBy: 'system'
+    })
+    return ref.id
+  }
+
+  const legalDeptId = await ensureDepartment('Legal Advisory Services')
+  const opsDeptId = await ensureDepartment('Operations Department')
+
   const interventionsList = [
     {
       title: 'Company Registration Support',
       description: 'Assist with formal registration and CIPC filing.',
-      department: 'Legal Advisory Services'
+      departmentId: legalDeptId
     },
     {
       title: 'Contract Drafting Training',
       description: 'Teach basic contract terms and risk awareness.',
-      department: 'Legal Advisory Services'
+      departmentId: legalDeptId
     },
     {
       title: 'SME Application Review',
       description: 'Help review and process startup applications.',
-      department: 'Operations Department'
+      departmentId: opsDeptId
     },
     {
       title: 'Report Writing Bootcamp',
       description: 'Workshop on effective operational reporting.',
-      department: 'Operations Department'
+      departmentId: opsDeptId
     }
   ]
 
   // Add interventions
   const interventionIds = {
-    'Legal Advisory Services': [],
-    'Operations Department': []
+    [legalDeptId]: [],
+    [opsDeptId]: []
   }
 
   for (const intervention of interventionsList) {
@@ -334,7 +352,7 @@ const seedLPH = async () => {
       createdBy: userId,
       companyCode
     })
-    interventionIds[intervention.department].push(ref.id)
+    interventionIds[intervention.departmentId].push(ref.id)
     console.log(`🛠️ Intervention added: ${intervention.title}`)
   }
 
@@ -345,19 +363,15 @@ const seedLPH = async () => {
     .get()
 
   const half = Math.ceil(participantsSnap.docs.length / 2)
-  const legalInterventions = interventionIds['Legal Advisory Services']
-  const opsInterventions = interventionIds['Operations Department']
 
   for (let i = 0; i < participantsSnap.docs.length; i++) {
     const doc = participantsSnap.docs[i]
     const isLegal = i >= half // Half go to Legal, half to Ops
-    const department = isLegal
-      ? 'Legal Advisory Services'
-      : 'Operations Department'
-    const required = isLegal ? legalInterventions : opsInterventions
+    const departmentId = isLegal ? legalDeptId : opsDeptId
+    const required = interventionIds[departmentId]
 
     await doc.ref.update({
-      department,
+      departmentId,
       interventions: {
         required,
         assigned: [],
@@ -366,7 +380,7 @@ const seedLPH = async () => {
     })
 
     console.log(
-      `👤 Participant ${doc.id} assigned to ${department} with interventions:`,
+      `👤 Participant ${doc.id} assigned to department ${departmentId} with interventions:`,
       required
     )
   }

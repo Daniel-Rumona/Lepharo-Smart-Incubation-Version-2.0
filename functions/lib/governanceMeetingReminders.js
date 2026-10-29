@@ -27,6 +27,7 @@ exports.governanceMeetingReminderCron = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
 const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
+const inAppNotifications_1 = require("./inAppNotifications");
 const TIME_ZONE = "Africa/Johannesburg";
 const REMIND_AFTER_MINUTES = 30;
 const MAX_REMINDERS = 3;
@@ -72,7 +73,7 @@ function occursToday(schedule, today) {
 const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
 const esc = (value) => String(value ?? "").replace(/[&<>"]/g, (c) => HTML_ESCAPES[c]);
 function buildEmail(schedule, meetingId, date, isFollowUp) {
-    const base = `${emailShared_1.APP_BASE_URL}/admin/features?confirmMeeting=${encodeURIComponent(meetingId)}`;
+    const base = `${emailShared_1.APP_BASE_URL}/system_admin/features?confirmMeeting=${encodeURIComponent(meetingId)}`;
     const yes = `${base}&answer=yes`;
     const no = `${base}&answer=no`;
     const subject = `${isFollowUp ? "Reminder: " : ""}Did your meeting with ${(0, emailShared_1.safeStr)(schedule.withName, "the requestee")} take place?`;
@@ -104,6 +105,16 @@ async function sendReminder(schedule, meetingId, date, isFollowUp) {
         subject: content.subject,
         html: content.html,
         text: content.text,
+    });
+    const organiser = schedule.createdBy && schedule.createdBy !== "system"
+        ? schedule.createdBy
+        : await (0, inAppNotifications_1.uidForEmail)(schedule.reminderEmail);
+    await (0, inAppNotifications_1.notifyInApp)({
+        type: "governance_meeting_confirmation",
+        message: `${isFollowUp ? "Reminder: d" : "D"}id your meeting "${schedule.title}" with ${(0, emailShared_1.safeStr)(schedule.withName, "the requestee")} on ${date} take place?`,
+        recipientIds: [organiser],
+        governanceMeetingId: meetingId,
+        link: `/system_admin/features?confirmMeeting=${encodeURIComponent(meetingId)}`,
     });
 }
 /**

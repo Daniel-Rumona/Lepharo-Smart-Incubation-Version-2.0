@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Modal, Button, Checkbox, Divider, Space, Typography } from 'antd'
+import { EditOutlined } from '@ant-design/icons'
 import '@/styles/contract-paper.css'
 
 type Props = {
@@ -120,9 +121,12 @@ export const ScrollableContractModal: React.FC<Props> = ({
     if (nearBottom) setAtBottom(true)
   }
 
+  // Signing needs the box ticked; the box can only be ticked once the reader
+  // has reached the end. A document too short to scroll has no box.
+  const ackShown = !readOnly && requireScroll && (alwaysEnableIfShort ? !shortDoc : true)
   const canConfirm = !!loading
     ? false
-    : !requireScroll || (alwaysEnableIfShort && shortDoc) || atBottom || ack
+    : !requireScroll || (alwaysEnableIfShort && shortDoc) || ack
 
   const signatureImg =
     signedMeta?.signatureUrl ||
@@ -142,18 +146,22 @@ export const ScrollableContractModal: React.FC<Props> = ({
       styles={{ body: { padding: 0 } }}
       footer={[
         <div key='foot' style={{ width: '100%' }}>
-          {!readOnly &&
-            requireScroll &&
-            (alwaysEnableIfShort ? !shortDoc : true) && (
-              <div style={{ padding: '8px 16px' }}>
-                <Checkbox
-                  checked={ack}
-                  onChange={e => setAck(e.target.checked)}
-                >
-                  I have read and agree to the contents.
-                </Checkbox>
-              </div>
-            )}
+          {ackShown && (
+            <div style={{ padding: '8px 16px' }}>
+              <Checkbox
+                checked={ack}
+                disabled={!atBottom}
+                onChange={e => setAck(e.target.checked)}
+              >
+                I have read and agree to the contents.
+              </Checkbox>
+              {!atBottom && (
+                <Typography.Text type='secondary' style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
+                  Scroll to the end of the document to continue.
+                </Typography.Text>
+              )}
+            </div>
+          )}
           {/* The buttons share the row equally (see modal-footer.css), so there
               is no free space for justify-content to place. Wrapping lets a
               button that can no longer fit its label move to its own row
@@ -174,6 +182,7 @@ export const ScrollableContractModal: React.FC<Props> = ({
             {!readOnly && onConfirm && (
               <Button
                 type='primary'
+                icon={<EditOutlined />}
                 onClick={onConfirm}
                 loading={loading}
                 disabled={!canConfirm}

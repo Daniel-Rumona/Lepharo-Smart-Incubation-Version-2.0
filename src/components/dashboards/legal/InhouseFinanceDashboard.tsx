@@ -109,7 +109,7 @@ export const InhouseFinanceDashboard: React.FC = () => {
   const [approvalForm] = Form.useForm();
 
   // Example role check: Adjust based on your actual user roles
-  const isFinanceUser = user?.role === 'admin' || user?.role === 'operations'; // Using 'admin' or 'operations' as placeholder for finance roles from index.tsx / OperationsDashboard.tsx
+  const isFinanceUser = user?.role === 'system_admin' || user?.role === 'operations'; // Using 'system_admin' or 'operations' as placeholder for finance roles from index.tsx / OperationsDashboard.tsx
 
   // Simulate fetching requests (initial load and after actions)
   useEffect(() => {

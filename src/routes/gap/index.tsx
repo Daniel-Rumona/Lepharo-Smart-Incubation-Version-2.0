@@ -1,24 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Table, Button, Space, Tag, Row, Col, Input, Segmented } from 'antd'
-import {
-    BarChartOutlined,
-    DatabaseOutlined,
-    CheckCircleTwoTone,
-    ExclamationCircleTwoTone
-} from '@ant-design/icons'
+import { Empty, Input, Pagination, Segmented } from 'antd'
+import { SearchOutlined } from '@ant-design/icons'
+import { Helmet } from 'react-helmet'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
 import { chunk } from '@/types/types'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
+import { EntityAvatar } from '@/components/workspace'
+import { StatusPill } from '@/routes/operations/movs/movParts'
+import '@/routes/operations/movs/movs.css'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
+import { pickLatestGap } from '@/services/gapSuggestionsService'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
-import { QA, getQAArray, yes } from './sections'
-
-export { lepharoDepartments } from './sections'
+import { getGapStatus } from './sections'
 
 
 const isManualApplication = (a: any): boolean => {
@@ -57,30 +55,13 @@ const GAPAnalysisTable: React.FC = () => {
     const [records, setRecords] = useState<any[]>([])
 
     const [searchText, setSearchText] = useState('')
-    const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'confirmed'>('all')
+    const [statusFilter, setStatusFilter] = useState<'pending' | 'confirmed' | 'missing' | 'all'>('pending')
+    const [page, setPage] = useState(1)
 
-    /** STATUS (works for gapAnalysis + manual complianceDocuments) */
-    const getStatus = (r: any): 'Confirmed' | 'Pending' => {
-        if (!r) return 'Pending'
-
-        // Manual => status is stored on compliance doc (raw)
-        if (r?.manuallyCreated) {
-            const raw = r?.gapAgreement?.raw
-            if (!raw) return 'Pending'
-            if (raw?.status === 'confirmed') return 'Confirmed'
-            if (raw?.romReview?.status === 'Confirmed') return 'Confirmed'
-            if (raw?.romReview?.confirmedAt) return 'Confirmed'
-            if (raw?.verifiedAt) return 'Confirmed'
-            if (raw?.acceptedAt) return 'Confirmed' // if your upload already implies completion
-            return 'Pending'
-        }
-
-        // Non-manual => gapAnalysis
-        if (r?.confirmationStatus === 'Confirmed') return 'Confirmed'
-        if (r?.romReview?.status === 'Confirmed') return 'Confirmed'
-        if (r?.romReview?.confirmedAt) return 'Confirmed'
-        return 'Pending'
-    }
+    /** Manual GAPs with nothing uploaded have no record to open yet. */
+    const hasRecord = (r: any) => !r?.manuallyCreated || !!r?.gapAgreement?.raw
+    const getStatus = (r: any): 'Confirmed' | 'Pending' | 'Missing' =>
+        hasRecord(r) ? getGapStatus(r) : 'Missing'
 
     // HYBRID fetch: manual apps → complianceDocs, normal apps → gapAnalysis
     useEffect(() => {
@@ -151,22 +132,27 @@ const GAPAnalysisTable: React.FC = () => {
 
                 const collected: any[] = []
 
-                // NORMAL GAPs
+                // NORMAL GAPs — one row per participant: this programme's latest GAP.
                 const normalPids = normalApps.map(a => String(a.participantId))
+                const gapsByPid = new Map<string, any[]>()
                 for (const ids of chunk(normalPids, 10)) {
                     if (!ids.length) continue
                     const gapSnap = await getDocs(
                         query(collection(db, 'gapAnalysis'), where('participantId', 'in', ids))
                     )
-
                     gapSnap.docs.forEach(docSnap => {
-                        const g = docSnap.data() as any
+                        const g = { id: docSnap.id, ...(docSnap.data() as any) }
                         const pid = String(g.participantId)
+                        gapsByPid.set(pid, [...(gapsByPid.get(pid) || []), g])
+                    })
+                }
+
+                gapsByPid.forEach((gaps, pid) => {
+                        const g = pickLatestGap(gaps, activeProgramId)
                         const appMeta = appByPid.get(pid)
-                        if (!appMeta) return
+                        if (!g || !appMeta) return
 
                         collected.push({
-                            id: docSnap.id,
                             ...g,
                             company: {
                                 ...(g.company || {}),
@@ -179,9 +165,7 @@ const GAPAnalysisTable: React.FC = () => {
                             manuallyCreated: false,
                             gapAgreement: g.gapAgreement || null
                         })
-
-                    })
-                }
+                })
 
                 // MANUAL GAPs → applications/{appId}/complianceDocuments
                 for (const a of manualApps) {
@@ -268,207 +252,160 @@ const GAPAnalysisTable: React.FC = () => {
         [records, isQuantilytixViewer]
     )
 
-    const overall = useMemo(() => {
+    const counts = useMemo(() => {
         const base = domainFilteredRecords
-        const total = base.length
-        const confirmed = base.filter(r => getStatus(r) === 'Confirmed').length
-        const pending = total - confirmed
-
-        let yesCount = 0
-        let noCount = 0
-        for (const r of base) {
-            const allQAs: QA[] = [
-                ...getQAArray(r?.sections?.marketingCommunication),
-                ...getQAArray(r?.sections?.psychometric),
-                ...getQAArray(r?.sections?.financialManagement?.q),
-                ...getQAArray(r?.sections?.labourHSE),
-                ...getQAArray(r?.sections?.wellness?.q),
-                ...getQAArray(r?.sections?.legal?.q),
-                ...getQAArray(r?.sections?.marketLinkage),
-                ...getQAArray(r?.sections?.qualityManagement),
-                ...getQAArray(r?.sections?.trainingNeeds?.yn)
-            ]
-            for (const qa of allQAs) {
-                if (!qa || qa.answer == null) continue
-                if (yes(qa.answer)) yesCount++
-                else noCount++
-            }
+        return {
+            pending: base.filter(r => getStatus(r) === 'Pending').length,
+            confirmed: base.filter(r => getStatus(r) === 'Confirmed').length,
+            missing: base.filter(r => getStatus(r) === 'Missing').length,
+            all: base.length
         }
-        const denom = yesCount + noCount
-        const overallYesPct = denom ? Math.round((yesCount / denom) * 1000) / 10 : 0
-        return { total, confirmed, pending, overallYesPct }
     }, [domainFilteredRecords])
 
-    /** ✅ SORT: pending first, then company name A→Z */
-    const tableData = useMemo(() => {
-        let list = domainFilteredRecords
+    // "Not uploaded" only shows when there is something in it.
+    const segments = [
+        { value: 'pending', label: 'To confirm', tone: 'warning' },
+        { value: 'confirmed', label: 'Confirmed', tone: 'success' },
+        { value: 'missing', label: 'Not uploaded', tone: 'danger' },
+        { value: 'all', label: 'All', tone: 'neutral' }
+    ].filter(segment => segment.value !== 'missing' || counts.missing > 0 || statusFilter === 'missing')
 
+    const rows = useMemo(() => {
+        let list = domainFilteredRecords
         if (statusFilter === 'pending') list = list.filter(r => getStatus(r) === 'Pending')
         if (statusFilter === 'confirmed') list = list.filter(r => getStatus(r) === 'Confirmed')
+        if (statusFilter === 'missing') list = list.filter(r => getStatus(r) === 'Missing')
 
         const q = searchText.trim().toLowerCase()
         if (q) {
-            list = list.filter(r => {
-                const name = String(r?.company?.name || '')
-                const email = String(r?.company?.email || '')
-                const region = String(r?.company?.region || '')
-                return `${name} ${email} ${region}`.toLowerCase().includes(q)
-            })
-        }
-
-        return [...list].sort((a, b) => {
-            const pa = getStatus(a) === 'Pending' ? 0 : 1
-            const pb = getStatus(b) === 'Pending' ? 0 : 1
-            if (pa !== pb) return pa - pb // pending on top
-
-            const na = String(a?.company?.name || '').toLowerCase()
-            const nb = String(b?.company?.name || '').toLowerCase()
-            return na.localeCompare(nb) // alphabetical
-        })
-    }, [domainFilteredRecords, searchText, statusFilter])
-
-    const columns = [
-        {
-            title: 'Company Name',
-            dataIndex: ['company', 'name'],
-            key: 'company',
-            sorter: (a: any, b: any) =>
-                String(a?.company?.name || '').localeCompare(String(b?.company?.name || ''))
-        },
-        { title: 'Region', dataIndex: ['company', 'region'], key: 'region' },
-        { title: 'Email', dataIndex: ['company', 'email'], key: 'email' },
-        {
-            title: 'Date of Engagement',
-            dataIndex: ['company', 'dateOfEngagement'],
-            key: 'dateOfEngagement',
-            render: (_: any, r: any) => {
-                const ts = r?.manuallyCreated
-                    ? (r?.company?.dateOfEngagement || r?.gapAgreement?.acceptedAt)
-                    : (r?.submittedAt)
-
-                return formatDate(ts, 'YYYY-MM-DD')
-            }
-        },
-        {
-            title: 'Status',
-            key: 'status',
-            render: (_: any, r: any) => {
-                const st = getStatus(r)
-                return <Tag color={st === 'Confirmed' ? 'green' : 'gold'}>{st}</Tag>
-            }
-        },
-        {
-            title: 'Actions',
-            key: 'actions',
-            render: (_: any, record: any) => (
-                <Space>
-                    <Button
-                        size='small'
-                        type='link'
-                        onClick={e => {
-                            e.stopPropagation()
-                            openGap(record)
-                        }}
-                    >
-                        View
-                    </Button>
-                </Space>
+            list = list.filter(r =>
+                `${r?.company?.name || ''} ${r?.company?.email || ''} ${r?.company?.region || ''}`
+                    .toLowerCase()
+                    .includes(q)
             )
         }
-    ]
 
-    const DashboardCards = () => (
-        <Row gutter={[16, 16]} style={{ marginBottom: 10 }}>
-            <Col xs={24} sm={12} md={6}>
-                <MotionCard.Metric
-                    title="Total Assessments"
-                    value={overall.total}
-                    icon={<DatabaseOutlined style={{ fontSize: 18, color: '#1890ff' }} />}
-                    iconBg="rgba(24,144,255,.12)"
-                    subtitle="All assessments captured."
-                />
-            </Col>
+        return [...list].sort((x, y) =>
+            String(x?.company?.name || '').localeCompare(String(y?.company?.name || ''))
+        )
+    }, [domainFilteredRecords, searchText, statusFilter])
 
-            <Col xs={24} sm={12} md={6}>
-                <MotionCard.Metric
-                    title="Pending Reviews"
-                    value={overall.pending}
-                    icon={<ExclamationCircleTwoTone twoToneColor="#faad14" />}
-                    iconBg="rgba(250,173,20,.12)"
-                    subtitle="Awaiting confirmation."
-                />
-            </Col>
+    useEffect(() => setPage(1), [searchText, statusFilter])
 
-            <Col xs={24} sm={12} md={6}>
-                <MotionCard.Metric
-                    title="Confirmed Reviews"
-                    value={overall.confirmed}
-                    icon={<CheckCircleTwoTone twoToneColor="#52c41a" />}
-                    iconBg="rgba(82,196,26,.12)"
-                    subtitle="Reviews already confirmed."
-                />
-            </Col>
+    const PAGE_SIZE = 12
+    const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-            <Col xs={24} sm={12} md={6}>
-                <MotionCard.Metric
-                    title="Overall Yes Rate"
-                    value={`${Number(overall.overallYesPct || 0).toFixed(1)}%`}
-                    icon={<BarChartOutlined style={{ fontSize: 18, color: '#1890ff' }} />}
-                    iconBg="rgba(24,144,255,.12)"
-                    subtitle="Average positive response rate."
-                />
-            </Col>
-        </Row>
-    )
+    const PILL: Record<string, { tone: string; label: string }> = {
+        Pending: { tone: 'warning', label: 'To confirm' },
+        Confirmed: { tone: 'success', label: 'Confirmed' },
+        Missing: { tone: 'danger', label: 'Not uploaded' }
+    }
 
     return (
-        <div style={{ padding: '2px 24px', }}>
+        <div className='ws-page'>
+            <Helmet>
+                <title>GAP Analysis | Smart Incubation</title>
+            </Helmet>
             {loading ? (
                 <PageSkeleton variant='list' />
             ) : (
                 <>
+                    <DashboardFilterBar>
+                        <div className='ws-toolbar'>
+                            <Segmented
+                                className='ws-toolbar-status mv-status-strip'
+                                block
+                                value={statusFilter}
+                                onChange={value => setStatusFilter(value as typeof statusFilter)}
+                                aria-label='Filter by status'
+                                options={segments.map(segment => ({
+                                    value: segment.value,
+                                    label: (
+                                        <span className='mv-seg'>
+                                            {segment.label}
+                                            <span className={`mv-seg-count qtx-tone-${segment.tone}`}>
+                                                {counts[segment.value as keyof typeof counts]}
+                                            </span>
+                                        </span>
+                                    )
+                                }))}
+                            />
+                            <Input
+                                className='ws-toolbar-search'
+                                allowClear
+                                prefix={<SearchOutlined />}
+                                placeholder='Search company, email or region'
+                                aria-label='Search GAP Analyses'
+                                value={searchText}
+                                onChange={e => setSearchText(e.target.value)}
+                            />
+                        </div>
+                    </DashboardFilterBar>
 
-                    <DashboardCards />
-
-                    <MotionCard
-                        filterBar={<Row gutter={[16, 16]} align='middle' justify='space-between'>
-                            <Col xs={24} md={12}>
-                                <Input.Search
-                                    allowClear
-                                    placeholder='Search by company or email'
-                                    value={searchText}
-                                    onChange={e => setSearchText(e.target.value)}
-                                    onSearch={val => setSearchText(val)}
-                                />
-                            </Col>
-                            <Col xs={24} md={12} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                <Segmented
-                                    value={statusFilter}
-                                    onChange={v => setStatusFilter(v as any)}
-                                    options={[
-                                        { label: `All (${overall.total})`, value: 'all' },
-                                        { label: `Pending (${overall.pending})`, value: 'pending' },
-                                        { label: `Confirmed (${overall.confirmed})`, value: 'confirmed' }
-                                    ]}
-                                />
-                            </Col>
-                        </Row>
-                        }>
-                        <Table
-                            columns={columns as any}
-                            dataSource={tableData}
-                            rowKey='id'
-                            pagination={{ pageSize: 5, position: ['bottomCenter'], showSizeChanger: false }}
-                            onRow={record => ({
-                                onClick: () => openGap(record),
-                                style: { cursor: 'pointer' }
-                            })}
-                        />
+                    <MotionCard>
+                        {rows.length === 0 ? (
+                            <Empty
+                                className='ws-list-empty'
+                                description={
+                                    statusFilter === 'pending' && !searchText
+                                        ? 'Nothing waiting for confirmation.'
+                                        : 'No GAP Analyses match.'
+                                }
+                            />
+                        ) : (
+                            <>
+                                <div className='ws-rows' role='list' aria-label='GAP Analyses'>
+                                    {pageRows.map(r => {
+                                        const status = getStatus(r)
+                                        const name = r?.company?.name || 'Unnamed SME'
+                                        const date = r?.manuallyCreated ? r?.gapAgreement?.acceptedAt : r?.submittedAt
+                                        const meta = [
+                                            r?.company?.region,
+                                            date ? `Submitted ${formatDate(date, 'D MMM YYYY')}` : null,
+                                            r?.manuallyCreated ? 'Uploaded document' : null
+                                        ].filter(Boolean).join(' · ')
+                                        const canOpen = status !== 'Missing'
+                                        return (
+                                            <button
+                                                key={r.id}
+                                                type='button'
+                                                role='listitem'
+                                                className='ws-row'
+                                                disabled={!canOpen}
+                                                title={canOpen ? undefined : 'No GAP Analysis has been uploaded for this SME yet.'}
+                                                onClick={() => canOpen && openGap(r)}
+                                            >
+                                                <EntityAvatar name={name} size={36} />
+                                                <div className='ws-row-main'>
+                                                    <div className='ws-row-name'>{name}</div>
+                                                    <div className='ws-row-meta'>{meta || r?.company?.email || '—'}</div>
+                                                </div>
+                                                <div className='ws-row-side'>
+                                                    <StatusPill tone={PILL[status].tone}>{PILL[status].label}</StatusPill>
+                                                </div>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                                {rows.length > PAGE_SIZE && (
+                                    <div className='ws-pagination'>
+                                        <Pagination
+                                            size='small'
+                                            current={page}
+                                            pageSize={PAGE_SIZE}
+                                            total={rows.length}
+                                            onChange={setPage}
+                                            showSizeChanger={false}
+                                            showLessItems
+                                        />
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </MotionCard>
                 </>
-            )
-            }
-        </div >
+            )}
+        </div>
     )
 }
 

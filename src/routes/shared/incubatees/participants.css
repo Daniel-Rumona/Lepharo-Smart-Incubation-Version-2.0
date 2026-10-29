@@ -1,0 +1,230 @@
+/* Participants (SME overview) page — the parts specific to SMEs. The shared
+   list + detail layout lives in components/workspace/workspace.css. */
+
+/* List row extras: the SME's group and its headcount. */
+.ptx-group-tag.ant-tag {
+    margin-inline-end: 0;
+    color: var(--app-accent-strong);
+    background: color-mix(in srgb, var(--app-accent) 12%, transparent);
+}
+
+.ptx-row-staff {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-muted);
+}
+
+/* Four sections share the switcher; trim the side padding so they fit. */
+.ptx-sections .ant-segmented-item-label {
+    padding-inline: 10px;
+}
+
+/* B-BBEE level reads as a badge beside the ownership cards' heading. */
+.ptx-bee {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-inline-start: 8px;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--app-accent-strong);
+    letter-spacing: 0;
+    text-transform: none;
+    background: color-mix(in srgb, var(--app-accent) 12%, transparent);
+    border-radius: 999px;
+}
+
+/* --- Compliance documents ------------------------------------------------ */
+/* One bordered list, a row per document. The row stays neutral; status shows
+   in the icon tint and one tag, so a valid document doesn't shout in green. */
+.ptx-docs {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.ptx-doc {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 10px 12px;
+    transition: background 140ms ease;
+}
+
+.ptx-doc + .ptx-doc {
+    border-top: 1px solid var(--app-border);
+}
+
+.ptx-doc:hover {
+    background: var(--app-surface-sunken);
+}
+
+.ptx-doc-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    font-size: 15px;
+    color: var(--qtx-tone-fg);
+    background: var(--qtx-tone-bg);
+    border-radius: 10px;
+}
+
+.ptx-doc-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ptx-doc-title {
+    overflow: hidden;
+    font-weight: 600;
+    color: var(--app-text);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ptx-doc-meta {
+    overflow: hidden;
+    margin-top: 1px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ptx-doc-status.ant-tag {
+    flex: 0 0 auto;
+    margin-inline-end: 0;
+}
+
+.ptx-doc .ant-btn {
+    flex: 0 0 auto;
+    min-width: 64px;
+}
+
+.ptx-doc-nofile {
+    flex: 0 0 auto;
+    min-width: 64px;
+    font-size: 12px;
+    text-align: center;
+    color: var(--app-text-subtle);
+}
+
+/* --- Performance trend ----------------------------------------------------- */
+/* Revenue and employment as two aligned charts on one month axis (never one
+   chart with two y-scales). Each has a heading and its data source beneath. */
+.ptx-trend {
+    display: grid;
+    gap: 18px;
+}
+
+.ptx-trend section + section {
+    padding-top: 14px;
+    border-top: 1px solid var(--app-border);
+}
+
+.ptx-trend-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+}
+
+.ptx-trend-title {
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+.ptx-trend-source {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.ptx-trend-empty {
+    padding: 28px 0;
+    font-size: 13px;
+    text-align: center;
+    color: var(--app-text-subtle);
+}
+
+/* --- Timeline (horizontal) ---------------------------------------------------- */
+/* A dot per step joined by a rail; label and date sit under each dot. The rail
+   between two steps is filled once the later step has happened. */
+.ptx-timeline {
+    display: grid;
+    margin: 0;
+    padding: 4px 0 0;
+    list-style: none;
+}
+
+.ptx-timeline-step {
+    position: relative;
+    min-width: 0;
+    padding-inline-end: 12px;
+}
+
+/* The rail runs from this dot to the next one. */
+.ptx-timeline-step:not(:last-child)::after {
+    position: absolute;
+    top: 6px;
+    inset-inline: 18px 0;
+    height: 2px;
+    content: '';
+    background: var(--app-border-strong);
+    border-radius: 999px;
+}
+
+.ptx-timeline-step.is-next-done:not(:last-child)::after {
+    background: var(--app-accent);
+}
+
+.ptx-timeline-dot {
+    display: block;
+    width: 14px;
+    height: 14px;
+    box-sizing: border-box;
+    background: var(--app-surface);
+    border: 2px solid var(--app-border-strong);
+    border-radius: 50%;
+}
+
+.ptx-timeline-step.is-done .ptx-timeline-dot {
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--app-accent) 16%, transparent);
+}
+
+.ptx-timeline-label {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.ptx-timeline-date {
+    margin-top: 2px;
+    font-weight: 600;
+    color: var(--app-text);
+    overflow-wrap: anywhere;
+}
+
+.ptx-timeline-date.is-pending {
+    font-weight: 500;
+    font-style: italic;
+    color: var(--app-text-subtle);
+}
+
+/* --- Section spacing ----------------------------------------------------------- */
+/* Performance, interventions and compliance end with a card or list; leave
+   room under it so it doesn't sit on the panel's bottom edge. */
+.ptx-section-pad {
+    padding-bottom: 20px;
+}

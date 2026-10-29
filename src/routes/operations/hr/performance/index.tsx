@@ -43,10 +43,9 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import {
-    DashboardHeaderCard,
-    MotionCard
-} from '@/components/dashboards/metrics/Header'
+import { useDepartmentRoles } from '@/services/departmentRoles'
+import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 
 const { Text } = Typography
@@ -140,7 +139,7 @@ type AutoPerformance = {
     signals: string[]
 }
 
-const EXCLUDED_ROLES = new Set(['incubatee', 'funder', 'admin'])
+const EXCLUDED_ROLES = new Set(['incubatee', 'funder', 'system_admin'])
 
 const ACTION_OPTIONS = [
     { value: 'recognition', label: 'Recognition' },
@@ -384,12 +383,11 @@ const EmployeePerformancePage: React.FC = () => {
     const { user } = useFullIdentity()
     const [form] = Form.useForm()
     const userRole = cleanRole(user?.role)
-    const userDepartment = String((user as any)?.departmentName || (user as any)?.department || '')
+    const { hasRole, nameOf } = useDepartmentRoles()
+    const userDepartmentId = String((user as any)?.departmentId || '').trim()
+    const userDepartment = userDepartmentId ? nameOf(userDepartmentId, '') : ''
     const isDirector = userRole === 'director'
-    const isHR =
-        userRole === 'hr' ||
-        userDepartment.toLowerCase().startsWith('hrm') ||
-        userDepartment.toLowerCase().includes('human resources')
+    const isHR = userRole === 'hr' || hasRole(userDepartmentId, 'hr')
     const isHod = userRole === 'operations'
     const canSeeAll = isDirector || isHR
 
@@ -558,8 +556,8 @@ const EmployeePerformancePage: React.FC = () => {
                 .filter(emp => {
                     if (canSeeAll) return true
                     if (!isHod) return emp.id === String(user?.id || '')
-                    if (!userDepartment) return false
-                    return String(emp.department || '').toLowerCase() === userDepartment.toLowerCase()
+                    if (!userDepartmentId) return false
+                    return emp.departmentId === userDepartmentId
                 })
 
             const reviewRows = reviewsSnap.docs
@@ -625,7 +623,7 @@ const EmployeePerformancePage: React.FC = () => {
 
     useEffect(() => {
         loadData()
-    }, [user?.id, userRole, userDepartment])
+    }, [user?.id, userRole, userDepartmentId, isHR])
 
     const latestReviewByEmployee = useMemo(() => {
         const map = new Map<string, PerformanceReview>()
@@ -649,8 +647,10 @@ const EmployeePerformancePage: React.FC = () => {
 
     const departments = useMemo(
         () =>
-            [...new Set(employees.map(emp => emp.department).filter(Boolean).map(String))].sort(),
-        [employees]
+            [...new Set(employees.map(emp => emp.departmentId).filter(Boolean).map(String))]
+                .map(id => ({ value: id, label: nameOf(id) }))
+                .sort((a, b) => a.label.localeCompare(b.label)),
+        [employees, nameOf]
     )
 
     const rows = useMemo(() => {
@@ -692,7 +692,7 @@ const EmployeePerformancePage: React.FC = () => {
         }
 
         if (departmentFilter) {
-            next = next.filter(row => row.department === departmentFilter)
+            next = next.filter(row => row.departmentId === departmentFilter)
         }
 
         if (ratingFilter) {
@@ -969,7 +969,7 @@ const EmployeePerformancePage: React.FC = () => {
             <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} lg={5}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={<TeamOutlined />}
                             title='Employees'
                             value={metrics.total}
@@ -979,9 +979,9 @@ const EmployeePerformancePage: React.FC = () => {
                 </Col>
                 <Col xs={24} sm={12} lg={5}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={<CheckCircleOutlined />}
-                            iconBg='rgba(82,196,26,.12)'
+                            tone='success'
                             title='Rated'
                             value={metrics.reviewed}
                             subtitle='Compact or suggested'
@@ -990,9 +990,9 @@ const EmployeePerformancePage: React.FC = () => {
                 </Col>
                 <Col xs={24} sm={12} lg={5}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={<RiseOutlined />}
-                            iconBg='rgba(22,119,255,.12)'
+                            tone='info'
                             title='Average Score'
                             value={metrics.average ? `${metrics.average}/5` : '-'}
                             subtitle='Equal-weight compact average'
@@ -1001,9 +1001,9 @@ const EmployeePerformancePage: React.FC = () => {
                 </Col>
                 <Col xs={24} sm={12} lg={5}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={<FileTextOutlined />}
-                            iconBg='rgba(250,173,20,.14)'
+                            tone='warning'
                             title='Open Actions'
                             value={metrics.openActions}
                             subtitle='Follow-up required'
@@ -1012,9 +1012,9 @@ const EmployeePerformancePage: React.FC = () => {
                 </Col>
                 <Col xs={24} sm={12} lg={4}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={<WarningOutlined />}
-                            iconBg='rgba(255,77,79,.12)'
+                            tone='danger'
                             title='Critical'
                             value={metrics.critical}
                             subtitle='Below 2.5 rating'
@@ -1042,7 +1042,7 @@ const EmployeePerformancePage: React.FC = () => {
                                 value={departmentFilter}
                                 onChange={setDepartmentFilter}
                                 style={{ width: '100%' }}
-                                options={departments.map(dep => ({ value: dep, label: dep }))}
+                                options={departments}
                             />
                         </Col>
                         <Col xs={24} sm={12} lg={5}>

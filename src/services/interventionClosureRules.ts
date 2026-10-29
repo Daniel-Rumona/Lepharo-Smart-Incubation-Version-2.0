@@ -25,7 +25,7 @@ export const isCloseReason = (value: unknown): value is CloseReason =>
     CLOSE_REASONS.some(reason => reason.value === value)
 
 /** Roles that may close or reopen support (HOD and above). */
-export const CLOSURE_ROLES = ['operations', 'admin', 'system_admin'] as const
+export const CLOSURE_ROLES = ['operations', 'system_admin'] as const
 export const canCloseSupport = (role: unknown) =>
     (CLOSURE_ROLES as readonly string[]).includes(String(role || '').trim().toLowerCase())
 

@@ -21,7 +21,9 @@ export type ScheduleOption = {
     rationale: string
     frequency: 'as-needed' | 'weekly' | 'bi-weekly' | 'monthly'
     strict: boolean
-    endMode: 'fixed-cycles' | 'until-closed' | 'programme-end' | ''
+    endMode: 'fixed-cycles' | 'until-closed' | 'programme-end' | 'end-date' | ''
+    /** YYYY-MM-DD, only when endMode is 'end-date' (set by hand when editing). */
+    endDate?: string | null
     cycles: number
     plannedSessions: number
 }
@@ -31,7 +33,7 @@ export type BreakdownOption = {
     rationale: string
     hasSubInterventions: boolean
     rotationMode: 'rotate' | 'repeat'
-    subInterventions: { title: string; defaultPlannedSessions: number }[]
+    subInterventions: { subId?: string; title: string; defaultPlannedSessions: number }[]
     plannedSessions: number
 }
 

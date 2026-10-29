@@ -17,15 +17,16 @@ import {
 import { ArrowsAltOutlined } from "@ant-design/icons";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
-import HCMore from "highcharts/highcharts-more";
-import HCExporting from "highcharts/modules/exporting";
-import HCDrilldown from "highcharts/modules/drilldown";
-import HCFunnel from "highcharts/modules/funnel";
+import "highcharts/highcharts-more";
+import "highcharts/modules/exporting";
+import "highcharts/modules/drilldown";
+import "highcharts/modules/funnel";
 import dayjs, { Dayjs } from "dayjs";
 import { Helmet } from "react-helmet";
 
 // Firebase
 import { db } from "@/firebase";
+import { useDepartmentRoles } from "@/services/departmentRoles";
 import {
     collection,
     getDocs,
@@ -50,10 +51,6 @@ import {
 import { buildReachMonthlyDrilldownOptions } from "@/components/reports/reachDrilldownOptions";
 import { chunk } from "@/types/types";
 
-if (typeof HCMore === "function") HCMore(Highcharts);
-if (typeof HCExporting === "function") HCExporting(Highcharts);
-if (typeof HCDrilldown === "function") HCDrilldown(Highcharts);
-if (typeof HCFunnel === "function") HCFunnel(Highcharts);
 
 type Application = {
     id: string;
@@ -73,7 +70,7 @@ type AssignedIntervention = {
     programId?: string;
     status?: string;
     assignmentStatus?: string;
-    areaOfSupport?: string | null;
+    departmentId?: string | null;
     interventionTitle?: string | null;
     createdAt?: any;
     updatedAt?: any;
@@ -228,6 +225,7 @@ const { RangePicker } = DatePicker;
 
 const FunderAnalytics: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity();
+    const { nameOf } = useDepartmentRoles();
     const { activeProgramId } = useActiveProgramId();
 
     const [loading, setLoading] = useState(true);
@@ -507,8 +505,7 @@ const FunderAnalytics: React.FC = () => {
                 if (!statusFilter.includes(st)) return false;
             }
             if (deptFilter.length) {
-                const dept = normalizeBucketKey(ai.areaOfSupport, "Other");
-                if (!deptFilter.includes(dept)) return false;
+                if (!deptFilter.includes(String(ai.departmentId || ""))) return false;
             }
             return true;
         });
@@ -517,22 +514,17 @@ const FunderAnalytics: React.FC = () => {
     // ───── Reach derivations (project-scoped, then narrowed by Department → Intervention) ─────
     const reachDepartmentOptions = useMemo(() => {
         const depts = Array.from(
-            new Set(
-                assignedFiltered.map((ai) =>
-                    normalizeBucketKey(ai.areaOfSupport, "Other")
-                )
-            )
-        ).sort();
-        return [
-            { label: "All departments", value: "all" },
-            ...depts.map((dept) => ({ label: dept, value: dept })),
-        ];
-    }, [assignedFiltered]);
+            new Set(assignedFiltered.map((ai) => String(ai.departmentId || "")))
+        )
+            .map((value) => ({ value, label: nameOf(value, "Other") }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+        return [{ label: "All departments", value: "all" }, ...depts];
+    }, [assignedFiltered, nameOf]);
 
     const reachDepartmentFiltered = useMemo(() => {
         if (reachDepartment === "all") return assignedFiltered;
         return assignedFiltered.filter(
-            (ai) => normalizeBucketKey(ai.areaOfSupport, "Other") === reachDepartment
+            (ai) => String(ai.departmentId || "") === reachDepartment
         );
     }, [assignedFiltered, reachDepartment]);
 
@@ -830,7 +822,7 @@ const FunderAnalytics: React.FC = () => {
             },
         ],
         yAxis: {
-            title: { text: null },
+            title: { text: '' },
             labels: {
                 formatter: function () {
                     // @ts-ignore
@@ -1101,7 +1093,7 @@ const FunderAnalytics: React.FC = () => {
             const normalizedStatus = normalizeInterventionStatus(ai.assignmentStatus);
             if (!normalizedStatus) return;
 
-            const dept = normalizeBucketKey(ai.areaOfSupport, "Other");
+            const dept = nameOf(ai.departmentId, "Other");
             const interventionTitle = normalizeBucketKey(
                 ai.interventionTitle,
                 "Untitled Intervention"
@@ -1231,7 +1223,7 @@ const FunderAnalytics: React.FC = () => {
             deptDrilldownMap,
             funnelData,
         };
-    }, [assignedFiltered, effectiveRange]);
+    }, [assignedFiltered, effectiveRange, nameOf]);
 
     // ───── Demographics derivations ─────
     const appsSubmittedVsAccepted = useMemo(() => {
@@ -1413,10 +1405,10 @@ const FunderAnalytics: React.FC = () => {
 
     const reachScopeLabel = useMemo(() => {
         const parts: string[] = [];
-        if (reachDepartment !== "all") parts.push(reachDepartment);
+        if (reachDepartment !== "all") parts.push(nameOf(reachDepartment, "Other"));
         if (reachIntervention !== "all") parts.push(reachIntervention);
         return parts.length ? parts.join(" — ") : "Program-wide";
-    }, [reachDepartment, reachIntervention]);
+    }, [reachDepartment, reachIntervention, nameOf]);
 
     const trendOptions: Highcharts.Options = {
         credits: { enabled: false },
@@ -1488,7 +1480,12 @@ const FunderAnalytics: React.FC = () => {
             type: "column",
             events: {
                 drilldown: function (e: any) {
-                    const chart = this as Highcharts.Chart;
+                    // Both methods are added by the drilldown module at runtime
+                    // but are missing from its typings.
+                    const chart = this as Highcharts.Chart & {
+                        addSingleSeriesAsDrilldown: (point: Highcharts.Point, options: Highcharts.SeriesOptionsType) => void
+                        applyDrilldown: () => void
+                    };
                     const dept = e.point?.custom?.dept || e.point?.name;
                     const detail = deptDrilldownMap[dept];
 
@@ -1712,7 +1709,7 @@ const FunderAnalytics: React.FC = () => {
             },
         ],
         yAxis: {
-            title: { text: null },
+            title: { text: '' },
             labels: {
                 formatter: function () {
                     // @ts-ignore

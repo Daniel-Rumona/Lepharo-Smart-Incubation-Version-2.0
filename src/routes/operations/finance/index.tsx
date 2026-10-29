@@ -47,6 +47,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { auth, db } from "@/firebase";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { MotionCard } from "@/components/dashboards/metrics/Header";
+import { MetricTile } from "@/components/dashboards/metrics/MetricTile";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import {
     guideTarget,
@@ -1247,9 +1248,9 @@ const RevenueTrendModal = ({
                                     align="stretch"
                                 >
                                     <Col xs={24} sm={12} lg={6}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<DollarOutlined />}
-                                            iconBg="rgba(22, 119, 255, 0.12)"
+                                            tone='info'
                                             title={
                                                 currentPeriodRow
                                                     ? `Latest (${currentPeriodRow.label})`
@@ -1262,9 +1263,9 @@ const RevenueTrendModal = ({
                                     </Col>
 
                                     <Col xs={24} sm={12} lg={6}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<DollarOutlined />}
-                                            iconBg="rgba(19, 194, 194, 0.12)"
+                                            tone='info'
                                             title={
                                                 previousPeriodRow
                                                     ? `Previous (${previousPeriodRow.label})`
@@ -1277,19 +1278,19 @@ const RevenueTrendModal = ({
                                     </Col>
 
                                     <Col xs={24} sm={12} lg={6}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={
                                                 getChangeIcon(
                                                     filteredSummary.momChangePercentage,
                                                 ) || <RiseOutlined />
                                             }
-                                            iconBg={
+                                            tone={
                                                 Number(
                                                     filteredSummary.momChangePercentage ||
                                                     0,
                                                 ) >= 0
-                                                    ? "rgba(82, 196, 26, 0.12)"
-                                                    : "rgba(255, 77, 79, 0.12)"
+                                                    ? 'success'
+                                                    : 'danger'
                                             }
                                             title="Month-on-Month"
                                             value={percentage(
@@ -1299,9 +1300,9 @@ const RevenueTrendModal = ({
                                     </Col>
 
                                     <Col xs={24} sm={12} lg={6}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<BarChartOutlined />}
-                                            iconBg="rgba(114, 46, 209, 0.12)"
+                                            tone='info'
                                             title={
                                                 bestRevenueMonth
                                                     ? `Best (${bestRevenueMonth.label})`
@@ -1320,12 +1321,12 @@ const RevenueTrendModal = ({
                                     align="stretch"
                                 >
                                     <Col xs={24} sm={12} lg={6}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<DollarOutlined />}
-                                            iconBg={
+                                            tone={
                                                 totalProfitLoss >= 0
-                                                    ? "rgba(82, 196, 26, 0.12)"
-                                                    : "rgba(255, 77, 79, 0.12)"
+                                                    ? 'success'
+                                                    : 'danger'
                                             }
                                             title="Total P/L"
                                             value={
@@ -1345,32 +1346,32 @@ const RevenueTrendModal = ({
                                     </Col>
 
                                     <Col xs={24} sm={12} lg={6}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<ArrowUpOutlined />}
-                                            iconBg="rgba(82, 196, 26, 0.12)"
+                                            tone='success'
                                             title="Profitable Months"
                                             value={profitableMonths}
                                         />
                                     </Col>
 
                                     <Col xs={24} sm={12} lg={6}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<ArrowDownOutlined />}
-                                            iconBg="rgba(255, 77, 79, 0.12)"
+                                            tone='danger'
                                             title="Loss Months"
                                             value={lossMonths}
                                         />
                                     </Col>
 
                                     <Col xs={24} sm={12} lg={6}>
-                                        <MotionCard.Metric
+                                        <MetricTile
                                             icon={<BarChartOutlined />}
-                                            iconBg={
+                                            tone={
                                                 Number(
                                                     bestProfitMonth?.profit || 0,
                                                 ) >= 0
-                                                    ? "rgba(82, 196, 26, 0.12)"
-                                                    : "rgba(255, 77, 79, 0.12)"
+                                                    ? 'success'
+                                                    : 'danger'
                                             }
                                             title={
                                                 bestProfitMonth
@@ -2628,9 +2629,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 align="stretch"
             >
                 <Col xs={24} sm={12} md={8} xl={5}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<TeamOutlined />}
-                        iconBg="rgba(22, 119, 255, 0.12)"
+                        tone='info'
                         title="Active SMEs"
                         value={
                             metricsReady ? (
@@ -2648,9 +2649,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} md={8} xl={5}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<DollarOutlined />}
-                        iconBg="rgba(82, 196, 26, 0.12)"
+                        tone='success'
                         title="Total Revenue"
                         value={
                             metricsReady ? (
@@ -2668,9 +2669,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} md={8} xl={5}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<DollarOutlined />}
-                        iconBg="rgba(19, 194, 194, 0.12)"
+                        tone='info'
                         title="Current Month Revenue"
                         value={
                             metricsReady ? (
@@ -2688,9 +2689,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} md={8} xl={4}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<RiseOutlined />}
-                        iconBg="rgba(114, 46, 209, 0.12)"
+                        tone='info'
                         title="Growing SMEs"
                         value={
                             metricsReady ? (
@@ -2708,9 +2709,9 @@ export const ParticipantsFinancialView: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} md={8} xl={5}>
-                    <MotionCard.Metric
+                    <MetricTile
                         icon={<FileTextOutlined />}
-                        iconBg="rgba(47, 84, 235, 0.12)"
+                        tone='info'
                         title="Financial Documents"
                         value={
                             metricsReady ? (

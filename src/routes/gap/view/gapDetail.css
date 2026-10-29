@@ -1,0 +1,130 @@
+/* GAP Analysis detail: one header, then the answers, then sign-off. */
+
+.gd-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gd-head-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.gd-head-name {
+    overflow: hidden;
+    font-size: 17px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.gd-head-sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.gd-head-meta {
+    overflow: hidden;
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--app-text-subtle);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.gd-head-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.gd-head-actions .ant-btn {
+    border-radius: 999px;
+}
+
+/* Square only the joined edges, and only when Download has a menu button beside it. */
+/* antd's compact-item styles set a 6px outer radius; match the pill buttons beside it. */
+.gd-head-actions .ant-space-compact > .ant-btn.ant-btn-compact-first-item:not(.ant-btn-compact-last-item) {
+    border-start-start-radius: 999px;
+    border-end-start-radius: 999px;
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+}
+
+.gd-head-actions .ant-space-compact > .ant-btn.ant-btn-compact-last-item:not(.ant-btn-compact-first-item) {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    border-start-end-radius: 999px;
+    border-end-end-radius: 999px;
+}
+
+.gd-signoff {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.gd-signoff-item {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+}
+
+.gd-signoff-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.gd-signature {
+    display: block;
+    max-width: 180px;
+    max-height: 60px;
+    object-fit: contain;
+}
+
+.gd-comment {
+    white-space: pre-wrap;
+    color: var(--app-text-muted);
+}
+
+.gd-muted {
+    color: var(--app-text-subtle);
+}
+
+@media (max-width: 767px) {
+    .gd-head {
+        flex-wrap: wrap;
+    }
+
+    .gd-head-text {
+        flex-basis: calc(100% - 48px);
+    }
+
+    .gd-head-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .gd-head-meta {
+        white-space: normal;
+    }
+
+    .gd-signoff {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 420px) {
+    .gd-hide-sm {
+        display: none;
+    }
+}

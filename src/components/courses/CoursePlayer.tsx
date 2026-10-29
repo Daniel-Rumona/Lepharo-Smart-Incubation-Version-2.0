@@ -13,7 +13,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import SurveyQuestionFrame from "@/components/surveys/shared/SurveyQuestionFrame";
 import { MaterialPreview } from "./Materials";
 import RichText from "./RichText";
-import { kindOf, useBuilderVars } from "./builder/kinds";
+import { kindOf } from "./builder/kinds";
 import {
   type Course,
   type Enrollment,
@@ -31,6 +31,7 @@ import {
   learnerCourse,
   watchEnrollment,
 } from "./courseStorage";
+import { LEARNER_COURSES } from "./learnerCourses";
 import "./styles.css";
 import "./builder/builder.css";
 
@@ -63,7 +64,6 @@ export function CoursePlayer({
   onItemChange?: (itemId: string) => void;
 }) {
   const { message } = App.useApp();
-  const vars = useBuilderVars();
   const root = useRef<HTMLDivElement>(null);
   const [enrollment, setEnrollment] = useState<Enrollment>(
     initialEnrollment || {
@@ -272,7 +272,7 @@ export function CoursePlayer({
   );
 
   return (
-    <div className="cp-shell" style={vars} ref={root}>
+    <div className="cp-shell" ref={root}>
     <div className="cp">
       <aside className="cp-side">
         <div className="cp-course">
@@ -692,7 +692,7 @@ export default function LearnerCoursePage() {
       {error ? (
         <Alert type="error" message={error} />
       ) : data ? (
-        <CoursePlayer key={data.enrollment.id} course={data.course} initialEnrollment={data.enrollment} onExit={() => navigate("/academy")} />
+        <CoursePlayer key={data.enrollment.id} course={data.course} initialEnrollment={data.enrollment} onExit={() => navigate(LEARNER_COURSES)} />
       ) : (
         <Typography.Paragraph>Loading course…</Typography.Paragraph>
       )}

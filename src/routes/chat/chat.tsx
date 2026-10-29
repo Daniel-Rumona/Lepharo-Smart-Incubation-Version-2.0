@@ -13,14 +13,25 @@ import {
     Spin,
     Typography
 } from 'antd'
-import { ArrowLeftOutlined, AudioOutlined, FormOutlined, HistoryOutlined, OpenAIOutlined, SendOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, AudioOutlined, CalendarOutlined, CompassOutlined, FormOutlined, HistoryOutlined, OpenAIOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { DepartmentRoleKey, useDepartmentRoles } from '@/services/departmentRoles'
+import { useActiveProgramId } from '@/lib/useActiveProgramId'
+import { useColorMode } from '@/contexts/ThemeContext'
+import {
+    AGENT_REPORT_LABEL,
+    getAgentReportKind,
+    useAgentReportPlayback
+} from '@/routes/chat/AgentReportPlayback'
 import { ChartSpecRenderer } from '@/components/ai/ChartSpecRenderer'
 import { ConversationMode } from '@/routes/chat/ConversationMode'
 import { ChatHistoryModal } from '@/routes/chat/ChatHistoryModal'
+import ScheduleAppointmentFlow, { type BookedSummary } from '@/routes/chat/actions/ScheduleAppointmentFlow'
+import ProposalCard from '@/routes/chat/actions/ProposalCard'
 import {
     MAX_MESSAGE_LENGTH,
     useChatSession
@@ -36,20 +47,18 @@ const { TextArea } = Input
 // have interventions/appointments/MOVs of their own, so both roleBasedTopics
 // and roleBasedQuestions special-case this department instead of falling
 // through to the generic intervention-centric copy every other department gets.
-const HR_DEPARTMENT_PATTERN = /(human resources|hrm|\bhr\b)/
+const isFinanceRole = (departmentRole: DepartmentRoleKey | null) =>
+    departmentRole === 'financialCompliance' || departmentRole === 'inhouseFinance'
 
-const roleBasedTopics = (user: Record<string, any> | null): string[] => {
+const roleBasedTopics = (user: Record<string, any> | null, departmentRole: DepartmentRoleKey | null): string[] => {
     const role = normaliseIdentityValue(user?.role)
-    const department = normaliseIdentityValue(
-        user?.departmentName || user?.department || user?.effectiveDepartment
-    )
 
     if (role === 'incubatee') return ['My progress', 'Interventions', 'Appointments', 'Compliance']
-    if ((role === 'coordinator' || role === 'operations') && HR_DEPARTMENT_PATTERN.test(department)) {
+    if ((role === 'coordinator' || role === 'operations') && departmentRole === 'hr') {
         return ['Clock-ins', 'Leave', 'KPI targets', 'Team']
     }
     if (role === 'coordinator') return ['Assigned work', 'Interventions', 'Appointments', 'MOVs']
-    if (role === 'operations' && /(monitoring|evaluation|m&e)/.test(department)) {
+    if (role === 'operations' && departmentRole === 'monitoring') {
         return ['Interventions', 'MOVs', 'Compliance', 'Participant progress']
     }
     if (role === 'operations') return ['Interventions', 'Appointments', 'Programme progress', 'Requests']
@@ -110,11 +119,8 @@ const normaliseIdentityValue = (value: unknown) =>
         .toLowerCase()
         .replace(/[\s_-]+/g, ' ')
 
-const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
+const roleBasedQuestions = (user: Record<string, any> | null, departmentRole: DepartmentRoleKey | null): string[] => {
     const role = normaliseIdentityValue(user?.role)
-    const department = normaliseIdentityValue(
-        user?.departmentName || user?.department || user?.effectiveDepartment
-    )
 
     if (role === 'incubatee') {
         return [
@@ -135,7 +141,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
     }
 
     if (role === 'coordinator') {
-        if (/(monitoring|evaluation|m&e)/.test(department)) {
+        if (departmentRole === 'monitoring') {
             return [
                 'Which of my assigned interventions are overdue?',
                 'Summarise my completed interventions',
@@ -144,7 +150,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
             ]
         }
 
-        if (/(health|safety|hse)/.test(department)) {
+        if (departmentRole === 'hse') {
             return [
                 'Show my active HSE interventions',
                 'Which of my assigned interventions are overdue?',
@@ -153,7 +159,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
             ]
         }
 
-        if (/(finance|financial|account)/.test(department)) {
+        if (isFinanceRole(departmentRole)) {
             return [
                 'Show my active finance interventions',
                 'Which of my assigned interventions are overdue?',
@@ -162,7 +168,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
             ]
         }
 
-        if (HR_DEPARTMENT_PATTERN.test(department)) {
+        if (departmentRole === 'hr') {
             return [
                 'Show my leave requests',
                 'Have I taken any leave this month?',
@@ -180,7 +186,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
     }
 
     if (role === 'operations') {
-        if (HR_DEPARTMENT_PATTERN.test(department)) {
+        if (departmentRole === 'hr') {
             return [
                 "Who's currently on leave?",
                 'Show outstanding leave requests',
@@ -189,7 +195,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
             ]
         }
 
-        if (/(monitoring|evaluation|m&e)/.test(department)) {
+        if (departmentRole === 'monitoring') {
             return [
                 'Which participant compliance items are outstanding?',
                 'Which MOVs are still outstanding?',
@@ -198,7 +204,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
             ]
         }
 
-        if (/(health|safety|hse)/.test(department)) {
+        if (departmentRole === 'hse') {
             return [
                 'How many HSE interventions are active?',
                 'Which HSE interventions are overdue?',
@@ -207,7 +213,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
             ]
         }
 
-        if (/(finance|financial|account)/.test(department)) {
+        if (isFinanceRole(departmentRole)) {
             return [
                 'How many finance interventions are active?',
                 'Which finance interventions are overdue?',
@@ -260,7 +266,7 @@ const roleBasedQuestions = (user: Record<string, any> | null): string[] => {
         ]
     }
 
-    if (['admin', 'system admin'].includes(role)) {
+    if (['system_admin', 'system admin'].includes(role)) {
         return [
             'Summarise participant progress across the organisation',
             'How many interventions are currently active?',
@@ -287,34 +293,74 @@ const TypingIndicator = () => (
 
 const Chat: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
-    const { messages, isTyping, error, startMessage, startNewChat, isResuming, refreshHistory } = useChatSession()
+    const {
+        messages, isTyping, error, startMessage, startNewChat, isResuming, refreshHistory,
+        pendingAction, clearPendingAction, appendLocalMessage, showMe, openGuide, activeSessionId
+    } = useChatSession()
     const state = { messages, isTyping, error }
     const [input, setInput] = useState('')
     const [conversationMode, setConversationMode] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
+    const [scheduleOpen, setScheduleOpen] = useState(false)
+    const [scheduleHint, setScheduleHint] = useState<string | null>(null)
     const navigate = useNavigate()
     const screens = useBreakpoint()
     const isMobile = !screens.md
+    const canScheduleAppointments = normaliseIdentityValue(user?.role) === 'coordinator'
+
+    const openScheduler = (smeHint?: string | null) => {
+        setScheduleHint(smeHint || null)
+        setScheduleOpen(true)
+    }
+
+    // The model only proposes the flow; the sheet opens here, and nothing is
+    // saved until the coordinator submits the form themselves.
+    useEffect(() => {
+        if (pendingAction?.kind !== 'schedule_appointment') return
+        openScheduler(pendingAction.sme)
+        clearPendingAction()
+    }, [pendingAction])
+
+    const handleBooked = (summary: BookedSummary) => {
+        const who = summary.companyName || summary.smeName
+        appendLocalMessage(
+            `Booked **${summary.title}** with **${who}** on ${summary.startsAt.format('ddd D MMM')}, ` +
+            `${summary.startsAt.format('HH:mm')}–${summary.endsAt.format('HH:mm')}. ` +
+            `${summary.smeName} will be asked to confirm.`
+        )
+    }
     const messagesRef = useRef<HTMLDivElement | null>(null)
     const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
+    const emptyComposerRef = useRef<HTMLDivElement | null>(null)
+    const { activeProgramId, isAllPrograms } = useActiveProgramId()
+    const { isDark } = useColorMode()
+    const { roleOf } = useDepartmentRoles()
+    const departmentRole = roleOf(user?.departmentId)
+    const reportKind = useMemo(
+        () => getAgentReportKind(user, departmentRole),
+        [user?.role, departmentRole]
+    )
+    const playback = useAgentReportPlayback({ user, kind: reportKind, programId: activeProgramId, isAllPrograms, isDark })
+    const isFriday = dayjs().day() === 5
+    const playReport = () => playback.start(emptyComposerRef.current?.querySelector('.chat-input-wrap') ?? null)
     const suggestedQuestions = useMemo(
-        () => roleBasedQuestions(user),
-        [
-            user?.role,
-            user?.departmentName,
-            user?.department,
-            user?.effectiveDepartment
-        ]
+        () => roleBasedQuestions(user, departmentRole),
+        [user?.role, departmentRole]
     )
     const rotatingTopics = useMemo(
-        () => roleBasedTopics(user),
-        [user?.role, user?.departmentName, user?.department, user?.effectiveDepartment]
+        () => roleBasedTopics(user, departmentRole),
+        [user?.role, departmentRole]
     )
     const typedTopic = useRotatingTypewriter(rotatingTopics)
     const firstName = String(user?.name || user?.displayName || '')
         .trim()
         .split(/\s+/)[0] || 'there'
     const hasConversation = state.messages.length > 0
+    // New chat only makes sense once there is a chat to leave. History is
+    // always reachable — the modal has its own empty state, and hiding the
+    // button whenever today's list is empty (or failed to load) stranded people.
+    const showNewChat = hasConversation
+    const showHistory = true
 
     // Docking the composer reliably needs .chat-page pinned to the exact
     // viewport region below whatever chrome the shared layout shell
@@ -420,7 +466,7 @@ const Chat: React.FC = () => {
 
     return (
         <div
-            className='chat-page'
+            className={`chat-page ${playback.active ? 'chat-leaving' : ''}`}
             style={{ '--chat-top-offset': `${topOffset}px` } as React.CSSProperties}
         >
             <style>{`
@@ -565,7 +611,7 @@ const Chat: React.FC = () => {
         .chat-mobile-header {
           flex: 0 0 auto;
           display: grid;
-          grid-template-columns: 34px 1fr auto;
+          grid-template-columns: 1fr auto 1fr;
           align-items: center;
           gap: 10px;
           height: 52px;
@@ -573,9 +619,11 @@ const Chat: React.FC = () => {
           border-bottom: 1px solid var(--app-border);
           background: var(--app-surface);
         }
+        .chat-mobile-header > .chat-back-button { justify-self: start; }
         .chat-mobile-header-actions {
           display: flex;
           align-items: center;
+          justify-content: flex-end;
           gap: 4px;
         }
         .chat-desktop-toolbar {
@@ -740,6 +788,11 @@ const Chat: React.FC = () => {
           max-width: min(82%, 980px);
           min-width: 0;
         }
+        .chat-proposal-card {
+          max-width: 560px;
+          border-radius: 14px;
+          border-color: var(--app-accent);
+        }
         .chat-bubble {
           max-width: 100%;
           padding: 12px 16px;
@@ -884,6 +937,78 @@ const Chat: React.FC = () => {
           display: grid;
           place-items: center;
         }
+        /* "Play report": everything but the text field fades away; the field
+           itself is replaced by the transition's blob (AgentReportPlayback). */
+        .chat-empty-state > *:not(.chat-empty-composer),
+        .chat-desktop-toolbar,
+        .chat-mobile-header,
+        .chat-marker-rail,
+        .chat-composer-meta {
+          transition: opacity .4s ease, transform .4s ease;
+        }
+        .chat-leaving .chat-empty-state > *:not(.chat-empty-composer),
+        .chat-leaving .chat-desktop-toolbar,
+        .chat-leaving .chat-mobile-header,
+        .chat-leaving .chat-marker-rail,
+        .chat-leaving .chat-composer-meta {
+          opacity: 0;
+          transform: translateY(-10px);
+          pointer-events: none;
+        }
+        .chat-leaving .chat-empty-composer .chat-input-wrap { visibility: hidden; }
+        .chat-report-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          flex-wrap: wrap;
+          width: min(760px, 100%);
+          margin-top: 22px;
+          padding: 14px 18px;
+          border-radius: 16px;
+          border: 1px solid color-mix(in srgb, var(--app-accent) 40%, transparent);
+          background: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
+          text-align: left;
+        }
+        .chat-report-banner strong { display: block; font-size: 16px; }
+        .chat-report-banner span { color: var(--app-text-muted); font-size: 13px; }
+        .chat-suggestion-report {
+          grid-column: 1 / -1;
+          justify-content: flex-start;
+          gap: 12px;
+          min-height: 56px;
+          padding: 10px 14px;
+          border-radius: 14px;
+          border-color: color-mix(in srgb, var(--app-accent) 40%, transparent);
+          background: linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--app-accent) 16%, var(--app-surface)),
+            color-mix(in srgb, var(--app-accent) 5%, var(--app-surface))
+          );
+          font-size: 14px;
+          font-weight: 650;
+        }
+        .chat-suggestion-report-icon {
+          flex: 0 0 auto;
+          display: grid;
+          place-items: center;
+          width: 34px;
+          height: 34px;
+          border-radius: 10px;
+          color: #fff;
+          background: var(--app-accent);
+          font-size: 18px;
+        }
+        .chat-suggestion-report-label { flex: 1 1 auto; min-width: 0; }
+        .chat-suggestion-report-cta {
+          flex: 0 0 auto;
+          padding: 4px 14px;
+          border-radius: 999px;
+          color: var(--app-accent);
+          background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+          font-size: 12px;
+          font-weight: 700;
+        }
         @media (max-width: 767px) {
           /* The hover-to-preview marker rail doesn't translate to touch —
              hide it and reclaim the left gutter it was reserving. */
@@ -912,42 +1037,50 @@ const Chat: React.FC = () => {
                         </button>
                         <span className='chat-mobile-header-title'>QxAgent</span>
                         <div className='chat-mobile-header-actions'>
+                            {showHistory && (
+                                <button
+                                    type='button'
+                                    className='chat-back-button'
+                                    aria-label='Conversation history'
+                                    onClick={() => { setHistoryOpen(true); void refreshHistory() }}
+                                >
+                                    <HistoryOutlined />
+                                </button>
+                            )}
+                            {showNewChat && (
+                                <button
+                                    type='button'
+                                    className='chat-back-button'
+                                    aria-label='Start a new chat'
+                                    onClick={startNewChat}
+                                >
+                                    <FormOutlined />
+                                </button>
+                            )}
+                        </div>
+                    </header>
+                ) : (showHistory || showNewChat) && (
+                    <div className='chat-desktop-toolbar'>
+                        {showHistory && (
                             <button
                                 type='button'
-                                className='chat-back-button'
-                                aria-label='Conversation history'
+                                className='chat-toolbar-button'
                                 onClick={() => { setHistoryOpen(true); void refreshHistory() }}
                             >
                                 <HistoryOutlined />
+                                <span>History</span>
                             </button>
+                        )}
+                        {showNewChat && (
                             <button
                                 type='button'
-                                className='chat-back-button'
-                                aria-label='Start a new chat'
+                                className='chat-toolbar-button'
                                 onClick={startNewChat}
                             >
                                 <FormOutlined />
+                                <span>New chat</span>
                             </button>
-                        </div>
-                    </header>
-                ) : (
-                    <div className='chat-desktop-toolbar'>
-                        <button
-                            type='button'
-                            className='chat-toolbar-button'
-                            onClick={() => { setHistoryOpen(true); void refreshHistory() }}
-                        >
-                            <HistoryOutlined />
-                            <span>History</span>
-                        </button>
-                        <button
-                            type='button'
-                            className='chat-toolbar-button'
-                            onClick={startNewChat}
-                        >
-                            <FormOutlined />
-                            <span>New chat</span>
-                        </button>
+                        )}
                     </div>
                 )}
                 <nav className='chat-marker-rail' aria-label='Conversation messages'>
@@ -989,7 +1122,33 @@ const Chat: React.FC = () => {
                                 <span className='chat-typewriter-cursor' aria-hidden='true' />
                             </div>
 
+                            {reportKind && isFriday && (
+                                <div className='chat-report-banner'>
+                                    <div>
+                                        <strong>It&apos;s Friday, are you ready for the meeting?</strong>
+                                        <span>Your report is ready to play.</span>
+                                    </div>
+                                    <Button type='primary' shape='round' size='large' icon={<PlayCircleOutlined />} onClick={playReport}>
+                                        Play report
+                                    </Button>
+                                </div>
+                            )}
+
                             <div className='chat-suggestions' aria-label='Suggested questions'>
+                                {reportKind && !isFriday && (
+                                    <button type='button' className='chat-suggestion chat-suggestion-report' onClick={playReport}>
+                                        <span className='chat-suggestion-report-icon' aria-hidden='true'><PlayCircleOutlined /></span>
+                                        <span className='chat-suggestion-report-label'>{AGENT_REPORT_LABEL[reportKind]}</span>
+                                        <span className='chat-suggestion-report-cta'>Play</span>
+                                    </button>
+                                )}
+                                {canScheduleAppointments && (
+                                    <button type='button' className='chat-suggestion chat-suggestion-report' onClick={() => openScheduler()}>
+                                        <span className='chat-suggestion-report-icon' aria-hidden='true'><CalendarOutlined /></span>
+                                        <span className='chat-suggestion-report-label'>Set up an appointment</span>
+                                        <span className='chat-suggestion-report-cta'>Book</span>
+                                    </button>
+                                )}
                                 {suggestedQuestions.map(question => (
                                     <button
                                         key={question}
@@ -1003,7 +1162,7 @@ const Chat: React.FC = () => {
                                 ))}
                             </div>
 
-                            <div className='chat-empty-composer'>
+                            <div className='chat-empty-composer' ref={emptyComposerRef}>
                                 {renderComposer()}
                             </div>
                         </div>
@@ -1036,6 +1195,43 @@ const Chat: React.FC = () => {
                                         {item.chart && (
                                             <ChartSpecRenderer chart={item.chart} className='chat-chart-card' />
                                         )}
+                                        {item.action?.kind === 'schedule_appointment' && canScheduleAppointments && (
+                                            <Button
+                                                type='primary'
+                                                ghost
+                                                shape='round'
+                                                icon={<CalendarOutlined />}
+                                                onClick={() => openScheduler(item.action?.sme)}
+                                                style={{ alignSelf: 'flex-start' }}
+                                            >
+                                                Open appointment scheduler
+                                            </Button>
+                                        )}
+                                        {item.proposal && (
+                                            <ProposalCard
+                                                messageId={item.id}
+                                                draft={item.proposal}
+                                                sessionId={activeSessionId}
+                                                onOutcome={appendLocalMessage}
+                                            />
+                                        )}
+                                        {(item.guide || item.showMe) && (
+                                            <Button
+                                                type='primary'
+                                                ghost
+                                                shape='round'
+                                                icon={<CompassOutlined />}
+                                                onClick={() => {
+                                                    if (item.guide) openGuide(item.guide)
+                                                    else if (item.showMe) void showMe(item.showMe)
+                                                }}
+                                                style={{ alignSelf: 'flex-start' }}
+                                            >
+                                                {item.guide
+                                                    ? `Show me: ${item.guide.title}`
+                                                    : `Show me on ${item.showMe?.label || 'the page'}`}
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -1066,6 +1262,15 @@ const Chat: React.FC = () => {
             </section>
 
             <ChatHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
+            {canScheduleAppointments && (
+                <ScheduleAppointmentFlow
+                    open={scheduleOpen}
+                    onClose={() => setScheduleOpen(false)}
+                    smeHint={scheduleHint}
+                    onBooked={handleBooked}
+                />
+            )}
+            {playback.overlay}
         </div>
     )
 }

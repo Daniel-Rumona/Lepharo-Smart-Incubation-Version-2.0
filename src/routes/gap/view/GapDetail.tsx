@@ -5,12 +5,14 @@ import {
     Button,
     Card,
     Col,
+    Dropdown,
     Empty,
     Grid,
     Input,
     Row,
+    Segmented,
+    Select,
     Space,
-    Switch,
     Tag,
     Tooltip,
     Typography,
@@ -25,20 +27,24 @@ import {
     getDocs,
     limit,
     query,
-    updateDoc,
+    runTransaction,
     where
 } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { db } from '@/firebase'
 import {
     ArrowLeftOutlined,
+    DownOutlined,
     DownloadOutlined,
     FileTextOutlined,
-    PartitionOutlined,
-    ThunderboltOutlined
+    PartitionOutlined
 } from '@ant-design/icons'
+import { StatusPill } from '@/routes/operations/movs/movParts'
+import '@/routes/operations/movs/movs.css'
+import './gapDetail.css'
 import { exportGapDocx } from '@/utils/gapDocx'
 import { applyKpiDeltas } from '@/lib/kpis'
+import { DepartmentRoleKey, useDepartmentRoles } from '@/services/departmentRoles'
 import GapExportForm from '@/components/gap'
 import {
     AnswerState,
@@ -48,18 +54,16 @@ import {
     SectionKey,
     SectionStats,
     getAnswerStates,
+    getGapStatus,
     getOwnedSectionsForDept,
     getSectionStats,
     yes
 } from '../sections'
 import GapConfirmModal from './GapConfirmModal'
-import GapMappingModal from './GapMappingModal'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 
 const { useBreakpoint } = Grid
 const { Text } = Typography
-
-const DEPT_ROM = 'ROM (Recruitment, Onboarding and Maintenance)'
 
 const downloadFile = (url: string, filename = 'gap-analysis.pdf') => {
     const a = document.createElement('a')
@@ -80,27 +84,13 @@ async function fetchSignatureUrlForEmail(email?: string) {
     return !snap.empty ? ((snap.docs[0].data() as any)?.signatureURL || '') : ''
 }
 
-export function getGapStatus(r: any): 'Confirmed' | 'Pending' {
-    if (!r) return 'Pending'
-
-    if (r?.manuallyCreated) {
-        const raw = r?.gapAgreement?.raw
-        if (!raw) return 'Pending'
-        if (raw?.status === 'confirmed') return 'Confirmed'
-        if (raw?.romReview?.status === 'Confirmed') return 'Confirmed'
-        if (raw?.romReview?.confirmedAt) return 'Confirmed'
-        if (raw?.verifiedAt) return 'Confirmed'
-        if (raw?.acceptedAt) return 'Confirmed'
-        return 'Pending'
-    }
-
-    if (r?.confirmationStatus === 'Confirmed') return 'Confirmed'
-    if (r?.romReview?.status === 'Confirmed') return 'Confirmed'
-    if (r?.romReview?.confirmedAt) return 'Confirmed'
-    return 'Pending'
-}
+export { getGapStatus }
 
 const safeFileName = (s: string) => String(s || 'SMME').trim().replace(/[^\w-]+/g, '_')
+
+/** What a state means: whether the answer is fine or a gap, not the word the SME chose. */
+const stateLabel = (s: AnswerState) =>
+    s === 'yes' ? 'In place' : s === 'no' ? 'Gap' : s === 'info' ? 'Not scored' : 'Unanswered'
 
 /** ===== Gap strip: one square per question, green / red / grey, click to jump ===== */
 const GapStrip: React.FC<{
@@ -129,7 +119,7 @@ const GapStrip: React.FC<{
             }}
         >
             {states.map((s, i) => {
-                const label = s === 'yes' ? 'Yes' : s === 'no' ? 'No' : 'Unanswered'
+                const label = stateLabel(s)
                 const active = activeIndex === i
                 return (
                     <Tooltip key={i} title={`Q${i + 1} — ${label}`}>
@@ -198,8 +188,8 @@ export type GapDetailProps = {
     romName?: string
     romEmail?: string
 
-    /** Viewer's department, used to decide whether they can build a plan */
-    viewerDepartmentName?: string
+    /** Viewer's department role, used to decide whether they can build a plan */
+    viewerDepartmentRole?: DepartmentRoleKey | null
 
     /**
      * 'page' assumes the route supplies its own back control.
@@ -220,12 +210,13 @@ const GapDetail: React.FC<GapDetailProps> = ({
     allowedSections,
     romName,
     romEmail,
-    viewerDepartmentName,
+    viewerDepartmentRole,
     mode = 'embedded',
     onBack,
     onConfirmed
 }) => {
     const navigate = useNavigate()
+    const { idForRole } = useDepartmentRoles()
     const screens = useBreakpoint()
     const isMobile = !screens.md
     const { token } = theme.useToken()
@@ -240,7 +231,6 @@ const GapDetail: React.FC<GapDetailProps> = ({
 
     const [confirmOpen, setConfirmOpen] = useState(false)
     const [exportFormOpen, setExportFormOpen] = useState(false)
-    const [mappingOpen, setMappingOpen] = useState(false)
     const [downloading, setDownloading] = useState(false)
 
     /** Question index requested by the gap strip, pending a scroll */
@@ -379,12 +369,6 @@ const GapDetail: React.FC<GapDetailProps> = ({
      */
     const showRail = visibleSections.length > 1
 
-    /**
-     * Mapping needs structured answers and at least one section the viewer owns.
-     * The backend re-checks the department, so this only hides a button that
-     * would have been refused anyway.
-     */
-    const canMap = !isManualGap && visibleSections.length > 0 && !!gap?.id
 
     /**
      * Only a department that actually delivers a section can build a plan from
@@ -396,7 +380,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
         !isManualGap &&
         !!participantId &&
         status === 'Confirmed' &&
-        getOwnedSectionsForDept(viewerDepartmentName).length > 0
+        getOwnedSectionsForDept(viewerDepartmentRole).length > 0
 
     const activeStates = useMemo(
         () => (gap && !isManualGap ? getAnswerStates(gap, activeSection) : []),
@@ -420,7 +404,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
 
     const filteredRows = useMemo(() => {
         let list = rows
-        if (gapsOnly) list = list.filter(r => r.state !== 'yes')
+        if (gapsOnly) list = list.filter(r => r.state === 'no' || r.state === 'blank')
 
         const q = search.trim().toLowerCase()
         if (q) {
@@ -454,12 +438,14 @@ const GapDetail: React.FC<GapDetailProps> = ({
         return () => window.clearTimeout(t)
     }, [highlighted])
 
-    // Reset the reading position when the section changes
+    // Reset the reading position when the section changes; open on the gaps when there are any.
     useEffect(() => {
         setSearch('')
-        setGapsOnly(false)
+        const stats = gap && !isManualGap ? getSectionStats(gap, activeSection) : null
+        setGapsOnly(!!stats && stats.no + stats.blank > 0)
         rowRefs.current = {}
-    }, [activeSection])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeSection, gap?.id])
 
     /** ===== Actions ===== */
     const applyConfirmation = async (payload: {
@@ -497,7 +483,20 @@ const GapDetail: React.FC<GapDetailProps> = ({
             }
         }
 
-        await updateDoc(doc(db, 'gapAnalysis', gap.id), update as any)
+        const gapRef = doc(db, 'gapAnalysis', gap.id)
+        const alreadyConfirmed = await runTransaction(db, async transaction => {
+            const fresh = await transaction.get(gapRef)
+            if (fresh.exists() && getGapStatus(fresh.data()) === 'Confirmed') return true
+            transaction.update(gapRef, update as any)
+            return false
+        })
+        if (alreadyConfirmed) {
+            message.info('Someone has already confirmed this GAP Analysis.')
+            const fresh = await getDoc(gapRef)
+            if (fresh.exists()) setGap({ id: gap.id, ...(fresh.data() as any) })
+            setConfirmOpen(false)
+            return
+        }
 
         // KPI credit for the ROM team — best effort, never blocks the confirmation
         try {
@@ -529,7 +528,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
                 {
                     participantId,
                     programId: programId || 'unknown',
-                    areaOfSupport: DEPT_ROM,
+                    departmentId: idForRole('rom') || undefined,
                     quarter: quarterKey
                 },
                 { gap_analysis_completed: { mode: 'increment', value: 1 } }
@@ -627,80 +626,68 @@ const GapDetail: React.FC<GapDetailProps> = ({
         return parsed.isValid() ? parsed.format(pattern) : '—'
     }
 
+    const downloadButton = (
+        <Button icon={<DownloadOutlined />} aria-label='Download GAP' loading={downloading} onClick={handleDownload}>
+            <span className='gd-hide-sm'>Download</span>
+        </Button>
+    )
+
     return (
         <Space direction='vertical' size={12} style={{ width: '100%' }}>
-            {/* ===== Top bar ===== */}
-            <div
-                style={{
-                    position: 'sticky',
-                    top: 0,
-                    zIndex: 20,
-                    alignItems: 'center',
-                    gap: 12,
-                    // Equal side tracks put the title at the true centre of the bar,
-                    // rather than centred in whatever space the buttons leave over.
-                    ...(isMobile
-                        ? { display: 'flex', flexWrap: 'wrap' as const }
-                        : { display: 'grid', gridTemplateColumns: '1fr auto 1fr' }),
-                    padding: isMobile ? '10px 12px' : '12px 16px',
-                    background: token.colorBgContainer,
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                    borderRadius: 20,
-                    boxShadow: token.boxShadowTertiary
-                }}
-            >
-                {/* Always rendered so the grid keeps three tracks and the title stays centred */}
-                <div style={{ justifySelf: 'start' }}>
+            {/* ===== Header ===== */}
+            <MotionCard className='gd-head-card'>
+                <div className='gd-head'>
                     {onBack && (
-                        <Button shape='round' icon={<ArrowLeftOutlined />} onClick={onBack}>
-                            {mode === 'page' ? 'Back' : 'Close'}
-                        </Button>
+                        <Button shape='circle' icon={<ArrowLeftOutlined />} aria-label='Back' onClick={onBack} />
                     )}
-                </div>
+                    <div className='gd-head-text'>
+                        <div className='gd-head-name' title={smmeName}>{smmeName}</div>
+                        <div className='gd-head-sub'>
+                            <span>GAP Analysis</span>
+                            <StatusPill tone={status === 'Confirmed' ? 'success' : 'warning'}>
+                                {status === 'Confirmed' ? 'Confirmed' : 'To confirm'}
+                            </StatusPill>
+                            {isManualGap && <StatusPill tone='neutral'>Uploaded document</StatusPill>}
+                        </div>
+                        <div className='gd-head-meta'>
+                            {[
+                                gap?.company?.region,
+                                gap?.company?.email,
+                                engagementDate ? `Submitted ${fmt(engagementDate, 'D MMM YYYY')}` : null,
+                                gap?.romReview?.confirmedAt
+                                    ? `Confirmed by ${gap?.romReview?.reviewerName || gap?.romReview?.reviewerEmail || 'ROM'} on ${fmt(gap?.romReview?.confirmedAt, 'D MMM YYYY')}`
+                                    : null
+                            ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                        </div>
+                    </div>
+                    <div className='gd-head-actions'>
+                        {/* Download; ROM also gets a menu to edit the QMS document header. */}
+                        {isROM && !isManualGap ? (
+                            <Space.Compact>
+                                {downloadButton}
+                                <Dropdown
+                                    trigger={['click']}
+                                    menu={{
+                                        items: [{ key: 'header', icon: <FileTextOutlined />, label: 'Edit document header and download' }],
+                                        onClick: () => setExportFormOpen(true)
+                                    }}
+                                >
+                                    <Button icon={<DownOutlined />} aria-label='More download options' />
+                                </Dropdown>
+                            </Space.Compact>
+                        ) : (
+                            downloadButton
+                        )}
 
-                <div
-                    style={{
-                        flex: '1 1 240px',
-                        minWidth: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        textAlign: 'center',
-                        gap: 10,
-                        flexWrap: 'wrap'
-                    }}
-                >
-                    <Text strong style={{ fontSize: 16, whiteSpace: 'nowrap' }}>
-                        GAP Analysis
-                    </Text>
-                    <span style={{ color: token.colorSplit }}>|</span>
-                    <Text
-                        style={{
-                            fontSize: 15,
-                            color: token.colorTextSecondary,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '100%'
-                        }}
-                        title={smmeName}
-                    >
-                        {smmeName}
-                    </Text>
-                    <Tag
-                        color={status === 'Confirmed' ? 'success' : 'warning'}
-                        style={{ marginInlineEnd: 0, borderRadius: 999 }}
-                    >
-                        {status}
-                    </Tag>
-                    {isManualGap && <Tag style={{ marginInlineEnd: 0, borderRadius: 999 }}>Manual</Tag>}
-                </div>
-
-                <Space wrap size={8} style={{ justifySelf: 'end', whiteSpace: 'nowrap' }}>
-                    {canBuildPlan && (
-                        <Tooltip title='Build this participant’s diagnostic plan for your department'>
+                        {isROM && !isManualGap && status === 'Pending' ? (
+                            <Button type='primary' onClick={() => setConfirmOpen(true)}>
+                                Confirm GAP
+                            </Button>
+                        ) : canBuildPlan ? (
                             <Button
-                                shape='round'
+                                type='primary'
                                 icon={<PartitionOutlined />}
                                 onClick={() =>
                                     navigate(
@@ -710,124 +697,9 @@ const GapDetail: React.FC<GapDetailProps> = ({
                             >
                                 Build plan
                             </Button>
-                        </Tooltip>
-                    )}
-
-                    {canMap && (
-                        <Tooltip title='AI-map these gaps to interventions your department offers'>
-                            <Button
-                                shape='round'
-                                icon={<ThunderboltOutlined />}
-                                onClick={() => setMappingOpen(true)}
-                            >
-                                Mapping
-                            </Button>
-                        </Tooltip>
-                    )}
-
-                    {isROM && !isManualGap && (
-                        <Tooltip title='Export with the QMS document header'>
-                            <Button
-                                shape='round'
-                                icon={<FileTextOutlined />}
-                                onClick={() => setExportFormOpen(true)}
-                            >
-                                Export
-                            </Button>
-                        </Tooltip>
-                    )}
-
-                    <Button
-                        shape='round'
-                        icon={<DownloadOutlined />}
-                        loading={downloading}
-                        onClick={handleDownload}
-                    >
-                        Download GAP
-                    </Button>
-
-                    {isROM && !isManualGap && status === 'Pending' && (
-                        <Button shape='round' type='primary' onClick={() => setConfirmOpen(true)}>
-                            Confirm GAP
-                        </Button>
-                    )}
-                </Space>
-            </div>
-
-            {/* ===== Meta strip ===== */}
-            <MotionCard size='small' styles={{ body: { padding: isMobile ? 12 : 16 } }}>
-                <div
-                    style={{
-                        display: 'grid',
-                        gridTemplateColumns: isMobile
-                            ? '1fr'
-                            : 'repeat(auto-fit, minmax(180px, 1fr))',
-                        gap: isMobile ? 12 : 20,
-                        alignItems: 'start'
-                    }}
-                >
-                    <MetaItem label='Region' value={gap?.company?.region} />
-                    <MetaItem label='Email' value={gap?.company?.email} />
-                    <MetaItem label='Contact' value={gap?.company?.contact} />
-                    <MetaItem label='Engagement date' value={fmt(engagementDate)} />
-                    <MetaItem
-                        label='SMME signature'
-                        value={
-                            smmeSignatureUrl || gap?.signatures?.smmeSignatureUrl ? (
-                                <img
-                                    src={smmeSignatureUrl || gap?.signatures?.smmeSignatureUrl}
-                                    alt='SMME Signature'
-                                    style={{
-                                        maxWidth: 160,
-                                        maxHeight: 56,
-                                        objectFit: 'contain',
-                                        display: 'block'
-                                    }}
-                                />
-                            ) : (
-                                '—'
-                            )
-                        }
-                    />
-                    {gap?.romReview?.confirmedAt && (
-                        <MetaItem
-                            label='Confirmed by'
-                            value={
-                                <>
-                                    {gap?.romReview?.reviewerName ||
-                                        gap?.romReview?.reviewerEmail ||
-                                        '—'}
-                                    <div style={{ fontSize: 12, color: token.colorTextTertiary }}>
-                                        {fmt(gap?.romReview?.confirmedAt, 'YYYY-MM-DD HH:mm')}
-                                    </div>
-                                </>
-                            }
-                        />
-                    )}
-                </div>
-
-                {gap?.romReview?.comment ? (
-                    <div
-                        style={{
-                            marginTop: 14,
-                            paddingTop: 12,
-                            borderTop: `1px solid ${token.colorBorderSecondary}`
-                        }}
-                    >
-                        <div
-                            style={{
-                                fontSize: 12,
-                                color: token.colorTextTertiary,
-                                textTransform: 'uppercase',
-                                letterSpacing: 0.4,
-                                marginBottom: 4
-                            }}
-                        >
-                            ROM review comment
-                        </div>
-                        <div style={{ whiteSpace: 'pre-wrap' }}>{gap.romReview.comment}</div>
+                        ) : null}
                     </div>
-                ) : null}
+                </div>
             </MotionCard>
 
             {/* ===== Body ===== */}
@@ -851,10 +723,22 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                     title='Sections'
                                     styles={{ body: { padding: 8 } }}
                                 >
+                                    {isMobile && (
+                                        <Select
+                                            aria-label='Select GAP section'
+                                            value={activeSection}
+                                            onChange={value => setActiveSection(value as SectionKey)}
+                                            style={{ width: '100%', marginBottom: 8 }}
+                                            options={allStats.map(s => ({
+                                                value: s.key,
+                                                label: `${s.title} · ${s.no > 0 ? `${s.no} gap${s.no > 1 ? 's' : ''}` : s.blank > 0 ? `${s.blank} blank` : 'Clear'}`
+                                            }))}
+                                        />
+                                    )}
                                     <div
                                         style={
                                             isMobile
-                                                ? { display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }
+                                                ? { display: 'none' }
                                                 : { display: 'flex', flexDirection: 'column', gap: 4 }
                                         }
                                     >
@@ -875,7 +759,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                                     type='button'
                                                     onClick={() => setActiveSection(s.key)}
                                                     aria-current={active}
-                                                    title={`${s.yes} Yes · ${s.no} No · ${s.blank} unanswered`}
+                                                    title={`${s.yes} in place · ${s.no} gaps · ${s.blank} unanswered`}
                                                     style={{
                                                         textAlign: 'left',
                                                         cursor: 'pointer',
@@ -892,7 +776,8 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                                 >
                                                     <div
                                                         style={{
-                                                            display: 'flex',
+                                                            display: isMobile ? 'grid' : 'flex',
+                                                            gridTemplateColumns: isMobile ? '4px 24px minmax(0, 1fr)' : undefined,
                                                             alignItems: 'baseline',
                                                             justifyContent: 'space-between',
                                                             gap: 8,
@@ -948,7 +833,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                         <Text type='secondary' style={{ fontSize: 12 }}>
                                             {activeStats.yesPct == null
                                                 ? 'Not answered'
-                                                : `${activeStats.yesPct}% Yes`}
+                                                : `${activeStats.yesPct}% in place`}
                                         </Text>
                                     ) : null
                                 }
@@ -963,17 +848,18 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                             />
                                         </Col>
                                         <Col xs={24} sm={10} style={{ textAlign: isMobile ? 'left' : 'right' }}>
-                                            <Space>
-                                                <Switch
-                                                    size='small'
-                                                    checked={gapsOnly}
-                                                    onChange={setGapsOnly}
-                                                    id='gaps-only'
-                                                />
-                                                <label htmlFor='gaps-only' style={{ cursor: 'pointer' }}>
-                                                    Show gaps only
-                                                </label>
-                                            </Space>
+                                            <Segmented
+                                                value={gapsOnly ? 'gaps' : 'all'}
+                                                onChange={value => setGapsOnly(value === 'gaps')}
+                                                aria-label='Which questions to show'
+                                                options={[
+                                                    {
+                                                        value: 'gaps',
+                                                        label: `Gaps · ${(activeStats?.no || 0) + (activeStats?.blank || 0)}`
+                                                    },
+                                                    { value: 'all', label: `All · ${activeStats?.total ?? rows.length}` }
+                                                ]}
+                                            />
                                         </Col>
                                     </Row>
                                 }
@@ -994,8 +880,8 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                             }}
                                         >
                                             <Space size={12} wrap>
-                                                <LegendDot color={token.colorSuccess} label='Yes' />
-                                                <LegendDot color={token.colorError} label='No' />
+                                                <LegendDot color={token.colorSuccess} label='In place' />
+                                                <LegendDot color={token.colorError} label='Gap' />
                                                 <LegendDot color={token.colorFill} label='Unanswered' />
                                                 <span>Click a square to jump to that question.</span>
                                             </Space>
@@ -1007,7 +893,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                             image={Empty.PRESENTED_IMAGE_SIMPLE}
                                             description={
                                                 gapsOnly
-                                                    ? 'No gaps in this section — every question answered Yes.'
+                                                    ? 'No gaps in this section.'
                                                     : 'No questions match your search.'
                                             }
                                         />
@@ -1022,7 +908,8 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                                             rowRefs.current[r.index] = el
                                                         }}
                                                         style={{
-                                                            display: 'flex',
+                                                            display: isMobile ? 'grid' : 'flex',
+                                                            gridTemplateColumns: isMobile ? '4px 24px minmax(0, 1fr)' : undefined,
                                                             gap: 12,
                                                             padding: '10px 8px',
                                                             borderTop: `1px solid ${token.colorBorderSecondary}`,
@@ -1062,8 +949,16 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                                         >
                                                             {r.number}
                                                         </div>
-                                                        <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-                                                            <div style={{ color: token.colorText }}>
+                                                        <div
+                                                            style={{
+                                                                flex: '1 1 auto',
+                                                                minWidth: 0,
+                                                                width: isMobile ? '100%' : undefined,
+                                                                gridColumn: isMobile ? '3 / -1' : undefined,
+                                                                gridRow: isMobile ? '1' : undefined
+                                                            }}
+                                                        >
+                                                            <div style={{ color: token.colorText, lineHeight: 1.55 }}>
                                                                 {r.question}
                                                             </div>
                                                             {r.comment ? (
@@ -1079,9 +974,16 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                                                 </div>
                                                             ) : null}
                                                         </div>
-                                                        <div style={{ flex: '0 0 auto' }}>
+                                                        <div
+                                                            style={{
+                                                                flex: isMobile ? '0 0 100%' : '0 0 auto',
+                                                                gridColumn: isMobile ? '3 / -1' : undefined,
+                                                                gridRow: isMobile ? '2' : undefined,
+                                                                marginTop: isMobile ? 4 : 0
+                                                            }}
+                                                        >
                                                             {r.answer ? (
-                                                                <Tag color={yes(r.answer) ? 'green' : 'red'}>
+                                                                <Tag color={r.state === 'yes' ? 'green' : r.state === 'no' ? 'red' : undefined}>
                                                                     {r.answer}
                                                                 </Tag>
                                                             ) : (
@@ -1100,6 +1002,45 @@ const GapDetail: React.FC<GapDetailProps> = ({
                 )
             }
 
+            {!isManualGap && (
+                <MotionCard size='small' title='Sign-off'>
+                    <div className='gd-signoff'>
+                        <div className='gd-signoff-item'>
+                            <div className='gd-signoff-label'>SME</div>
+                            <div>{gap?.signatures?.smmeNameSurname || smmeName}</div>
+                            {smmeSignatureUrl || gap?.signatures?.smmeSignatureUrl ? (
+                                <img
+                                    className='gd-signature'
+                                    src={smmeSignatureUrl || gap?.signatures?.smmeSignatureUrl}
+                                    alt='SME signature'
+                                />
+                            ) : (
+                                <div className='gd-muted'>No signature on file</div>
+                            )}
+                        </div>
+                        <div className='gd-signoff-item'>
+                            <div className='gd-signoff-label'>ROM review</div>
+                            {gap?.romReview?.confirmedAt ? (
+                                <>
+                                    <div>
+                                        {gap?.romReview?.reviewerName || gap?.romReview?.reviewerEmail || 'ROM'}
+                                        <span className='gd-muted'> · {fmt(gap?.romReview?.confirmedAt, 'D MMM YYYY, HH:mm')}</span>
+                                    </div>
+                                    {gap?.romReview?.romSignatureUrl ? (
+                                        <img className='gd-signature' src={gap.romReview.romSignatureUrl} alt='ROM signature' />
+                                    ) : null}
+                                    {gap?.romReview?.comment ? (
+                                        <div className='gd-comment'>{gap.romReview.comment}</div>
+                                    ) : null}
+                                </>
+                            ) : (
+                                <div className='gd-muted'>Not confirmed yet</div>
+                            )}
+                        </div>
+                    </div>
+                </MotionCard>
+            )}
+
             <GapConfirmModal
                 open={confirmOpen}
                 onCancel={() => setConfirmOpen(false)}
@@ -1107,14 +1048,6 @@ const GapDetail: React.FC<GapDetailProps> = ({
                 romName={romName}
                 romEmail={romEmail}
                 isMobile={isMobile}
-            />
-
-            <GapMappingModal
-                open={mappingOpen}
-                onClose={() => setMappingOpen(false)}
-                gapId={gap?.id}
-                companyName={gap?.company?.name}
-                sections={visibleSections}
             />
 
             <GapExportForm
@@ -1127,28 +1060,6 @@ const GapDetail: React.FC<GapDetailProps> = ({
                 smmeSignatureUrl={smmeSignatureUrl}
             />
         </Space >
-    )
-}
-
-const MetaItem: React.FC<{ label: string; value?: React.ReactNode }> = ({ label, value }) => {
-    const { token } = theme.useToken()
-    return (
-        <div style={{ minWidth: 0 }}>
-            <div
-                style={{
-                    fontSize: 12,
-                    color: token.colorTextTertiary,
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.4,
-                    marginBottom: 4
-                }}
-            >
-                {label}
-            </div>
-            <div style={{ color: token.colorText, wordBreak: 'break-word' }}>
-                {value == null || value === '' ? '—' : value}
-            </div>
-        </div>
     )
 }
 

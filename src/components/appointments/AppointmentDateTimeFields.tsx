@@ -7,6 +7,9 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import dayjs, { type Dayjs } from 'dayjs'
 import 'dayjs/locale/en-gb'
 import { useColorMode } from '@/contexts/ThemeContext'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useBranchOperatingHours } from '@/hooks/useBranchOperatingHours'
+import { clockMinutes, getDayHours, type BranchOperatingHours } from '@/utils/branchOperatingHours'
 
 const { Text } = Typography
 
@@ -28,8 +31,8 @@ const buildPickerTheme = (isDark: boolean) =>
                     background: {
                         // Matches --app-surface-raised: the popup floats above
                         // the modal, so it takes the elevated rung.
-                        paper: '#1f242d',
-                        default: '#171b22'
+                        paper: '#2e3238',
+                        default: '#26292e'
                     },
                     text: {
                         primary: 'rgba(255, 255, 255, 0.88)',
@@ -48,8 +51,27 @@ const buildPickerTheme = (isDark: boolean) =>
         }
     })
 
-const isOutsideSchedulingHours = (value: Dayjs, view: 'hours' | 'minutes' | 'seconds') =>
-    view === 'hours' && (value.hour() < 6 || value.hour() > 18)
+const SLOT_MINUTES = 15
+
+/**
+ * Bounds the clock to the coordinator's centre hours for the chosen day: a
+ * start can be picked from opening until one slot before closing, an end from
+ * one slot after opening until closing. Closed days offer no times at all.
+ */
+const outsideOperatingHours = (hours: BranchOperatingHours, edge: 'start' | 'end') =>
+    (value: Dayjs, view: 'hours' | 'minutes' | 'seconds') => {
+        const day = getDayHours(hours, value.toDate())
+        if (day.closed) return true
+        const earliest = clockMinutes(day.opens) + (edge === 'end' ? SLOT_MINUTES : 0)
+        const latest = clockMinutes(day.closes) - (edge === 'start' ? SLOT_MINUTES : 0)
+        const hourStart = value.hour() * 60
+        if (view === 'hours') return hourStart + 60 - SLOT_MINUTES < earliest || hourStart > latest
+        const minutes = hourStart + value.minute()
+        return minutes < earliest || minutes > latest
+    }
+
+const closedDay = (hours: BranchOperatingHours) => (value: Dayjs) =>
+    getDayHours(hours, value.toDate()).closed
 
 const handlePickerOnlyKeyDown = (
     event: React.KeyboardEvent<HTMLDivElement>,
@@ -118,6 +140,11 @@ const AppointmentDateTimeFields: React.FC<Props> = ({ form, allowPast = false, d
     const [startPickerOpen, setStartPickerOpen] = React.useState(false)
     const [endPickerOpen, setEndPickerOpen] = React.useState(false)
     const { isDark } = useColorMode()
+    const { user, loading: identityLoading } = useFullIdentity()
+    const { hours } = useBranchOperatingHours(user, identityLoading)
+    const isClosedDay = React.useMemo(() => closedDay(hours), [hours])
+    const startTimeDisabled = React.useMemo(() => outsideOperatingHours(hours, 'start'), [hours])
+    const endTimeDisabled = React.useMemo(() => outsideOperatingHours(hours, 'end'), [hours])
 
     // Rebuilding the MUI theme on every render would remount the picker's
     // styles and close the popup mid-interaction.
@@ -162,7 +189,8 @@ const AppointmentDateTimeFields: React.FC<Props> = ({ form, allowPast = false, d
                             onClose={() => setStartPickerOpen(false)}
                             onOpen={() => setStartPickerOpen(true)}
                             openTo="day"
-                            shouldDisableTime={isOutsideSchedulingHours}
+                            shouldDisableDate={isClosedDay}
+                            shouldDisableTime={startTimeDisabled}
                             skipDisabled
                             timeSteps={{ hours: 1, minutes: 15 }}
                             views={['year', 'day', 'hours', 'minutes']}
@@ -220,7 +248,8 @@ const AppointmentDateTimeFields: React.FC<Props> = ({ form, allowPast = false, d
                             onClose={() => setEndPickerOpen(false)}
                             onOpen={() => setEndPickerOpen(true)}
                             openTo="day"
-                            shouldDisableTime={isOutsideSchedulingHours}
+                            shouldDisableDate={isClosedDay}
+                            shouldDisableTime={endTimeDisabled}
                             skipDisabled
                             timeSteps={{ hours: 1, minutes: 15 }}
                             views={['year', 'day', 'hours', 'minutes']}

@@ -2,6 +2,7 @@ import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import nodemailer from "nodemailer";
 import { withEmailDeliveryLogging } from "./emailDelivery";
+import { departmentIdsForRole } from "./departmentRoles";
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -127,37 +128,13 @@ export async function getMERecipients() {
   const recipients = new Set<string>();
   recipients.add("egar@lepharo.co.za");
   try {
-    let meDeptId: string | null = null;
-    {
-      let q: FirebaseFirestore.Query = db.collection("departments");
-      const snap = await q.get();
-      for (const d of snap.docs) {
-        const data = d.data() as any;
-        const name = String(data.departmentName || data.name || "").toLowerCase();
-        const isME =
-          name.includes("monitoring") ||
-          name.includes("m&e") ||
-          name.includes("m & e") ||
-          name.replace(/\s+/g, "").includes("m&e");
-        if (isME) { meDeptId = d.id; break; }
-      }
-    }
+    const meDeptIds = new Set(await departmentIdsForRole("monitoring"));
+    if (!meDeptIds.size) return Array.from(recipients);
 
-    let uq: FirebaseFirestore.Query = db.collection("users").where("role", "==", "operations");
-    if (meDeptId) uq = uq.where("departmentId", "==", meDeptId);
-
-    const usersSnap = await uq.get();
+    const usersSnap = await db.collection("users").where("role", "==", "operations").get();
     usersSnap.docs.forEach((u) => {
       const data = u.data() as any;
-      if (!meDeptId) {
-        const dn = String(data.departmentName || "").toLowerCase();
-        const ok =
-          dn.includes("monitoring") ||
-          dn.includes("m&e") ||
-          dn.includes("m & e") ||
-          dn.replace(/\s+/g, "").includes("m&e");
-        if (!ok) return;
-      }
+      if (!meDeptIds.has(String(data.departmentId || ""))) return;
       const email = String(data.email || "").trim().toLowerCase();
       if (email.includes("@")) recipients.add(email);
     });
@@ -230,10 +207,20 @@ export function getTransporter() {
   const secure = process.env.SMTP_SECURE == null
     ? port === 465
     : process.env.SMTP_SECURE.trim().toLowerCase() === "true";
+  // One pooled connection, reused across sends and throttled, so crons that
+  // email many people don't open a burst of parallel SMTP sessions.
   _tx = withEmailDeliveryLogging(nodemailer.createTransport({
     host: requireEnv("SMTP_HOST"),
     port,
     secure,
+    pool: true,
+    maxConnections: 2,
+    maxMessages: 50,
+    rateDelta: 1000,
+    rateLimit: 3,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
     auth: {
       user: requireEnv("SMTP_USER"),
       pass: requireEnv("SMTP_PASS"),
@@ -261,11 +248,32 @@ export async function getConsultantMapByIds(ids: string[]) {
   return out;
 }
 
+/**
+ * Sends one message per recipient rather than one BCC to everyone: a single
+ * dead mailbox in a shared BCC made the server drop the whole SMTP session
+ * ("Connection closed unexpectedly"), so nobody got the reminder. Failures are
+ * per recipient now (each logged in emailLogs); this only throws when every
+ * recipient failed, so callers' existing error handling still fires.
+ */
 export async function sendStatusChangeNotification(recipients: string[], subject: string, html: string, text: string) {
-  if (!recipients.length) return;
+  const unique = [...new Set(recipients.map((r) => String(r || "").trim().toLowerCase()).filter((r) => r.includes("@")))];
+  if (!unique.length) return;
   const transporter = getTransporter();
   const from = process.env.SMTP_FROM || process.env.SMTP_USER!;
-  await transporter.sendMail({ from, to: from, bcc: recipients, subject, html, text });
+  let failed = 0;
+  let lastError: unknown = null;
+  for (const to of unique) {
+    try {
+      await transporter.sendMail({ from, to, subject, html, text });
+    } catch (error) {
+      failed++;
+      lastError = error;
+    }
+  }
+  if (failed) {
+    logger.warn("sendStatusChangeNotification.partialFailure", { subject, total: unique.length, failed });
+  }
+  if (failed === unique.length) throw lastError;
 }
 
 export function buildMovNotificationContent(opts: { statusLabel: string; movId: string; interventionTitle?: string; beneficiaryName?: string; facilitatorName?: string }) {

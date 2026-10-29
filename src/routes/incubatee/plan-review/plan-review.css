@@ -1,0 +1,109 @@
+/* ============================================================================
+   Development plan review, shown straight after sign-in. Builds on the
+   WhatsApp consent page's shell (`wc-` classes); only what differs is here.
+   Every class here is `pr-` prefixed.
+   ========================================================================== */
+
+.pr-loading {
+  display: grid;
+  place-items: center;
+  grid-template-rows: none;
+}
+
+/* Wider than the consent card: the walkthrough has steps and a list. */
+.wc-card.pr-card {
+  width: min(760px, 100%);
+}
+
+.pr-badge {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 18px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+  color: var(--app-accent);
+  font-size: 24px;
+}
+
+.pr-lead {
+  margin: 0 0 20px;
+  color: var(--app-text-subtle);
+}
+
+.pr-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+/* Long department names must wrap, never widen the page. The card and the
+   walkthrough's Space items are flex children, which default to the width of
+   their longest unbreakable line. */
+.wc-card.pr-card,
+.pr-card .ant-space,
+.pr-card .ant-space-item {
+  min-width: 0;
+  max-width: 100%;
+}
+.pr-card,
+.pr-card .wc-title {
+  overflow-wrap: anywhere;
+}
+.pr-card .wfy-plan-actions .ant-btn {
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  white-space: normal;
+  text-align: center;
+}
+
+/* The thank-you state is short: centred in the card, and on a phone in the
+   middle of the screen. */
+.pr-card.pr-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.pr-card.pr-done .pr-actions {
+  width: 100%;
+}
+
+@media (max-width: 767px) {
+  .pr-card.pr-done {
+    justify-content: center;
+    padding-bottom: 12vh;
+  }
+
+  /* Confirm full width on top, Back / Next sharing the row below it, and
+     "Open full plan" last. */
+  .pr-card .wfy-plan-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .pr-card .wfy-plan-actions > .ant-space {
+    display: flex;
+    width: 100%;
+  }
+  .pr-card .wfy-plan-actions > .ant-space > .ant-space-item {
+    flex: 1 1 0;
+  }
+  .pr-card .wfy-plan-actions > .ant-space > .ant-space-item:last-child {
+    order: -1;
+    flex-basis: 100%;
+  }
+  .pr-card .wfy-plan-actions .ant-btn {
+    width: 100%;
+  }
+  .pr-badge {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 14px;
+    font-size: 22px;
+  }
+  .pr-actions {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}

@@ -1,4 +1,4 @@
-import { collection, getDocs, limit, query, where } from 'firebase/firestore'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import {
     SECTION_ADAPTERS,
@@ -6,6 +6,7 @@ import {
     getOwnedSectionsForDept
 } from '@/routes/gap/sections'
 import { mapGapToInterventions } from './gapInterventionMappingService'
+import type { DepartmentRoleKey } from './departmentRoleLogic'
 
 export type GapSuggestion = {
     /** Intervention id from the department's own catalogue */
@@ -43,7 +44,29 @@ type StoredEdge = {
     rationale?: string
 }
 
-const isConfirmed = (gap: any) =>
+const gapMillis = (gap: any) => {
+    const v = gap?.submittedAt || gap?.createdAt || gap?.updatedAt
+    if (!v) return 0
+    if (typeof v?.toMillis === 'function') return v.toMillis()
+    if (typeof v?.seconds === 'number') return v.seconds * 1000
+    const ms = new Date(v).getTime()
+    return Number.isFinite(ms) ? ms : 0
+}
+
+/**
+ * A participant's current GAP Analysis for a programme: the latest one filed
+ * for it, or — for records from before GAPs carried a programId — the latest
+ * one with no programme. GAPs from other programmes never count.
+ */
+export function pickLatestGap<T extends { programId?: string }>(gaps: T[], programId?: string | null): T | null {
+    const pid = String(programId || '')
+    const inScope = gaps.filter(g => !pid || !g?.programId || String(g.programId) === pid)
+    const own = pid ? inScope.filter(g => String(g?.programId || '') === pid) : []
+    const pool = own.length ? own : inScope
+    return pool.reduce<T | null>((best, g) => (!best || gapMillis(g) > gapMillis(best) ? g : best), null)
+}
+
+export const isConfirmed = (gap: any) =>
     gap?.confirmationStatus === 'Confirmed' ||
     gap?.romReview?.status === 'Confirmed' ||
     !!gap?.romReview?.confirmedAt
@@ -70,23 +93,25 @@ const answerAt = (gap: any, section: SectionKey, index: number) => {
  */
 export async function loadGapSuggestions(
     participantId: string,
-    departmentName: string,
-    catalogueTitles: Map<string, string>
+    departmentRole: DepartmentRoleKey | null | undefined,
+    catalogueTitles: Map<string, string>,
+    programId?: string | null
 ): Promise<GapSuggestionsResult> {
-    const sections = getOwnedSectionsForDept(departmentName)
+    const sections = getOwnedSectionsForDept(departmentRole)
     if (!participantId || !sections.length) return EMPTY
 
+    // Not limit(1): that returned an arbitrary GAP, possibly an old or other-programme one.
     const snap = await getDocs(
         query(
             collection(db, 'gapAnalysis'),
-            where('participantId', '==', String(participantId)),
-            limit(1)
+            where('participantId', '==', String(participantId))
         )
     )
-    if (snap.empty) return EMPTY
-
-    const gapDoc = snap.docs[0]
-    const gap = { id: gapDoc.id, ...(gapDoc.data() as any) }
+    const gap = pickLatestGap(
+        snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })),
+        programId
+    )
+    if (!gap) return EMPTY
 
     if (!isConfirmed(gap)) {
         return { ...EMPTY, gapId: gap.id, unconfirmed: true }

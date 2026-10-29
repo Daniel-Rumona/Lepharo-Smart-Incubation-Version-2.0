@@ -11,7 +11,6 @@ import {
     Select,
     Alert,
     Rate,
-    Table,
     Tag,
     Grid,
     Space,
@@ -20,14 +19,15 @@ import {
     Descriptions,
     Divider
 } from 'antd'
+import { DisputeDeliveryModal } from '@/components/queries/DisputeDeliveryModal'
+import type { DisputeCategory } from '@/services/deliveryDisputeService'
 import {
     CheckCircleOutlined,
     FileTextOutlined,
-    FileDoneOutlined,
     CalendarOutlined,
     ClockCircleOutlined,
     CloseOutlined,
-    EyeOutlined
+    EyeOutlined,
 } from '@ant-design/icons'
 import {
     doc,
@@ -36,22 +36,17 @@ import {
     getDocs,
     query,
     where,
-    updateDoc,
     onSnapshot,
-    collectionGroup,
-    serverTimestamp,
     Timestamp
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import dayjs from 'dayjs'
 import { Helmet } from 'react-helmet'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { RatioIcon } from 'lucide-react'
 import { requestOpenAccountSettings } from '@/lib/accountSettings'
 import {
-    acceptAssignedIntervention,
-    declineAssignedIntervention,
     confirmCompletion as confirmCompletionAction,
     rejectCompletion as rejectCompletionAction
 } from '@/lib/interventions'
@@ -59,43 +54,35 @@ import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
 import DashboardOverview from '@/components/incubatee/DashboardOverview'
+import NeedsAttentionCard, { type AttentionItem } from '@/components/incubatee/NeedsAttentionCard'
 import Button from '@/components/incubatee/DashboardButton'
 import { buildDashboardComplianceRows } from '@/lib/dashboardCompliance'
 import { resolveAssignmentLifecycle } from '@/services/assignmentLifecycleService'
 import {
     resolveComplianceRequirements,
-    type ComplianceRequirement,
-    type AgreementTemplate
+    type ComplianceRequirement
 } from '@/services/complianceResolver'
-import { hasSmeGapSubmission, isIncubateeAgreementSigned } from '@/utils/agreementStatus'
 import {
     formatAppointmentStatus,
     formatDeliveryMethod,
     getAppointmentAssigneeName,
-    getConfirmationStatus,
     getDeliveryMethod,
+    getSmeResponseState,
     normalizeAppointmentRecord,
+    SME_RESPONSE_META,
     titleCase
 } from '@/services/appointmentService'
 import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
-import {
-    APPOINTMENT_DECLINE_REASON_OPTIONS,
-    appointmentDeclineReasonAllowsTimeProposal,
-    buildAppointmentDeclineReason,
-    type AppointmentDeclineReasonCode
-} from '@/lib/appointmentDeclineReasons'
-import AppointmentRescheduleProposalFields, {
-    buildAppointmentRescheduleProposals,
-    createAppointmentProposalDraft,
-    type AppointmentProposalDraft
-} from '@/components/appointments/AppointmentRescheduleProposalFields'
+import DeclineAppointmentModal from '@/components/appointments/DeclineAppointmentModal'
+import { confirmAppointmentResponse } from '@/services/appointmentResponses'
+import { useSmeWaiting, type DocumentRow } from '@/components/incubatee/SmeWaiting'
 import {
     guideTarget,
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
+import { useSigningCeremony } from '@/components/shared/SignatureAnimation'
 import '@/styles/incubatee-dashboard.css'
-import { MotionCard } from '@/components/dashboards/metrics/Header'
 
 /** AntD shorthands */
 const { Text } = Typography
@@ -119,7 +106,7 @@ interface AssignedIntervention {
     subInterventionTitle?: string
     subInterventionName?: string
     subIntervention?: string
-    areaOfSupport: string
+    departmentId?: string | null
     dueDate: any
     createdAt: any
     updatedAt: any
@@ -147,12 +134,6 @@ type UrgentItem = {
     cta: string
     onClick: () => void
     tag?: string
-}
-
-type PendingDpConfirmation = {
-    departmentId: string
-    departmentName: string
-    departmentCompletedAt: Date | null
 }
 
 /** ===========================
@@ -191,6 +172,8 @@ type Appointment = {
     location?: string
     status?: ApptStatus | string
     userConfirmation?: ApptConfirmation | string
+    /** Canonical v5 response field; kept in step with userConfirmation locally. */
+    smeConfirmation?: ApptConfirmation | string
     createdAt?: any
     updatedAt?: any
     declineReason?: string
@@ -266,80 +249,19 @@ const formatFoodSelections = (appt: Appointment | null, participantId: string | 
 }
 
 /** ===========================
- *  Question + Template types
- *  =========================== */
-type ResponseType = 'multiple' | 'scale' | 'short'
-
-interface Question {
-    id: string
-    type: ResponseType
-    questionText: string
-    required?: boolean
-    options?: string[]
-    multipleMode?: 'single' | 'multi'
-    min?: number
-    max?: number
-    step?: number
-    placeholder?: string
-}
-
-interface DepartmentFormTemplate {
-    id: string
-    title?: string
-    description?: string
-    type?: string
-    department?: string
-    questions?: Question[]
-}
-
-interface DocumentRow {
-    id: string // sentForms/{id}
-    responseDocId: string // responses/{participantId}
-    title: string
-    type: string
-    description: string
-    department?: string
-    status: 'pending' | 'in-progress' | 'completed'
-    dueDate?: string
-    requestedBy?: string
-    questions: Question[]
-    draftData?: any
-    answers?: Record<string, any>
-    submittedAt?: any
-    completed?: boolean
-    templateId?: string
-}
-
-/** ===========================
- *  Template cache for departmentForms
- *  =========================== */
-const templateCache = new Map<string, DepartmentFormTemplate | null>()
-async function getTemplateById(templateId?: string | null) {
-    if (!templateId) return null
-    if (templateCache.has(templateId)) return templateCache.get(templateId)!
-    try {
-        const snap = await getDoc(doc(db, 'departmentForms', templateId))
-        const tpl = snap.exists()
-            ? ({ id: snap.id, ...snap.data() } as DepartmentFormTemplate)
-            : null
-        templateCache.set(templateId, tpl)
-        return tpl
-    } catch (e) {
-        console.error('Failed to fetch departmentForms template:', e)
-        templateCache.set(templateId, null)
-        return null
-    }
-}
-
-/** ===========================
  *  Component
  *  =========================== */
 export const IncubateeDashboard: React.FC = () => {
     const { user, loading: identityLoading } = useFullIdentity()
+    const signingCeremony = useSigningCeremony()
     const screens = useBreakpoint()
     const isMobile = !screens.md
     const navigate = useNavigate()
+    const location = useLocation()
     const { activeProgramId } = useActiveProgramId()
+    // Everything waiting on the SME (plans, completions, agreements, forms,
+    // appointments to answer) comes from the shared source the prompt also reads.
+    const waiting = useSmeWaiting()
 
     const guideRegistration = useMemo<PageGuideRegistration>(
         () => ({
@@ -366,47 +288,25 @@ export const IncubateeDashboard: React.FC = () => {
                             }
                         },
                         {
-                            element: guideTarget('incubatee-pending-completions'),
+                            element: guideTarget('incubatee-needs-attention'),
                             skipMissingElement: true,
                             popover: {
-                                title: 'Completion confirmations',
+                                title: 'Needs your attention',
                                 description:
-                                    'When a facilitator completes an intervention, review the intervention and sub-intervention here before confirming or rejecting it.',
+                                    'Everything waiting on you, in one list: completed work to confirm or reject, agreements and surveys, department plans to confirm, and appointments to respond to. It is hidden when nothing needs you.',
                                 side: 'bottom',
                                 align: 'start'
                             }
                         },
                         {
-                            element: guideTarget('incubatee-completion-actions'),
+                            element: guideTarget('incubatee-attention-actions'),
                             skipMissingElement: true,
                             popover: {
-                                title: 'Confirm or reject',
+                                title: 'Act on an item',
                                 description:
-                                    'Confirm completed work when the delivery is correct, or reject it with a reason when follow-up is needed.',
+                                    'Each item has its main action highlighted. Confirm completed work when the delivery is correct, or reject it with a reason when follow-up is needed.',
                                 side: 'left',
                                 align: 'center'
-                            }
-                        },
-                        {
-                            element: guideTarget('incubatee-urgent-action'),
-                            skipMissingElement: true,
-                            popover: {
-                                title: 'Urgent action',
-                                description:
-                                    'Complete outstanding agreements or surveys shown here. This section is hidden when nothing requires attention.',
-                                side: 'bottom',
-                                align: 'start'
-                            }
-                        },
-                        {
-                            element: guideTarget('incubatee-pending-dp-confirmations'),
-                            skipMissingElement: true,
-                            popover: {
-                                title: 'Pending DP confirmations',
-                                description:
-                                    'These departments have completed their development-plan submission and are waiting for your review. Select View all to continue on the Roadmap page.',
-                                side: 'bottom',
-                                align: 'start'
                             }
                         },
                         {
@@ -415,20 +315,9 @@ export const IncubateeDashboard: React.FC = () => {
                             popover: {
                                 title: 'Upcoming schedule',
                                 description:
-                                    'Review upcoming appointment dates, times, delivery details and your response status.',
+                                    'Review this week\'s appointments by day. Open one to see its details and link, choose food when available, and confirm or decline it.',
                                 side: 'top',
                                 align: 'start'
-                            }
-                        },
-                        {
-                            element: guideTarget('incubatee-schedule-actions'),
-                            skipMissingElement: true,
-                            popover: {
-                                title: 'Appointment actions',
-                                description:
-                                    'Open appointment details or links, choose food when available, and confirm or decline pending appointments.',
-                                side: 'left',
-                                align: 'center'
                             }
                         }
                     ]
@@ -457,9 +346,6 @@ export const IncubateeDashboard: React.FC = () => {
 
     /** Interventions + actions */
     const [allInterventions, setAllInterventions] = useState<AssignedIntervention[]>([])
-    const [pendingInterventions, setPendingInterventions] = useState<any[]>([])
-    const [pendingDpConfirmations, setPendingDpConfirmations] =
-        useState<PendingDpConfirmation[]>([])
     const [confirmModalVisible, setConfirmModalVisible] = useState(false)
     const [selectedIntervention, setSelectedIntervention] =
         useState<AssignedIntervention | null>(null)
@@ -467,7 +353,6 @@ export const IncubateeDashboard: React.FC = () => {
     const [feedbackComments, setFeedbackComments] = useState<string>('')
     const [completionReviewStep, setCompletionReviewStep] = useState<0 | 1>(0)
     const [isRejectModalVisible, setIsRejectModalVisible] = useState(false)
-    const [rejectReason, setRejectReason] = useState('')
     const [confirmSubmitting, setConfirmSubmitting] = useState(false)
 
 
@@ -490,33 +375,27 @@ export const IncubateeDashboard: React.FC = () => {
     )
     const [apptDetailsOpen, setApptDetailsOpen] = useState(false)
     const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null)
-    const [declineApptOpen, setDeclineApptOpen] = useState(false)
-    const [declineApptReasonCode, setDeclineApptReasonCode] =
-        useState<AppointmentDeclineReasonCode | undefined>()
-    const [declineApptReason, setDeclineApptReason] = useState('')
-    const [declineApptProposals, setDeclineApptProposals] =
-        useState<AppointmentProposalDraft[]>([createAppointmentProposalDraft()])
-    const [declineApptId, setDeclineApptId] = useState<string | null>(null)
+    const [decliningAppt, setDecliningAppt] = useState<Appointment | null>(null)
     const [foodMenuModalOpen, setFoodMenuModalOpen] = useState(false)
     const [selectedFoodAppt, setSelectedFoodAppt] = useState<Appointment | null>(null)
     const [selectedMealItemId, setSelectedMealItemId] = useState<string | null>(null)
     const [selectedDrinkItemId, setSelectedDrinkItemId] = useState<string | null>(null)
     const [savingFoodSelection, setSavingFoodSelection] = useState(false)
+    const [acceptedAppLoading, setAcceptedAppLoading] = useState(true)
+    const [interventionsLoading, setInterventionsLoading] = useState(true)
 
     /** Agreements + GAP + modals */
-    const [signedAgreements, setSignedAgreements] = useState<Record<string, any>>({})
-    const [smeGapSubmitted, setSmeGapSubmitted] = useState(false)
-    const [requiredAgreements, setRequiredAgreements] = useState<Array<{
-        agreementId: string
-        title: string
-        template?: AgreementTemplate
-    }>>([])
     const [acceptedApp, setAcceptedApp] = useState<any>(null)
+    const [participantComplianceDocs, setParticipantComplianceDocs] = useState<any[]>([])
+    // Embedded documents come from where the Compliance pages read them: the
+    // participant's array when it has entries, otherwise the application's.
     const complianceRows = useMemo(() => buildDashboardComplianceRows(
         complianceRequirements,
-        Array.isArray(acceptedApp?.complianceDocuments) ? acceptedApp.complianceDocuments : [],
+        participantComplianceDocs.length
+            ? participantComplianceDocs
+            : Array.isArray(acceptedApp?.complianceDocuments) ? acceptedApp.complianceDocuments : [],
         complianceUploads
-    ), [complianceRequirements, acceptedApp?.complianceDocuments, complianceUploads])
+    ), [complianceRequirements, participantComplianceDocs, acceptedApp?.complianceDocuments, complianceUploads])
     const outstandingComplianceRows = complianceRows.filter(row => row.outstanding)
     const outstandingDocs = outstandingComplianceRows.length
     const complianceUnavailable = complianceLoading || requirementsLoading || Boolean(complianceError || requirementsError)
@@ -528,11 +407,10 @@ export const IncubateeDashboard: React.FC = () => {
     /** Realtime unsub refs */
     const applicationsUnsub = useRef<null | (() => void)>(null)
     const interventionsUnsub = useRef<null | (() => void)>(null)
-    const responsesUnsub = useRef<null | (() => void)>(null)
     const completionSubmitLock = useRef<string | null>(null)
 
-    /** Documents (SURVEYS) */
-    const [documents, setDocuments] = useState<DocumentRow[]>([])
+    /** Documents (SURVEYS): all forms sent to the SME, from the shared source. */
+    const documents: DocumentRow[] = waiting.forms
 
     /** -----------------
      *  Time helpers (fix TBD issue properly)
@@ -568,32 +446,9 @@ export const IncubateeDashboard: React.FC = () => {
         return d ? dayjs(d).format('HH:mm') : ''
     }
 
-    const normalizeSchedule = (item: Omit<ScheduleRow, '_n'>) => {
-        // Date:
-        // - prefer item.date
-        // - fallback to startTime if it's a Timestamp/Date
-        const dateCandidate =
-            (typeof item.date === 'string' && item.date) ||
-            (toDateSafe(item.startTime) ? dayjs(toDateSafe(item.startTime)!).format('YYYY-MM-DD') : '')
-
-        const date = fmtDateStr(dateCandidate)
-        const start = fmtTimeFromAny(item.startTime)
-        const end = fmtTimeFromAny(item.endTime)
-
-        const sortKey = (() => {
-            const d = date === '-' ? '9999-12-31' : date
-            const t = start || '99:99'
-            return `${d} ${t}`
-        })()
-
-        return { date, start, end, sortKey }
-    }
-
     const requireSignatureForCompletion = (onOk: () => void) => {
         if (user?.signatureURL) return onOk()
         Modal.confirm({
-            okButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
-            cancelButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
             title: 'Signature required',
             content:
                 'You must add your signature in Account Settings before you can confirm intervention completion.',
@@ -606,8 +461,6 @@ export const IncubateeDashboard: React.FC = () => {
     const requireSignatureForAcceptance = (itemLabel: string) => {
         if (user?.signatureURL) return true
         Modal.confirm({
-            okButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
-            cancelButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
             title: 'Signature required',
             content: `Please add your signature in Account Settings before confirming or accepting ${itemLabel}.`,
             okText: 'Go to Account Settings',
@@ -668,9 +521,11 @@ export const IncubateeDashboard: React.FC = () => {
                 // Firestore string equality is case-sensitive. Retain a
                 // compatibility fallback for legacy participant emails whose
                 // casing differs from the effective user profile.
+                // The rules only let staff scan the collection, so an SME's
+                // scan is denied and simply finds nothing.
                 if (!participantDoc) {
-                    const participants = await getDocs(collection(db, 'participants'))
-                    participantDoc = participants.docs.find(item =>
+                    const participants = await getDocs(collection(db, 'participants')).catch(() => null)
+                    participantDoc = participants?.docs.find(item =>
                         String(item.data()?.email || '').trim().toLowerCase() === email
                     ) || null
                 }
@@ -678,6 +533,8 @@ export const IncubateeDashboard: React.FC = () => {
 
             if (cancelled) return
             setParticipantId(String(participantDoc?.id || ''))
+            const participantDocuments = participantDoc?.data()?.complianceDocuments
+            setParticipantComplianceDocs(Array.isArray(participantDocuments) ? participantDocuments : [])
             setLoading(false)
         }
 
@@ -691,7 +548,6 @@ export const IncubateeDashboard: React.FC = () => {
             cancelled = true
             applicationsUnsub.current?.()
             interventionsUnsub.current?.()
-            responsesUnsub.current?.()
         }
     }, [
         identityLoading,
@@ -702,138 +558,6 @@ export const IncubateeDashboard: React.FC = () => {
         user?.profileId,
         user?.uid
     ])
-
-    /** -----------------
-     *  Development-plan confirmations awaiting the incubatee
-     *  ----------------- */
-    useEffect(() => {
-        if (!participantId) {
-            setPendingDpConfirmations([])
-            return
-        }
-
-        let cancelled = false
-        const normaliseName = (value: unknown) =>
-            String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
-        const isConfirmed = (value: any) =>
-            value === true || (value && typeof value === 'object' && value.confirmed === true)
-
-        const departmentRowsPromise = getDocs(collection(db, 'departments'))
-            .then(snapshot => snapshot.docs
-                .map(departmentDoc => {
-                    const data = departmentDoc.data() as any
-                    return {
-                        id: departmentDoc.id,
-                        name: String(data.name || data.departmentName || departmentDoc.id).trim(),
-                        interventionsDepartment: data.interventionsDepartment
-                    }
-                })
-                .filter(department => department.interventionsDepartment === true)
-                .sort((a, b) => a.name.localeCompare(b.name)))
-            .catch(error => {
-                console.error('Failed to load dashboard DP departments:', error)
-                return [] as Array<{ id: string; name: string; interventionsDepartment: any }>
-            })
-
-        const off = onSnapshot(
-            query(collection(db, 'diagnosticPlans'), where('participantId', '==', participantId)),
-            async snapshot => {
-                const latestPlanDoc = [...snapshot.docs].sort((a, b) => {
-                    const aDate = toDateSafe(a.data()?.createdAt)?.getTime() || 0
-                    const bDate = toDateSafe(b.data()?.createdAt)?.getTime() || 0
-                    return bDate - aDate
-                })[0]
-
-                if (!latestPlanDoc) {
-                    if (!cancelled) setPendingDpConfirmations([])
-                    return
-                }
-
-                const plan = latestPlanDoc.data() as any
-                const departments = await departmentRowsPromise
-                if (cancelled) return
-
-                const confirmedById = plan.confirmedByDeptId || {}
-                const confirmedByName = plan.confirmed || {}
-                const incubateeConfirmedById = plan.incubateeDepartmentConfirmationsByDeptId || {}
-                const smmeConfirmedById = plan.smmeConfirmedByDeptId || {}
-                const incubateeConfirmedByName = plan.incubateeDepartmentConfirmations || {}
-                const rowsById = new Map<string, PendingDpConfirmation>()
-                const knownDepartmentIds = new Set(departments.map(department => department.id))
-
-                const addPendingDepartment = (
-                    departmentId: string,
-                    departmentName: string,
-                    departmentConfirmation: any,
-                    incubateeConfirmation: any
-                ) => {
-                    if (!isConfirmed(departmentConfirmation) || isConfirmed(incubateeConfirmation)) return
-
-                    const completedAt =
-                        departmentConfirmation && typeof departmentConfirmation === 'object'
-                            ? toDateSafe(departmentConfirmation.confirmedAt)
-                            : null
-                    rowsById.set(departmentId, {
-                        departmentId,
-                        departmentName: departmentName || departmentId,
-                        departmentCompletedAt: completedAt
-                    })
-                }
-
-                departments.forEach(department => {
-                    const byName = confirmedByName[department.name] ??
-                        confirmedByName[normaliseName(department.name)]
-                    const departmentConfirmation = confirmedById[department.id] ?? byName
-                    const incubateeConfirmation =
-                        smmeConfirmedById[department.id] ??
-                        incubateeConfirmedById[department.id] ??
-                        incubateeConfirmedByName[department.name] ??
-                        incubateeConfirmedByName[normaliseName(department.name)]
-
-                    addPendingDepartment(
-                        department.id,
-                        department.name,
-                        departmentConfirmation,
-                        incubateeConfirmation
-                    )
-                })
-
-                Object.entries(confirmedById).forEach(([departmentId, confirmation]) => {
-                    if (knownDepartmentIds.has(departmentId)) return
-                    const intervention = (plan.interventions || []).find(
-                        (item: any) => String(item.departmentId || '') === departmentId
-                    )
-                    const confirmationName =
-                        confirmation && typeof confirmation === 'object'
-                            ? String((confirmation as any).departmentName || '').trim()
-                            : ''
-                    addPendingDepartment(
-                        departmentId,
-                        confirmationName || intervention?.departmentName || intervention?.department || departmentId,
-                        confirmation,
-                        smmeConfirmedById[departmentId] ?? incubateeConfirmedById[departmentId]
-                    )
-                })
-
-                setPendingDpConfirmations(
-                    [...rowsById.values()].sort((a, b) =>
-                        (b.departmentCompletedAt?.getTime() || 0) -
-                        (a.departmentCompletedAt?.getTime() || 0) ||
-                        a.departmentName.localeCompare(b.departmentName)
-                    )
-                )
-            },
-            error => {
-                console.error('Dashboard DP confirmations listener error:', error)
-                if (!cancelled) setPendingDpConfirmations([])
-            }
-        )
-
-        return () => {
-            cancelled = true
-            off()
-        }
-    }, [participantId])
 
     /** -----------------
      *  Appointments (upcoming)
@@ -903,23 +627,6 @@ export const IncubateeDashboard: React.FC = () => {
         return () => { disposed = true; off() }
     }, [participantId, activeProgramId])
 
-    useEffect(() => {
-        setSmeGapSubmitted(false)
-        if (!participantId) return
-
-        return onSnapshot(
-            query(collection(db, 'gapAnalysis'), where('participantId', '==', participantId)),
-            snapshot => {
-                setSmeGapSubmitted(hasSmeGapSubmission({
-                    gapRecords: snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
-                }))
-            },
-            error => {
-                console.error('Dashboard GAP submission status could not be loaded:', error)
-            }
-        )
-    }, [participantId])
-
     /** -----------------
      *  Live: applications (agreements, GAP, MOA)
      *  ----------------- */
@@ -927,6 +634,7 @@ export const IncubateeDashboard: React.FC = () => {
         let disposed = false
         let revision = 0
         setAcceptedApp(null)
+        setAcceptedAppLoading(Boolean(participantId))
         if (!participantId) return
 
         applicationsUnsub.current?.()
@@ -949,27 +657,12 @@ export const IncubateeDashboard: React.FC = () => {
                     ) ||
                     acceptedApps[0] ||
                     null
-                setAcceptedApp(accepted)
-
-                const merged: Record<string, any> = { ...(accepted?.signedAgreements || {}) }
-
-                if (accepted?.id) {
-                    const appRef = doc(db, 'applications', accepted.id)
-                    try {
-                        const agrSnap = await getDocs(collection(appRef, 'agreements'))
-                        agrSnap.forEach(d => {
-                            if (!merged[d.id]) merged[d.id] = d.data()
-                        })
-                    } catch (error) {
-                        console.error('Dashboard agreements could not be loaded:', error)
-                    }
-                }
-
                 if (disposed || currentRevision !== revision) return
-                setSignedAgreements(merged)
+                setAcceptedApp(accepted)
 
                 const acceptedAt = toDate(accepted?.acceptedAt || accepted?.dateAccepted) || new Date()
                 setMonthsInProgram(dayjs().diff(dayjs(acceptedAt), 'month'))
+                setAcceptedAppLoading(false)
             }
         )
 
@@ -981,30 +674,16 @@ export const IncubateeDashboard: React.FC = () => {
         setComplianceRequirements([])
         setRequirementsError('')
         setRequirementsLoading(Boolean(acceptedApp?.programId))
-        if (!acceptedApp?.programId) {
-            setRequiredAgreements([])
-            return
-        }
+        if (!acceptedApp?.programId) return
         resolveComplianceRequirements(acceptedApp.programId, { includeAllDepartments: true })
             .then(resolved => {
                 if (disposed) return
                 setComplianceRequirements(resolved.requirements)
                 setRequirementsLoading(false)
-                const templates = new Map(resolved.agreements.map(template => [template.agreementId, template]))
-                setRequiredAgreements(
-                    resolved.requirements
-                        .filter(requirement => requirement.kind === 'agreement' && requirement.agreementId)
-                        .map(requirement => ({
-                            agreementId: requirement.agreementId!,
-                            title: requirement.title,
-                            template: templates.get(requirement.agreementId!)
-                        }))
-                )
             })
             .catch(error => {
                 console.error('Failed to resolve dashboard agreements', error)
                 if (!disposed) {
-                    setRequiredAgreements([])
                     setRequirementsLoading(false)
                     setRequirementsError('Compliance requirements could not be loaded.')
                 }
@@ -1033,6 +712,7 @@ export const IncubateeDashboard: React.FC = () => {
      *  Live: assignedInterventions
      *  ----------------- */
     useEffect(() => {
+        setInterventionsLoading(Boolean(participantId))
         if (!participantId) return
         interventionsUnsub.current?.()
         interventionsUnsub.current = onSnapshot(
@@ -1044,184 +724,15 @@ export const IncubateeDashboard: React.FC = () => {
                         ...(d.data() as any)
                     }))
                 setAllInterventions(data)
-
-                const actionable = data
-                    .map(item => {
-                        const lifecycle = resolveAssignmentLifecycle(item)
-
-                        let type: 'confirmation' | null = null
-
-                        // Appointment acceptance is handled in the Schedule
-                        // section. An assignment with no appointment gives the
-                        // SME nothing to respond to, so it must not appear as a
-                        // pending intervention action.
-                        if (lifecycle.key === 'awaiting-participant-confirmation') {
-                            type = 'confirmation'
-                        }
-
-                        if (!type) return null
-
-                        const subIntervention = String(
-                            item.subInterventionTitle ||
-                            item.subInterventionName ||
-                            item.subIntervention ||
-                            ''
-                        ).trim()
-                        const facilitator = String(
-                            item.assigneeName ||
-                            item.facilitatorName ||
-                            item.consultantName ||
-                            ''
-                        ).trim()
-
-                        return {
-                            id: item.id,
-                            title: item.interventionTitle,
-                            subIntervention:
-                                subIntervention &&
-                                    subIntervention.toLowerCase() !== String(item.interventionTitle || '').trim().toLowerCase()
-                                    ? subIntervention
-                                    : '',
-                            facilitator: facilitator || 'Not assigned yet',
-                            type,
-                            date: item.dueDate?.seconds
-                                ? dayjs(item.dueDate.seconds * 1000).format('YYYY-MM-DD')
-                                : item.dueDate
-                                    ? dayjs(item.dueDate).format('YYYY-MM-DD')
-                                    : '-',
-                            full: item
-                        }
-                    })
-                    .filter(Boolean)
-
-                setPendingInterventions(actionable as any[])
+                setInterventionsLoading(false)
+            },
+            error => {
+                console.error('Dashboard interventions could not be loaded:', error)
+                setInterventionsLoading(false)
             }
         )
 
         return () => interventionsUnsub.current?.()
-    }, [participantId])
-
-    /** -----------------
-     *  Live: SURVEYS
-     *  ----------------- */
-    useEffect(() => {
-        if (!participantId) {
-            setDocuments([])
-            return
-        }
-        responsesUnsub.current?.()
-        let disposed = false
-        let fallbackFormsUnsub: null | (() => void) = null
-        let fallbackResponseUnsubs: Array<() => void> = []
-        let directRowsVersion = 0
-        const directResponses = new Map<string, { responseSnap: any; formSnap: any }>()
-
-        const buildDocumentRow = async (respSnap: any, suppliedFormSnap?: any) => {
-            const resp = respSnap.data() as any
-            const formRef = respSnap.ref.parent.parent!
-            const formSnap = suppliedFormSnap || await getDoc(formRef)
-            const form = (formSnap.exists() ? formSnap.data() : {}) as any
-
-            const templateId: string | undefined = resp?.templateId || form?.templateId || undefined
-            const tpl = await getTemplateById(templateId)
-
-            const status: DocumentRow['status'] = resp.completed
-                ? 'completed'
-                : resp.answersDraft && Object.keys(resp.answersDraft || {}).length
-                    ? 'in-progress'
-                    : 'pending'
-
-            const merged: Partial<DocumentRow> = {
-                title: tpl?.title ?? form.title ?? 'Untitled Form',
-                description: tpl?.description ?? form.description ?? '',
-                type: tpl?.type ?? form.type ?? 'marketing',
-                department: tpl?.department ?? form.department ?? form.requestedBy ?? '',
-                questions:
-                    (tpl?.questions as Question[] | undefined) ??
-                    ((Array.isArray(form.questions) ? form.questions : undefined) as Question[] | undefined) ??
-                    ((Array.isArray(resp.questions) ? resp.questions : undefined) as Question[] | undefined) ??
-                    []
-            }
-
-            return {
-                id: formRef.id,
-                responseDocId: respSnap.id,
-                status,
-                dueDate: form.dueDate || '',
-                requestedBy: form.requestedBy || form.department || '',
-                draftData: resp.answersDraft || undefined,
-                answers: resp.answers || undefined,
-                submittedAt: resp.submittedAt ?? null,
-                completed: !!resp.completed,
-                templateId,
-                ...merged
-            } as DocumentRow
-        }
-
-        const publishDirectRows = async () => {
-            const version = ++directRowsVersion
-            const rows = await Promise.all(
-                Array.from(directResponses.values()).map(({ responseSnap, formSnap }) =>
-                    buildDocumentRow(responseSnap, formSnap)
-                )
-            )
-            if (!disposed && version === directRowsVersion) setDocuments(rows)
-        }
-
-        const startDirectResponseListeners = () => {
-            if (fallbackFormsUnsub || disposed) return
-            setDocuments([])
-            fallbackFormsUnsub = onSnapshot(
-                collection(db, 'sentForms'),
-                formsSnap => {
-                    fallbackResponseUnsubs.forEach(unsubscribe => unsubscribe())
-                    fallbackResponseUnsubs = []
-                    directResponses.clear()
-                    void publishDirectRows()
-
-                    fallbackResponseUnsubs = formsSnap.docs.map(formSnap =>
-                        onSnapshot(
-                            doc(db, 'sentForms', formSnap.id, 'responses', participantId),
-                            responseSnap => {
-                                if (responseSnap.exists()) {
-                                    directResponses.set(formSnap.id, { responseSnap, formSnap })
-                                } else {
-                                    directResponses.delete(formSnap.id)
-                                }
-                                void publishDirectRows()
-                            },
-                            error => console.error('Direct dashboard response listener error:', error)
-                        )
-                    )
-                },
-                error => console.error('Dashboard sent forms listener error:', error)
-            )
-        }
-
-        const groupUnsub = onSnapshot(
-            query(collectionGroup(db, 'responses'), where('participantId', '==', participantId)),
-            async snap => {
-                const rows = await Promise.all(snap.docs.map(respSnap => buildDocumentRow(respSnap)))
-                if (!disposed) setDocuments(rows)
-            },
-            error => {
-                if (error.code === 'permission-denied') {
-                    startDirectResponseListeners()
-                    return
-                }
-                console.error('Responses listener (dashboard) error:', error)
-            }
-        )
-
-        const stopResponses = () => {
-            disposed = true
-            groupUnsub()
-            fallbackFormsUnsub?.()
-            fallbackResponseUnsubs.forEach(unsubscribe => unsubscribe())
-            fallbackResponseUnsubs = []
-        }
-        responsesUnsub.current = stopResponses
-        return stopResponses
     }, [participantId])
 
     /** -----------------
@@ -1278,35 +789,8 @@ export const IncubateeDashboard: React.FC = () => {
         .sort((a, b) => (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0) || a.id.localeCompare(b.id))
         .slice(0, 5), [allInterventions])
 
-    const unsignedAgreementRequirements = useMemo(() => {
-        const acceptedAt = toDate(acceptedApp?.acceptedAt || acceptedApp?.dateAccepted)
-        return requiredAgreements.filter(requirement => {
-            const delayMonths = requirement.template?.availabilityDelayMonths
-            if (typeof delayMonths === 'number' && delayMonths > 0) {
-                if (!acceptedAt || dayjs().isBefore(dayjs(acceptedAt).add(delayMonths, 'month'))) {
-                    return false
-                }
-            }
-            const value = signedAgreements?.[requirement.agreementId]
-            if (
-                requirement.agreementId === 'gap-analysis' &&
-                hasSmeGapSubmission({
-                    application: acceptedApp,
-                    agreement: value,
-                    gapRecords: smeGapSubmitted ? [{ id: 'submitted' }] : []
-                })
-            ) {
-                return false
-            }
-            return !isIncubateeAgreementSigned(value, requirement.agreementId)
-        })
-    }, [acceptedApp, requiredAgreements, signedAgreements, smeGapSubmitted])
-
-    const otherUnsignedCount = unsignedAgreementRequirements.length
-
     const urgentFormItems: UrgentItem[] = useMemo(() => {
-        return documents
-            .filter(d => d.status !== 'completed')
+        return waiting.pendingForms
             .map(d => ({
                 key: `resp-${d.id}`,
                 kind: 'survey',
@@ -1323,53 +807,36 @@ export const IncubateeDashboard: React.FC = () => {
                         }
                     })
             }))
-    }, [documents, navigate, participantId])
+    }, [waiting.pendingForms, navigate, participantId])
 
     const urgentItems: UrgentItem[] = useMemo(() => {
-        const agreements: UrgentItem[] = unsignedAgreementRequirements.map(requirement => ({
+        const agreements: UrgentItem[] = waiting.agreements.map(requirement => ({
             key: `agreement-${requirement.agreementId}`,
             kind: 'contract',
             title: requirement.title,
             subtitle: 'Required',
             cta: 'Open',
-            onClick: () => navigate('/incubatee/documents/compliance'),
+            // Opens this agreement on the compliance page, not just the page.
+            onClick: () => navigate('/incubatee/compliance', { state: { openAgreement: requirement.agreementId } }),
             tag: 'Agreement'
         }))
         return [...agreements, ...urgentFormItems]
-    }, [navigate, unsignedAgreementRequirements, urgentFormItems])
+    }, [navigate, waiting.agreements, urgentFormItems])
 
-    const hasUrgentAction = urgentItems.length > 0
 
     /** -----------------
      *  Appointment & Events actions
      *  ----------------- */
     const confirmAppointment = async (apptId: string) => {
         try {
-            await updateDoc(doc(db, 'appointments', apptId), {
-                smeConfirmation: 'confirmed',
-                updatedAt: serverTimestamp()
-            })
-
-            // Responding to an appointment doubles as accepting the underlying
-            // intervention assignment when it's still awaiting that decision.
-            // A no-op (already accepted, or a later appointment in the same
-            // intervention) throws and is safe to ignore here.
-            const assignedInterventionId = String(
-                appointments.find(a => a.id === apptId)?.assignedInterventionId || ''
-            ).trim()
-            if (assignedInterventionId) {
-                try {
-                    await acceptAssignedIntervention(db, assignedInterventionId)
-                } catch {
-                    // Not awaiting acceptance - nothing to do.
-                }
-            }
+            const appt = appointments.find(a => a.id === apptId) || waiting.appointments.find((a: any) => a.id === apptId)
+            await confirmAppointmentResponse({ id: apptId, assignedInterventionId: appt?.assignedInterventionId })
 
             setAppointments(prev =>
-                prev.map(a => (a.id === apptId ? { ...a, userConfirmation: 'confirmed' } : a))
+                prev.map(a => (a.id === apptId ? { ...a, userConfirmation: 'confirmed', smeConfirmation: 'confirmed' } : a))
             )
             if (selectedAppt?.id === apptId) {
-                setSelectedAppt({ ...selectedAppt, userConfirmation: 'confirmed' })
+                setSelectedAppt({ ...selectedAppt, userConfirmation: 'confirmed', smeConfirmation: 'confirmed' })
             }
             message.success('Appointment confirmed.')
         } catch (e) {
@@ -1467,22 +934,7 @@ export const IncubateeDashboard: React.FC = () => {
             }))
 
             const updatedSelections = newSelections
-            await updateDoc(doc(db, 'appointments', selectedFoodAppt.id), {
-                foodSelections: updatedSelections,
-                smeConfirmation: 'confirmed',
-                updatedAt: serverTimestamp()
-            })
-
-            const assignedInterventionId = String(
-                (selectedFoodAppt as any)?.assignedInterventionId || ''
-            ).trim()
-            if (assignedInterventionId) {
-                try {
-                    await acceptAssignedIntervention(db, assignedInterventionId)
-                } catch {
-                    // Not awaiting acceptance - nothing to do.
-                }
-            }
+            await confirmAppointmentResponse(selectedFoodAppt, updatedSelections)
 
             const wasAlreadyConfirmed =
                 String(selectedFoodAppt.userConfirmation || '').toLowerCase() === 'confirmed'
@@ -1494,7 +946,7 @@ export const IncubateeDashboard: React.FC = () => {
             setAppointments(prev =>
                 prev.map(a =>
                     a.id === selectedFoodAppt.id
-                        ? { ...a, foodSelections: updatedSelections, userConfirmation: 'confirmed' }
+                        ? { ...a, foodSelections: updatedSelections, userConfirmation: 'confirmed', smeConfirmation: 'confirmed' }
                         : a
                 )
             )
@@ -1502,7 +954,8 @@ export const IncubateeDashboard: React.FC = () => {
                 setSelectedAppt({
                     ...selectedAppt,
                     foodSelections: updatedSelections,
-                    userConfirmation: 'confirmed'
+                    userConfirmation: 'confirmed',
+                    smeConfirmation: 'confirmed'
                 })
             }
             setFoodMenuModalOpen(false)
@@ -1518,82 +971,8 @@ export const IncubateeDashboard: React.FC = () => {
     }
 
     const openDeclineAppointment = (apptId: string) => {
-        setDeclineApptId(apptId)
-        setDeclineApptReasonCode(undefined)
-        setDeclineApptReason('')
-        setDeclineApptProposals([createAppointmentProposalDraft()])
-        setDeclineApptOpen(true)
-    }
-
-    const submitDeclineAppointment = async () => {
-        if (!declineApptId) return
-        let reason
-        try {
-            reason = buildAppointmentDeclineReason(
-                declineApptReasonCode,
-                declineApptReason
-            )
-        } catch (error: any) {
-            message.warning(error?.message || 'Please provide a reason.')
-            return
-        }
-
-        const decliningAppointment = appointments.find(
-            appointment => appointment.id === declineApptId
-        )
-        const canProposeTime =
-            !decliningAppointment?.isGroupAppointment &&
-            appointmentDeclineReasonAllowsTimeProposal(reason.code)
-        let rescheduleProposals: ReturnType<typeof buildAppointmentRescheduleProposals> = []
-        try {
-            rescheduleProposals = canProposeTime
-                ? buildAppointmentRescheduleProposals(declineApptProposals)
-                : []
-        } catch (error: any) {
-            message.warning(error?.message || 'Check the proposed appointment times.')
-            return
-        }
-
-        try {
-            await updateDoc(doc(db, 'appointments', declineApptId), {
-                smeConfirmation: 'declined',
-                smeDeclineReason: reason.text,
-                smeRescheduleRequest: rescheduleProposals.length
-                    ? {
-                        status: 'proposed',
-                        reasonCode: reason.code,
-                        reasonText: reason.text,
-                        proposals: rescheduleProposals
-                    }
-                    : null,
-                updatedAt: serverTimestamp()
-            })
-
-            // Declining an appointment that's still awaiting the SME's initial
-            // acceptance declines the underlying assignment too. A no-op
-            // (already resolved, or a later appointment in the same
-            // intervention) throws and is safe to ignore here.
-            const assignedInterventionId = String(
-                appointments.find(a => a.id === declineApptId)?.assignedInterventionId || ''
-            ).trim()
-            if (assignedInterventionId) {
-                try {
-                    await declineAssignedIntervention(db, assignedInterventionId, reason.text)
-                } catch {
-                    // Not awaiting acceptance - nothing to do.
-                }
-            }
-
-            message.success('Appointment declined.')
-            setDeclineApptOpen(false)
-            setDeclineApptId(null)
-            setDeclineApptReasonCode(undefined)
-            setDeclineApptReason('')
-            setDeclineApptProposals([createAppointmentProposalDraft()])
-        } catch (e) {
-            console.error(e)
-            message.error('Failed to decline appointment.')
-        }
+        const appt = appointments.find(a => a.id === apptId) || waiting.appointments.find((a: any) => a.id === apptId)
+        if (appt) setDecliningAppt(appt as Appointment)
     }
 
 
@@ -1603,15 +982,15 @@ export const IncubateeDashboard: React.FC = () => {
     // Accept / decline now happens by responding to the intervention's
     // appointment invite (see the Schedule section) rather than here.
 
-    const handleRejectCompletion = async () => {
-        if (!selectedIntervention || !rejectReason.trim()) return message.warning('Please provide a reason.')
-        await rejectCompletionAction(db, selectedIntervention.id, rejectReason, {
+    const handleRejectCompletion = async (category: DisputeCategory, reason: string) => {
+        if (!selectedIntervention) return
+        await rejectCompletionAction(db, selectedIntervention.id, reason, {
             deptName: user?.departmentName,
-            uid: user?.uid
-        })
-        message.success('Completion rejected and logged.')
-        setIsRejectModalVisible(false)
-        setRejectReason('')
+            uid: user?.uid,
+            name: (user as any)?.name || null,
+            email: user?.email || undefined
+        }, category)
+        message.success('Sent to the facilitator. You’ll be asked to confirm again once it’s sorted.')
     }
 
     const handleConfirmCompletion = async () => {
@@ -1624,8 +1003,6 @@ export const IncubateeDashboard: React.FC = () => {
 
         if (!user?.signatureURL) {
             Modal.confirm({
-                okButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
-                cancelButtonProps: { shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } },
                 title: 'Signature required',
                 content:
                     'You must add your signature in Account Settings before you can confirm intervention completion.',
@@ -1640,23 +1017,26 @@ export const IncubateeDashboard: React.FC = () => {
             completionSubmitLock.current = interventionId
             setConfirmSubmitting(true)
 
-            await confirmCompletionAction(
-                db,
-                interventionId,
-                {
-                    rating: feedbackRating || 0,
-                    comments: feedbackComments?.trim() || ''
-                },
-                {
-                    signerSignatureUrl: user.signatureURL
-                }
+            // Confirming signs the MOV with the saved signature: show it being written.
+            await signingCeremony.sign(
+                user.signatureURL,
+                () => confirmCompletionAction(
+                    db,
+                    interventionId,
+                    {
+                        rating: feedbackRating || 0,
+                        comments: feedbackComments?.trim() || ''
+                    },
+                    {
+                        signerSignatureUrl: user.signatureURL
+                    }
+                ),
+                'Signing the MOV',
+                selectedIntervention.interventionTitle || undefined
             )
 
             // Close first so the user gets immediate feedback that action is done
             setConfirmModalVisible(false)
-
-            // Optimistic local cleanup
-            setPendingInterventions(prev => prev.filter(p => p.id !== interventionId))
 
             setAllInterventions(prev =>
                 prev.map(it =>
@@ -1683,7 +1063,7 @@ export const IncubateeDashboard: React.FC = () => {
 
             const alreadyGone =
                 !!currentId &&
-                !pendingInterventions.some(it => it.id === currentId)
+                !waiting.completions.some(it => it.id === currentId)
 
             if (
                 alreadyGone ||
@@ -1707,201 +1087,188 @@ export const IncubateeDashboard: React.FC = () => {
     }
 
     /** -----------------
-     *  Pending interventions columns
+     *  Schedule (Appointments)
      *  ----------------- */
-    const pendingColumns = [
-        {
-            title: 'Intervention',
-            dataIndex: 'title',
-            key: 'title',
-            width: 260,
-            render: (value: string, record: any) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong>{value || 'Untitled intervention'}</Text>
-                    {record.subIntervention && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            {record.subIntervention}
-                        </Text>
-                    )}
-                </Space>
-            )
-        },
-        {
-            title: 'Facilitator',
-            dataIndex: 'facilitator',
-            key: 'facilitator',
-            width: 180,
-            render: (value: string) => <Text>{value || 'Not assigned yet'}</Text>
-        },
-        { title: 'Due', dataIndex: 'date', key: 'date', width: 110 },
-        {
-            title: 'Action',
-            key: 'action',
-            width: 190,
-            render: (_: any, record: any) => (
-                <Space data-guide="incubatee-completion-actions">
-                    <Button
-                        shape='round'
-                        variant='filled'
-                        color='geekblue'
-                        style={{ border: '1px solid dodgerblue' }}
-                        icon={<CheckCircleOutlined />}
-                        onClick={() => {
-                            requireSignatureForCompletion(() => {
-                                setSelectedIntervention(record.full)
-                                setCompletionReviewStep(0)
-                                setConfirmModalVisible(true)
-                            })
-                        }}
-                    >
-                        Confirm
-                    </Button>
-                    <Button
-                        danger
-                        shape='round'
-                        variant='filled'
-                        style={{ border: '1px solid crimson' }}
-                        icon={<CloseOutlined />}
-                        onClick={() => {
-                            setSelectedIntervention(record.full)
-                            setIsRejectModalVisible(true)
-                        }}
-                    >
-                        Reject
-                    </Button>
-                </Space>
-            )
+    // The shared week card reads each record as the SME's own: group fields
+    // are dropped so it shows their confirmation, not the whole group's tally.
+    const ownAppointments = useMemo(
+        () => appointments.map(a => ({
+            ...a,
+            groupMembers: undefined,
+            _groupMembers: undefined,
+            groupId: undefined,
+            appointmentGroupId: undefined,
+            isGroup: false,
+            isGrouped: false
+        })),
+        [appointments]
+    )
+
+    const openAppointmentDetails = (row: { id: string }) => {
+        const appt = appointments.find(a => a.id === row.id)
+        if (!appt) return
+        setSelectedAppt(appt)
+        setApptDetailsOpen(true)
+    }
+
+    // Arriving from the "Waiting for you" prompt: open the meal choice for an
+    // appointment with a food menu, or bring Needs your attention into view.
+    const waitingRequest = (location.state || {}) as { waitingFoodMenuFor?: string; waitingFocus?: 'attention' }
+    useEffect(() => {
+        if (!waitingRequest.waitingFoodMenuFor && !waitingRequest.waitingFocus) return
+        if (waitingRequest.waitingFoodMenuFor) {
+            const appt = appointments.find(a => a.id === waitingRequest.waitingFoodMenuFor)
+            if (!appt) return // wait for appointments to load
+            handleConfirmAppointment(appt)
+        } else {
+            const card = document.getElementById('needs-attention')
+            if (!card) return
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }
-    ]
+        navigate(location.pathname, { replace: true, state: null })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [waitingRequest.waitingFoodMenuFor, waitingRequest.waitingFocus, appointments, loading])
 
-    /** -----------------
-     *  Schedule table (Appointments)
-     *  ----------------- */
-    type ScheduleRow = {
-        rowType: 'appointment'
-        title: string
-        deliveryLabel: string
-        statusLabel: string
-        confirmState: string
-        link?: string
-        location?: string
-        raw: Appointment
-        _n: { date: string; start: string; end: string; sortKey: string }
-    } & Pick<Appointment, 'id' | 'date' | 'startTime' | 'endTime'>
+    const closeAppointmentDetails = () => {
+        setApptDetailsOpen(false)
+        setSelectedAppt(null)
+    }
 
-    const scheduleRows: ScheduleRow[] = useMemo(() => {
-        const apptRows: Omit<ScheduleRow, '_n'>[] = appointments.map(a => {
-            const deliveryLabel = formatDeliveryMethod(a as any)
-
-            const confirmState = String(a.userConfirmation || 'pending')
-            const statusLabel = formatAppointmentStatus(a as any)
-            const isDeclined = confirmState.toLowerCase() === 'declined'
-
-            return {
-                rowType: 'appointment',
-                id: a.id,
-                title: a.interventionTitle || 'Appointment',
-                deliveryLabel,
-                statusLabel,
-                confirmState: confirmState.toLowerCase(),
-                // Don't surface a join link once the participant has declined.
-                link: isDeclined ? undefined : a.meetingLink,
-                location: a.location,
-                date: a.date,
-                startTime: a.startTime,
-                endTime: a.endTime,
-                raw: a
-            }
-        })
-
-        return apptRows
-            .map(r => {
-                const n = normalizeSchedule(r)
-                return { ...r, _n: n }
-            })
-            .sort((a: any, b: any) => a._n.sortKey.localeCompare(b._n.sortKey)) as any
-    }, [appointments])
-
-    const schedulePendingCount = useMemo(() => {
-        return scheduleRows.filter(r => String(r.confirmState || '').toLowerCase() === 'pending').length
-    }, [scheduleRows])
-
-    const renderScheduleActions = (r: ScheduleRow) => {
-        const isPending = String(r.confirmState || 'pending').toLowerCase() === 'pending'
-        const isConfirmed = String(r.confirmState || '').toLowerCase() === 'confirmed'
+    /** Everything an SME can do with an appointment, shown in its details modal. */
+    const renderAppointmentActions = (appt: Appointment) => {
+        const confirmState = String(appt.userConfirmation || 'pending').toLowerCase()
+        const isPending = confirmState === 'pending'
+        const isConfirmed = confirmState === 'confirmed'
+        // Don't surface a join link once the participant has declined.
+        const link = confirmState === 'declined' ? undefined : appt.meetingLink
         const hasFoodMenu =
-            r.raw?.deliveryMethod === 'in_person' &&
-            r.raw?.foodMenuEnabled &&
-            getFoodMenuItems(r.raw as Appointment).length > 0
+            appt.deliveryMethod === 'in_person' &&
+            appt.foodMenuEnabled &&
+            getFoodMenuItems(appt).length > 0
         const hasFoodSelection =
-            (getFoodSelectionsForParticipant(r.raw as Appointment, participantId) || []).length > 0
+            (getFoodSelectionsForParticipant(appt, participantId) || []).length > 0
 
-        return (
-            <Space data-guide="incubatee-schedule-actions" wrap style={{ marginTop: 8 }}>
+        return [
+            <Button key="close" onClick={closeAppointmentDetails}>
+                Close
+            </Button>,
+            link ? (
                 <Button
-                    size="small"
+                    key="link"
+                    variant="filled"
+                    color="green"
+                    icon={<EyeOutlined />}
+                    onClick={() => window.open(link, '_blank')}
+                >
+                    Open Link
+                </Button>
+            ) : null,
+            isConfirmed && hasFoodMenu ? (
+                <Button key="food" onClick={() => openAppointmentFoodMenu(appt)}>
+                    {hasFoodSelection ? 'Update Food' : 'Choose Food'}
+                </Button>
+            ) : null,
+            isPending ? (
+                <Button
+                    key="decline"
+                    danger
+                    variant="filled"
+                    icon={<CloseOutlined />}
                     onClick={() => {
-                        setSelectedAppt(r.raw as Appointment)
-                        setApptDetailsOpen(true)
+                        closeAppointmentDetails()
+                        openDeclineAppointment(appt.id)
                     }}
                 >
-                    Details
+                    Decline
                 </Button>
-
-                {r.link ? (
-                    <Button
-                        size="small"
-                        shape="round"
-                        variant="filled"
-                        color="green"
-                        style={{ border: '1px solid green' }}
-                        icon={<EyeOutlined />}
-                        onClick={() => window.open(r.link, '_blank')}
-                    >
-                        Open Link
-                    </Button>
-                ) : null}
-
-                {isConfirmed && hasFoodMenu ? (
-                    <Button
-                        size="small"
-                        shape="round"
-                        onClick={() => openAppointmentFoodMenu(r.raw as Appointment)}
-                    >
-                        {hasFoodSelection ? 'Update Food' : 'Choose Food'}
-                    </Button>
-                ) : null}
-
-                {isPending && (
-                    <>
-                        <Button
-                            size="small"
-                            shape="round"
-                            variant="filled"
-                            color="geekblue"
-                            style={{ border: '1px solid dodgerblue' }}
-                            type="primary"
-                            icon={<CheckCircleOutlined />}
-                            onClick={() => handleConfirmAppointment(r.raw as Appointment)}
-                        >
-                            Confirm
-                        </Button>
-                        <Button
-                            size="small"
-                            danger
-                            shape="round"
-                            variant="filled"
-                            style={{ border: '1px solid red' }}
-                            icon={<CloseOutlined />}
-                            onClick={() => openDeclineAppointment(r.id)}
-                        >
-                            Decline
-                        </Button>
-                    </>
-                )}
-            </Space>
-        )
+            ) : null,
+            isPending ? (
+                <Button
+                    key="confirm"
+                    type="primary"
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => handleConfirmAppointment(appt)}
+                >
+                    Confirm
+                </Button>
+            ) : null
+        ]
     }
+
+    /** -----------------
+     *  Needs your attention: one list of everything waiting on the SME
+     *  ----------------- */
+    const openCompletionReview = (intervention: any) => {
+        requireSignatureForCompletion(() => {
+            setSelectedIntervention(intervention)
+            setCompletionReviewStep(0)
+            setConfirmModalVisible(true)
+        })
+    }
+
+    const attentionItems: AttentionItem[] = (() => {
+        const completions: AttentionItem[] = waiting.completions.map((item: any) => ({
+            key: `completion-${item.id}`,
+            kind: 'completion',
+            title: item.subIntervention ? `${item.title} · ${item.subIntervention}` : item.title || 'Untitled intervention',
+            subtitle: [`Facilitator: ${item.facilitator || 'Not assigned yet'}`, item.date && item.date !== '-' ? `Due ${item.date}` : '']
+                .filter(Boolean)
+                .join(' · '),
+            actions: [
+                {
+                    label: 'Reject',
+                    danger: true,
+                    icon: <CloseOutlined />,
+                    onClick: () => {
+                        setSelectedIntervention(item.full)
+                        setIsRejectModalVisible(true)
+                    }
+                },
+                { label: 'Confirm', primary: true, icon: <CheckCircleOutlined />, onClick: () => openCompletionReview(item.full) }
+            ]
+        }))
+
+        const documentsToSign: AttentionItem[] = urgentItems.map(it => ({
+            key: it.key,
+            kind: it.kind === 'survey' ? 'survey' : 'agreement',
+            title: it.title,
+            subtitle: it.subtitle,
+            actions: [{ label: it.cta, primary: true, onClick: it.onClick }]
+        }))
+
+        const plans: AttentionItem[] = waiting.plans.map(item => ({
+            key: `plan-${item.id}`,
+            kind: 'plan',
+            title: `${item.name} plan`,
+            subtitle: item.completedAt
+                ? `Completed by the department on ${dayjs(item.completedAt).format('D MMM YYYY')}`
+                : 'Completed by the department',
+            actions: [{ label: 'Review', primary: true, onClick: () => navigate('/incubatee/roadmap') }]
+        }))
+
+        const appointmentsToAnswer: AttentionItem[] = (waiting.appointments as Appointment[])
+            .map(a => {
+                const start = toDateSafe(a.startTime) || (a.date ? toDateSafe(a.date) : null)
+                return { a, start: start ? dayjs(start) : null }
+            })
+            .map(({ a, start }) => ({
+                key: `appointment-${a.id}`,
+                kind: 'appointment',
+                title: a.interventionTitle || 'Appointment',
+                subtitle: [
+                    start ? start.format('ddd D MMM') : '',
+                    fmtTimeFromAny(a.startTime),
+                    formatDeliveryMethod(a as any)
+                ].filter(Boolean).join(' · '),
+                actions: [
+                    { label: 'Details', onClick: () => openAppointmentDetails(a) },
+                    { label: 'Decline', danger: true, icon: <CloseOutlined />, onClick: () => openDeclineAppointment(a.id) },
+                    { label: 'Confirm', primary: true, icon: <CheckCircleOutlined />, onClick: () => handleConfirmAppointment(a) }
+                ]
+            }))
+
+        return [...completions, ...documentsToSign, ...plans, ...appointmentsToAnswer]
+    })()
 
     /** -----------------
      *  Top metrics (map-driven, responsive)
@@ -1910,8 +1277,8 @@ export const IncubateeDashboard: React.FC = () => {
         {
             key: 'outstanding-documents',
             important: true,
-            icon: <FileTextOutlined style={{ fontSize: 20, color: '#fa8c16' }} />,
-            iconBg: 'rgba(250,140,22,.14)',
+            icon: <FileTextOutlined style={{ fontSize: 20 }} />,
+            tone: 'warning' as const,
             title: 'Outstanding Documents',
             mobileTitle: 'Documents',
             value: complianceUnavailable ? '—' : outstandingDocs,
@@ -1926,7 +1293,7 @@ export const IncubateeDashboard: React.FC = () => {
             key: 'interventions-distribution',
             important: true,
             icon: <RatioIcon size={20} color="#52c41a" />,
-            iconBg: 'rgba(82,196,26,.14)',
+            tone: 'success' as const,
             title: 'Interventions Distribution',
             mobileTitle: 'Interventions',
             value: `${completedInterventions}/${requiredInterventions}`,
@@ -1944,9 +1311,17 @@ export const IncubateeDashboard: React.FC = () => {
     /** -----------------
      *  Render
      *  ----------------- */
+    const dashboardContentLoading =
+        loading ||
+        appointmentsLoading ||
+        complianceLoading ||
+        requirementsLoading ||
+        acceptedAppLoading ||
+        interventionsLoading
+
     return (
         <>
-            {loading ? (
+            {dashboardContentLoading ? (
                 <div style={{ padding: screens.md ? 24 : 12 }}>
                     <PageSkeleton variant='analytics' />
                 </div>
@@ -1967,254 +1342,26 @@ export const IncubateeDashboard: React.FC = () => {
                                 <MetricsGrid metrics={topMetrics} />
                             </Col>
 
-                            {!hasUrgentAction && pendingInterventions.length === 0 && pendingDpConfirmations.length === 0 &&
-                                schedulePendingCount === 0 && outstandingDocs === 0 && !complianceUnavailable &&
-                                !appointmentsLoading && !appointmentError && acceptedApp && (
-                                    <Col span={24}>
-                                        <Alert type="success" showIcon message="You're all caught up"
-                                            description="No outstanding documents or confirmations. See your progress and upcoming appointments below." />
-                                    </Col>
-                                )}
-
-                            {(pendingInterventions.length > 0 || hasUrgentAction || pendingDpConfirmations.length > 0) && (
-                                <Col span={24}>
-                                    <div className={pendingInterventions.length > 0 && (hasUrgentAction || pendingDpConfirmations.length > 0) ? 'incubatee-action-layout' : 'incubatee-action-layout incubatee-action-layout-single'}>
-                                        {/* Completion decisions are placed first so they are visible above the fold. */}
-                                        {pendingInterventions.length > 0 && (
-                                            <div className="incubatee-completion-column">
-                                                <Card
-                                                    data-guide="incubatee-pending-completions"
-                                                    className="incubatee-dashboard-pending-card"
-                                                    size="small"
-                                                    style={{
-                                                        boxShadow: '0 8px 24px rgba(0,0,0,0.09)',
-                                                        borderRadius: 12,
-                                                        border: '1px solid #d6e4ff'
-                                                    }}
-                                                    title={
-                                                        <Space>
-                                                            <CheckCircleOutlined />
-                                                            <span>Pending Completion Confirmations</span>
-                                                            {pendingInterventions.length > 0 && (
-                                                                <Tag color="orange">{pendingInterventions.length}</Tag>
-                                                            )}
-                                                        </Space>
-                                                    }
-                                                >
-                                                    {screens.md ? (
-                                                        <Table
-                                                            className="incubatee-dashboard-pending-table"
-                                                            size="small"
-                                                            dataSource={pendingInterventions}
-                                                            columns={pendingColumns as any}
-                                                            rowKey="id"
-                                                            scroll={{ x: 'max-content' }}
-                                                            pagination={{
-                                                                pageSize: 3,
-                                                                hideOnSinglePage: true,
-                                                                responsive: true,
-                                                                showSizeChanger: false,
-                                                                position: ['bottomCenter']
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <List
-                                                            className='incubatee-dashboard-mobile-list'
-                                                            itemLayout="vertical"
-                                                            dataSource={pendingInterventions}
-                                                            pagination={{
-                                                                pageSize: 3,
-                                                                hideOnSinglePage: true,
-                                                                size: 'small'
-                                                            }}
-                                                            renderItem={(item: any) => (
-                                                                <List.Item className='incubatee-dashboard-mobile-card'>
-                                                                    <List.Item.Meta
-                                                                        title={
-                                                                            <Space direction="vertical" size={0}>
-                                                                                <Text strong>{item.title}</Text>
-                                                                                {item.subIntervention && (
-                                                                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                                                                        {item.subIntervention}
-                                                                                    </Text>
-                                                                                )}
-                                                                            </Space>
-                                                                        }
-                                                                        description={
-                                                                            <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                                                                                <Space wrap>
-                                                                                    <Text type="secondary">
-                                                                                        Facilitator: {item.facilitator || 'Not assigned yet'}
-                                                                                    </Text>
-                                                                                    <Text type="secondary">Due: {item.date || '-'}</Text>
-                                                                                </Space>
-                                                                                <div
-                                                                                    data-guide="incubatee-completion-actions"
-                                                                                    className='incubatee-dashboard-card-actions'
-                                                                                >
-                                                                                    <Button
-                                                                                        size="small"
-                                                                                        type="primary"
-                                                                                        icon={<CheckCircleOutlined />}
-                                                                                        onClick={() => {
-                                                                                            requireSignatureForCompletion(() => {
-                                                                                                setSelectedIntervention(item.full)
-                                                                                                setCompletionReviewStep(0)
-                                                                                                setConfirmModalVisible(true)
-                                                                                            })
-                                                                                        }}
-                                                                                    >
-                                                                                        Confirm
-                                                                                    </Button>
-                                                                                    <Button
-                                                                                        size="small"
-                                                                                        danger
-                                                                                        icon={<CloseOutlined />}
-                                                                                        onClick={() => {
-                                                                                            setSelectedIntervention(item.full)
-                                                                                            setIsRejectModalVisible(true)
-                                                                                        }}
-                                                                                    >
-                                                                                        Reject
-                                                                                    </Button>
-                                                                                </div>
-                                                                            </Space>
-                                                                        }
-                                                                    />
-                                                                </List.Item>
-                                                            )}
-                                                        />
-                                                    )}
-                                                </Card>
-                                            </div>
-                                        )}
-
-                                        <div className="incubatee-action-sidebar">
-                                            {/* Urgent documents sit beside confirmations on desktop. */}
-                                            {hasUrgentAction && (
-                                                <div>
-                                                    <MotionCard
-                                                        data-guide="incubatee-urgent-action"
-                                                        title="Urgent Action"
-                                                        extra={
-                                                            <Space>
-                                                                {otherUnsignedCount > 0 && (
-                                                                    <Button
-                                                                        size="small"
-                                                                        onClick={() => navigate('/incubatee/documents/compliance')}
-                                                                        icon={<FileDoneOutlined />}
-                                                                    >
-                                                                        View All
-                                                                    </Button>
-                                                                )}
-                                                                <Tag color="red">{urgentItems.length}</Tag>
-                                                            </Space>
-                                                        }
-                                                        style={{
-                                                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                                            transition: 'all 0.3s ease',
-                                                            borderRadius: 12,
-                                                            border: '1px solid #d6e4ff'
-                                                        }}
-                                                    >
-                                                        <List
-                                                            className='incubatee-urgent-list'
-                                                            itemLayout="horizontal"
-                                                            split={false}
-                                                            dataSource={urgentItems.slice(0, 3)}
-                                                            renderItem={(it: UrgentItem) => (
-                                                                <List.Item
-                                                                    actions={[
-                                                                        <Button key="go" type="primary" size="small" onClick={it.onClick}>
-                                                                            {it.cta}
-                                                                        </Button>
-                                                                    ]}
-                                                                >
-                                                                    <List.Item.Meta
-                                                                        title={
-                                                                            <>
-                                                                                {it.title}{' '}
-                                                                                <Tag color={it.kind === 'survey' ? 'blue' : 'purple'}>
-                                                                                    {it.tag || (it.kind === 'survey' ? 'Survey' : 'Contract')}
-                                                                                </Tag>
-                                                                            </>
-                                                                        }
-                                                                        description={it.subtitle}
-                                                                    />
-                                                                </List.Item>
-                                                            )}
-                                                        />
-                                                    </MotionCard>
-                                                </div>
-                                            )}
-
-                                            {pendingDpConfirmations.length > 0 && (
-                                                <div>
-                                                    <Card
-                                                        data-guide="incubatee-pending-dp-confirmations"
-                                                        size="small"
-                                                        title={
-                                                            <Space size={6} wrap>
-                                                                <FileDoneOutlined />
-                                                                <span>Pending DP Confirmations</span>
-                                                                <Tag color="orange">{pendingDpConfirmations.length}</Tag>
-                                                            </Space>
-                                                        }
-                                                        extra={
-                                                            <Button
-                                                                type="link"
-                                                                size="small"
-                                                                onClick={() => navigate('/incubatee/roadmap')}
-                                                            >
-                                                                View all
-                                                            </Button>
-                                                        }
-                                                        style={{
-                                                            width: '100%',
-                                                            maxWidth: '100%',
-                                                            borderRadius: 12,
-                                                            border: '1px solid #d6e4ff',
-                                                            boxShadow: '0 8px 24px rgba(0,0,0,0.09)'
-                                                        }}
-                                                    >
-                                                        <List
-                                                            size="small"
-                                                            dataSource={pendingDpConfirmations.slice(0, 3)}
-                                                            renderItem={item => (
-                                                                <List.Item
-                                                                    style={{
-                                                                        display: 'flex',
-                                                                        justifyContent: 'space-between',
-                                                                        gap: 16,
-                                                                        paddingInline: 0
-                                                                    }}
-                                                                >
-                                                                    <Text strong>{item.departmentName}</Text>
-                                                                    <Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
-                                                                        {item.departmentCompletedAt
-                                                                            ? dayjs(item.departmentCompletedAt).format('DD MMM YYYY')
-                                                                            : 'Date unavailable'}
-                                                                    </Text>
-                                                                </List.Item>
-                                                            )}
-                                                        />
-                                                    </Card>
-                                                </div>
-                                            )}
-
-                                        </div>
-                                    </div>
+                            {attentionItems.length > 0 ? (
+                                <Col span={24} id="needs-attention">
+                                    <NeedsAttentionCard items={attentionItems} />
                                 </Col>
-                            )}
+                            ) : outstandingDocs === 0 && !complianceUnavailable &&
+                                !appointmentsLoading && !appointmentError && acceptedApp ? (
+                                <Col span={24}>
+                                    <Alert type="success" showIcon message="You're all caught up"
+                                        description="No outstanding documents or confirmations. See your progress and upcoming appointments below." />
+                                </Col>
+                            ) : null}
 
                             <Col xs={24}>
                                 <DashboardOverview
                                     key={participantId + ':' + (activeProgramId || '')}
-                                    rows={scheduleRows}
+                                    appointments={ownAppointments}
                                     recentCompletions={recentCompletions}
-                                    appointmentsLoading={appointmentsLoading}
                                     appointmentError={appointmentError}
-                                    renderActions={renderScheduleActions}
+                                    onAppointmentClick={openAppointmentDetails}
+                                    facilitatorLabel={row => getAppointmentAssigneeName(row as any) || undefined}
                                     onViewAppointments={() => navigate('/incubatee/appointments')}
                                     onViewInterventions={() => navigate('/incubatee/interventions')}
                                 />
@@ -2224,8 +1371,6 @@ export const IncubateeDashboard: React.FC = () => {
 
                         <Modal
                             centered
-                            okButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }}
-                            cancelButtonProps={{ shape: 'round', variant: 'filled', color: 'red', style: { border: '1px solid red' } }}
                             title="Outstanding Compliance Documents"
                             open={complianceModalOpen}
                             onCancel={() => setComplianceModalOpen(false)}
@@ -2233,7 +1378,7 @@ export const IncubateeDashboard: React.FC = () => {
                                 <Button danger key="close" onClick={() => setComplianceModalOpen(false)}>Close</Button>,
                                 <Button key="manage" type="primary" onClick={() => {
                                     setComplianceModalOpen(false)
-                                    navigate('/incubatee/documents/compliance')
+                                    navigate('/incubatee/compliance')
                                 }}>{isMobile ? 'Manage' : 'Manage compliance documents'}</Button>
                             ]}>
                             {complianceError || requirementsError ? <Alert type="error" showIcon message={complianceError || requirementsError} /> :
@@ -2251,35 +1396,11 @@ export const IncubateeDashboard: React.FC = () => {
                         </Modal>
 
                         {/* Appointment details */}
-                        <Modal okButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }} cancelButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }}
+                        <Modal
                             title="Appointment Details"
                             open={apptDetailsOpen}
-                            onCancel={() => {
-                                setApptDetailsOpen(false)
-                                setSelectedAppt(null)
-                            }}
-                            footer={[
-                                <Button
-                                    key="close"
-                                    onClick={() => {
-                                        setApptDetailsOpen(false)
-                                        setSelectedAppt(null)
-                                    }}
-                                >
-                                    Close
-                                </Button>,
-                                selectedAppt &&
-                                    String(selectedAppt.userConfirmation || 'pending').toLowerCase() === 'pending' ? (
-                                    <Button
-                                        key="confirm"
-                                        type="primary"
-                                        icon={<CheckCircleOutlined />}
-                                        onClick={() => handleConfirmAppointment(selectedAppt)}
-                                    >
-                                        Confirm
-                                    </Button>
-                                ) : null
-                            ]}
+                            onCancel={closeAppointmentDetails}
+                            footer={selectedAppt ? renderAppointmentActions(selectedAppt) : null}
                         >
                             {selectedAppt ? (
                                 <Descriptions bordered size="small" column={1}>
@@ -2325,7 +1446,9 @@ export const IncubateeDashboard: React.FC = () => {
                                         </Descriptions.Item>
                                     ) : null}
                                     <Descriptions.Item label="Status">{formatAppointmentStatus(selectedAppt as any)}</Descriptions.Item>
-                                    <Descriptions.Item label="Your Confirmation">{titleCase(getConfirmationStatus(selectedAppt.userConfirmation))}</Descriptions.Item>
+                                    <Descriptions.Item label="Your Confirmation">
+                                        {SME_RESPONSE_META[getSmeResponseState(selectedAppt as any)].label}
+                                    </Descriptions.Item>
                                     {String(selectedAppt.userConfirmation || '').toLowerCase() === 'declined' && selectedAppt.declineReason ? (
                                         <Descriptions.Item label="Decline Reason">{selectedAppt.declineReason}</Descriptions.Item>
                                     ) : null}
@@ -2335,7 +1458,7 @@ export const IncubateeDashboard: React.FC = () => {
                             )}
                         </Modal>
 
-                        <Modal okButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }} cancelButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }}
+                        <Modal
                             title="Food Menu Selection"
                             open={foodMenuModalOpen}
                             onOk={saveFoodSelectionAndConfirm}
@@ -2395,84 +1518,25 @@ export const IncubateeDashboard: React.FC = () => {
                             )}
                         </Modal>
 
-                        <Modal cancelButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }}
-                            title="Decline Appointment"
-                            open={declineApptOpen}
-                            onOk={submitDeclineAppointment}
-                            onCancel={() => {
-                                setDeclineApptOpen(false)
-                                setDeclineApptId(null)
-                                setDeclineApptReasonCode(undefined)
-                                setDeclineApptReason('')
-                                setDeclineApptProposals([createAppointmentProposalDraft()])
-                            }}
-                            okButtonProps={{ danger: true, shape: 'round', variant: 'filled', style: { border: '1px solid crimson' } }}
-                            okText="Decline"
-                        >
-                            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-                                Please tell the facilitator why you cannot attend.
-                            </Text>
-                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                <Select
-                                    value={declineApptReasonCode}
-                                    onChange={value => {
-                                        setDeclineApptReasonCode(value)
-                                        if (value !== 'other') setDeclineApptReason('')
-                                    }}
-                                    placeholder="Select a reason"
-                                    style={{ width: '100%' }}
-                                    options={APPOINTMENT_DECLINE_REASON_OPTIONS.map(option => ({
-                                        value: option.value,
-                                        label: option.label
-                                    }))}
-                                />
-                                {declineApptReasonCode === 'other' ? (
-                                    <Input.TextArea
-                                        rows={4}
-                                        value={declineApptReason}
-                                        onChange={e => setDeclineApptReason(e.target.value)}
-                                        placeholder="Provide your reason in your own words"
-                                        maxLength={500}
-                                        showCount
-                                    />
-                                ) : null}
-                                {declineApptId &&
-                                    !appointments.find(appointment => appointment.id === declineApptId)?.isGroupAppointment &&
-                                    appointmentDeclineReasonAllowsTimeProposal(declineApptReasonCode) ? (
-                                    <>
-                                        <Divider style={{ margin: '4px 0' }} />
-                                        <AppointmentRescheduleProposalFields
-                                            value={declineApptProposals}
-                                            onChange={setDeclineApptProposals}
-                                        />
-                                    </>
-                                ) : null}
-                            </Space>
-                        </Modal>
+                        <DeclineAppointmentModal
+                            appointment={decliningAppt}
+                            onClose={() => setDecliningAppt(null)}
+                        />
                     </div>
 
-                    {/* Reject completion modal */}
-                    <Modal cancelButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }}
-                        title="Reject Completion"
+                    {/* Report a problem with a completion: the start of a delivery dispute. */}
+                    <DisputeDeliveryModal
                         open={isRejectModalVisible}
-                        onCancel={() => {
-                            setIsRejectModalVisible(false)
-                            setRejectReason('')
-                        }}
-                        onOk={handleRejectCompletion}
-                        okButtonProps={{ danger: true, shape: 'round', variant: 'filled', style: { border: '1px solid crimson' } }}
-                        okText="Submit Rejection"
-                    >
-                        <Input.TextArea
-                            rows={4}
-                            value={rejectReason}
-                            onChange={e => setRejectReason(e.target.value)}
-                            placeholder="Please explain why you’re rejecting this intervention’s completion..."
-                        />
-                    </Modal>
+                        interventionTitle={(selectedIntervention as any)?.interventionTitle}
+                        facilitatorName={(selectedIntervention as any)?.assigneeName || (selectedIntervention as any)?.consultantName}
+                        onClose={() => setIsRejectModalVisible(false)}
+                        onSubmit={handleRejectCompletion}
+                    />
+
+                    {signingCeremony.element}
 
                     {/* Confirm completion modal */}
-                    <Modal okButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }} cancelButtonProps={{ shape: 'round', variant: 'filled', color: 'geekblue', style: { border: '1px solid dodgerblue' } }}
+                    <Modal
                         title="Confirm Intervention Completion"
                         open={confirmModalVisible}
                         centered
@@ -2490,7 +1554,7 @@ export const IncubateeDashboard: React.FC = () => {
                             <Button
                                 key="reject"
                                 danger
-                                shape='round' variant='filled' style={{ border: '1px solid crimson' }}
+                                shape='round' variant='filled'
                                 icon={<CloseOutlined />}
                                 disabled={confirmSubmitting}
                                 onClick={() => {
@@ -2504,8 +1568,8 @@ export const IncubateeDashboard: React.FC = () => {
                                 key="submit"
                                 shape="round"
                                 variant="filled"
-                                color="geekblue"
-                                style={{ border: '1px solid dodgerblue', minWidth: 180 }}
+                                color="primary"
+                                style={{ minWidth: 180 }}
                                 icon={<CheckCircleOutlined />}
                                 loading={confirmSubmitting}
                                 onClick={() => {

@@ -1,8 +1,10 @@
 import * as logger from "firebase-functions/logger";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
+import { suppressRecordNotifications, syntheticMetadata } from "./syntheticData";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./emailShared";
 import { participant as resolveParticipant } from "./workflowEmailFunctions";
+import { sendCheckBackWhatsApp } from "./whatsappCheckBack";
 import {
   deriveConfidence,
   dueAtFrom,
@@ -90,6 +92,7 @@ export const onAssignmentConfirmedScheduleFollowUp = onDocumentWritten(
     const smeContact = await resolveParticipant({ participantId: after.participantId });
 
     await ref.set({
+      ...syntheticMetadata(after),
       assignedInterventionId: assignmentId,
       participantId: clean(after.participantId),
       participantName: clean(after.participantName),
@@ -148,6 +151,7 @@ export const outcomeFollowUpReminderCron = onSchedule(
     let reminded = 0;
     for (const snap of snapshot.docs) {
       const f = snap.data() as any;
+      if (suppressRecordNotifications(f, snap.id)) continue;
       const state = {
         status: f.status,
         dueAt: asDate(f.dueAt),
@@ -228,6 +232,20 @@ export const outcomeFollowUpReminderCron = onSchedule(
         }
       }
 
+      // WhatsApp goes out alongside the in-app notice and email, on the same schedule.
+      // It can never block them: failures are logged and recorded, nothing more.
+      const whatsapp = await sendCheckBackWhatsApp(snap.id, f, {
+        sendToSme: patch.smeNotified === true,
+      });
+      if (whatsapp.facilitator !== "skipped") {
+        patch.whatsappFacilitatorStatus = whatsapp.facilitator;
+        patch.whatsappFacilitatorAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+      if (whatsapp.sme !== "skipped") {
+        patch.whatsappSmeStatus = whatsapp.sme;
+        patch.whatsappSmeAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+
       await snap.ref.update(patch);
       reminded += 1;
     }
@@ -247,6 +265,7 @@ export const onOutcomeFollowUpAnswered = onDocumentUpdated(
     const assignmentRef = db.collection("assignedInterventions").doc(clean(after.assignedInterventionId));
 
     const base = {
+      ...syntheticMetadata(after),
       followUpId,
       assignedInterventionId: clean(after.assignedInterventionId),
       participantId: clean(after.participantId),

@@ -1,37 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import {
-    Alert,
-    Button,
-    Card,
-    Empty,
-    Input,
-    Modal,
-    Progress,
-    Radio,
-    Segmented,
-    Select,
-    Space,
-    Tag,
-    Typography,
-    Upload,
-    message
-} from 'antd'
+import { Alert, App, Button, Dropdown, Empty, Input, Modal, Progress, Radio, Segmented, Select, Space, Upload } from 'antd'
 import type { UploadProps } from 'antd'
 import {
-    CheckOutlined,
-    CloseCircleOutlined,
+    DownOutlined,
     DownloadOutlined,
     EyeOutlined,
     LockOutlined,
+    MoreOutlined,
     PaperClipOutlined,
-    SaveOutlined,
-    SendOutlined,
     SettingOutlined,
     TeamOutlined,
     UnlockOutlined
 } from '@ant-design/icons'
 import { db, storage } from '@/firebase'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { StatusPill } from '@/routes/operations/movs/movParts'
 import {
+    SectionChangedError,
     acceptCoordinatorSubmission,
     addReportBlockAttachmentMetadata,
     approveReportBlock,
@@ -40,6 +25,7 @@ import {
     listenReport,
     listenReportActivity,
     listenReportBlocks,
+    reopenReportBlock,
     requestReportBlockChanges,
     saveReportBlock,
     submitReportBlock,
@@ -48,38 +34,29 @@ import {
 } from './services/reportsService'
 import { loadReportUsers } from './services/reportDirectoryService'
 import { uploadReportBlockAttachment } from './services/reportStorageService'
-import { downloadDocx, generateReportDocx } from './services/docxGenerationService'
+import { downloadDocx, generateReportDocx, summarizeExport } from './services/docxGenerationService'
 import { getReportTemplate } from './services/reportTemplatesService'
 import { requestReportWriting, type ReportWritingAction } from './services/aiReportWritingService'
 import {
+    canUserApproveBlock,
     canUserControlProjectAdminMode,
     canUserDelegateBlock,
     canUserEditBlock,
     canUserManageDepartmentBlock,
     canUserManageReport,
+    canUserReopenBlock,
     canUserReviewContributorSubmission,
-    canUserReviewDepartmentSubmission,
     canUserViewBlock,
     canUserViewFullReport,
-    isCoordinator,
     isOperations,
     isProjectAdmin
 } from './reportPermissions'
-import type {
-    ProjectAdminMode,
-    ReportActivity,
-    ReportBlock,
-    ReportDirectoryUser,
-    ReportDocument,
-    ReportUserContext
-} from './types'
-import { BlockStatusTag, ContentTypeTag, PageHeader, formatTimestamp } from './shared'
+import type { ProjectAdminMode, ReportActivity, ReportBlock, ReportDirectoryUser, ReportDocument, ReportUserContext } from './types'
+import { CONTENT_TYPE_LABEL, PageHeader, formatTimestamp, sectionStatus } from './shared'
 import NarrativeBlockEditor from './components/NarrativeBlockEditor'
 import StructuredTableEditor from './components/StructuredTableEditor'
 import BlockCommentsPanel from './components/BlockCommentsPanel'
 import BlockHistoryPanel from './components/BlockHistoryPanel'
-
-const { Text, Title } = Typography
 
 type Props = {
     user: ReportUserContext
@@ -90,23 +67,34 @@ type Props = {
     onPreview?: () => void
 }
 
-const ReportWorkspacePage: React.FC<Props> = ({
-    user,
-    reportId,
-    forceContributorOnly = false,
-    initialBlockId,
-    onBack,
-    onPreview
-}) => {
+const AI_ACTIONS: { key: ReportWritingAction; label: string }[] = [
+    { key: 'improve', label: 'Improve the writing' },
+    { key: 'summarise', label: 'Make it shorter' },
+    { key: 'expand', label: 'Add more detail' },
+    { key: 'commentary', label: 'Draft commentary' },
+    { key: 'risk_mitigation', label: 'Suggest risks and mitigations' }
+]
+
+const emptyContentFor = (block: ReportBlock) =>
+    block.content ?? (block.contentType === 'table' || block.contentType === 'kpi' ? { rows: [] } : '')
+
+const ReportWorkspacePage: React.FC<Props> = ({ user, reportId, forceContributorOnly = false, initialBlockId, onBack, onPreview }) => {
+    const { message, modal } = App.useApp()
     const [report, setReport] = useState<ReportDocument | null>(null)
     const [blocks, setBlocks] = useState<ReportBlock[]>([])
     const [activeId, setActiveId] = useState(initialBlockId || '')
     const [draftContent, setDraftContent] = useState<any>('')
+    /** The section's updatedAt when its text was loaded into the editor. */
+    const [draftBase, setDraftBase] = useState<any>(null)
+    const [dirty, setDirty] = useState(false)
+    /** Set when someone else saved this section while it had unsaved edits here. */
+    const [changedBy, setChangedBy] = useState<string | null>(null)
+
     const [saving, setSaving] = useState(false)
     const [generatingWord, setGeneratingWord] = useState(false)
     const [aiWriting, setAiWriting] = useState(false)
     const [aiSuggestion, setAiSuggestion] = useState('')
-    const [rightTab, setRightTab] = useState('Comments')
+    const [lowerTab, setLowerTab] = useState('Comments')
     const [activity, setActivity] = useState<ReportActivity[]>([])
     const [changeReason, setChangeReason] = useState('')
     const [requestOpen, setRequestOpen] = useState(false)
@@ -128,14 +116,8 @@ const ReportWorkspacePage: React.FC<Props> = ({
 
     useEffect(() => {
         if (!report) return
-
-        if (fullView) {
-            return listenReportBlocks(db, reportId, setBlocks)
-        }
-
-        return listenContributorBlocks(db, user, rows => {
-            setBlocks(rows.filter(block => block.reportId === reportId))
-        })
+        if (fullView) return listenReportBlocks(db, reportId, setBlocks)
+        return listenContributorBlocks(db, user, rows => setBlocks(rows.filter(block => block.reportId === reportId)))
     }, [reportId, report?.id, fullView, user.uid, user.departmentId])
 
     useEffect(() => {
@@ -151,12 +133,8 @@ const ReportWorkspacePage: React.FC<Props> = ({
             setCoordinators([])
             return
         }
-
         loadReportUsers(db)
-            .then(rows => setCoordinators(rows.filter(item =>
-                String(item.role || '').toLowerCase() === 'coordinator' &&
-                item.departmentId === user.departmentId
-            )))
+            .then(rows => setCoordinators(rows.filter(item => item.departmentId === user.departmentId)))
             .catch(() => setCoordinators([]))
     }, [user.uid, user.role, user.departmentId])
 
@@ -178,89 +156,157 @@ const ReportWorkspacePage: React.FC<Props> = ({
             return
         }
         if (!activeId || !visibleBlocks.some(block => block.id === activeId)) {
-            setActiveId(initialBlockId && visibleBlocks.some(block => block.id === initialBlockId)
-                ? initialBlockId
-                : visibleBlocks[0].id)
+            setActiveId(initialBlockId && visibleBlocks.some(block => block.id === initialBlockId) ? initialBlockId : visibleBlocks[0].id)
         }
     }, [visibleBlocks, activeId, initialBlockId])
 
     const active = visibleBlocks.find(block => block.id === activeId) || null
 
+    // Load the text when the section changes — only then. (Reloading on every update,
+    // as before, wiped what someone was typing whenever anyone saved anything.)
     useEffect(() => {
-        if (active) {
-            setDraftContent(JSON.parse(JSON.stringify(
-                active.content ?? (active.contentType === 'table' || active.contentType === 'kpi' ? { rows: [] } : '')
-            )))
-            setDelegateIds(active.delegatedUserIds || [])
+        if (!active) return
+        setDraftContent(JSON.parse(JSON.stringify(emptyContentFor(active))))
+        setDraftBase(active.updatedAt ?? null)
+        setDirty(false)
+        setChangedBy(null)
+        setDelegateIds(active.delegatedUserIds || [])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [active?.id])
+
+    // The section changed on the server: take it if nothing is unsaved here, else say so.
+    const activeUpdatedMs = active?.updatedAt?.toMillis?.() ?? 0
+    useEffect(() => {
+        if (!active) return
+        if (!dirty) {
+            setDraftContent(JSON.parse(JSON.stringify(emptyContentFor(active))))
+            setDraftBase(active.updatedAt ?? null)
+            setChangedBy(null)
+        } else if (active.updatedBy === user.uid) {
+            setDraftBase(active.updatedAt ?? null)
+        } else if ((draftBase?.toMillis?.() ?? 0) !== activeUpdatedMs) {
+            setChangedBy(active.updatedByName || 'Someone else')
         }
-    }, [active?.id, active?.updatedAt])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeUpdatedMs])
+
+    // Leaving with unsaved text asks first.
+    useEffect(() => {
+        if (!dirty) return
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault()
+            event.returnValue = ''
+        }
+        window.addEventListener('beforeunload', onBeforeUnload)
+        return () => window.removeEventListener('beforeunload', onBeforeUnload)
+    }, [dirty])
+
+    const editDraft = (value: any) => {
+        setDraftContent(value)
+        setDirty(true)
+    }
+
+    const reloadSection = () => {
+        if (!active) return
+        setDraftContent(JSON.parse(JSON.stringify(emptyContentFor(active))))
+        setDraftBase(active.updatedAt ?? null)
+        setDirty(false)
+        setChangedBy(null)
+    }
+
+    const switchTo = (id: string) => {
+        if (id === activeId) return
+        if (!dirty) return setActiveId(id)
+        modal.confirm({
+            title: 'Leave this section without saving?',
+            content: 'Your changes to this section haven’t been saved.',
+            okText: 'Leave without saving',
+            cancelText: 'Stay',
+            centered: true,
+            onOk: () => setActiveId(id)
+        })
+    }
+
+    const leavePage = () => {
+        if (!dirty) return onBack()
+        modal.confirm({
+            title: 'Leave without saving?',
+            content: 'Your changes to this section haven’t been saved.',
+            okText: 'Leave',
+            cancelText: 'Stay',
+            centered: true,
+            onOk: onBack
+        })
+    }
 
     const editable = !!report && !!active && canUserEditBlock(user, report, active)
     const departmentManager = !!active && canUserManageDepartmentBlock(user, active)
-    const delegatedContributor = !!active && !departmentManager && !reportManager && (
-        active.delegatedUserIds.includes(user.uid) || active.editorUserIds.includes(user.uid)
-    )
+    const delegatedContributor = !!active && !departmentManager && !reportManager && (active.delegatedUserIds.includes(user.uid) || active.editorUserIds.includes(user.uid))
     const reviewContributor = !!active && canUserReviewContributorSubmission(user, active)
-    const reviewDepartment = !!report && !!active && canUserReviewDepartmentSubmission(user, report, active)
+    const canApprove = !!report && !!active && canUserApproveBlock(user, report, active)
+    const canReopen = !!report && !!active && canUserReopenBlock(user, report, active)
     const canDelegate = !!report && !!active && canUserDelegateBlock(user, report, active)
+    const submittedToOwner = !!active && active.status === 'submitted' && active.submittedTo === 'report_manager'
 
-    const save = async () => {
-        if (!active || !editable) return
+    const run = async (work: () => Promise<void>, done: string, failed: string) => {
         setSaving(true)
         try {
-            await saveReportBlock({ db, block: active, user, content: draftContent })
-            message.success('Block saved.')
+            await work()
+            message.success(done)
         } catch (err: any) {
-            message.error(err?.message || 'Could not save block.')
+            if (err instanceof SectionChangedError) setChangedBy(err.message.split(' changed')[0] || 'Someone else')
+            message.error(err?.message || failed)
         } finally {
             setSaving(false)
         }
     }
 
-    const submit = async () => {
+    const persist = async (summary?: string) => {
+        if (!active) return
+        await saveReportBlock({ db, block: active, user, content: draftContent, summary, baseUpdatedAt: draftBase })
+        setDirty(false)
+    }
+
+    const save = () => run(() => persist(), 'Saved.', 'Couldn’t save the section.')
+
+    const submit = () => {
         if (!active || !report || !editable) return
         if (active.evidencePolicy === 'required' && !active.attachments?.length) {
-            message.error('Attach at least one supporting evidence file before submitting this block.')
+            message.error('Attach the supporting evidence first. This section needs it.')
             return
         }
-        setSaving(true)
-        try {
-            await saveReportBlock({ db, block: active, user, content: draftContent, summary: 'Saved before submission.' })
-            const target = delegatedContributor && active.editorDepartmentIds.length ? 'department' : 'report_manager'
-            await submitReportBlock({ db, block: { ...active, content: draftContent }, user, target })
-            message.success(target === 'department' ? 'Block submitted to your HOD.' : 'Block submitted to the report manager.')
-        } catch (err: any) {
-            message.error(err?.message || 'Could not submit block.')
-        } finally {
-            setSaving(false)
-        }
+        const target = delegatedContributor && active.editorDepartmentIds.length ? 'department' : 'report_manager'
+        return run(
+            async () => {
+                await persist('Saved before sending for review.')
+                await submitReportBlock({ db, block: { ...active, status: active.status === 'not_started' ? 'draft' : active.status, content: draftContent }, user, target })
+            },
+            target === 'department' ? 'Sent to your department head.' : 'Sent to the report owner for review.',
+            'Couldn’t send the section.'
+        )
     }
 
-    const acceptAndForward = async () => {
-        if (!active || !reviewContributor) return
-        setSaving(true)
-        try {
-            await acceptCoordinatorSubmission({ db, block: active, user })
-            message.success('Contribution accepted and submitted to the report manager.')
-        } catch (err: any) {
-            message.error(err?.message || 'Could not forward contribution.')
-        } finally {
-            setSaving(false)
-        }
-    }
+    const acceptAndForward = () =>
+        active && run(() => acceptCoordinatorSubmission({ db, block: active, user }), 'Accepted and sent to the report owner.', 'Couldn’t send it on.')
 
-    const approve = async () => {
-        if (!active || !reviewDepartment) return
-        setSaving(true)
-        try {
-            await approveReportBlock({ db, block: active, user })
-            message.success('Block approved.')
-        } catch (err: any) {
-            message.error(err?.message || 'Could not approve block.')
-        } finally {
-            setSaving(false)
-        }
-    }
+    const approve = () =>
+        active &&
+        run(
+            async () => {
+                // The owner may have edited before approving; a first save moves "not started" to "in progress".
+                const saved = dirty && editable
+                if (saved) await persist('Saved before approving.')
+                await approveReportBlock({
+                    db,
+                    block: saved && active.status === 'not_started' ? { ...active, status: 'draft' } : active,
+                    user
+                })
+            },
+            'Section done.',
+            'Couldn’t approve the section.'
+        )
+
+    const reopen = () => active && run(() => reopenReportBlock({ db, block: active, user }), 'Reopened for editing.', 'Couldn’t reopen the section.')
 
     const openRequestChanges = (target: 'contributor' | 'department') => {
         setRequestTarget(target)
@@ -270,92 +316,82 @@ const ReportWorkspacePage: React.FC<Props> = ({
 
     const requestChanges = async () => {
         if (!active || !changeReason.trim()) return
-        setSaving(true)
-        try {
-            await requestReportBlockChanges({
-                db,
-                block: active,
-                user,
-                reason: changeReason.trim(),
-                target: requestTarget
-            })
-            setChangeReason('')
-            setRequestOpen(false)
-            message.success('Changes requested.')
-        } catch (err: any) {
-            message.error(err?.message || 'Could not request changes.')
-        } finally {
-            setSaving(false)
-        }
+        await run(
+            async () => {
+                await requestReportBlockChanges({ db, block: active, user, reason: changeReason.trim(), target: requestTarget })
+                setRequestOpen(false)
+            },
+            'Changes asked for.',
+            'Couldn’t send the request.'
+        )
     }
 
     const saveDelegation = async () => {
         if (!active || !canDelegate) return
-        const selected = coordinators.filter(item => delegateIds.includes(item.id))
-        setSaving(true)
-        try {
-            await delegateReportBlock({
-                db,
-                block: active,
-                user,
-                contributorIds: selected.map(item => item.id),
-                contributorNames: selected.map(item => item.name)
-            })
-            setDelegateOpen(false)
-            message.success(selected.length ? 'Coordinator delegation updated.' : 'Coordinator delegation removed.')
-        } catch (err: any) {
-            message.error(err?.message || 'Could not update delegation.')
-        } finally {
-            setSaving(false)
-        }
+        const chosen = coordinators.filter(item => delegateIds.includes(item.id))
+        await run(
+            async () => {
+                await delegateReportBlock({ db, block: active, user, contributorIds: chosen.map(i => i.id), contributorNames: chosen.map(i => i.name) })
+                setDelegateOpen(false)
+            },
+            chosen.length ? 'Handed over.' : 'Taken back.',
+            'Couldn’t update who writes this section.'
+        )
     }
 
     const saveAccess = async () => {
         if (!report || !canControlAccess) return
-        setSaving(true)
-        try {
-            await updateReportProjectAdminMode({ db, report, user, mode: projectAdminMode })
-            setAccessOpen(false)
-            message.success('Center Coordinator report access updated.')
-        } catch (err: any) {
-            message.error(err?.message || 'Could not update report access.')
-        } finally {
-            setSaving(false)
-        }
+        await run(
+            async () => {
+                await updateReportProjectAdminMode({ db, report, user, mode: projectAdminMode })
+                setAccessOpen(false)
+            },
+            'Access updated.',
+            'Couldn’t update access.'
+        )
     }
 
-    const toggleLock = async () => {
-        if (!report || !canControlAccess) return
-        setSaving(true)
-        try {
-            await updateReportLock({
-                db,
-                report,
-                user,
-                locked: !report.lock?.locked,
-                reason: report.lock?.locked ? undefined : (lockReason.trim() || 'Report locked by Account Manager.')
-            })
-            message.success(report.lock?.locked ? 'Report unlocked.' : 'Report locked.')
-        } catch (err: any) {
-            message.error(err?.message || 'Could not update report lock.')
-        } finally {
-            setSaving(false)
-        }
-    }
+    const toggleLock = () =>
+        report &&
+        run(
+            () => updateReportLock({ db, report, user, locked: !report.lock?.locked, reason: report.lock?.locked ? undefined : lockReason.trim() || 'Locked by the report owner.' }),
+            report.lock?.locked ? 'Report unlocked.' : 'Report locked.',
+            'Couldn’t change the lock.'
+        )
 
-    const generateWord = async () => {
+    const downloadWord = async () => {
         if (!report || !fullView) return
-        setGeneratingWord(true)
-        try {
-            const template = await getReportTemplate(db, report.templateId)
-            const file = await generateReportDocx({ template, blocks })
-            downloadDocx(file, `${report.title}-${report.periodLabel}.docx`)
-            message.success('Word report generated.')
-        } catch (err: any) {
-            message.error(err?.message || 'Could not generate the Word report.')
-        } finally {
-            setGeneratingWord(false)
+        const { unmapped, unfinished } = summarizeExport(blocks)
+        const go = async () => {
+            setGeneratingWord(true)
+            try {
+                const template = await getReportTemplate(db, report.templateId)
+                const file = await generateReportDocx({ template, blocks })
+                downloadDocx(file, `${report.title}-${report.periodLabel}.docx`)
+            } catch (err: any) {
+                message.error(err?.message || 'Couldn’t make the Word document.')
+            } finally {
+                setGeneratingWord(false)
+            }
         }
+        if (!unmapped.length && !unfinished.length) return go()
+        modal.confirm({
+            title: 'Download anyway?',
+            centered: true,
+            okText: 'Download',
+            content: (
+                <div className="cr-confirm-list">
+                    {unfinished.length ? <p>{unfinished.length} section{unfinished.length === 1 ? ' isn’t' : 's aren’t'} done yet; they’re included as they are.</p> : null}
+                    {unmapped.length ? (
+                        <p>
+                            Not linked to the Word template, so left out: {unmapped.slice(0, 5).join(', ')}
+                            {unmapped.length > 5 ? ` and ${unmapped.length - 5} more` : ''}.
+                        </p>
+                    ) : null}
+                </div>
+            ),
+            onOk: go
+        })
     }
 
     const assistWriting = async (action: ReportWritingAction) => {
@@ -363,8 +399,11 @@ const ReportWorkspacePage: React.FC<Props> = ({
         setAiWriting(true)
         try {
             setAiSuggestion(await requestReportWriting(action, active, draftContent))
-        } catch (err: any) { message.error(err?.message || 'Could not generate writing assistance.') }
-        finally { setAiWriting(false) }
+        } catch (err: any) {
+            message.error(err?.message || 'The AI couldn’t help with this just now.')
+        } finally {
+            setAiWriting(false)
+        }
     }
 
     const uploadProps: UploadProps = {
@@ -374,9 +413,9 @@ const ReportWorkspacePage: React.FC<Props> = ({
             try {
                 const uploaded = await uploadReportBlockAttachment(storage, active.reportId, active.id, file as File)
                 await addReportBlockAttachmentMetadata({ db, block: active, user, attachment: uploaded })
-                message.success('Attachment uploaded.')
+                message.success('Evidence attached.')
             } catch (err: any) {
-                message.error(err?.message || 'Could not upload attachment.')
+                message.error(err?.message || 'Couldn’t attach the file.')
             }
             return false
         }
@@ -384,171 +423,292 @@ const ReportWorkspacePage: React.FC<Props> = ({
 
     const grouped = useMemo(() => {
         const map = new Map<string, ReportBlock[]>()
-        visibleBlocks.forEach(block => map.set(block.sectionTitle, [...(map.get(block.sectionTitle) || []), block]))
+        visibleBlocks.forEach(block => map.set(block.sectionTitle || 'Sections', [...(map.get(block.sectionTitle || 'Sections') || []), block]))
         return Array.from(map.entries())
     }, [visibleBlocks])
 
-    const renderEditor = () => {
-        if (!active) return <Empty description="No report block selected" />
-        if (active.contentType === 'narrative') return <NarrativeBlockEditor value={typeof draftContent === 'string' ? draftContent : ''} onChange={setDraftContent} readOnly={!editable} />
-        if (active.contentType === 'table' || active.contentType === 'kpi') return <StructuredTableEditor columns={active.schema?.columns || []} value={draftContent} onChange={setDraftContent} readOnly={!editable} kpiMode={active.contentType === 'kpi'} />
-        return <div className="block-editor-body"><Text style={{ whiteSpace: 'pre-wrap' }}>{String(draftContent || '')}</Text></div>
-    }
-
-    if (!report) return <div style={{ padding: 48, textAlign: 'center' }}><Text type="secondary">Loading report...</Text></div>
+    if (!report) return <div className="cr-muted" style={{ padding: 48, textAlign: 'center' }}>Loading the report…</div>
 
     if (!fullView && !visibleBlocks.length) {
         return (
-            <Card className="report-soft-card">
-                <Empty description="No report blocks are assigned to your department or user account" />
-                <div style={{ textAlign: 'center', marginTop: 12 }}><Button onClick={onBack}>Back</Button></div>
-            </Card>
+            <MotionCard>
+                <Empty description="None of this report’s sections are yours to write." />
+                <div style={{ textAlign: 'center', marginTop: 12 }}>
+                    <Button onClick={onBack}>Back</Button>
+                </div>
+            </MotionCard>
         )
     }
 
-    const contributorOnly = !fullView
     const projectAdminReadOnly = isProjectAdmin(user) && report.access?.projectAdminMode === 'read_only'
+    const reportMenu = [
+        ...(canControlAccess
+            ? [
+                { key: 'lock', icon: report.lock?.locked ? <UnlockOutlined /> : <LockOutlined />, label: report.lock?.locked ? 'Unlock report' : 'Lock report' },
+                { key: 'access', icon: <SettingOutlined />, label: 'Project admin access' }
+            ]
+            : [])
+    ]
+
+    const st = active ? sectionStatus(active) : null
+    const primaryAction = !active ? null : canReopen ? (
+        <Button onClick={reopen} loading={saving}>
+            Reopen
+        </Button>
+    ) : reviewContributor ? (
+        <>
+            <Button danger onClick={() => openRequestChanges('contributor')}>
+                Ask for changes
+            </Button>
+            <Button type="primary" onClick={acceptAndForward} loading={saving}>
+                Accept and send on
+            </Button>
+        </>
+    ) : canApprove ? (
+        <>
+            {submittedToOwner ? (
+                <Button danger onClick={() => openRequestChanges('department')}>
+                    Ask for changes
+                </Button>
+            ) : null}
+            <Button type="primary" onClick={approve} loading={saving}>
+                {submittedToOwner ? 'Approve' : 'Mark as done'}
+            </Button>
+        </>
+    ) : editable && active.status !== 'submitted' ? (
+        <Button type="primary" onClick={submit} loading={saving}>
+            {delegatedContributor && active.editorDepartmentIds.length ? 'Send to department head' : 'Send for review'}
+        </Button>
+    ) : null
 
     return (
-        <div className="report-shell">
-            <Space direction="vertical" size={14} style={{ width: '100%' }}>
-                <PageHeader
-                    eyebrow={contributorOnly ? (departmentManager ? 'DEPARTMENT REPORT CONTRIBUTION' : 'MY REPORT CONTRIBUTIONS') : 'REPORT WORKSPACE'}
-                    title={`${report.title} · ${report.periodLabel}`}
-                    subtitle={contributorOnly
-                        ? `${visibleBlocks.length} block(s) in your reporting scope`
-                        : `${report.completedBlocks}/${report.totalBlocks} blocks approved · ${report.progressPercent}% overall progress`}
-                    onBack={onBack}
-                    actions={
+        <div className="cr-workspace">
+            <PageHeader
+                title={report.title}
+                subtitle={`${report.periodLabel}${report.programName ? ` · ${report.programName}` : ''} · ${report.completedBlocks} of ${report.totalBlocks} sections done`}
+                onBack={leavePage}
+                actions={
+                    fullView ? (
                         <Space wrap>
-                            {fullView && onPreview ? <Button icon={<EyeOutlined />} onClick={onPreview}>Preview</Button> : null}
-                            {canControlAccess ? <Button icon={<SettingOutlined />} onClick={() => setAccessOpen(true)}>Report Access</Button> : null}
-                            {canControlAccess ? <Button icon={report.lock?.locked ? <UnlockOutlined /> : <LockOutlined />} onClick={toggleLock} loading={saving}>{report.lock?.locked ? 'Unlock Report' : 'Lock Report'}</Button> : null}
-                            {fullView ? <Button icon={<DownloadOutlined />} loading={generatingWord} onClick={generateWord}>Generate Word</Button> : null}
-                        </Space>
-                    }
-                />
-
-                {report.sourceReportTitle ? <Alert type="info" showIcon message={`This report was carried over from ${report.sourceReportTitle}. Review carried content before submission.`} /> : null}
-                {projectAdminReadOnly ? <Alert type="warning" showIcon message="This report is read-only for the Center Coordinator. The Account Manager can restore full control." /> : null}
-                {report.lock?.locked ? <Alert type="error" showIcon message="Report locked" description={report.lock.reason || 'Editing and workflow actions are disabled until the Account Manager unlocks the report.'} /> : null}
-
-                <div className="workspace-grid" style={contributorOnly ? { gridTemplateColumns: '270px minmax(0,1fr) 310px' } : undefined}>
-                    <div className="workspace-panel">
-                        <div className="workspace-panel-header">
-                            <Text strong>{contributorOnly ? (isOperations(user) ? 'Department Blocks' : 'My Blocks') : 'Report Structure'}</Text>
-                            <Progress percent={report.progressPercent} size="small" showInfo={false} style={{ marginTop: 8 }} />
-                        </div>
-                        <div className="workspace-section-list">
-                            {grouped.map(([sectionTitle, sectionBlocks]) => (
-                                <div key={sectionTitle} style={{ marginBottom: 10 }}>
-                                    <Text type="secondary" style={{ fontSize: 10, fontWeight: 700, padding: '0 10px' }}>{sectionTitle.toUpperCase()}</Text>
-                                    {sectionBlocks.map(block => (
-                                        <button key={block.id} className={`workspace-section-item ${activeId === block.id ? 'active' : ''}`} onClick={() => setActiveId(block.id)}>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <Text strong style={{ color: 'inherit', fontSize: 12 }}>{block.title}</Text>
-                                                <div style={{ marginTop: 3 }}>
-                                                    <Space size={4} wrap>
-                                                        <BlockStatusTag status={block.status} />
-                                                        {block.status === 'submitted' && block.submittedTo === 'department' ? <Tag color="gold">Awaiting HOD</Tag> : null}
-                                                        {block.status === 'submitted' && block.submittedTo === 'report_manager' ? <Tag color="blue">Awaiting Report Manager</Tag> : null}
-                                                    </Space>
-                                                </div>
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="workspace-panel">
-                        {active ? <>
-                            <div className="workspace-editor-header">
-                                <Space direction="vertical" size={7} style={{ width: '100%' }}>
-                                    <Space wrap size={6}><Title level={4} style={{ margin: 0 }}>{active.title}</Title><ContentTypeTag value={active.contentType} /><BlockStatusTag status={active.status} />{active.carriedFromPeriodLabel ? <Tag color="gold">Carried from {active.carriedFromPeriodLabel}</Tag> : null}</Space>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                        Department: {active.editorDepartmentNames?.length ? active.editorDepartmentNames.join(', ') : 'Unassigned'}
-                                    </Text>
-                                    {active.delegatedUserNames?.length ? <Space size={6} wrap><TeamOutlined /><Text type="secondary" style={{ fontSize: 12 }}>Delegated to {active.delegatedUserNames.join(', ')}</Text></Space> : null}
-                                    {active.changeRequest?.reason ? <Alert type="warning" showIcon message={`Changes requested: ${active.changeRequest.reason}`} /> : null}
-                                </Space>
-                            </div>
-
-                            {renderEditor()}
-
-                            {editable ? <Space wrap style={{ padding: '0 14px 14px' }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>AI writing:</Text>
-                                <Button size="small" loading={aiWriting} onClick={() => assistWriting('improve')}>Improve</Button>
-                                <Button size="small" loading={aiWriting} onClick={() => assistWriting('summarise')}>Summarise</Button>
-                                <Button size="small" loading={aiWriting} onClick={() => assistWriting('expand')}>Expand</Button>
-                                <Button size="small" loading={aiWriting} onClick={() => assistWriting('commentary')}>Draft Commentary</Button>
-                                <Button size="small" loading={aiWriting} onClick={() => assistWriting('risk_mitigation')}>Risk Mitigation</Button>
-                            </Space> : null}
-
-                            <div style={{ padding: 14, borderTop: '1px solid #e7edf5' }}>
-                                <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-                                    <Space wrap>
-                                        {active.evidencePolicy !== 'none' ? <Upload {...uploadProps}><Button icon={<PaperClipOutlined />} disabled={!editable}>{active.evidencePolicy === 'required' ? 'Attach Required Evidence' : 'Attach Evidence'}</Button></Upload> : null}
-                                        {active.attachments?.length ? <Tag>{active.attachments.length} attachment(s)</Tag> : null}
-                                        {active.evidencePolicy === 'required' && !active.attachments?.length ? <Tag color="red">Evidence required before submission</Tag> : null}
-                                        {canDelegate ? <Button icon={<TeamOutlined />} onClick={() => { setDelegateIds(active.delegatedUserIds || []); setDelegateOpen(true) }}>Delegate Coordinator</Button> : null}
-                                    </Space>
-                                    <Space wrap>
-                                        {editable ? <Button icon={<SaveOutlined />} onClick={save} loading={saving}>Save Draft</Button> : null}
-                                        {editable && !reportManager && active.status !== 'submitted' && active.status !== 'approved' ? <Button type="primary" icon={<SendOutlined />} onClick={submit} loading={saving}>{delegatedContributor && active.editorDepartmentIds.length ? 'Submit to HOD' : 'Submit to Report Manager'}</Button> : null}
-                                        {reviewContributor ? <><Button danger icon={<CloseCircleOutlined />} onClick={() => openRequestChanges('contributor')}>Request Changes</Button><Button type="primary" icon={<SendOutlined />} onClick={acceptAndForward} loading={saving}>Accept & Submit</Button></> : null}
-                                        {reviewDepartment ? <><Button danger icon={<CloseCircleOutlined />} onClick={() => openRequestChanges('department')}>Request Changes</Button><Button type="primary" icon={<CheckOutlined />} onClick={approve} loading={saving}>Approve</Button></> : null}
-                                    </Space>
-                                </Space>
-                            </div>
-                        </> : <Empty description="No visible report blocks" />}
-                    </div>
-
-                    <div className="workspace-panel">
-                        <div className="workspace-panel-header"><Segmented block value={rightTab} onChange={value => setRightTab(String(value))} options={fullView ? ['Comments', 'History', 'Activity'] : ['Comments', 'History']} /></div>
-                        <div className="collab-body">
-                            {active && rightTab === 'Comments' ? <BlockCommentsPanel blockId={active.id} user={user} /> : null}
-                            {active && rightTab === 'History' ? <BlockHistoryPanel blockId={active.id} /> : null}
-                            {rightTab === 'Activity' ? (
-                                <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                                    {activity.slice(0, 20).map(item => <div key={item.id} className="activity-item"><Text strong style={{ fontSize: 12 }}>{item.createdByName}</Text><Text style={{ display: 'block', fontSize: 12 }}>{item.detail || item.action}</Text><Text type="secondary" style={{ fontSize: 11 }}>{formatTimestamp(item.createdAt)}</Text></div>)}
-                                    {!activity.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No activity yet" /> : null}
-                                </Space>
+                            {onPreview ? (
+                                <Button icon={<EyeOutlined />} onClick={onPreview}>
+                                    Preview
+                                </Button>
                             ) : null}
-                        </div>
-                    </div>
-                </div>
-            </Space>
+                            <Button icon={<DownloadOutlined />} loading={generatingWord} onClick={() => void downloadWord()}>
+                                Download Word
+                            </Button>
+                            {reportMenu.length ? (
+                                <Dropdown
+                                    trigger={['click']}
+                                    menu={{ items: reportMenu, onClick: ({ key }) => (key === 'lock' ? void toggleLock() : setAccessOpen(true)) }}
+                                >
+                                    <Button shape="circle" icon={<MoreOutlined />} aria-label="More report actions" />
+                                </Dropdown>
+                            ) : null}
+                        </Space>
+                    ) : null
+                }
+            />
 
-                <Modal open={!!aiSuggestion} title="AI writing suggestion" width={720} okText={active?.contentType === 'narrative' || active?.contentType === 'static' ? 'Use suggestion' : 'Close'} cancelText="Keep my draft" onCancel={() => setAiSuggestion('')} onOk={() => { if (active?.contentType === 'narrative' || active?.contentType === 'static') setDraftContent(aiSuggestion); setAiSuggestion('') }}>
-                    <Input.TextArea value={aiSuggestion} onChange={e => setAiSuggestion(e.target.value)} autoSize={{ minRows: 10, maxRows: 20 }} />
-                    {active?.contentType === 'table' || active?.contentType === 'kpi' ? <Text type="secondary">Review this proposed commentary and copy it into an appropriate narrative block; table values are never changed by AI.</Text> : null}
-                </Modal>
-                <Modal
+            {report.lock?.locked ? <Alert type="error" showIcon message="This report is locked" description={report.lock.reason || 'Nobody can edit it until the report owner unlocks it.'} /> : null}
+            {projectAdminReadOnly ? <Alert type="warning" showIcon message="You can view this report, but not edit it. The report owner can change that." /> : null}
+
+            <div className="cr-workspace-grid">
+                <MotionCard className="cr-sections-card">
+                    <div className="cr-sections-head">
+                        <span className="ws-section-title">{fullView ? 'Sections' : 'Your sections'}</span>
+                        <Progress percent={report.progressPercent} size="small" showInfo={false} />
+                    </div>
+                    <div className="cr-sections-nav">
+                        {grouped.map(([title, sectionBlocks]) => (
+                            <div key={title} className="cr-nav-group">
+                                <div className="cr-nav-group-title">{title}</div>
+                                {sectionBlocks.map(block => {
+                                    const s = sectionStatus(block)
+                                    return (
+                                        <button
+                                            key={block.id}
+                                            type="button"
+                                            className={`cr-nav-item${activeId === block.id ? ' is-active' : ''}`}
+                                            aria-current={activeId === block.id}
+                                            onClick={() => switchTo(block.id)}
+                                        >
+                                            <span className="cr-nav-name">{block.title}</span>
+                                            <StatusPill tone={s.tone}>{s.label}</StatusPill>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        ))}
+                    </div>
+                </MotionCard>
+
+                <div className="cr-editor-col">
+                    <MotionCard>
+                        {active && st ? (
+                            <div className="cr-editor">
+                                <div className="cr-editor-head">
+                                    <div className="cr-editor-title">
+                                        <h2>{active.title}</h2>
+                                        <StatusPill tone={st.tone}>{st.label}</StatusPill>
+                                        {dirty ? <StatusPill tone="warning">Unsaved</StatusPill> : null}
+                                    </div>
+                                    <div className="cr-muted">
+                                        {CONTENT_TYPE_LABEL[active.contentType]} · Written by{' '}
+                                        {active.delegatedUserNames?.length
+                                            ? active.delegatedUserNames.join(', ')
+                                            : active.editorDepartmentNames?.length
+                                                ? active.editorDepartmentNames.join(', ')
+                                                : 'the report owner'}
+                                        {active.carriedFromPeriodLabel ? ` · Copied from ${active.carriedFromPeriodLabel}` : ''}
+                                    </div>
+                                    {active.changeRequest?.reason ? <Alert type="warning" showIcon message={`Changes asked: ${active.changeRequest.reason}`} /> : null}
+                                    {changedBy ? (
+                                        <Alert
+                                            type="warning"
+                                            showIcon
+                                            message={`${changedBy} changed this section while you were editing.`}
+                                            description="Reloading shows their version and drops your unsaved changes. Copy anything you want to keep first."
+                                            action={
+                                                <Button size="small" onClick={reloadSection}>
+                                                    Reload section
+                                                </Button>
+                                            }
+                                        />
+                                    ) : null}
+                                </div>
+
+                                {active.contentType === 'narrative' ? (
+                                    <NarrativeBlockEditor value={typeof draftContent === 'string' ? draftContent : ''} onChange={editDraft} readOnly={!editable} />
+                                ) : active.contentType === 'table' || active.contentType === 'kpi' ? (
+                                    <StructuredTableEditor
+                                        columns={active.schema?.columns || []}
+                                        value={draftContent}
+                                        onChange={editDraft}
+                                        readOnly={!editable}
+                                        kpiMode={active.contentType === 'kpi'}
+                                    />
+                                ) : (
+                                    <div className="cr-static-text">{String(draftContent || '')}</div>
+                                )}
+
+                                <div className="cr-editor-foot">
+                                    <Space wrap>
+                                        {active.evidencePolicy !== 'none' ? (
+                                            <Upload {...uploadProps}>
+                                                <Button icon={<PaperClipOutlined />} disabled={!editable}>
+                                                    {active.evidencePolicy === 'required' ? 'Attach evidence (needed)' : 'Attach evidence'}
+                                                </Button>
+                                            </Upload>
+                                        ) : null}
+                                        {active.attachments?.length ? <span className="cr-muted">{active.attachments.length} file{active.attachments.length === 1 ? '' : 's'} attached</span> : null}
+                                        {canDelegate ? (
+                                            <Button icon={<TeamOutlined />} onClick={() => { setDelegateIds(active.delegatedUserIds || []); setDelegateOpen(true) }}>
+                                                Hand to a coordinator
+                                            </Button>
+                                        ) : null}
+                                        {editable && active.contentType !== 'static' ? (
+                                            <Dropdown
+                                                trigger={['click']}
+                                                disabled={aiWriting}
+                                                menu={{ items: AI_ACTIONS.map(a => ({ key: a.key, label: a.label })), onClick: ({ key }) => void assistWriting(key as ReportWritingAction) }}
+                                            >
+                                                <Button loading={aiWriting}>
+                                                    AI help <DownOutlined />
+                                                </Button>
+                                            </Dropdown>
+                                        ) : null}
+                                    </Space>
+                                    <Space wrap>
+                                        {editable ? (
+                                            <Button onClick={() => void save()} loading={saving} disabled={!dirty}>
+                                                Save
+                                            </Button>
+                                        ) : null}
+                                        {primaryAction}
+                                    </Space>
+                                </div>
+                            </div>
+                        ) : (
+                            <Empty description="Choose a section." />
+                        )}
+                    </MotionCard>
+
+                    {active ? (
+                        <MotionCard>
+                            <Segmented
+                                value={lowerTab}
+                                onChange={v => setLowerTab(String(v))}
+                                options={fullView ? ['Comments', 'History', 'Activity'] : ['Comments', 'History']}
+                            />
+                            <div className="cr-lower">
+                                {lowerTab === 'Comments' ? <BlockCommentsPanel blockId={active.id} user={user} /> : null}
+                                {lowerTab === 'History' ? <BlockHistoryPanel blockId={active.id} /> : null}
+                                {lowerTab === 'Activity' ? (
+                                    activity.length ? (
+                                        <div className="cr-activity">
+                                            {activity.slice(0, 20).map(item => (
+                                                <div key={item.id} className="cr-activity-item">
+                                                    <strong>{item.createdByName}</strong> {item.detail || item.action}
+                                                    <div className="cr-muted">{formatTimestamp(item.createdAt)}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nothing yet" />
+                                    )
+                                ) : null}
+                            </div>
+                        </MotionCard>
+                    ) : null}
+                </div>
+            </div>
+
+            <Modal
+                open={!!aiSuggestion}
+                title="AI suggestion"
+                width={720}
+                okText={active?.contentType === 'narrative' || active?.contentType === 'static' ? 'Use this' : 'Close'}
+                cancelText="Keep mine"
+                onCancel={() => setAiSuggestion('')}
+                onOk={() => {
+                    if (active?.contentType === 'narrative' || active?.contentType === 'static') editDraft(aiSuggestion)
+                    setAiSuggestion('')
+                }}
+            >
+                <Input.TextArea value={aiSuggestion} onChange={e => setAiSuggestion(e.target.value)} autoSize={{ minRows: 10, maxRows: 20 }} />
+                {active?.contentType === 'table' || active?.contentType === 'kpi' ? (
+                    <div className="cr-muted" style={{ marginTop: 8 }}>
+                        Copy this into a written section if it helps. The AI never changes table values.
+                    </div>
+                ) : null}
+            </Modal>
+
+            <Modal
                 open={requestOpen}
                 onCancel={() => setRequestOpen(false)}
-                title={requestTarget === 'contributor' ? 'Request Changes from Coordinator' : 'Request Department Changes'}
-                okText="Send Request"
-                onOk={requestChanges}
+                title="Ask for changes"
+                okText="Send"
+                onOk={() => void requestChanges()}
                 confirmLoading={saving}
                 okButtonProps={{ disabled: !changeReason.trim() }}
-                destroyOnHidden
+                destroyOnClose
             >
-                <Input.TextArea autoSize={{ minRows: 4, maxRows: 8 }} value={changeReason} onChange={e => setChangeReason(e.target.value)} placeholder="Explain what needs to be changed..." />
+                <Input.TextArea autoSize={{ minRows: 4, maxRows: 8 }} value={changeReason} onChange={e => setChangeReason(e.target.value)} placeholder="What needs to change?" />
             </Modal>
 
             <Modal
                 open={delegateOpen}
                 onCancel={() => setDelegateOpen(false)}
-                title="Delegate Coordinator"
-                okText="Save Delegation"
-                onOk={saveDelegation}
+                title="Hand this section to a coordinator"
+                okText="Save"
+                onOk={() => void saveDelegation()}
                 confirmLoading={saving}
-                destroyOnHidden
+                destroyOnClose
             >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <Alert type="info" showIcon message="Only coordinators in your department are listed. You remain the department owner and reviewer for this block." />
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                    <div className="cr-muted">They write it and send it back to you to check before it goes to the report owner.</div>
                     <Select
                         mode="multiple"
                         allowClear
@@ -557,36 +717,24 @@ const ReportWorkspacePage: React.FC<Props> = ({
                         style={{ width: '100%' }}
                         value={delegateIds}
                         onChange={setDelegateIds}
-                        placeholder="Select coordinator(s)"
+                        placeholder="Choose coordinators"
                         options={coordinators.map(item => ({ value: item.id, label: `${item.name}${item.email ? ` · ${item.email}` : ''}` }))}
                     />
-                    {!coordinators.length ? <Text type="secondary">No coordinators with this departmentId were found in users.</Text> : null}
+                    {!coordinators.length ? <div className="cr-muted">There are no coordinators in your department.</div> : null}
                 </Space>
             </Modal>
 
-            <Modal
-                open={accessOpen}
-                onCancel={() => setAccessOpen(false)}
-                title="Report Access"
-                okText="Save Access"
-                onOk={saveAccess}
-                confirmLoading={saving}
-                destroyOnHidden
-            >
+            <Modal open={accessOpen} onCancel={() => setAccessOpen(false)} title="Project admin access" okText="Save" onOk={() => void saveAccess()} confirmLoading={saving} destroyOnClose>
                 <Space direction="vertical" size={14} style={{ width: '100%' }}>
-                    <Alert type="info" showIcon message="Account Manager authority is programme-scoped through managedPrograms. This setting only controls Center Coordinator access to this report." />
+                    <Radio.Group value={projectAdminMode} onChange={e => setProjectAdminMode(e.target.value)}>
+                        <Space direction="vertical">
+                            <Radio value="manage">Can edit, hand over and approve sections</Radio>
+                            <Radio value="read_only">Can only view and download</Radio>
+                        </Space>
+                    </Radio.Group>
                     <div>
-                        <Text strong style={{ display: 'block', marginBottom: 8 }}>Center Coordinator</Text>
-                        <Radio.Group value={projectAdminMode} onChange={e => setProjectAdminMode(e.target.value)}>
-                            <Space direction="vertical">
-                                <Radio value="manage">Full Control — edit, assign, review and approve</Radio>
-                                <Radio value="read_only">Read Only — view, preview and download only</Radio>
-                            </Space>
-                        </Radio.Group>
-                    </div>
-                    <div>
-                        <Text strong style={{ display: 'block', marginBottom: 6 }}>Lock reason</Text>
-                        <Input value={lockReason} onChange={e => setLockReason(e.target.value)} placeholder="Used if you lock the report" />
+                        <div className="cr-label">Reason shown when the report is locked</div>
+                        <Input value={lockReason} onChange={e => setLockReason(e.target.value)} placeholder="Optional" />
                     </div>
                 </Space>
             </Modal>

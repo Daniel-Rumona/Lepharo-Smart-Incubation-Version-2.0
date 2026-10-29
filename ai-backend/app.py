@@ -1,4 +1,5 @@
 import base64
+import calendar
 import binascii
 import html
 import io
@@ -34,10 +35,17 @@ from firestore_tools import (
     find_required_document,
     update_compliance_document_status,
     save_chat_turn,
+    chat_session_usable_by,
     _parse_date_like,
 )
 from page_registry import get_page_context
 from tools_dispatcher import run_page_tools
+from plan_roadmap import (
+    RoadmapDraft,
+    RoadmapExtractionRequest,
+    build_roadmap_draft,
+    roadmap_extraction_prompt,
+)
 from gap_mapping import (
     GapMappingError,
     GapMappingRequest,
@@ -51,6 +59,9 @@ from ai_feedback import (
     record_feedback,
 )
 from academy_coach import CoachRequest, CoachResponse, CoachUnavailable, coach_reply
+from twin_scenario import ProjectionSummaryRequest, ProjectionSummaryResponse, ScenarioIntentRequest, ScenarioIntentResponse, ScenarioUnavailable, interpret_scenario, summarise_projection
+from show_me import ComposeTourRequest, ComposeTourResponse, ShowMeUnavailable, compose_tour, sanitize_show_me
+from agent_proposals import PROPOSAL_MARKER, allowed_proposals_for, proposal_directive, sanitize_proposal
 from lph_gateway import LphGateway
 from whatsapp_staff import GeminiStaffReasoner
 from whatsapp import (
@@ -252,10 +263,43 @@ MAX_CHART_CATEGORIES = 12
 MAX_CHART_SERIES = 3
 CHART_MARKER = "<<<CHART_JSON>>>"
 GUIDE_MARKER = "<<<GUIDE_JSON>>>"
+ACTION_MARKER = "<<<ACTION_JSON>>>"
+SHOWME_MARKER = "<<<SHOWME_JSON>>>"
+REPLY_MARKERS = (CHART_MARKER, GUIDE_MARKER, SHOWME_MARKER, ACTION_MARKER, PROPOSAL_MARKER)
+
+
+def _split_reply_markers(raw_text: str) -> tuple[str, dict[str, Any]]:
+    """Split a reply into its answer text and the parsed JSON after each marker.
+
+    Markers may come in any order; whatever follows a marker up to the next one is
+    its JSON. A marker whose JSON doesn't parse is treated as absent.
+    """
+    positions = sorted(
+        (raw_text.find(marker), marker) for marker in REPLY_MARKERS if marker in raw_text
+    )
+    answer = raw_text[: positions[0][0]] if positions else raw_text
+    parsed: dict[str, Any] = {}
+    for index, (start, marker) in enumerate(positions):
+        end = positions[index + 1][0] if index + 1 < len(positions) else len(raw_text)
+        text = CODE_FENCE_PATTERN.sub("", raw_text[start + len(marker):end].strip()).strip()
+        if not text:
+            continue
+        try:
+            parsed[marker] = json.loads(text)
+        except (ValueError, TypeError):
+            continue
+    return answer.strip(), parsed
+
+# Interactive write flows the web chat may open for a user. The model only
+# ever *proposes* one; the frontend opens a form the user must complete and
+# submit themselves, and only roles listed here are ever offered it.
+ROLE_ALLOWED_ACTIONS: dict[str, set[str]] = {
+    "coordinator": {"schedule_appointment"},
+}
 CODE_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 
 
-ADMIN_ROLES = {"admin", "system_admin", "director", "operations"}
+ADMIN_ROLES = {"system_admin", "director", "operations"}
 PROGRAM_SCOPED_ROLES = {"projectadmin", "receptionist", "funder"}
 
 OWN_DATA_TOOLS = {
@@ -290,6 +334,7 @@ PROGRAM_DATA_TOOLS = {
     "get_appointments_by_program",
     "get_movs_by_program",
     "get_monthly_participants_serviced_by_program",
+    "get_intervention_impact_by_program",
     "get_timesheets_by_program",
     "get_programs",
     "get_departments",
@@ -315,6 +360,7 @@ GLOBAL_DATA_TOOLS = {
     "get_inquiries",
     "get_intake_submissions",
     "get_monthly_participants_serviced",
+    "get_intervention_impact",
     "get_recent_activity_summary",
 }
 
@@ -512,7 +558,7 @@ def _compute_role_label(
         return f"Receptionist at {branch_name}" if branch_name else "Receptionist"
     if role == "director":
         return "Director"
-    if role in {"admin", "system_admin"}:
+    if role == "system_admin":
         return "System Administrator"
     if role == "funder":
         return "Funder"
@@ -693,6 +739,7 @@ TOOL_TOPIC_RULES: list[tuple[re.Pattern, tuple[str, ...]]] = [
     (re.compile(r"\bcatalog|\bservices? (offered|catalog)\b", re.I), ("catalog", "interventions_catalog")),
     (re.compile(r"\bdepartments?\b|\bhod\b", re.I), ("department",)),
     (re.compile(r"\bprogram(me)?s?\b|\bbranch\b", re.I), ("program",)),
+    (re.compile(r"\bimpact\b|\bworking\b|\bworked\b|\beffective|\blift\b|\bpaying off\b|\bmade a difference\b|\brevenue (growth|change|increase)", re.I), ("impact",)),
     (re.compile(r"\bbrief me\b|\bcatch me up\b|\bwhat happened\b|\brecap\b|\brecent activity\b|\bwhat'?s new\b|\btoday'?s? activity\b|\bsince (i|we) last\b|\bwhat needs my attention\b", re.I), ("recent_activity",)),
 ]
 
@@ -1039,6 +1086,26 @@ def _redact_chart(chart: Optional[dict[str, Any]], source_data: Any) -> Optional
     }
 
 
+def _allowed_actions_for(role: str) -> set[str]:
+    return set(ROLE_ALLOWED_ACTIONS.get(role, set()))
+
+
+def _sanitize_action(raw: Any, allowed: set[str]) -> Optional[dict[str, Any]]:
+    """Only ever return an interactive action this user's role may start —
+    never trust a kind the model may have invented."""
+    if not isinstance(raw, dict) or not allowed:
+        return None
+
+    kind = raw.get("kind")
+    if not isinstance(kind, str) or kind not in allowed:
+        return None
+
+    sme = raw.get("sme")
+    sme_hint = sme.strip()[:80] if isinstance(sme, str) and sme.strip() else None
+
+    return {"kind": kind, "sme": sme_hint}
+
+
 def _sanitize_guide(raw: Any, available_guides: Any) -> Optional[dict[str, Any]]:
     """Only ever return a guide the frontend itself offered in this request —
     never trust a pageId/guideId the model may have invented or altered."""
@@ -1193,7 +1260,7 @@ def detect_template_blocks(payload: TemplateDetectionRequest, request: Request):
     if not api_key:
         raise HTTPException(status_code=503, detail="The assistant is not configured.")
     user = _verified_user(request, None)
-    if _normalise_role(user.role) not in {"operations", "projectadmin", "admin", "system_admin"}:
+    if _normalise_role(user.role) not in {"operations", "projectadmin", "system_admin"}:
         raise HTTPException(status_code=403, detail="Template detection is restricted to report managers.")
 
     nodes = [node.model_dump() for node in payload.nodes if node.text.strip()][:300]
@@ -1243,6 +1310,65 @@ If the content is a table/KPI, write concise commentary based only on its values
         return ReportWritingResponse(suggestion=suggestion)
     except Exception as error:
         raise HTTPException(status_code=502, detail="Writing assistance is temporarily unavailable.") from error
+
+
+@app.post("/twin/scenario-intent", response_model=ScenarioIntentResponse)
+def twin_scenario_intent(payload: ScenarioIntentRequest, request: Request):
+    """Reads a sentence like "add 2 coordinators and 30 new SMEs over 12 weeks" into Intervention Twin levers.
+
+    The model only lists the changes; twin_scenario.py validates them and does the arithmetic and limits.
+    Any failure returns 502/503 and the page falls back to its built-in reader.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The assistant is not configured.")
+    user = _verified_user(request, None)
+    if _normalise_role(user.role) not in {"operations", "projectadmin", "system_admin"}:
+        raise HTTPException(status_code=403, detail="The Intervention Twin is restricted to managers.")
+    try:
+        return interpret_scenario(genai.Client(api_key=api_key), os.getenv("GEMINI_MODEL", "gemini-3.6-flash"), payload)
+    except ScenarioUnavailable as error:
+        print("Twin scenario intent failed:", str(error), flush=True)
+        raise HTTPException(status_code=502, detail="The assistant could not read that change.") from error
+
+
+@app.post("/twin/projection-summary", response_model=ProjectionSummaryResponse)
+def twin_projection_summary(payload: ProjectionSummaryRequest, request: Request):
+    """Two or three plain sentences comparing an Intervention Twin change with "if nothing changes".
+
+    The page sends only numbers and short labels. The wording is accepted only if every number in it was one it was given;
+    any failure returns 502/503 and the page keeps its built-in wording.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The assistant is not configured.")
+    user = _verified_user(request, None)
+    if _normalise_role(user.role) not in {"operations", "projectadmin", "system_admin"}:
+        raise HTTPException(status_code=403, detail="The Intervention Twin is restricted to managers.")
+    try:
+        return summarise_projection(genai.Client(api_key=api_key), os.getenv("GEMINI_MODEL", "gemini-3.6-flash"), payload)
+    except ScenarioUnavailable as error:
+        print("Twin projection summary failed:", str(error), flush=True)
+        raise HTTPException(status_code=502, detail="The assistant could not write that summary.") from error
+
+
+@app.post("/guide/compose", response_model=ComposeTourResponse)
+def guide_compose(payload: ComposeTourRequest, request: Request):
+    """Writes a short guided tour for "show me how" from the elements the page reported.
+
+    The page sends only its route, its curated guide titles and the visible label of each
+    guide target; the reply may only point at those targets. Any failure returns 502 and the
+    page just stays open without a tour.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The assistant is not configured.")
+    _verified_user(request, None)
+    try:
+        return compose_tour(genai.Client(api_key=api_key), os.getenv("GEMINI_MODEL", "gemini-3.6-flash"), payload)
+    except ShowMeUnavailable as error:
+        print("Guide compose failed:", str(error), flush=True)
+        raise HTTPException(status_code=502, detail="The assistant could not put that tour together.") from error
 
 
 @app.post("/api/chat", response_model=WhatsAppChatResponse)
@@ -1331,6 +1457,9 @@ def chat(payload: ChatRequest, request: Request):
     session_id = str(payload.sessionId or "").strip()[:120] or uuid.uuid4().hex
 
     user = _verified_user(request, payload.user)
+    if payload.sessionId and not chat_session_usable_by(session_id, user.uid or ""):
+        # Someone else's session id: start a fresh conversation instead of joining theirs.
+        session_id = uuid.uuid4().hex
     backend_page_context = get_page_context(payload.route)
     frontend_page_context = payload.pageContext or {}
 
@@ -1433,6 +1562,40 @@ def chat(payload: ChatRequest, request: Request):
       produced, put a one-sentence reason in "answer" (e.g. what data is missing) and leave chart null.
         """
         if payload.chartOnly
+        else ""
+    )
+
+    allowed_actions = _allowed_actions_for(role) if not payload.chartOnly else set()
+    action_directive = (
+        f"""
+    - This user may start these interactive actions: {sorted(allowed_actions)}. The app opens a form
+      for them; you never perform the action yourself. If — and only if — the user clearly asks to
+      schedule, book or set up an appointment (kind "schedule_appointment"), keep "answer" to one short
+      friendly sentence such as "Let's set that up — pick the SME below." and append one final marker
+      after everything else (after any chart/guide markers): on its own new line, write exactly
+      {ACTION_MARKER} and then, immediately after it on the same line, ONLY a single-line compact JSON
+      object matching exactly: {{"kind": "schedule_appointment", "sme": string | null}} where "sme" is
+      the SME/company name the user mentioned, or null. Never output this marker for any other request,
+      and never claim an appointment was created. If you can instead PROPOSE the appointment (see below)
+      because the user gave a date and time and the assignment id is in the data, propose it and do not
+      output this marker.
+        """
+        if allowed_actions
+        else ""
+    )
+    allowed_proposals = allowed_proposals_for(role) if not payload.chartOnly else set()
+    show_me_directive = (
+        f"""
+    - The live frontend page context's "availableRoutes" lists the pages this user can open (route,
+      label, section). If the user asks how to do something, where to find something, or to be shown
+      around, and no availableGuides entry matches, pick the single page from availableRoutes where it
+      is done. Keep "answer" to one or two sentences saying where it is, then append one final marker:
+      on its own new line, write exactly {SHOWME_MARKER} and then, immediately after it on the same
+      line, ONLY a single-line compact JSON object: {{"route": string, "goal": string}}. Copy "route"
+      verbatim from availableRoutes; "goal" restates what the user wants to do in a short phrase. The
+      app opens the page and walks them through it. Never output this marker for a route not in the list.
+        """
+        if not payload.chartOnly
         else ""
     )
 
@@ -1566,6 +1729,9 @@ def chat(payload: ChatRequest, request: Request):
       Copy the pageId, guideId, route, and title values verbatim from the matching availableGuides
       entry — never invent or alter them, and never reference a pageId/guideId that isn't in that
       list. If availableGuides is empty or nothing in it matches, do not output this marker at all.
+    {show_me_directive}
+    {action_directive}
+    {proposal_directive(allowed_proposals)}
 
     Verified user scope:
     {json.dumps(user.model_dump(), default=str)}
@@ -1610,33 +1776,12 @@ def chat(payload: ChatRequest, request: Request):
 
     raw_text = (response.text or "").strip()
 
-    if GUIDE_MARKER in raw_text:
-        pre_guide_text, _, guide_part = raw_text.partition(GUIDE_MARKER)
-    else:
-        pre_guide_text, guide_part = raw_text, ""
-
-    if CHART_MARKER in pre_guide_text:
-        answer_part, _, chart_part = pre_guide_text.partition(CHART_MARKER)
-    else:
-        answer_part, chart_part = pre_guide_text, ""
-
-    raw_answer = answer_part.strip()
-    raw_chart: Any = None
-    raw_guide: Any = None
-
-    chart_text = CODE_FENCE_PATTERN.sub("", chart_part.strip()).strip()
-    if chart_text:
-        try:
-            raw_chart = json.loads(chart_text)
-        except (ValueError, TypeError):
-            raw_chart = None
-
-    guide_text = CODE_FENCE_PATTERN.sub("", guide_part.strip()).strip()
-    if guide_text:
-        try:
-            raw_guide = json.loads(guide_text)
-        except (ValueError, TypeError):
-            raw_guide = None
+    raw_answer, marker_json = _split_reply_markers(raw_text)
+    raw_chart: Any = marker_json.get(CHART_MARKER)
+    raw_guide: Any = marker_json.get(GUIDE_MARKER)
+    raw_show_me: Any = marker_json.get(SHOWME_MARKER)
+    raw_action: Any = marker_json.get(ACTION_MARKER)
+    raw_proposal: Any = marker_json.get(PROPOSAL_MARKER)
 
     # Defensive fallback: if the model ignored the marker format and emitted the
     # older {"answer": ..., "chart": ...} JSON envelope instead, unwrap it rather
@@ -1664,6 +1809,14 @@ def chat(payload: ChatRequest, request: Request):
     safe_answer = _redact_internal_identifiers(raw_answer, fetched_data)
     safe_chart = _redact_chart(_sanitize_chart(raw_chart), fetched_data)
     safe_guide = _sanitize_guide(raw_guide, frontend_page_context.get("availableGuides"))
+    safe_action = _sanitize_action(raw_action, allowed_actions)
+    safe_show_me = (
+        None if safe_guide else sanitize_show_me(raw_show_me, frontend_page_context.get("availableRoutes"))
+    )
+    safe_proposal = sanitize_proposal(raw_proposal, allowed_proposals)
+    if safe_proposal:
+        # One way to act per reply: a ready proposal replaces the open-the-form flow.
+        safe_action = None
 
     save_chat_turn(
         session_id=session_id,
@@ -1681,6 +1834,9 @@ def chat(payload: ChatRequest, request: Request):
         "reply": safe_answer,
         "chart": safe_chart,
         "guide": safe_guide,
+        "action": safe_action,
+        "showMe": safe_show_me,
+        "proposal": safe_proposal,
         "sources": [
             name
             for name, result in tool_results.items()
@@ -1782,7 +1938,6 @@ class ComplianceVerifyRequest(BaseModel):
 # receptionist/funder (read/oversight-only per their described scope) and
 # incubatee/applicant (can't self-verify their own uploads).
 COMPLIANCE_REVIEW_ROLES = {
-    "admin",
     "system_admin",
     "director",
     "operations",
@@ -1816,21 +1971,20 @@ def _fetch_document_bytes(url: str) -> Optional[tuple[bytes, str]]:
 
 
 def _resolve_compliance_expiry(document: dict, requirement: Optional[dict]) -> Optional[datetime]:
-    direct = _parse_date_like(document.get("expiryDate"))
-    if direct:
-        return direct
-
+    # Same rule as complianceEffectiveExpiry in the app: the requirement's
+    # validity period from the issue date wins, otherwise the stored expiryDate.
     if requirement and requirement.get("hasExpiry") and requirement.get("expiryMonths"):
-        issued = _parse_date_like(document.get("issueDate") or document.get("uploadedAt"))
+        issued = _parse_date_like(document.get("issueDate"))
         if issued:
             months = int(requirement["expiryMonths"])
             total_months = issued.month - 1 + months
             year = issued.year + total_months // 12
             month = total_months % 12 + 1
-            day = min(issued.day, 28)
+            # Clamp to the month's last day (31 Jan + 1 month = 28/29 Feb).
+            day = min(issued.day, calendar.monthrange(year, month)[1])
             return issued.replace(year=year, month=month, day=day)
 
-    return None
+    return _parse_date_like(document.get("expiryDate"))
 
 
 def _verify_document_with_ai(
@@ -3343,7 +3497,7 @@ def map_gap_interventions(payload: GapMappingRequest, request: Request):
     try:
         return build_gap_mapping(
             payload,
-            department_name=user.departmentName,
+            department_id=user.departmentId,
             actor=user.email or user.uid,
             genai_client_factory=lambda: genai.Client(api_key=api_key),
         )
@@ -3354,6 +3508,43 @@ def map_gap_interventions(payload: GapMappingRequest, request: Request):
         raise HTTPException(
             status_code=502, detail="Intervention mapping is temporarily unavailable."
         ) from error
+
+
+# ============= IMPLEMENTATION PLAN -> DRAFT ROADMAP =============
+# Reads an uploaded departmental implementation plan and returns a DRAFT
+# milestone roadmap. Nothing is persisted: the HOD reviews/edits the draft and
+# the client publishes it to `planRoadmaps` (see functions/src/planRoadmapCheckIns.ts).
+
+PLAN_ROADMAP_AUTHOR_ROLES = ADMIN_ROLES | {"projectadmin"}
+
+
+@app.post("/plans/extract-roadmap", response_model=RoadmapDraft)
+def extract_plan_roadmap(payload: RoadmapExtractionRequest, request: Request):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The assistant is not configured.")
+
+    user = _verified_user(request, None)
+    if _normalise_role(user.role) not in PLAN_ROADMAP_AUTHOR_ROLES:
+        raise HTTPException(status_code=403, detail="You do not have permission to import implementation plans.")
+
+    document_part, document_text, _ = _read_course_document(
+        payload.fileBase64, payload.fileName, payload.mimeType
+    )
+    prompt = roadmap_extraction_prompt(date.today(), user.departmentName or "")
+    contents: Any = (
+        [document_part, prompt]
+        if document_part is not None
+        else prompt + "\n\nDocument:\n" + document_text
+    )
+    parsed = _gemini_json(api_key, contents, "Implementation plan extraction")
+    draft = build_roadmap_draft(parsed)
+    if not draft.milestones:
+        raise HTTPException(
+            status_code=422,
+            detail="No milestones or activities could be found in this document.",
+        )
+    return draft
 
 
 # ============= KPI AGREEMENT EXTRACTION =============
@@ -3567,7 +3758,7 @@ Live data sources this system can compute a KPI from (sourceType.field):
 - interventions (count only, no numeric fields): filter by the same fields as
   applications, plus status, movStatus, and interventionTitle (the specific
   intervention given, e.g. "SBAT Assessment", "BBBEE Compliance Support") -
-  NOT areaOfSupport, which is the owning department and is already implied by
+  NOT departmentId, which is the owning department and is already implied by
   the department this KPI is being created for.
 - metrics (participant monthly metrics, numeric): monthlyRevenue, jobsCreated,
   jobsSustained, employeesPermanent, employeesTemporary, totalEmployees - each
@@ -3792,32 +3983,51 @@ def extract_kpi_candidates(payload: KpiAgreementExtractionRequest, request: Requ
 def _kpi_agreement_chat_rules(department_name: Optional[str]) -> str:
     # The client always resolves a department before this chat starts (the Add
     # KPI modal picks it up front, via a dropdown or the user's own
-    # department - see AddKpiFlowModal.tsx), so normally there is nothing to
+    # department - see KpiAssistant.tsx), so normally there is nothing to
     # ask here. The "unknown" branch only covers a caller that somehow starts
     # this chat without one.
-    first_question = (
-        f'Which financial year this covers (e.g. "2026-27 FY"). The department is '
-        f'already known - {department_name} - do not ask about it.'
+    # The client opens the chat itself by asking what the department needs to
+    # deliver, so the first user message normally already lists KPIs.
+    department_rule = (
+        f"The department is already known - {department_name} - never ask about it."
         if department_name else
-        'Which department/service this is for, and which financial year (e.g. "2026-27 FY").'
+        "Ask which department/service this is for only if the user has not said."
     )
+    fy = _current_sa_fy_label()
     return f"""
-Ask ONE focused question at a time instead of a long checklist - ordinarily:
-  1. {first_question}
-  2. Whether the targets are numeric (an annual figure split across Q1-Q4) or
-     qualitative deliverables (an area, what gets done, how it's measured, how
-     often) - a department can use either or both.
-  3. The KPI rows themselves, a few at a time, in whichever shape applies.
-  4. Form No / Revision No / Effective date and any standalone monthly capacity
-     line, only if the user actually knows them - never chase these if the user
-     does not have them; leave them blank rather than stall the conversation.
+{department_rule}
+Financial year: use the one the user names; if they name none, use {fy} -
+never ask about the financial year as a question of its own.
 
-Keep each question short and give a concrete example of the format you need.
-Never invent a KPI, a number, or a name the user has not actually given you.
-Once you have a department/service name, a financial year, and at least one
-numeric target or deliverable, you may finish - do not keep asking once there
-is enough to save; the user can add more rows on the review screen afterwards.
+The conversation opens by asking for the first KPI's name and what it is
+about. Build the KPIs ONE AT A TIME. For the KPI being discussed, ask ONE short
+follow-up per turn, skipping anything the user has already said:
+  1. Whether it is a number to hit (e.g. "40 SMEs") or a deliverable to
+     complete (e.g. "a signed-off impact report") - only if it is not obvious
+     from what they said.
+  2. Number: the target for the year, then whether to split it evenly across
+     Q1-Q4 or how they want it split.
+     Deliverable: how completion is measured, then how often it is reported
+     (monthly or quarterly).
+When that KPI is complete, briefly confirm it in one line and ask whether
+there is another KPI - if so, ask for its name and what it is about, and repeat.
+Finish (done: true) only when the user says there are no more KPIs, or asks
+you to finish; include every complete KPI from the conversation in the draft.
+
+Form No / Revision No / Effective date / monthly capacity: never ask; fill them
+only if the user volunteers them.
+
+Keep each question short and conversational, with a concrete example of the
+answer you need. Never invent a KPI, a number, or a name the user has not
+actually given you; use the user's own wording for the KPI name.
 """
+
+
+def _current_sa_fy_label() -> str:
+    """The South African financial year in progress (April-March), e.g. "2026-27 FY"."""
+    today = datetime.now()
+    start = today.year if today.month >= 4 else today.year - 1
+    return f"{start}-{str((start + 1) % 100).zfill(2)} FY"
 
 
 def _kpi_agreement_chat_prompt(
@@ -3895,7 +4105,8 @@ def kpi_candidate_chat(payload: KpiAgreementChatRequest, request: Request):
 
     history = [
         {"role": msg.role[:20], "content": msg.content.strip()[:2000]}
-        for msg in payload.messages[-20:]
+        # Room for several KPIs built one at a time (about six turns each).
+        for msg in payload.messages[-80:]
         if msg.role in {"user", "assistant"} and msg.content.strip()
     ]
     if not history or history[-1]["role"] != "user":

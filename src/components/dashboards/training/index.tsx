@@ -10,14 +10,13 @@ import {
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
+import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import InterventionsDashboard from "../shared/InterventionsDashboard";
+import TrainingProgramDashboard from "./TrainingProgramDashboard";
+import { useActiveTraining } from "./useTrainingProgram";
 import "./department-filters.css";
 
 type Department = { id: string; name: string; parentDepartmentId?: string };
-const normalize = (value: unknown) =>
-  String(value ?? "")
-    .trim()
-    .toLowerCase();
 
 export default function TrainingDashboard() {
   const { token } = theme.useToken();
@@ -27,6 +26,9 @@ export default function TrainingDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
+  // Trainings sit in the programme picker; picking one swaps in its own dashboard.
+  const { activeProgramId } = useActiveProgramId();
+  const { training, checking } = useActiveTraining(activeProgramId);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -67,16 +69,12 @@ export default function TrainingDashboard() {
   );
   const departmentIds = useMemo(() => scope.map((row) => row.id), [scope]);
   const matchesDepartment = useCallback(
-    (entry: Record<string, any>) => {
-      if (entry.departmentId)
-        return departmentIds.includes(String(entry.departmentId));
-      const name = normalize(
-        entry.areaOfSupport || entry.area || entry.departmentName
-      );
-      return !!name && scope.some((row) => normalize(row.name) === name);
-    },
-    [scope, departmentIds]
+    (entry: Record<string, any>) =>
+      !!entry.departmentId && departmentIds.includes(String(entry.departmentId)),
+    [departmentIds]
   );
+  if (checking) return <DashboardLoader />;
+  if (training) return <TrainingProgramDashboard key={training.id} training={training} />;
   if (loading)
     return (
       <DashboardLoader />
@@ -100,7 +98,7 @@ export default function TrainingDashboard() {
     );
   return (
     <InterventionsDashboard
-      title="Training Academy"
+      title={departments.find((row) => row.id === user?.departmentId)?.name || "Training"}
       matchesDepartment={matchesDepartment}
       departmentIds={departmentIds}
       scopeControl={

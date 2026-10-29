@@ -41,6 +41,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 
@@ -507,45 +508,45 @@ const EmployeeLeave = () => {
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col xs={24} sm={12} xl={6}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             title='Total Requests'
                             value={requestMetrics.total}
                             subtitle='All leave applications'
-                            icon={<FileTextOutlined style={{ color: '#1677ff' }} />}
-                            iconBg='rgba(22,119,255,.12)'
+                            icon={<FileTextOutlined />}
+                            tone='accent'
                         />
                     </MotionCard>
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             title='Pending'
                             value={requestMetrics.pending}
                             subtitle='Awaiting a decision'
-                            icon={<ClockCircleOutlined style={{ color: '#faad14' }} />}
-                            iconBg='rgba(250,173,20,.14)'
+                            icon={<ClockCircleOutlined />}
+                            tone='warning'
                         />
                     </MotionCard>
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             title='Approved'
                             value={requestMetrics.approved}
                             subtitle='Requests approved'
-                            icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                            iconBg='rgba(82,196,26,.12)'
+                            icon={<CheckCircleOutlined />}
+                            tone='success'
                         />
                     </MotionCard>
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             title='Rejected'
                             value={requestMetrics.rejected}
                             subtitle='Requests declined'
-                            icon={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
-                            iconBg='rgba(255,77,79,.12)'
+                            icon={<CloseCircleOutlined />}
+                            tone='danger'
                         />
                     </MotionCard>
                 </Col>

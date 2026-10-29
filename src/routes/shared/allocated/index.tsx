@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Segmented,
-    Select,
     Skeleton,
-    Table,
     Tag,
     Space,
     Typography,
@@ -13,33 +11,43 @@ import {
     Input,
     Button,
     Modal,
+    App,
     Form,
     Upload,
     message,
     Alert,
+    Avatar,
     Card,
+    Rate,
     Grid,
     List,
-    Descriptions,
     Progress,
     DatePicker,
     Dropdown,
     Collapse,
     Tooltip,
-    Carousel,
-    Image,
     Slider,
     Pagination,
-    Popconfirm
+    Popconfirm,
+    Badge,
+    Drawer,
+    Popover
 } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
+import { FilterPanel } from '@/components/workspace'
+import { QueryInbox } from '@/components/queries/QueryInbox'
+import { isCatchingUp } from '@/services/deliveryDisputeService'
+import { StatusPill } from '@/routes/operations/movs/movParts'
+import { QueryThread } from '@/routes/operations/movs/MovQueries'
+import '@/routes/operations/movs/movs.css'
+import '@/components/queries/choice-cards.css'
+import './allocated.css'
 import {
     CheckCircleOutlined,
     ClockCircleOutlined,
     CalendarOutlined,
     TeamOutlined,
     FileProtectOutlined,
-    WarningOutlined,
     EditOutlined,
     EyeOutlined,
     UploadOutlined,
@@ -51,14 +59,18 @@ import {
     FileImageOutlined,
     FileTextOutlined,
     AppstoreOutlined,
-    InfoCircleOutlined,
     BellOutlined,
+    SearchOutlined,
+    FilterOutlined,
+    SendOutlined,
+    QuestionCircleOutlined,
     CloseOutlined,
-    DeleteOutlined,
-    MoreOutlined,
     EnvironmentOutlined,
     VideoCameraOutlined,
-    PlusOutlined
+    PlusOutlined,
+    HistoryOutlined,
+    ArrowRightOutlined,
+    ArrowLeftOutlined
 } from '@ant-design/icons'
 import {
     collection,
@@ -71,11 +83,10 @@ import {
     getDoc,
     updateDoc,
     arrayUnion,
-    orderBy,
-    QueryConstraint,
-    addDoc
+    QueryConstraint
 } from 'firebase/firestore'
 import { db, auth, storage } from '@/firebase'
+import SetupSegmented from '@/components/shared/SetupSegmented'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import dayjs, { Dayjs } from 'dayjs'
 import { Helmet } from 'react-helmet'
@@ -85,6 +96,10 @@ import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import EvidenceManagerPanel from '@/components/evidence/EvidenceManagerPanel'
 import { USE_SENSITIVE_DEPARTMENT_SUMMARY_INSTEAD_OF_POE } from '@/config/evidencePolicy'
 import { DEFAULT_EVIDENCE_MODEL, resolveDeliverableName } from '@/services/evidenceModel'
+import EvidenceFileRow from '@/components/interventions/EvidenceFileRow'
+import { EvidenceCardTitle, evidenceCardProps, pillTag } from '@/components/interventions/EvidenceCardTitle'
+import IncubateeBanner from '@/components/interventions/IncubateeBanner'
+import ManageMovCard from '@/components/interventions/ManageMovCard'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import {
     guideTarget,
@@ -98,7 +113,6 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { completeIntervention, completionFailureEvidence, loadInterventionCompletionContext, interventionCompletionError, mergeCompletionFailureContext, COMPLETION_MAX_FILE_SIZE_BYTES, COMPLETION_SUCCESS_MESSAGE, type InterventionCompletionContext } from '@/services/interventionCompletionService'
 import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
 import {
-    getGroupDelivery,
     loadGroupDeliveriesForAssignee,
     progressFromGroupDelivery,
     saveGroupDelivery,
@@ -114,11 +128,25 @@ import {
     resolveAssignmentLifecycle
 } from '@/services/assignmentLifecycleService'
 import { useColorMode } from '@/contexts/ThemeContext'
+import { functionsBaseUrl } from '@/firebaseConfig'
 
 const { Text, Title } = Typography
-const { Search } = Input
 const { RangePicker } = DatePicker
 const POE_PAGE_SIZE = 4
+const LIST_PAGE_SIZE = 10
+
+/** The facilitator's view of an intervention: what (if anything) they have to do next. */
+type WorkStatus = 'needs-you' | 'in-delivery' | 'awaiting' | 'done' | 'all'
+const WORK_SEGMENTS: { value: WorkStatus; label: string; tone: string }[] = [
+    { value: 'needs-you', label: 'Needs you', tone: 'danger' },
+    { value: 'in-delivery', label: 'In delivery', tone: 'info' },
+    { value: 'awaiting', label: 'Awaiting sign-off', tone: 'warning' },
+    { value: 'done', label: 'Done', tone: 'success' },
+    { value: 'all', label: 'All', tone: 'neutral' }
+]
+
+/** A document on a documents-mode intervention (stored like a resource). */
+type EvidenceDoc = Resource & Record<string, any>
 
 type Resource = {
     type?: string
@@ -132,8 +160,9 @@ type QueryDoc = {
     id: string
     consolidatedMovId?: string
     queryType?: string
+    type?: string
     queryMessage?: string
-    status?: 'open' | 'resolved' | string
+    status?: 'open' | 'answered' | 'resolved' | string
     createdAt?: Timestamp | Date | string | null
     updatedAt?: Timestamp | Date | string | null
     resolutionNotes?: string
@@ -233,7 +262,6 @@ interface AssignedIntervention {
     groupKey?: string
 
     departmentId?: string
-    areaOfSupport?: string
 
     targetMetric?: string
     targetType?: string
@@ -420,7 +448,45 @@ const getCompletionProgressEvidence = (
     return Array.from(byLink.values())
 }
 
+/**
+ * Delivery re-opened by an SME dispute: the SME rejected completion, or the
+ * facilitator chose to deliver what's missing (or the HOD sided with the SME).
+ * It isn't finished, whatever computedProgress says from before.
+ */
+const isReopenedDelivery = (r: AssignedIntervention) => {
+    const anyR = r as any
+    if (String(anyR.participantCompletionStatus || '').toLowerCase() === 'rejected') return true
+    const dispute = String(anyR.deliveryDispute?.status || '').toLowerCase()
+    return ['redelivering', 'sme-upheld'].includes(dispute) && String(anyR.assigneeCompletionStatus || '').toLowerCase() !== 'completed'
+}
+
+/**
+ * Where a re-opened delivery stands: the updates logged since it was last
+ * completed, or, until there are any, the last update before that completion
+ * (e.g. 80%). The next update then shows what was redelivered.
+ */
+const reopenedProgress = (r: AssignedIntervention) => {
+    const anyR = r as any
+    const updates = (r.progressUpdates || [])
+        .filter(u => Number.isFinite(Number(u.computedProgress)))
+        .map(u => ({ at: toJsDate(u.createdAt)?.getTime() || 0, value: clampPercent(Number(u.computedProgress)) }))
+        .sort((a, b) => a.at - b.at)
+    // When it was re-opened: the facilitator's "deliver what's missing" (or the HOD's decision), else the SME's rejection.
+    const reopenedAt =
+        toJsDate(anyR.deliveryDispute?.at)?.getTime() ||
+        toJsDate(anyR.participantCompletionRejectedAt)?.getTime() ||
+        0
+    const since = reopenedAt ? updates.filter(u => u.at > reopenedAt) : []
+    // Logged since: that's where the redelivery stands, up to 100% so it can be submitted again.
+    if (since.length) return Math.max(...since.map(u => u.value))
+    // A catch-up within a group: its own updates start where the group was before completion.
+    if (Number.isFinite(Number(anyR.catchUp?.fromProgress)) && anyR.catchUp?.status === 'active') return clampPercent(Number(anyR.catchUp.fromProgress))
+    const before = updates.filter(u => (!reopenedAt || u.at <= reopenedAt) && u.value < 100)
+    return before.length ? before[before.length - 1].value : 0
+}
+
 const getProgressPercent = (r: AssignedIntervention) => {
+    if (isReopenedDelivery(r)) return reopenedProgress(r)
     // Completion is an explicit delivery decision. It must not be replaced by
     // an incomplete attendance import from an older appointment workflow.
     if (
@@ -461,8 +527,11 @@ const getProgressPercent = (r: AssignedIntervention) => {
 // the individual member assignments. This fallback exists only for legacy
 // groups that predate the shared document; the first progress update writes
 // the shared document and it becomes the sole source from then on.
-const legacyGroupProgressFallback = (members: AssignedIntervention[]) =>
-    clampPercent(Math.max(0, ...members.map(getProgressPercent)))
+const legacyGroupProgressFallback = (members: AssignedIntervention[]) => {
+    const open = members.filter(m => !resolveAssignmentLifecycle(m).isCompleted)
+    // Every member done: the delivery is done. Otherwise only the open members say how far it got.
+    return open.length ? clampPercent(Math.max(0, ...open.map(getProgressPercent))) : 100
+}
 
 // The one delivery value for a grouped row. Every grouped surface - the status
 // tag, the progress bar, the member list and the completion gate - must read
@@ -628,9 +697,48 @@ const isOpenQuery = (status?: string) =>
 
 const isOverdueRecord = (record: AssignedIntervention): boolean => {
     if (isFullyCompleted(record) || isCompletedLegacy(record) || isClosedWithoutAttendance(record)) return false
+    // Cancelled or waiting for reassignment: nobody owes anything.
+    if (!resolveAssignmentLifecycle(record).isOpen) return false
     const due = toJsDate(record.dueDate)
     if (!due) return false
     return dayjs(due).isBefore(dayjs(), 'day')
+}
+
+/** The MOVs issued for these assignments. */
+const movsForAssignments = async (assignmentIds: string[]) => {
+    const found: { id: string; data: any }[] = []
+    for (let at = 0; at < assignmentIds.length; at += 10) {
+        const snap = await getDocs(query(collection(db, 'movDocuments'), where('assignedInterventionId', 'in', assignmentIds.slice(at, at + 10))))
+        snap.docs.forEach(d => found.push({ id: d.id, data: d.data() }))
+    }
+    return found
+}
+
+/** Evidence an approved MOV was approved on can't be taken away. */
+const anyMovApproved = (movs: { data: any }[]) => movs.some(m => m.data?.approvedByHod === true || String(m.data?.status || '') === 'approved')
+
+/** Takes removed evidence off the (unapproved) MOVs too, so no MOV or pack points at a file that's gone. */
+const pruneMovEvidence = async (movs: { id: string; data: any }[], links: string[] | 'all') => {
+    const drop = (value: any) => {
+        const link = String(typeof value === 'string' ? value : value?.link || value?.url || '').trim()
+        return links === 'all' ? true : links.includes(link)
+    }
+    await Promise.all(movs.filter(m => !anyMovApproved([m])).map(m => {
+        const patch: Record<string, any> = { updatedAt: Timestamp.now() }
+        for (const field of ['resources', 'poeEvidence', 'poeUrls']) {
+            if (Array.isArray(m.data?.[field])) patch[field] = m.data[field].filter((v: any) => !drop(v))
+        }
+        return updateDoc(doc(db, 'movDocuments', m.id), patch).catch(error => console.warn('MOV evidence not pruned', m.id, error))
+    }))
+}
+
+/** POEs uploaded for one SME of a group ("Single upload"): theirs alone, never the group's. */
+const memberOwnUploads = (group: DisplayIntervention | null | undefined, member: AssignedIntervention): Resource[] => {
+    const updates = (group?.groupDelivery?.progressUpdates || []) as any[]
+    const mine = new Set(updates
+        .filter(u => u?.type === 'evidence-uploaded-single' && String(u?.participantId || '') === String(member.participantId || ''))
+        .flatMap(u => (u.resources || []).map((r: any) => String(r?.link || ''))))
+    return getPoeResourcesFromRecord(member).filter(r => mine.has(String(r.link || ''))) as Resource[]
 }
 
 const isDocumentTarget = (item: AssignedIntervention) =>
@@ -700,13 +808,6 @@ const getPoeResourcesFromRecord = (
     return normalizePoeResources(resources)
 }
 
-const hasEvidence = (item: AssignedIntervention): boolean => {
-    if (isDocumentTarget(item)) {
-        return getDocumentEvidence(item).length > 0
-    }
-
-    return getPoeResourcesFromRecord(item).length > 0
-}
 
 const getGroupKey = (r: any): string | null => {
     const key = r?.groupAssignmentId || r?.groupId || r?.groupKey || null
@@ -759,23 +860,6 @@ const getReminderTargets = (record: DisplayIntervention) => {
     return (record.members || []).filter(member => needsReminderSingle(member))
 }
 
-const statusTag = (r: AssignedIntervention) => {
-    if (isClosedWithoutAttendance(r)) return <Tag color="red">NO SESSIONS ATTENDED</Tag>
-    const lifecycle = resolveAssignmentLifecycle(r)
-    if (lifecycle.key === 'awaiting-participant-acceptance') {
-        return <Tag color={lifecycle.color}>Awaiting Appointment Response</Tag>
-    }
-    if (lifecycle.key === 'awaiting-participant-confirmation') {
-        // Same state the grouped tag and the metric call "Awaiting SME
-        // Confirmation". One name for one state.
-        return <Tag color={lifecycle.color}>Pending Sign-off</Tag>
-    }
-    if (lifecycle.key === 'participant-rejected') {
-        return <Tag color={lifecycle.color}>Completion Rejected</Tag>
-    }
-    return <Tag color={lifecycle.color}>{lifecycle.label}</Tag>
-}
-
 const getCompletionRejectionReason = (record: AssignedIntervention) =>
     String(
         (record as any).participantCompletionRejectionReason ||
@@ -792,42 +876,10 @@ const getCompletionFeedback = (record: AssignedIntervention) => {
     }
 }
 
-const renderCompletionConfirmation = (record: AssignedIntervention) => {
-    const status = getSmeCompletion(record)
-    const isConfirmed = status === 'confirmed' || status === 'done'
-    const isRejected = status === 'rejected'
-    const rejectionReason = getCompletionRejectionReason(record)
-    const feedback = getCompletionFeedback(record)
 
-    return (
-        <Space direction="vertical" size={4}>
-            <Tag color={isConfirmed ? 'green' : isRejected ? 'red' : 'gold'}>
-                {isConfirmed ? 'Confirmed' : isRejected ? 'Rejected' : 'Pending'}
-            </Tag>
-            {isRejected ? (
-                <Text type="danger">
-                    Reason: {rejectionReason || 'No reason provided'}
-                </Text>
-            ) : null}
-            {isConfirmed ? (
-                <Text type="secondary">
-                    Feedback: {feedback.rating > 0 || feedback.comments
-                        ? `${feedback.rating > 0 ? `${feedback.rating}/5` : ''}${feedback.rating > 0 && feedback.comments ? ' - ' : ''}${feedback.comments}`
-                        : 'No feedback provided'}
-                </Text>
-            ) : null}
-        </Space>
-    )
-}
-
-// The single answer to "what state is this row in".
-//
-// The status tag, the metric counts and the quick filter must all come from
-// here. They used to compute it three different ways - the tag from the group's
-// shared delivery, the metric from the rolled-up row's own lifecycle, the
-// filter from `.some()` over the members - so a card could read 7 while its
-// filter produced a different set of rows.
 type DisplayStatus =
+    | 'disputed'
+    | 'closed'
     | 'no-attendance'
     | 'completed'
     | 'awaiting-confirmation'
@@ -841,6 +893,9 @@ const resolveDisplayStatus = (record: DisplayIntervention): DisplayStatus => {
         if (isClosedWithoutAttendance(record)) return 'no-attendance'
         const lifecycle = resolveAssignmentLifecycle(record)
         if (lifecycle.isCompleted) return 'completed'
+        // The SME disputed completion: the facilitator has to respond.
+        if (lifecycle.key === 'participant-rejected') return 'disputed'
+        if (!lifecycle.isOpen) return 'closed'
         if (lifecycle.key === 'awaiting-participant-acceptance') return 'awaiting-response'
         if (lifecycle.key === 'awaiting-participant-confirmation') return 'awaiting-confirmation'
         if (lifecycle.key === 'in-delivery') return 'in-delivery'
@@ -849,6 +904,9 @@ const resolveDisplayStatus = (record: DisplayIntervention): DisplayStatus => {
 
     const members = record.members || []
     if (!members.length) return 'active'
+    if (members.every(m => !resolveAssignmentLifecycle(m).isOpen && !resolveAssignmentLifecycle(m).isCompleted)) return 'closed'
+    // Any SME disputing completion is the facilitator's next job, whatever the rest are doing.
+    if (members.some(m => resolveAssignmentLifecycle(m).key === 'participant-rejected')) return 'disputed'
 
     // Delivery is one shared value. Never derive it from the members, or a
     // single confirmed SME drags the whole group to "done".
@@ -874,37 +932,6 @@ const resolveDisplayStatus = (record: DisplayIntervention): DisplayStatus => {
     return groupProgress > 0 ? 'in-delivery' : 'active'
 }
 
-const groupedStatusTag = (record: DisplayIntervention) => {
-    if (!record.isGroupedDisplay) return statusTag(record)
-
-    switch (resolveDisplayStatus(record)) {
-        case 'no-attendance': return <Tag color="red">No Attendance</Tag>
-        case 'completed': return <Tag color="green">Completed</Tag>
-        case 'awaiting-confirmation': return <Tag color="purple">Pending Sign-off</Tag>
-        case 'declined': return <Tag color="red">Group Declined</Tag>
-        case 'awaiting-response': return <Tag color="gold">Waiting on Appointment Responses</Tag>
-        case 'in-delivery': return <Tag color="geekblue">In Delivery</Tag>
-        default: return <Tag color="blue">Grouped Active</Tag>
-    }
-}
-
-const waitingOnTag = (r: AssignedIntervention) => {
-    if (isClosedWithoutAttendance(r)) return <Text type="secondary">Closed - no attendance</Text>
-    const lifecycle = resolveAssignmentLifecycle(r)
-    if (lifecycle.key === 'awaiting-participant-acceptance') {
-        return <Tag color={lifecycle.color}>Appointment Response</Tag>
-    }
-    if (lifecycle.key === 'awaiting-participant-confirmation') {
-        // This tag answers "waiting on whom", so it names the SME.
-        return <Tag color={lifecycle.color}>SME Confirmation</Tag>
-    }
-    if (lifecycle.key === 'participant-rejected') {
-        return <Tag color={lifecycle.color}>Facilitator Follow-up</Tag>
-    }
-    return lifecycle.waitingOn === 'none'
-        ? <Text type="secondary">-</Text>
-        : <Tag color={lifecycle.color}>{lifecycle.label}</Tag>
-}
 
 const getSubInterventionLabel = (r: AssignedIntervention): string | null => {
     const anyR = r as any
@@ -919,6 +946,19 @@ const getSubInterventionLabel = (r: AssignedIntervention): string | null => {
 
     const clean = String(label || '').trim()
     return clean ? clean : null
+}
+
+/** The document's name for display: no upload timestamp, folder or extension; "POE n" only when nothing better is known. */
+const evidenceDisplayName = (entry: EvidenceEntry, index: number) => {
+    let fromLink = ''
+    try {
+        fromLink = decodeURIComponent(String(entry.value || '').split('?')[0].split('/').pop() || '').split('/').pop() || ''
+    } catch {
+        fromLink = ''
+    }
+    const raw = String(entry.originalName || '').trim() || (isGenericPoeLabel(entry.label) ? fromLink : entry.label) || ''
+    const name = raw.replace(/^\d{10,}_/, '').replace(/\.[a-z0-9]{1,5}$/i, '').replace(/_/g, ' ').trim()
+    return name || entry.label || `POE ${index + 1}`
 }
 
 const getEvidenceEntriesFromRecord = (record: AssignedIntervention | null): EvidenceEntry[] => {
@@ -945,22 +985,34 @@ const getEvidenceEntriesFromRecord = (record: AssignedIntervention | null): Evid
     }))
 }
 
-const fetchQueriesForIntervention = async (record: AssignedIntervention): Promise<QueryDoc[]> => {
-    try {
-        const interventionId = record.interventionId || record.id
-        if (!interventionId) return []
-
-        let rows = await workflowQueryService.list({ interventionId }) as QueryDoc[]
-
-        if (record.participantId) {
-            rows = rows.filter(q => !q.participantId || q.participantId === record.participantId)
-        }
-
-        return rows
-    } catch (err) {
-        console.error('Failed to fetch intervention queries:', err)
-        return []
+/**
+ * The queries on one assignment: those raised on its intervention (for this
+ * SME, or the whole intervention), plus those on the assignment itself, such
+ * as an SME delivery dispute (its context.interventionId is the assignment id).
+ * Reads are shared through `cache`, so a group of 20 SMEs reads once, not 20 times.
+ */
+const fetchQueriesForIntervention = async (
+    record: AssignedIntervention,
+    cache: Map<string, Promise<QueryDoc[]>> = new Map()
+): Promise<QueryDoc[]> => {
+    const read = (key: string, load: () => Promise<QueryDoc[]>) => {
+        if (!cache.has(key)) cache.set(key, load().catch(err => { console.warn('Failed to fetch queries:', err); return [] }))
+        return cache.get(key)!
     }
+    const interventionId = String(record.interventionId || '').trim()
+    const [byIntervention, byAssignment] = await Promise.all([
+        interventionId ? read(`i:${interventionId}`, () => workflowQueryService.list({ interventionId }) as Promise<QueryDoc[]>) : Promise.resolve([]),
+        read(`a:${record.id}`, async () => {
+            const [byContext, byTarget] = await Promise.all([
+                workflowQueryService.list({ interventionId: record.id }),
+                workflowQueryService.list({ targetId: record.id } as any)
+            ])
+            return [...byContext, ...byTarget] as QueryDoc[]
+        })
+    ])
+    const forThisSme = byIntervention.filter(q => !record.participantId || !q.participantId || q.participantId === record.participantId)
+    const seen = new Set<string>()
+    return [...forThisSme, ...byAssignment].filter(q => (q.id && !seen.has(q.id) ? (seen.add(q.id), true) : false))
 }
 
 const buildUserScopedAssignedQueries = ({
@@ -1010,7 +1062,7 @@ const rollupGroupedRows = (
 
     rows.forEach(row => {
         const rowLifecycle: 'active' | 'completed' =
-            resolveAssignmentLifecycle(row).isCompleted || isClosedWithoutAttendance(row)
+            resolveAssignmentLifecycle(row).isCompleted || !resolveAssignmentLifecycle(row).isOpen || isClosedWithoutAttendance(row)
                 ? 'completed'
                 : 'active'
         const gk = getGroupKey(row)
@@ -1029,11 +1081,11 @@ const rollupGroupedRows = (
         grouped.get(gk)!.push(row)
     })
 
-    const rolled: DisplayIntervention[] = Array.from(grouped.entries()).map(([groupKey, members]) => {
+    const rolled: DisplayIntervention[] = Array.from(grouped.entries()).map(([groupKey, members]): DisplayIntervention => {
         const base = pickMostAdvanced(members)
         const sharedDelivery = groupDeliveries[groupKey]
         const groupLifecycle: 'active' | 'completed' = members.some(member =>
-            !(resolveAssignmentLifecycle(member).isCompleted || isClosedWithoutAttendance(member))
+            !(resolveAssignmentLifecycle(member).isCompleted || !resolveAssignmentLifecycle(member).isOpen || isClosedWithoutAttendance(member))
         ) ? 'active' : 'completed'
 
         const dueDates = members
@@ -1057,7 +1109,7 @@ const rollupGroupedRows = (
             completedDates.length > 0 ? new Date(Math.max(...completedDates)) : null
 
         const allResources = members.flatMap(m => m.resources || [])
-        const allQueries = members.flatMap(m => m.queries || [])
+        const allQueries = Array.from(new Map(members.flatMap(m => m.queries || []).map(q => [q.id, q])).values())
 
         const uniqueParticipantNames = Array.from(
             new Set(
@@ -1100,7 +1152,7 @@ const rollupGroupedRows = (
             // removed. Falling back on `allResources` here resurrected deleted
             // POEs whenever the shared list became empty.
             resources: sharedDelivery
-                ? (Array.isArray(sharedDelivery.evidence) ? sharedDelivery.evidence : [])
+                ? (Array.isArray(sharedDelivery.evidence) ? sharedDelivery.evidence as Resource[] : [])
                 : allResources,
             queries: allQueries,
             queryCount: allQueries.length,
@@ -1156,6 +1208,7 @@ const TypedText: React.FC<{ text: string; play?: unknown; speed?: number }> = ({
 
 const CoordinatorAllocatedInterventions: React.FC = () => {
     const { isDark } = useColorMode();
+    const { modal } = App.useApp()
     const { activeProgramId } = useActiveProgramId()
     const { user: effectiveUser, loading: identityLoading } = useFullIdentity()
     const screens = Grid.useBreakpoint()
@@ -1399,8 +1452,8 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
 
     const [allInterventions, setAllInterventions] = useState<AssignedIntervention[]>([])
     const [groupDeliveries, setGroupDeliveries] = useState<Record<string, GroupInterventionDelivery>>({})
-    const [activeInterventions, setActiveInterventions] = useState<AssignedIntervention[]>([])
-    const [completedInterventions, setCompletedInterventions] = useState<AssignedIntervention[]>([])
+    const [, setActiveInterventions] = useState<AssignedIntervention[]>([])
+    const [, setCompletedInterventions] = useState<AssignedIntervention[]>([])
 
     const [remindingIds, setRemindingIds] = useState<string[]>([])
     const [bulkReminding, setBulkReminding] = useState(false)
@@ -1423,17 +1476,18 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
     const [pendingEvidenceFiles, setPendingEvidenceFiles] = useState<File[]>([])
     const manageEvidenceFileInputRef = useRef<HTMLInputElement>(null)
     const pendingEvidenceReplaceTargetRef = useRef<string | undefined>()
+    // What the staged files will replace when saved: one document, all of them, or nothing (just add).
+    const [pendingReplaceTarget, setPendingReplaceTarget] = useState<string | undefined>()
 
     const [searchText, setSearchText] = useState('')
-    const [workflowFilter, setWorkflowFilter] = useState('all')
-    const [quickStatus, setQuickStatus] = useState<'all' | 'in-delivery' | 'awaiting-confirmation' | 'completed'>('all')
     const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null)
-    const [evidenceModalOpen, setEvidenceModalOpen] = useState(false)
     const [evidenceRecord, setEvidenceRecord] = useState<AssignedIntervention | null>(null)
 
     const [detailsModalOpen, setDetailsModalOpen] = useState(false)
     const [detailsRecord, setDetailsRecord] = useState<DisplayIntervention | null>(null)
-    const [detailsTab, setDetailsTab] = useState<'overview' | 'members' | 'sessions' | 'updates'>('overview')
+    const [detailsTab, setDetailsTab] = useState<'overview' | 'members' | 'sessions' | 'updates' | 'queries'>('overview')
+    const [workStatus, setWorkStatus] = useState<WorkStatus>('needs-you')
+    const [listPage, setListPage] = useState(1)
     const [detailsSessions, setDetailsSessions] = useState<any[]>([])
     // Each session's own invited/attended totals, keyed by session id. These
     // cover everyone on the session, not just this intervention's members.
@@ -1586,11 +1640,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
     const [savingOverdue, setSavingOverdue] = useState(false)
     const [overdueForm] = Form.useForm()
 
-    const [queriesModalOpen, setQueriesModalOpen] = useState(false)
-    const [queriesLoading, setQueriesLoading] = useState(false)
-    const [selectedQueries, setSelectedQueries] = useState<QueryDoc[]>([])
-    const [selectedQueryRecord, setSelectedQueryRecord] = useState<AssignedIntervention | null>(null)
-    const [queriesModalScope, setQueriesModalScope] = useState<'record' | 'open'>('record')
 
     const [evidencePoePage, setEvidencePoePage] = useState(1)
     const [manageEvidencePoePage, setManageEvidencePoePage] = useState(1)
@@ -1606,15 +1655,18 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         [manageEvidenceRecord]
     )
 
-    const pagedEvidenceEntries = useMemo(() => {
-        const start = (evidencePoePage - 1) * POE_PAGE_SIZE
-        return evidenceEntries.slice(start, start + POE_PAGE_SIZE)
-    }, [evidenceEntries, evidencePoePage])
-
-    const pagedManageEvidenceEntries = useMemo(() => {
-        const start = (manageEvidencePoePage - 1) * POE_PAGE_SIZE
-        return manageEvidenceEntries.slice(start, start + POE_PAGE_SIZE)
-    }, [manageEvidenceEntries, manageEvidencePoePage])
+    const manageEvidenceDeliverableName = useMemo(() => {
+        if (!manageEvidenceRecord) return 'Proof of Execution (POE)'
+        const named = resolveDeliverableName(
+            ((manageEvidenceRecord as DisplayIntervention).members?.[0] || manageEvidenceRecord) as any,
+            null,
+            { ...DEFAULT_EVIDENCE_MODEL, deliverable: 'named' }
+        )
+        return named.isConfigured ? named.name : 'Proof of Execution (POE)'
+    }, [manageEvidenceRecord])
+    const manageEvidenceAddLabel = manageEvidenceRecord && isDocumentTarget(manageEvidenceRecord)
+        ? 'document'
+        : manageEvidenceDeliverableName === 'Proof of Execution (POE)' ? 'POE' : manageEvidenceDeliverableName
 
     useEffect(() => {
         const maxPage = Math.max(1, Math.ceil(evidenceEntries.length / POE_PAGE_SIZE))
@@ -1672,7 +1724,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             (toJsDate(left.createdAt)?.getTime() || 0)
         )
     }, [detailsRecord])
-    const detailsProgressImages: any[] = []
 
     // The appointments this intervention is delivered over. Loaded when the
     // details modal opens rather than for every table row, because it needs a
@@ -1873,7 +1924,12 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         try {
             const [delivery, context] = await Promise.all([
                 findAppointmentDeliveryMethod(record, preferredMethod),
-                getGroupMemberIdsForEvidence(record).then(ids => loadInterventionCompletionContext(db, ids))
+                getGroupMemberIdsForEvidence(record)
+                    .then(ids => record.isGroupedDisplay
+                        // SMEs catching up are completed on their own, not with the group.
+                        ? ids.filter(id => !(record.members || []).some(member => member.id === id && isCatchingUp(member)))
+                        : ids)
+                    .then(ids => loadInterventionCompletionContext(db, ids))
             ])
             const currentPoeLinks = new Set(
                 (record.isGroupedDisplay
@@ -2004,7 +2060,10 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                         appointmentSnap.docs.forEach(appointmentDoc => {
                             const appointment = appointmentDoc.data() as any
                             const assignmentId = String(appointment.assignedInterventionId || '')
-                            if (!assignmentId || appointment.attendance?.status !== 'attended') return
+                            // Same rule as the details panel: check-in driven sessions only set checkedInAt.
+                            const attended = ['attended', 'checked-in', 'checked-out'].includes(String(appointment.attendance?.status || '')) ||
+                                Boolean(appointment.attendance?.checkedInAt)
+                            if (!assignmentId || !attended) return
 
                             if (!attendedAppointmentsByAssignment.has(assignmentId)) {
                                 attendedAppointmentsByAssignment.set(assignmentId, new Set())
@@ -2047,7 +2106,9 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     // Attendance is recorded for every assignment, including
                     // completed ones, because it decides who actually received
                     // the intervention and can be issued a MOV.
-                    if (isSessionTracked && attendedCount !== storedSessions) {
+                    // Only ever raise it: attendance recorded elsewhere (a register, an
+                    // older workflow) must not be wiped by what this page can see.
+                    if (isSessionTracked && attendedCount > storedSessions) {
                         repair['tracking.sessionsLogged'] = attendedCount
                         next = {
                             ...next,
@@ -2056,8 +2117,15 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     }
 
                     if (completionIsFinal) {
-                        if (Number(item.computedProgress) !== 100) repair.computedProgress = 100
+                        // Grouped members' delivery lives on the group delivery document, never on each member.
+                        if (!isGroupedMember && Number(item.computedProgress) !== 100) repair.computedProgress = 100
                         next = { ...next, computedProgress: 100 }
+                    } else if (isReopenedDelivery(item) && !isGroupedMember) {
+                        // Back in delivery after a dispute: progress returns to before the completion,
+                        // not to the 100% the completion recorded.
+                        const reopened = reopenedProgress(item)
+                        if (Number(item.computedProgress) !== reopened) repair.computedProgress = reopened
+                        next = { ...next, computedProgress: reopened }
                     } else if (isSessionTracked && !isGroupedMember) {
                         const plannedSessions = Math.max(1, Number(item.plannedSessions) || 1)
                         // Attendance can supplement delivery progress, but it
@@ -2091,6 +2159,8 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     await Promise.allSettled(progressRepairs)
                 }
 
+                const queryCache = new Map<string, Promise<QueryDoc[]>>()
+                const departmentCache = new Map<string, Promise<boolean>>()
                 const enrichAssignment = async (
                     item: AssignedIntervention
                 ): Promise<AssignedIntervention> => {
@@ -2100,28 +2170,21 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     }
 
                     try {
-                        if (base.departmentId) {
-                            const depSnap = await getDocs(
-                                query(
-                                    collection(db, 'departments'),
-                                    where('__name__', '==', base.departmentId),
-                                    limit(1)
-                                )
-                            )
-
-                            if (!depSnap.empty) {
-                                base = {
-                                    ...base,
-                                    isSensitive: depSnap.docs[0].data()?.isSensitive === true
-                                } as any
+                        const departmentId = String(base.departmentId || '')
+                        if (departmentId) {
+                            if (!departmentCache.has(departmentId)) {
+                                departmentCache.set(departmentId, getDoc(doc(db, 'departments', departmentId))
+                                    .then(snap => snap.data()?.isSensitive === true)
+                                    .catch(() => false))
                             }
+                            base = { ...base, isSensitive: await departmentCache.get(departmentId)! } as any
                         }
                     } catch {
                         //
                     }
 
                     try {
-                        const rows = await fetchQueriesForIntervention(base)
+                        const rows = await fetchQueriesForIntervention(base, queryCache)
                         base = {
                             ...base,
                             queries: rows,
@@ -2181,39 +2244,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
     // counts in the detail view.
     // Counted with the same resolver the status tag and the filter use, so a
     // card's number always matches the number of rows clicking it produces.
-    const metrics = useMemo(() => {
-        const inScope = baseData.filter(
-            row => row.lifecycleBucket === 'active' || row.lifecycleBucket === 'completed'
-        )
-        const countOf = (status: DisplayStatus) =>
-            inScope.filter(row => resolveDisplayStatus(row) === status).length
-
-        return {
-            total: inScope.length,
-            inDelivery: countOf('in-delivery'),
-            awaitingSmeCompletionConfirm: countOf('awaiting-confirmation'),
-            // "No attendance" is a closed outcome, so it belongs with completed.
-            completed: countOf('completed') + countOf('no-attendance')
-        }
-    }, [baseData])
-
-    const openQueriesForMetric = useMemo(() => {
-        const unique = new Map<string, QueryDoc>()
-        baseData.forEach(item => {
-            ; (item.queries || []).forEach(queryRecord => {
-                if (isOpenQuery(queryRecord.status)) unique.set(queryRecord.id, queryRecord)
-            })
-        })
-        return Array.from(unique.values()).sort((left, right) =>
-            (toJsDate(right.createdAt)?.getTime() || 0) -
-            (toJsDate(left.createdAt)?.getTime() || 0)
-        )
-    }, [baseData])
-
-    const historyQueryMetrics = useMemo(() => ({
-        totalOpen: openQueriesForMetric.length
-    }), [openQueriesForMetric])
-
     useEffect(() => {
         const completionAssignmentId = String(
             (location.state as any)?.completionAssignmentId || ''
@@ -2239,23 +2269,13 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         navigate(location.pathname, { replace: true, state: {} })
     }, [baseData, loading, location.pathname, location.state, navigate])
 
+    // SME photos live on users/{uid}. A failed lookup just means "no photo"
+    // and the avatar falls back to initials.
+    const [photoByParticipantId, setPhotoByParticipantId] = useState<Record<string, string>>({})
+    const requestedPhotoIdsRef = useRef<Set<string>>(new Set())
+
     const filteredData = useMemo(() => {
         const rows = baseData.filter(item => {
-            if (quickStatus !== 'all') {
-                const status = resolveDisplayStatus(item)
-                const matchesQuickStatus = quickStatus === 'completed'
-                    ? status === 'completed' || status === 'no-attendance'
-                    : status === quickStatus
-                if (!matchesQuickStatus) return false
-            }
-            if (workflowFilter !== 'all') {
-                const rows = item.isGroupedDisplay ? item.members || [] : [item]
-                const matchesWorkflow = workflowFilter === 'no-attendance'
-                    ? rows.some(isClosedWithoutAttendance)
-                    : rows.some(row => resolveAssignmentLifecycle(row).key === workflowFilter)
-                if (!matchesWorkflow) return false
-            }
-
             const text = searchText.trim().toLowerCase()
             if (text) {
                 const name =
@@ -2283,113 +2303,179 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         // Newest allocation first. The Dates column sorter can flip this, but
         // this is the order the table opens on.
         return rows.sort((left, right) => getAssignedTime(right) - getAssignedTime(left))
-    }, [baseData, dateRange, searchText, workflowFilter, quickStatus])
+    }, [baseData, dateRange, searchText])
+
+    useEffect(() => {
+        const ids = Array.from(new Set(
+            filteredData
+                .filter(row => !row.isGroupedDisplay)
+                .map(row => String(row.participantId || '').trim())
+                .filter(id => id && !requestedPhotoIdsRef.current.has(id))
+        ))
+        if (!ids.length) return
+        ids.forEach(id => requestedPhotoIdsRef.current.add(id))
+
+        let cancelled = false
+        void (async () => {
+            const found: Record<string, string> = {}
+            await Promise.all(ids.map(async id => {
+                try {
+                    const participantSnap = await getDoc(doc(db, 'participants', id))
+                    const participant = participantSnap.exists() ? (participantSnap.data() as any) : null
+                    const direct = String(participant?.photoURL || '').trim()
+                    if (direct) {
+                        found[id] = direct
+                        return
+                    }
+
+                    const uid = String(participant?.uid || '').trim()
+                    if (uid) {
+                        const userSnap = await getDoc(doc(db, 'users', uid))
+                        const user = userSnap.exists() ? (userSnap.data() as any) : null
+                        const url = String(user?.photoURL || '').trim()
+                        if (url) found[id] = url
+                        return
+                    }
+
+                    // Stored email casing is not guaranteed to match users/{uid}.
+                    const rawEmail = String(participant?.email || '').trim()
+                    if (rawEmail) {
+                        const emails = Array.from(new Set([rawEmail, rawEmail.toLowerCase()]))
+                        const usersSnap = await getDocs(
+                            query(collection(db, 'users'), where('email', 'in', emails))
+                        )
+                        for (const userDoc of usersSnap.docs) {
+                            const user = userDoc.data() as any
+                            const url = String(user?.photoURL || '').trim()
+                            if (url) {
+                                found[id] = url
+                                break
+                            }
+                        }
+                    }
+                } catch (error) {
+                    // No access or no profile: fall back to initials.
+                    console.warn(`Could not load SME photo for participant ${id}`, error)
+                }
+            }))
+            if (!cancelled && Object.keys(found).length) {
+                setPhotoByParticipantId(previous => ({ ...previous, ...found }))
+            }
+        })()
+
+        return () => {
+            cancelled = true
+        }
+    }, [filteredData])
+
+    const renderSmeAvatar = (record: DisplayIntervention, size = 40) => {
+        if (record.isGroupedDisplay) {
+            return <Avatar size={size} icon={<AppstoreOutlined />} style={{ flexShrink: 0 }} />
+        }
+        const name = String(record.participantName || record.beneficiaryName || '').trim()
+        return (
+            <Avatar
+                size={size}
+                src={photoByParticipantId[String(record.participantId || '')] || undefined}
+                style={{ flexShrink: 0 }}
+            >
+                {name ? name.charAt(0).toUpperCase() : '?'}
+            </Avatar>
+        )
+    }
+
+    /**
+     * Emails each SME a reminder to confirm completion. One SME is reminded at
+     * most once a day (lastReminderAt on the assignment), seeded records are
+     * skipped, and partial failures are reported as such, so a retry doesn't
+     * email the ones that already went out.
+     */
+    const sendReminders = async (targets: AssignedIntervention[]) => {
+        const user = auth.currentUser
+        if (!user?.email) throw new Error('signed-out')
+        const dayAgo = Date.now() - 24 * 60 * 60 * 1000
+        const due = targets.filter(target => {
+            if ((target as any).suppressNotifications === true) return false
+            const last = toJsDate((target as any).lastReminderAt)
+            return !last || last.getTime() < dayAgo
+        })
+        const idToken = await user.getIdToken()
+        const results = await Promise.allSettled(due.map(async target => {
+            const response = await fetch(`${functionsBaseUrl}/sendInterventionReminderEmail`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+                body: JSON.stringify({
+                    programId: target.programId || activeProgramId || null,
+                    assignedInterventionId: target.id,
+                    participantId: target.participantId || null,
+                    participantName: target.participantName || target.beneficiaryName || null,
+                    participantEmail: (target as any).participantEmail || null,
+                    interventionTitle: target.interventionTitle || null,
+                    reminderReason: getReminderReason(target) || 'confirmation'
+                })
+            })
+            const result = await response.json().catch(() => ({}))
+            if (!response.ok || result?.ok === false) throw new Error(result?.error || 'Failed to send reminder email.')
+            await updateDoc(doc(db, 'assignedInterventions', target.id), { lastReminderAt: Timestamp.now() } as any).catch(() => undefined)
+        }))
+        const sent = results.filter(r => r.status === 'fulfilled').length
+        return { sent, failed: results.length - sent, skipped: targets.length - due.length }
+    }
+
+    const reportReminders = ({ sent, failed, skipped }: { sent: number; failed: number; skipped: number }) => {
+        const parts = [
+            sent ? `Reminder sent to ${sent} SME${sent === 1 ? '' : 's'}.` : null,
+            skipped ? `${skipped} already reminded in the last 24 hours.` : null,
+            failed ? `${failed} couldn’t be sent; try again later.` : null
+        ].filter(Boolean).join(' ')
+        if (failed) message.warning(parts)
+        else if (sent) message.success(parts)
+        else message.info(parts || 'Nobody to remind.')
+    }
 
     const sendReminder = async (record: DisplayIntervention) => {
-        const user = auth.currentUser
-        if (!user?.email) {
-            message.error('You must be logged in.')
-            return
-        }
-
         const targets = getReminderTargets(record)
         if (!targets.length) {
             message.warning('No SME on this item is awaiting completion confirmation.')
             return
         }
-
+        setRemindingIds(prev => [...prev, record.id])
         try {
-            setRemindingIds(prev => [...prev, record.id])
-
-            const sendReminderEmail = async (target: AssignedIntervention) => {
-                const reason = getReminderReason(target)
-                if (!reason) return
-                const idToken = await user.getIdToken()
-                const response = await fetch('https://us-central1-lph-smart-inc.cloudfunctions.net/sendInterventionReminderEmail', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-                    body: JSON.stringify({
-                        programId: target.programId || activeProgramId || null,
-                        participantId: target.participantId || null,
-                        participantName: target.participantName || target.beneficiaryName || null,
-                        participantEmail: (target as any).participantEmail || (target as any).email || null,
-                        interventionTitle: target.interventionTitle || null,
-                        reminderReason
-                    })
-                })
-                const result = await response.json().catch(() => ({}))
-                if (!response.ok || result?.ok === false) throw new Error(result?.error || 'Failed to send reminder email.')
-            }
-            await Promise.all(targets.map(sendReminderEmail))
-
-            message.success(
-                record.isGroupedDisplay
-                    ? `Completion reminders sent to ${targets.length} SME(s).`
-                    : 'Completion reminder sent.'
-            )
+            reportReminders(await sendReminders(targets))
         } catch (err) {
             console.error(err)
-            message.error('Failed to send completion reminder.')
+            message.error('The reminder couldn’t be sent. Try again.')
         } finally {
             setRemindingIds(prev => prev.filter(id => id !== record.id))
         }
     }
 
     const sendReminderToAllVisible = async () => {
-        const visibleTargets = filteredData.flatMap(item => getReminderTargets(item))
-
-        if (!visibleTargets.length) {
-            message.warning('No visible items are awaiting completion confirmation.')
+        const targets = filteredData.flatMap(item => getReminderTargets(item))
+        if (!targets.length) {
+            message.warning('Nobody in this list is waiting to confirm completion.')
             return
         }
-
-        const user = auth.currentUser
-        if (!user?.email) {
-            message.error('You must be logged in.')
-            return
-        }
-
+        const ok = await modal.confirm({
+            centered: true,
+            title: `Remind ${targets.length} SME${targets.length === 1 ? '' : 's'}?`,
+            content: 'Each gets an email asking them to confirm completion. Anyone reminded in the last 24 hours is skipped.',
+            okText: 'Send reminders'
+        })
+        if (!ok) return
+        setBulkReminding(true)
         try {
-            setBulkReminding(true)
-
-            const sendReminderEmail = async (target: AssignedIntervention) => {
-                const reason = getReminderReason(target)
-                if (!reason) return
-                const idToken = await user.getIdToken()
-                const response = await fetch('https://us-central1-lph-smart-inc.cloudfunctions.net/sendInterventionReminderEmail', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-                    body: JSON.stringify({
-                        programId: target.programId || activeProgramId || null,
-                        participantId: target.participantId || null,
-                        participantName: target.participantName || target.beneficiaryName || null,
-                        participantEmail: (target as any).participantEmail || (target as any).email || null,
-                        interventionTitle: target.interventionTitle || null,
-                        reminderReason
-                    })
-                })
-                const result = await response.json().catch(() => ({}))
-                if (!response.ok || result?.ok === false) throw new Error(result?.error || 'Failed to send reminder email.')
-            }
-            await Promise.all(visibleTargets.map(sendReminderEmail))
-
-            message.success(`Completion reminders sent to ${visibleTargets.length} SME(s).`)
+            reportReminders(await sendReminders(targets))
         } catch (err) {
             console.error(err)
-            message.error('Failed to send completion reminders.')
+            message.error('The reminders couldn’t be sent. Try again.')
         } finally {
             setBulkReminding(false)
         }
     }
 
-    const renderSubInterventionTag = (r: AssignedIntervention) => {
-        const label = getSubInterventionLabel(r)
-        if (!label) return <Tag color="default">No Sub-Intervention</Tag>
-        return <Tag color="purple">{label}</Tag>
-    }
-
     const setRecordQueriesLocally = (recordId: string, rows: QueryDoc[]) => {
-        setCompletedInterventions(prev =>
+        setAllInterventions(prev =>
             prev.map(item =>
                 item.id === recordId
                     ? {
@@ -2403,17 +2489,14 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         )
     }
 
-    const openEvidenceModal = (record: AssignedIntervention) => {
-        setEvidenceRecord(record)
-        setEvidencePoePage(1)
-        setEvidenceModalOpen(true)
-    }
-
-    const openDetailsModal = (record: DisplayIntervention) => {
+    /** Opens an intervention in the detail panel (a bottom sheet on phones). */
+    const selectRecord = (record: DisplayIntervention, userInitiated: boolean) => {
+        if (record.id !== detailsRecord?.id) {
+            setDetailsTab('overview')
+            void loadDetailsSessions(record)
+        }
         setDetailsRecord(record)
-        setDetailsTab('overview')
-        setDetailsModalOpen(true)
-        void loadDetailsSessions(record)
+        if (userInitiated && isMobile) setDetailsModalOpen(true)
     }
 
     const openProgressModal = async (record: DisplayIntervention) => {
@@ -2561,53 +2644,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         setManageEvidenceOpen(true)
     }
 
-    const openQueriesModal = async (record: AssignedIntervention) => {
-        try {
-            setQueriesModalScope('record')
-            setSelectedQueryRecord(record)
-            setQueriesLoading(true)
-            setQueriesModalOpen(true)
-
-            if (record.queries?.length) {
-                setSelectedQueries(record.queries)
-                return
-            }
-
-            const rows = await fetchQueriesForIntervention(record)
-            setSelectedQueries(rows)
-            setRecordQueriesLocally(record.id, rows)
-        } finally {
-            setQueriesLoading(false)
-        }
-    }
-
-    const openAllOpenQueriesModal = () => {
-        setQueriesModalScope('open')
-        setSelectedQueryRecord(null)
-        setSelectedQueries(openQueriesForMetric)
-        setQueriesLoading(false)
-        setQueriesModalOpen(true)
-    }
-
-    const closeQueriesModal = () => {
-        setQueriesModalOpen(false)
-        setSelectedQueries([])
-        setSelectedQueryRecord(null)
-        setQueriesModalScope('record')
-    }
-
-    const findRecordForQuery = (queryRecord: QueryDoc) =>
-        baseData.find(record =>
-            (record.isGroupedDisplay ? record.members || [] : [record]).some(member => {
-                const participantMatches =
-                    !queryRecord.participantId || member.participantId === queryRecord.participantId
-                const interventionMatches =
-                    !queryRecord.interventionId ||
-                    member.id === queryRecord.interventionId ||
-                    member.interventionId === queryRecord.interventionId
-                return participantMatches && interventionMatches
-            })
-        )
 
     const openPoeResolveModal = (record: AssignedIntervention, queryRecord: QueryDoc) => {
         setSelectedRecord(record)
@@ -2769,55 +2805,41 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             currentPoes.filter(resource => canonicalUrl(resource.link) !== targetUrl)
         )
 
-        console.error('[Allocated MOV] POE delete requested', {
-            interventionTitle: (record as any).interventionTitle,
-            groupKey: (record as DisplayIntervention).groupKeyResolved || null,
-            isGrouped: (record as DisplayIntervention).isGroupedDisplay === true,
-            recordId: record.id,
-            poeUrl,
-            targetUrl,
-            current: currentPoes.map(resource => ({ label: resource.label, originalName: resource.originalName, link: resource.link })),
-            next: nextPoes.map(resource => ({ label: resource.label, originalName: resource.originalName, link: resource.link }))
-        })
-
         if (nextPoes.length === currentPoes.length) {
-            console.error('[Allocated MOV] POE delete matched no resource', {
-                recordId: record.id,
-                targetUrl,
-                currentLinks: currentPoes.map(resource => resource.link)
-            })
-            message.warning('That POE could not be matched to the saved evidence list. The details were logged.')
+            message.warning('That POE is no longer on this intervention. Refreshing the list.')
+            setReloadKey(value => value + 1)
             return
         }
 
-        const targetIds = await getGroupMemberIdsForEvidence(
-            record as DisplayIntervention
-        )
-
-        if (!targetIds.length) {
-            message.error('No linked interventions were found for this POE.')
-            return
-        }
-
+        // Busy straight away, so a second click can't start a second delete.
+        setDeletingPoeUrl(poeUrl)
         try {
-            setDeletingPoeUrl(poeUrl)
+            const targetIds = await getGroupMemberIdsForEvidence(
+                record as DisplayIntervention
+            )
+            if (!targetIds.length) {
+                message.error('No linked interventions were found for this POE.')
+                return
+            }
+            const movs = await movsForAssignments(targetIds)
+            if (anyMovApproved(movs)) {
+                message.warning('The HOD has approved the MOV on this evidence, so it can’t be removed. Ask the HOD to undo the approval first.')
+                return
+            }
             if ((record as DisplayIntervention).isGroupedDisplay) {
                 await saveSharedGroupDelivery(record as DisplayIntervention, { evidence: nextPoes })
-                // Keep each member aligned with the shared group evidence too.
-                // This prevents older assignment resources from resurrecting a
-                // POE when the group delivery list is empty or stale.
-                await Promise.all(targetIds.map(id =>
-                    updateDoc(doc(db, 'assignedInterventions', id), {
-                        resources: nextPoes,
+                // Keep each member aligned with the shared group evidence too
+                // (stale member resources used to resurrect removed POEs), but
+                // keep any POE uploaded for that SME alone.
+                const membersById = new Map(((record as DisplayIntervention).members || []).map(member => [member.id, member]))
+                await Promise.all(targetIds.map(id => {
+                    const member = membersById.get(id)
+                    const own = member ? memberOwnUploads(record as DisplayIntervention, member).filter(r => canonicalUrl(r.link) !== targetUrl) : []
+                    return updateDoc(doc(db, 'assignedInterventions', id), {
+                        resources: normalizePoeResources([...nextPoes, ...own]),
                         updatedAt: Timestamp.now()
                     } as any)
-                ))
-                const saved = await getGroupDelivery(db, (record as DisplayIntervention).groupKeyResolved || '')
-                console.error('[Allocated MOV] Group POE delete write completed', {
-                    groupKey: (record as DisplayIntervention).groupKeyResolved,
-                    savedEvidence: saved?.evidence?.map((resource: any) => ({ label: resource?.label, link: resource?.link })) || [],
-                    targetIds
-                })
+                }))
             } else {
                 await Promise.all(targetIds.map(id =>
                     updateDoc(doc(db, 'assignedInterventions', id), {
@@ -2839,11 +2861,12 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     )
                     await saveSharedGroupDelivery(parent, { evidence: sharedNext })
                     setManageEvidenceRecord(previous => previous && (previous as DisplayIntervention).groupKeyResolved === parent.groupKeyResolved
-                        ? { ...previous, resources: sharedNext, groupDelivery: { ...((previous as DisplayIntervention).groupDelivery || {}), evidence: sharedNext } as GroupInterventionDelivery }
+                        ? ({ ...previous, resources: sharedNext, groupDelivery: { ...((previous as DisplayIntervention).groupDelivery || {}), evidence: sharedNext } as GroupInterventionDelivery } as unknown as AssignedIntervention)
                         : previous)
                 }
             }
 
+            await pruneMovEvidence(movs, [poeUrl, targetUrl])
             applyPoeStateLocally(record, targetIds, nextPoes)
             setManageEvidencePoePage(1)
             message.success('POE removed.')
@@ -2857,13 +2880,19 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
     }
 
     const removeAllPoe = async (record: AssignedIntervention) => {
-        const targetIds = await getGroupMemberIdsForEvidence(record as DisplayIntervention)
-        if (!targetIds.length) {
-            message.error('No linked interventions were found for this POE.')
-            return
-        }
+        if (isDocumentTarget(record) || deletingPoeUrl) return
+        setDeletingPoeUrl('__all__')
         try {
-            setDeletingPoeUrl('__all__')
+            const targetIds = await getGroupMemberIdsForEvidence(record as DisplayIntervention)
+            if (!targetIds.length) {
+                message.error('No linked interventions were found for this POE.')
+                return
+            }
+            const movs = await movsForAssignments(targetIds)
+            if (anyMovApproved(movs)) {
+                message.warning('The HOD has approved the MOV on this evidence, so it can’t be removed. Ask the HOD to undo the approval first.')
+                return
+            }
             if ((record as DisplayIntervention).isGroupedDisplay) {
                 await saveSharedGroupDelivery(record as DisplayIntervention, { evidence: [] })
             } else {
@@ -2876,7 +2905,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     const sharedNext = (parent.groupDelivery.evidence || []).filter(resource => otherLinks.has(String(resource.link)))
                     await saveSharedGroupDelivery(parent, { evidence: sharedNext })
                     setManageEvidenceRecord(previous => previous && (previous as DisplayIntervention).groupKeyResolved === parent.groupKeyResolved
-                        ? { ...previous, resources: sharedNext, groupDelivery: { ...((previous as DisplayIntervention).groupDelivery || {}), evidence: sharedNext } as GroupInterventionDelivery }
+                        ? ({ ...previous, resources: sharedNext, groupDelivery: { ...((previous as DisplayIntervention).groupDelivery || {}), evidence: sharedNext } as GroupInterventionDelivery } as unknown as AssignedIntervention)
                         : previous)
                 }
             }
@@ -2884,6 +2913,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                 resources: [],
                 updatedAt: Timestamp.now()
             } as any)))
+            await pruneMovEvidence(movs, 'all')
             applyPoeStateLocally(record, targetIds, [])
             setManageEvidencePoePage(1)
             message.success('All POEs removed.')
@@ -2914,14 +2944,14 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             setDeletingPoeUrl(documentUrl)
             if ((record as DisplayIntervention).isGroupedDisplay) {
                 await saveSharedGroupDelivery(record as DisplayIntervention, { evidence: next })
-            } else {
-                await Promise.all(targetIds.map(id => {
-                    return updateDoc(doc(db, 'assignedInterventions', id), {
-                        resources: next,
-                        updatedAt: Timestamp.now()
-                    } as any)
-                }))
             }
+            // Members too: evidence is read from the assignments, and a stale copy brings the document back.
+            await Promise.all(targetIds.map(id => {
+                return updateDoc(doc(db, 'assignedInterventions', id), {
+                    resources: next,
+                    updatedAt: Timestamp.now()
+                } as any)
+            }))
             const patchItem = (item: AssignedIntervention) => item.id === record.id ? {
                 ...item,
                 resources: next
@@ -3020,12 +3050,15 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
 
             if (progressRecord.isGroupedDisplay) {
                 await saveSharedGroupDelivery(progressRecord, { evidence: finalPoes })
-                await Promise.all(assignmentIds.map(id =>
-                    updateDoc(doc(db, 'assignedInterventions', id), {
-                        resources: finalPoes,
+                const membersById = new Map((progressRecord.members || []).map(member => [member.id, member]))
+                await Promise.all(assignmentIds.map(id => {
+                    const member = membersById.get(id)
+                    const own = member ? memberOwnUploads(progressRecord, member) : []
+                    return updateDoc(doc(db, 'assignedInterventions', id), {
+                        resources: normalizePoeResources([...finalPoes, ...own]),
                         updatedAt: Timestamp.now()
                     } as any)
-                ))
+                }))
             } else {
                 await Promise.all(assignmentIds.map(id =>
                     updateDoc(doc(db, 'assignedInterventions', id), {
@@ -3226,9 +3259,11 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                             ? false
                             : resource.link !== replaceTarget
                 )
-                const nextEvidence = normalizePoeResources(
-                    [...retainedEvidence, ...uploaded].filter(resource => resource?.link)
-                )
+                const combined = [...retainedEvidence, ...uploaded].filter(resource => resource?.link)
+                // Documents keep their names; only POEs are numbered "POE n".
+                const nextEvidence = documentTarget
+                    ? Array.from(new Map(combined.map(resource => [resource.link, resource])).values())
+                    : normalizePoeResources(combined)
                 if (isSingleGroupUpload && selectedGroupMember) {
                     const memberCurrent = getPoeResourcesFromRecord(selectedGroupMember)
                     const memberNext = normalizePoeResources(
@@ -3265,7 +3300,8 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                 await saveSharedGroupDelivery(manageEvidenceRecord as DisplayIntervention, {
                     progress: groupedRecord.progressResolved ?? 0,
                     deliveryStatus: undefined,
-                    evidence: nextEvidence,
+                    // A single SME's POE is recorded (below) but isn't the group's evidence.
+                    evidence: isSingleGroupUpload ? currentEvidence : nextEvidence,
                     progressUpdates: [
                         ...(groupedRecord.groupDelivery?.progressUpdates || []),
                         sharedUpdate
@@ -3383,6 +3419,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             setManageEvidenceOpen(false)
             setManageEvidenceRecord(null)
             setPendingEvidenceFiles([])
+            setPendingReplaceTarget(undefined)
             manageEvidenceForm.resetFields()
             completionEvidenceForm.resetFields()
 
@@ -3396,16 +3433,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         }
     }
 
-    const renderProgress = (record: DisplayIntervention) => {
-        const percent = record.progressResolved ?? getProgressPercent(record)
-        return (
-            <Space direction="vertical" size={4} style={{ width: 120 }}>
-                <Progress percent={percent} size="small" />
-            </Space>
-        )
-    }
 
-    // A compact stat, used across the session plan strip.
     const sessionStat = (
         icon: React.ReactNode,
         label: string,
@@ -3472,8 +3500,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Card
                     size="small"
-                    title={<Space size={8}><CalendarOutlined />Session plan</Space>}
-                    style={{ borderRadius: 12 }}
+                    style={{ borderRadius: 12, border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#d9d9d9'}` }}
                 >
                     <Space direction="vertical" size={12} style={{ width: '100%' }}>
                         <Row gutter={[16, 14]}>
@@ -3548,9 +3575,9 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
 
                 <Card
                     size="small"
-                    title={<Space size={8}><ClockCircleOutlined />Sessions ({scheduled})</Space>}
+                    title={<Space size={8}><ClockCircleOutlined />Sessions</Space>}
                     style={{ borderRadius: 12 }}
-                    styles={{ body: { padding: detailsSessionRows.length ? 0 : 16 } }}
+                    styles={{ body: { padding: 12 } }}
                 >
                     {detailsSessionsLoading ? (
                         <Skeleton active paragraph={{ rows: 3 }} />
@@ -3563,6 +3590,12 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                         <Collapse
                             ghost
                             accordion
+                            {...(detailsSessionRows.length === 1 && !record.isGroupedDisplay
+                                ? {
+                                    activeKey: [detailsSessionRows[0].key],
+                                    expandIcon: () => null
+                                }
+                                : {})}
                             items={detailsSessionRows.map((row, index) => {
                                 const start = toJsDate(row.startAt)
                                 const end = toJsDate(row.endAt)
@@ -3571,6 +3604,11 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
 
                                 return {
                                     key: row.key,
+                                    style: {
+                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#d9d9d9'}`,
+                                        borderRadius: 12,
+                                        marginBottom: 8
+                                    },
                                     label: (
                                         <Space wrap size={[10, 4]} style={{ width: '100%' }}>
                                             <Tag
@@ -3593,6 +3631,9 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                         {end ? ` - ${dayjs(end).format('HH:mm')}` : ''}
                                                     </Text>
                                                 </Space>
+                                            ) : null}
+                                            {row.title ? (
+                                                <Text strong>{row.title}</Text>
                                             ) : null}
                                             {row.held === true ? (
                                                 <Tag color="green" icon={<CheckCircleOutlined />} style={{ marginInlineEnd: 0 }}>Held</Tag>
@@ -3642,10 +3683,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                 ) : null}
                                             </Space>
 
-                                            {row.title ? (
-                                                <Text type="secondary">{row.title}</Text>
-                                            ) : null}
-
                                             {row.sessionInvited > row.invited ? (
                                                 <Alert
                                                     type="info"
@@ -3662,7 +3699,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                 />
                                             ) : null}
 
-                                            {row.attendedNames.length ? (
+                                            {record.isGroupedDisplay && row.attendedNames.length ? (
                                                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                                     <Text type="secondary" style={{ fontSize: 12 }}>
                                                         Attended ({row.attendedNames.length})
@@ -3677,7 +3714,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                 </Space>
                                             ) : null}
 
-                                            {row.absentNames.length ? (
+                                            {record.isGroupedDisplay && row.absentNames.length ? (
                                                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                                     <Text type="secondary" style={{ fontSize: 12 }}>
                                                         Absent ({row.absentNames.length})
@@ -3702,8 +3739,95 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         )
     }
 
+    // Assigned -> Completed -> Due, as one centred card strip.
+    const renderDateFlow = (record: DisplayIntervention, withTime = false, compact = false) => {
+        const fmt = withTime ? formatDateTime : formatDate
+        const overdue = record.lifecycleBucket !== 'completed' && isOverdueRecord(record)
+        const steps: { key: string; label: string; value: any; icon: React.ReactNode; color: string }[] = [
+            {
+                key: 'assigned',
+                label: 'Assigned',
+                value: record.assignedAtResolved ?? getAssignedAt(record),
+                icon: <CalendarOutlined />,
+                color: '#1677ff'
+            }
+        ]
+        if (record.lifecycleBucket === 'completed') {
+            steps.push({
+                key: 'completed',
+                label: 'Completed',
+                value: record.completedAtResolved || assignmentCompletedDate(record),
+                icon: <CheckCircleOutlined />,
+                color: '#52c41a'
+            })
+        }
+        steps.push({
+            key: 'due',
+            label: 'Due',
+            value: record.dueDate,
+            icon: <ClockCircleOutlined />,
+            color: overdue ? '#cf1322' : '#fa8c16'
+        })
+
+        return (
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexWrap: 'wrap',
+                    gap: compact ? 10 : 16,
+                    padding: compact ? '8px 12px' : '14px 16px',
+                    borderRadius: 12,
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#d9d9d9'}`,
+                    background: isDark ? 'rgba(255,255,255,0.03)' : '#fff',
+                    width: '100%'
+                }}
+            >
+                {steps.map((step, index) => (
+                    <React.Fragment key={step.key}>
+                        {index > 0 ? (
+                            <ArrowRightOutlined style={{ color: '#8c8c8c', fontSize: compact ? 12 : 16 }} />
+                        ) : null}
+                        <Space size={compact ? 8 : 12} align="center">
+                            <span
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: compact ? 28 : 38,
+                                    height: compact ? 28 : 38,
+                                    borderRadius: '50%',
+                                    fontSize: compact ? 14 : 18,
+                                    color: step.color,
+                                    background: `${step.color}1f`
+                                }}
+                            >
+                                {step.icon}
+                            </span>
+                            <Space direction="vertical" size={0}>
+                                <Text
+                                    type="secondary"
+                                    style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}
+                                >
+                                    {step.label}
+                                </Text>
+                                <Text
+                                    strong
+                                    type={step.key === 'due' && overdue ? 'danger' : undefined}
+                                    style={{ fontSize: compact ? 13 : 15 }}
+                                >
+                                    {fmt(step.value)}
+                                </Text>
+                            </Space>
+                        </Space>
+                    </React.Fragment>
+                ))}
+            </div>
+        )
+    }
+
     const renderDetailsDescriptions = (record: DisplayIntervention) => {
-        const assignedAt = record.assignedAtResolved ?? getAssignedAt(record)
 
         const groupedMembers = record.members || []
         // One delivery, one status. Only members who attended can be confirmed,
@@ -3729,104 +3853,145 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
 
         const showGroupedConfirmationSummary = groupDelivered && groupedReceived.length > 0
 
-        return (
-            <Descriptions
-                bordered
-                size="small"
-                column={record.isGroupedDisplay ? 1 : (screens.xl ? 2 : 1)}
-            >
-                {/*
-                  Title, status, progress and the headline dates are in the
-                  summary strip above. Repeat only what the strip cannot show:
-                  exact times, the assignee, and the delivery breakdown.
-                */}
-                <Descriptions.Item label="Assignee">
-                    {record.assigneeName || '-'}
-                </Descriptions.Item>
+        const statusCard = (
+            tone: 'blue' | 'green' | 'gold' | 'red' | 'default',
+            icon: React.ReactNode,
+            title: React.ReactNode,
+            body?: React.ReactNode
+        ) => {
+            const palette = {
+                blue: ['#91caff', '#e6f4ff'],
+                green: ['#b7eb8f', '#f6ffed'],
+                gold: ['#ffe58f', '#fffbe6'],
+                red: ['#ffccc7', '#fff2f0'],
+                default: ['#d9d9d9', '#fafafa']
+            }[tone]
+            return (
+                <Card
+                    size="small"
+                    style={{
+                        borderRadius: 12,
+                        border: `1px solid ${palette[0]}`,
+                        background: isDark ? 'rgba(255,255,255,0.03)' : palette[1]
+                    }}
+                >
+                    <Space align="start" size={12}>
+                        <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
+                        <Space direction="vertical" size={4}>
+                            <Text strong>{title}</Text>
+                            {body ? <div>{body}</div> : null}
+                        </Space>
+                    </Space>
+                </Card>
+            )
+        }
 
-                <Descriptions.Item label="Assigned At">
-                    {formatDateTime(assignedAt)}
-                </Descriptions.Item>
+        if (record.isGroupedDisplay) {
+            return (
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {renderDateFlow(record, true)}
 
-                {record.lifecycleBucket === 'completed' ? (
-                    <Descriptions.Item label="Completed At">
-                        {formatDateTime(record.completedAtResolved || assignmentCompletedDate(record))}
-                    </Descriptions.Item>
-                ) : (
-                    <Descriptions.Item label="Due Date">
-                        {formatDate(record.dueDate)}
-                    </Descriptions.Item>
-                )}
+                    {statusCard(
+                        groupDelivered ? 'blue' : groupProgress > 0 ? 'gold' : 'default',
+                        groupDelivered
+                            ? <CheckCircleOutlined style={{ color: '#1677ff' }} />
+                            : <ClockCircleOutlined style={{ color: '#8c8c8c' }} />,
+                        groupDelivered
+                            ? 'Delivered to the whole group'
+                            : groupProgress > 0
+                                ? 'In delivery'
+                                : 'Not started',
+                        <Space direction="vertical" size={8}>
+                            <Text type="secondary">
+                                This intervention is delivered once to the whole group, so
+                                delivery progress is the same for every member.
+                            </Text>
 
-                {record.isGroupedDisplay ? (
-                    <>
-                        <Descriptions.Item label="Delivery Status">
-                            <Space direction="vertical" size={4}>
-                                <Tag color={groupDelivered ? 'blue' : groupProgress > 0 ? 'geekblue' : 'default'}>
-                                    {groupDelivered
-                                        ? 'Delivered'
-                                        : groupProgress > 0
-                                            ? `In delivery - ${groupProgress}%`
-                                            : 'Not started'}
-                                </Tag>
-                                <Text type="secondary">
-                                    This intervention is delivered once to the whole group, so
-                                    delivery progress is the same for every member.
-                                </Text>
-                            </Space>
-                        </Descriptions.Item>
-
-                        {groupDelivered ? (
-                            <Descriptions.Item label="Attendance">
-                                <Space direction="vertical" size={4}>
-                                    <Space wrap>
-                                        <Tag color="green">Received: {groupedReceived.length}</Tag>
-                                        {groupedNotReceived > 0 ? (
-                                            <Tag color="red">Did not attend: {groupedNotReceived}</Tag>
-                                        ) : null}
-                                    </Space>
+                            {groupDelivered ? (
+                                <Space wrap size={[6, 6]}>
+                                    <Tag color="green">Received: {groupedReceived.length}</Tag>
                                     {groupedNotReceived > 0 ? (
-                                        <Text type="secondary">
-                                            Members who attended no appointments did not receive this
-                                            intervention and cannot be issued a MOV.
-                                        </Text>
+                                        <Tag color="red">Did not attend: {groupedNotReceived}</Tag>
+                                    ) : null}
+                                    {showGroupedConfirmationSummary ? (
+                                        <>
+                                            <Tag color="green">Confirmed: {groupedSmeConfirmed}</Tag>
+                                            {groupedSmeRejected > 0 ? (
+                                                <Tag color="red">Rejected: {groupedSmeRejected}</Tag>
+                                            ) : null}
+                                            <Tag>Pending: {groupedSmePendingConfirmation}</Tag>
+                                        </>
                                     ) : null}
                                 </Space>
-                            </Descriptions.Item>
-                        ) : null}
+                            ) : null}
 
-                        <Descriptions.Item label="Completion Confirmation">
-                            {showGroupedConfirmationSummary ? (
-                                <Space wrap>
-                                    <Tag color="green">Confirmed: {groupedSmeConfirmed}</Tag>
-                                    {groupedSmeRejected > 0 ? (
-                                        <Tag color="red">Rejected: {groupedSmeRejected}</Tag>
-                                    ) : null}
-                                    <Tag color="default">Pending: {groupedSmePendingConfirmation}</Tag>
-                                </Space>
-                            ) : (
+                            {groupDelivered && groupedNotReceived > 0 ? (
                                 <Text type="secondary">
-                                    {groupDelivered
-                                        ? 'No member attended, so there is nothing to confirm.'
-                                        : 'Available once delivery reaches 100%'}
+                                    Members who attended no appointments did not receive this
+                                    intervention and cannot be issued a MOV.
                                 </Text>
-                            )}
-                        </Descriptions.Item>
-                    </>
-                ) : (
-                    <>
-                        <Descriptions.Item label="Delivery Status">
-                            <Tag color={getFacilitatorCompletion(record) === 'done' ? 'blue' : 'default'}>
-                                {getFacilitatorCompletion(record) === 'done' ? 'Completed' : 'Pending'}
-                            </Tag>
-                        </Descriptions.Item>
+                            ) : null}
 
-                        <Descriptions.Item label="Completion Confirmation">
-                            {renderCompletionConfirmation(record)}
-                        </Descriptions.Item>
-                    </>
-                )}
-            </Descriptions>
+                            {groupDelivered && !showGroupedConfirmationSummary ? (
+                                <Text type="secondary">
+                                    No member attended, so there is nothing to confirm.
+                                </Text>
+                            ) : null}
+                        </Space>
+                    )}
+                </Space>
+            )
+        }
+
+        const done = getFacilitatorCompletion(record) === 'done'
+        const smeStatus = getSmeCompletion(record)
+        const smeConfirmed = smeStatus === 'confirmed' || smeStatus === 'done'
+        const smeRejected = smeStatus === 'rejected'
+        const feedback = getCompletionFeedback(record)
+
+        return (
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {renderDateFlow(record, true)}
+
+                {!done
+                    ? statusCard(
+                        'default',
+                        <ClockCircleOutlined style={{ color: '#8c8c8c' }} />,
+                        'Delivery in progress',
+                        <Text type="secondary">You have not marked this intervention as completed yet.</Text>
+                    )
+                    : smeConfirmed
+                        ? statusCard(
+                            'green',
+                            <CheckCircleOutlined style={{ color: '#52c41a' }} />,
+                            'You completed this intervention and the SME has confirmed.'
+                        )
+                        : smeRejected
+                            ? statusCard(
+                                'red',
+                                <CloseOutlined style={{ color: '#cf1322' }} />,
+                                // The reason and the response are in the dispute at the top of the panel.
+                                'You completed this intervention but the SME disputes it.'
+                            )
+                            : statusCard(
+                                'gold',
+                                <ClockCircleOutlined style={{ color: '#d48806' }} />,
+                                'You completed this intervention. The SME has not confirmed yet.'
+                            )}
+
+                {done && smeConfirmed ? (
+                    <Card size="small" title="SME feedback" style={{ borderRadius: 12 }}>
+                        {feedback.rating > 0 || feedback.comments ? (
+                            <Space direction="vertical" size={6}>
+                                {feedback.rating > 0 ? <Rate disabled value={feedback.rating} /> : null}
+                                {feedback.comments ? <Text>{feedback.comments}</Text> : null}
+                            </Space>
+                        ) : (
+                            <Text type="secondary">No feedback provided.</Text>
+                        )}
+                    </Card>
+                ) : null}
+            </Space>
         )
     }
 
@@ -3865,6 +4030,12 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                             <List.Item>
                                 <Space direction="vertical" size={5} style={{ width: '100%' }}>
                                     <Text strong>{member.participantName || member.beneficiaryName || member.participantId || '-'}</Text>
+                                    {isCatchingUp(member) && (
+                                        <Space wrap size={[6, 4]}>
+                                            <Tag color="orange">Catch-up · {getProgressPercent(member)}%</Tag>
+                                            <Text type="secondary">Redelivering what this SME missed; completed on its own, without the group.</Text>
+                                        </Space>
+                                    )}
 
                                     {!groupDelivered ? (
                                         <Text type="secondary">
@@ -3907,18 +4078,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     }}
                 />
             </Card>
-        )
-    }
-
-    const getRecordDisplayName = (record: DisplayIntervention) => {
-        if (record.isGroupedDisplay) {
-            return record.interventionTitle || 'grouped_intervention'
-        }
-
-        return (
-            record.participantName ||
-            record.beneficiaryName ||
-            'sme'
         )
     }
 
@@ -4087,548 +4246,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
     // used to have its own column (beneficiary, due date, queries, evidence)
     // is either folded into a related column or moved into the row's action
     // menu, so Actions can stay pinned and reachable without scrolling.
-    const columns: ColumnsType<DisplayIntervention> = useMemo(() => {
-        const cols: ColumnsType<DisplayIntervention> = [
-            {
-                title: 'Intervention',
-                key: 'intervention',
-                render: (_: any, record: DisplayIntervention) => {
-                    const name =
-                        record.participantName ||
-                        record.beneficiaryName ||
-                        record.participantId ||
-                        'Unknown'
-
-                    // Stacked, one fact per line: what the work is, which part
-                    // of it, then who it is for.
-                    return (
-                        <Space direction="vertical" size={4} style={{ minWidth: 0 }}>
-                            <Text strong ellipsis={{ tooltip: record.interventionTitle }}>
-                                {record.interventionTitle || (
-                                    <Text type="secondary">Untitled intervention</Text>
-                                )}
-                            </Text>
-
-                            {record.subInterventionTitle || record.subInterventionId ? (
-                                <div>{renderSubInterventionTag(record)}</div>
-                            ) : null}
-
-                            {record.isGroupedDisplay ? (
-                                <Tag color="purple" icon={<AppstoreOutlined />} style={{ marginInlineEnd: 0 }}>
-                                    Grouped • {record.memberCount || 0} SMEs
-                                </Tag>
-                            ) : (
-                                <Text type="secondary" ellipsis={{ tooltip: name }} style={{ maxWidth: 260 }}>
-                                    {name}
-                                </Text>
-                            )}
-                        </Space>
-                    )
-                }
-            },
-            {
-                title: 'Workflow',
-                key: 'workflow',
-                width: 210,
-                render: (_: any, record: DisplayIntervention) => (
-                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                        {record.isGroupedDisplay ? groupedStatusTag(record) : statusTag(record)}
-                        <div style={{ width: '100%', maxWidth: 160 }}>{renderProgress(record)}</div>
-                    </Space>
-                )
-            }
-        ]
-
-        // Dates earn their space only once there is room for them.
-        if (screens.lg) {
-            cols.push({
-                title: 'Timeline',
-                key: 'timeline',
-                width: 190,
-                sorter: (left: DisplayIntervention, right: DisplayIntervention) =>
-                    getAssignedTime(left) - getAssignedTime(right),
-                defaultSortOrder: 'descend',
-                render: (_: any, record: DisplayIntervention) => {
-                    const isCompleted = record.lifecycleBucket === 'completed'
-                    const due = toJsDate(record.dueDate)
-                    const overdue =
-                        !isCompleted && !!due && dayjs(due).isBefore(dayjs(), 'day')
-
-                    return (
-                        <Space direction="vertical" size={2}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                Assigned {formatDate(record.assignedAtResolved ?? getAssignedAt(record))}
-                            </Text>
-                            {isCompleted ? (
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                    Completed {formatDate(record.completedAtResolved)}
-                                </Text>
-                            ) : (
-                                <Space size={4}>
-                                    <CalendarOutlined
-                                        style={{ fontSize: 12, color: overdue ? '#cf1322' : undefined }}
-                                    />
-                                    <Text
-                                        type={overdue ? 'danger' : 'secondary'}
-                                        style={{ fontSize: 12 }}
-                                    >
-                                        Due {formatDate(record.dueDate)}
-                                    </Text>
-                                </Space>
-                            )}
-                        </Space>
-                    )
-                }
-            })
-        }
-
-        if (screens.xxl) {
-            cols.push({
-                title: 'Queries',
-                key: 'queries',
-                width: 120,
-                render: (_: any, record: DisplayIntervention) => {
-                    if (record.lifecycleBucket !== 'completed') return <Text type="secondary">-</Text>
-
-                    const total = Number(record.queryCount || 0)
-                    const open = Number(record.openQueryCount || 0)
-                    if (!total) return <Text type="secondary">None</Text>
-
-                    return (
-                        <Space direction="vertical" size={2}>
-                            <Tag color={open > 0 ? 'volcano' : 'green'} style={{ marginInlineEnd: 0 }}>
-                                {total - open}/{total} closed
-                            </Tag>
-                            {open > 0 ? <Tag color="orange" style={{ marginInlineEnd: 0 }}>{open} open</Tag> : null}
-                        </Space>
-                    )
-                }
-            })
-        }
-
-        cols.push({
-            title: 'Actions',
-            key: 'actions',
-            width: 190,
-            fixed: screens.lg ? 'right' : undefined,
-            render: (_: any, record: DisplayIntervention) => {
-                const canRemind = canSendReminderRecord(record)
-                const reminding = remindingIds.includes(record.id)
-                const isCompleted = record.lifecycleBucket === 'completed'
-                const recordProgress = record.progressResolved ?? getProgressPercent(record)
-                const canComplete = !isCompleted && recordProgress >= 100 &&
-                    (record.members || [record]).some(member =>
-                        getFacilitatorCompletion(member) !== 'done'
-                    )
-                const overdue = !isCompleted && isOverdueRecord(record)
-                const evidenceCount = getEvidenceEntriesFromRecord(record).length
-                const totalQueries = Number(record.queryCount || 0)
-                const openQueries = Number(record.openQueryCount || 0)
-
-                // One contextual primary button carries the step the row is
-                // actually waiting on; the rest go in the menu so the column
-                // stays narrow enough to pin to the edge.
-                // Not a one-click toggle: it opens the completion form, which
-                // wants the POE and a summary before it can issue the MOVs.
-                const primary = canComplete
-                    ? {
-                        label: 'Submit completion',
-                        guide: 'complete-intervention-action',
-                        icon: <CheckCircleOutlined />,
-                        color: 'green' as const,
-                        border: 'green',
-                        onClick: () => void prepareCompletionStep(record)
-                    }
-                    : !isCompleted && recordProgress < 100
-                        ? {
-                            label: 'Add progress',
-                            guide: 'add-progress-action',
-                            icon: <EditOutlined />,
-                            color: 'blue' as const,
-                            border: '#1677ff',
-                            onClick: () => openProgressModal(record)
-                        }
-                        : {
-                            label: 'Details',
-                            guide: undefined,
-                            icon: <InfoCircleOutlined />,
-                            color: 'green' as const,
-                            border: 'green',
-                            onClick: () => openDetailsModal(record)
-                        }
-
-                const items = [
-                    ...(primary.label === 'Details'
-                        ? []
-                        : [{
-                            key: 'details',
-                            icon: <InfoCircleOutlined />,
-                            label: 'View details',
-                            onClick: () => openDetailsModal(record)
-                        }]),
-                    {
-                        key: 'evidence',
-                        icon: <UploadOutlined />,
-                        label: evidenceCount ? `Manage evidence (${evidenceCount})` : 'Add evidence',
-                        onClick: () => openManageEvidenceModal(record)
-                    },
-                    ...(isCompleted && totalQueries
-                        ? [{
-                            key: 'queries',
-                            icon: <EyeOutlined />,
-                            label: `View queries${openQueries ? ` (${openQueries} open)` : ''}`,
-                            onClick: () => openQueriesModal(record)
-                        }]
-                        : []),
-                    ...(isCompleted
-                        ? [{
-                            key: 'register',
-                            icon: <CalendarOutlined />,
-                            label: 'Generate register',
-                            disabled: generatingRegisterId === record.id,
-                            onClick: () => generateRegisterForRecord(record)
-                        }]
-                        : []),
-                    ...(!isCompleted && canRemind
-                        ? [{
-                            key: 'remind',
-                            icon: <BellOutlined />,
-                            label: 'Send confirmation reminder',
-                            disabled: reminding,
-                            onClick: () => sendReminder(record)
-                        }]
-                        : []),
-                    ...(overdue
-                        ? [{
-                            key: 'overdue',
-                            icon: <ClockCircleOutlined />,
-                            danger: true,
-                            label: 'Give overdue reason',
-                            onClick: () => openOverdueModal(record)
-                        }]
-                        : [])
-                ]
-
-                return (
-                    <Space size={4} wrap={false}>
-                        <Button
-                            data-guide={primary.guide}
-                            shape="round"
-                            variant="filled"
-                            color={primary.color}
-                            size="small"
-                            style={{ border: `1px solid ${primary.border}` }}
-                            icon={primary.icon}
-                            loading={generatingRegisterId === record.id}
-                            onClick={primary.onClick}
-                        >
-                            {primary.label}
-                        </Button>
-
-                        <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
-                            <Button
-                                shape="circle"
-                                size="small"
-                                icon={<MoreOutlined />}
-                                aria-label="More actions"
-                            />
-                        </Dropdown>
-
-                        {overdue ? (
-                            <Tag color="red" style={{ marginInlineEnd: 0 }}>!</Tag>
-                        ) : null}
-                    </Space>
-                )
-            }
-        })
-
-        return cols
-    }, [generatingRegisterId, remindingIds, screens.lg, screens.xxl])
-
-    const renderAllocatedCard = (record: DisplayIntervention) => {
-        const canRemind = canSendReminderRecord(record)
-        const reminding = remindingIds.includes(record.id)
-        const overdue = isOverdueRecord(record)
-        const progress = record.progressResolved ?? getProgressPercent(record)
-        const canComplete = record.lifecycleBucket !== 'completed' && progress >= 100 &&
-            (record.members || [record]).some(member =>
-                getFacilitatorCompletion(member) !== 'done'
-            )
-        const assignedAt = record.assignedAtResolved ?? getAssignedAt(record)
-
-        return (
-            <Card
-                style={{
-                    marginBottom: 12,
-                    borderRadius: 12,
-                    border: '1px solid #d6e4ff'
-                }}
-            >
-                <Space direction="vertical" style={{ width: '100%' }} size={10}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                        <div style={{ minWidth: 0 }}>
-                            <Text strong style={{ display: 'block' }}>
-                                {record.participantName || record.beneficiaryName || record.participantId || '-'}
-                            </Text>
-                            <Text type="secondary" style={{ display: 'block' }}>
-                                {record.interventionTitle || 'Untitled intervention'}
-                            </Text>
-
-                            <div style={{ marginTop: 6 }}>
-                                {record.isGroupedDisplay ? groupedStatusTag(record) : statusTag(record)}
-                            </div>
-
-                            {record.isGroupedDisplay ? (
-                                <div style={{ marginTop: 6 }}>
-                                    <Tag color="purple" icon={<AppstoreOutlined />}>
-                                        Grouped • {record.memberCount || 0} SMEs
-                                    </Tag>
-                                </div>
-                            ) : null}
-                        </div>
-                    </div>
-
-                    <Space wrap>
-                        {renderSubInterventionTag(record)}
-                        {waitingOnTag(record)}
-                        {overdue ? <Tag color="red">Overdue</Tag> : null}
-                    </Space>
-
-                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                        <Text type="secondary">Progress</Text>
-                        <Progress percent={progress} />
-                    </Space>
-
-                    <Space wrap>
-                        <Text type="secondary">Assigned: {formatDate(assignedAt)}</Text>
-                        <Text type="secondary">Due: {formatDate(record.dueDate)}</Text>
-                    </Space>
-
-                    <Space wrap>
-                        <Button
-                            shape="round"
-                            variant="filled"
-                            size="small"
-                            color="default"
-                            icon={<InfoCircleOutlined />}
-                            onClick={() => openDetailsModal(record)}
-                        >
-                            Details
-                        </Button>
-
-                        {progress < 100 ? (
-                            <Button
-                                data-guide="add-progress-action"
-                                shape="round"
-                                variant="filled"
-                                color="blue"
-                                style={{ border: '1px solid #1677ff' }}
-                                icon={<EditOutlined />}
-                                onClick={() => openProgressModal(record)}
-                            >
-                                Add Progress
-                            </Button>
-                        ) : null}
-
-                        {canComplete ? (
-                            <Button
-                                data-guide="complete-intervention-action"
-                                shape="round"
-                                variant="filled"
-                                color="green"
-                                style={{ border: '1px solid green' }}
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => void prepareCompletionStep(record)}
-                            >
-                                Complete Intervention
-                            </Button>
-                        ) : null}
-
-                        {canRemind && (
-                            <Button
-                                shape="round"
-                                variant="filled"
-                                color="orange"
-                                style={{ border: '1px solid orange' }}
-                                icon={<BellOutlined />}
-                                loading={reminding}
-                                onClick={() => sendReminder(record)}
-                            >
-                                Send Confirmation Reminder
-                            </Button>
-                        )}
-
-                        {overdue && (
-                            <Button
-                                shape="round"
-                                variant="filled"
-                                color="orange"
-                                style={{ border: '1px solid orange' }}
-                                icon={<ClockCircleOutlined />}
-                                size='small'
-                                onClick={() => openOverdueModal(record)}
-                            >
-                                Reason
-                            </Button>
-                        )}
-                    </Space>
-                </Space>
-            </Card>
-        )
-    }
-
-    const renderHistoryCard = (record: DisplayIntervention) => {
-        const progress = record.progressResolved ?? getProgressPercent(record)
-        const assignedAt = record.assignedAtResolved ?? getAssignedAt(record)
-        const completedAt = record.completedAtResolved ?? assignmentCompletedDate(record)
-        const hasEv = hasEvidence(record)
-        const total = Number(record.queryCount || 0)
-        const open = Number(record.openQueryCount || 0)
-        const closed = total - open
-
-        return (
-            <Card
-                style={{
-                    marginBottom: 12,
-                    borderRadius: 12,
-                    border: '1px solid #d6e4ff'
-                }}
-            >
-                <Space direction="vertical" style={{ width: '100%' }} size={10}>
-                    <div>
-                        <Text strong style={{ display: 'block' }}>
-                            {record.participantName || record.beneficiaryName || record.participantId || '-'}
-                        </Text>
-                        <Text type="secondary" style={{ display: 'block' }}>
-                            {record.interventionTitle || 'Untitled intervention'}
-                        </Text>
-                    </div>
-
-                    <Space wrap>
-                        {record.isGroupedDisplay ? (
-                            <Tag color="purple" icon={<AppstoreOutlined />}>
-                                Grouped • {record.memberCount || 0} SMEs
-                            </Tag>
-                        ) : null}
-                        {renderSubInterventionTag(record)}
-                        {record.isGroupedDisplay ? groupedStatusTag(record) : statusTag(record)}
-                    </Space>
-
-                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                        <Text type="secondary">Progress</Text>
-                        <Progress percent={progress} />
-                    </Space>
-
-                    <Space wrap>
-                        <Text type="secondary">Assigned: {formatDate(assignedAt)}</Text>
-                        <Text type="secondary">Completed: {formatDate(completedAt)}</Text>
-                        <Text type="secondary">Due: {formatDate(record.dueDate)}</Text>
-                    </Space>
-
-                    <Space wrap>
-                        <Button
-                            shape="round"
-                            variant="filled"
-                            color="default"
-                            icon={<InfoCircleOutlined />}
-                            onClick={() => openDetailsModal(record)}
-                        >
-                            Details
-                        </Button>
-
-                        <Button
-                            shape="round"
-                            variant="filled"
-                            color="cyan"
-                            style={{ border: '1px solid #13c2c2' }}
-                            icon={<CalendarOutlined />}
-                            loading={generatingRegisterId === record.id}
-                            onClick={() => generateRegisterForRecord(record)}
-                        >
-                            Generate Register
-                        </Button>
-
-                        {total > 0 ? (
-                            <Button
-                                shape="round"
-                                variant="filled"
-                                color="geekblue"
-                                style={{ border: '1px solid dodgerblue' }}
-                                icon={<EyeOutlined />}
-                                onClick={() => openQueriesModal(record)}
-                            >
-                                Queries ({closed}/{total})
-                            </Button>
-                        ) : (
-                            <Tag>No Queries</Tag>
-                        )}
-
-                        {hasEv ? (
-                            <>
-                                <Button
-                                    shape="round"
-                                    variant="filled"
-                                    color="green"
-                                    style={{ border: '1px solid limegreen' }}
-                                    icon={<FileProtectOutlined />}
-                                    onClick={() => openEvidenceModal(record)}
-                                >
-                                    Evidence
-                                </Button>
-
-                                <Button
-                                    shape="round"
-                                    variant="filled"
-                                    color="blue"
-                                    style={{ border: '1px solid #1677ff' }}
-                                    icon={<UploadOutlined />}
-                                    onClick={() => openManageEvidenceModal(record)}
-                                >
-                                    Manage Evidence
-                                </Button>
-                            </>
-                        ) : (
-                            <>
-                                <Tag color="red">Missing Evidence</Tag>
-
-                                <Button
-                                    shape="round"
-                                    variant="filled"
-                                    color="blue"
-                                    style={{ border: '1px solid #1677ff' }}
-                                    icon={<UploadOutlined />}
-                                    onClick={() => openManageEvidenceModal(record)}
-                                >
-                                    Add Evidence
-                                </Button>
-                            </>
-                        )}
-                    </Space>
-
-                    {open > 0 ? <Tag color="orange">{open} Open Query(ies)</Tag> : null}
-                </Space>
-            </Card>
-        )
-    }
-
-    const metricColFlex = isMobile
-        ? '1 1 calc(50% - 12px)'
-        : '1 1 180px'
-
-    // Selecting the metric that is already applied clears the filter, so the
-    // cards behave like a toggle group without needing a separate "All" step.
-    const toggleQuickStatus = (value: typeof quickStatus) =>
-        setQuickStatus(current => (current === value ? 'all' : value))
-
-    const quickStatusStyle = (value: typeof quickStatus): React.CSSProperties =>
-        quickStatus === value
-            ? {
-                borderColor: '#1677ff',
-                boxShadow: isDark
-                    ? '0 0 0 2px rgba(22,119,255,0.35)'
-                    : '0 0 0 2px rgba(22,119,255,0.18)'
-            }
-            : {}
     const compactModalStyles = {
         body: {
             maxHeight: isMobile ? '76vh' : '74vh',
@@ -4637,6 +4254,22 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             paddingTop: 10,
             paddingBottom: 10
         }
+    }
+
+    /** A grouped intervention's evidence (not documents): shared POE plus each SME's own. */
+    const isGroupEvidence = !!(manageEvidenceRecord as DisplayIntervention | null)?.isGroupedDisplay && !!manageEvidenceRecord && !isDocumentTarget(manageEvidenceRecord)
+    /** The SME the pending files are for, or null for the whole group / a single intervention. */
+    const evidenceForMember = isGroupEvidence && groupEvidenceMode === 'single' ? groupEvidenceMemberId || null : null
+
+    /** Choose files for the group (memberId null) or one SME; switching who they're for drops files picked for someone else. */
+    const pickEvidenceFiles = (memberId: string | null, replaceTarget?: string) => {
+        if ((memberId || null) !== evidenceForMember && pendingEvidenceFiles.length) {
+            setPendingEvidenceFiles([])
+            setPendingReplaceTarget(undefined)
+        }
+        setGroupEvidenceMode(memberId ? 'single' : 'bulk')
+        setGroupEvidenceMemberId(memberId || undefined)
+        openManageEvidenceFilePicker(replaceTarget)
     }
 
     const openManageEvidenceFilePicker = (replaceTarget?: string) => {
@@ -4653,19 +4286,30 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         pendingEvidenceReplaceTargetRef.current = undefined
         if (!files.length) return
 
-        const fileList = files.map(file => ({
-            uid: `${Date.now()}-${file.name}`,
+        // Files are only staged here, so several can be picked (in one go or over a few
+        // picks) and checked before anything is saved. Saving is the explicit button.
+        setPendingEvidenceFiles(current => {
+            const seen = new Set(current.map(file => `${file.name}:${file.size}:${file.lastModified}`))
+            return [
+                ...current,
+                ...files.filter(file => !seen.has(`${file.name}:${file.size}:${file.lastModified}`))
+            ]
+        })
+        // Choosing Replace sets what gets replaced; a plain Add keeps whatever was chosen before.
+        if (replaceTarget !== undefined) setPendingReplaceTarget(replaceTarget)
+    }
+
+    const saveStagedEvidence = () => {
+        const fileList = pendingEvidenceFiles.map(file => ({
+            uid: `${Date.now()}-${file.name}-${file.size}`,
             name: file.name,
             originFileObj: file
         }))
-        const values = {
-            ...manageEvidenceForm.getFieldsValue(),
+        void submitManageEvidence({
+            ...manageEvidenceForm.getFieldsValue(true),
             files: fileList,
-            replaceTarget
-        }
-        setPendingEvidenceFiles(files)
-        manageEvidenceForm.setFieldsValue(values)
-        void submitManageEvidence(values)
+            replaceTarget: pendingReplaceTarget
+        })
     }
     const progressModalStyles = {
         body: {
@@ -4678,416 +4322,489 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
         }
     }
 
+    // ---- Workspace: one status strip, a list beside the open intervention ----
+
+    const canCompleteRecord = (record: DisplayIntervention) =>
+        record.lifecycleBucket !== 'completed' &&
+        (record.progressResolved ?? getProgressPercent(record)) >= 100 &&
+        (record.members || [record]).some(member => getFacilitatorCompletion(member) !== 'done' && !(record.isGroupedDisplay && isCatchingUp(member)))
+
+    /** SMEs in a group catching up after a dispute: each has their own progress and completion. */
+    const catchUpsOf = (record: DisplayIntervention) =>
+        record.isGroupedDisplay ? (record.members || []).filter(isCatchingUp) : []
+    const memberName = (member: AssignedIntervention) => member.participantName || member.beneficiaryName || 'the SME'
+    /** A group member as a record of its own, so progress and completion apply to that SME alone. */
+    const asSingle = (member: AssignedIntervention): DisplayIntervention => ({ ...member, isGroupedDisplay: false, lifecycleBucket: 'active', progressResolved: getProgressPercent(member) })
+
+    /** Queries on the row waiting for the facilitator's answer (not ones they've answered). */
+    const openQueriesOf = (record: DisplayIntervention) =>
+        Array.from(new Map((record.queries || []).map(q => [q.id, q])).values())
+            .filter(q => String(q.status || 'open').toLowerCase() === 'open')
+
+    /** Where an intervention stands from the facilitator's side: what, if anything, they have to do. */
+    const workStatusOf = (record: DisplayIntervention): WorkStatus => {
+        const status = resolveDisplayStatus(record)
+        if (status === 'disputed' || openQueriesOf(record).length) return 'needs-you'
+        if (record.lifecycleBucket !== 'completed' && (canCompleteRecord(record) || isOverdueRecord(record))) return 'needs-you'
+        if (catchUpsOf(record).length) return 'needs-you'
+        if (status === 'awaiting-confirmation') return 'awaiting'
+        if (['completed', 'no-attendance', 'closed'].includes(status) || record.lifecycleBucket === 'completed') return 'done'
+        return 'in-delivery'
+    }
+
+    /** Why a row is in "Needs you", as short flags. */
+    const needsOf = (record: DisplayIntervention) => {
+        const flags: { label: string; tone: 'danger' | 'warning' | 'info' }[] = []
+        if (resolveDisplayStatus(record) === 'disputed') flags.push({ label: 'Completion disputed', tone: 'danger' })
+        const open = openQueriesOf(record).filter(q => !String(q.queryType || q.type || '').startsWith('completion-reject')).length
+        if (open) flags.push({ label: `${open} ${open === 1 ? 'query' : 'queries'} to answer`, tone: 'warning' })
+        if (canCompleteRecord(record)) flags.push({ label: 'Ready to submit', tone: 'info' })
+        const catchUps = catchUpsOf(record).length
+        if (catchUps) flags.push({ label: `${catchUps} SME${catchUps === 1 ? '' : 's'} catching up`, tone: 'warning' })
+        if (record.lifecycleBucket !== 'completed' && isOverdueRecord(record)) flags.push({ label: 'Overdue', tone: 'danger' })
+        return flags
+    }
+
+    const workCounts = useMemo(() => {
+        const counts: Record<WorkStatus, number> = { 'needs-you': 0, 'in-delivery': 0, awaiting: 0, done: 0, all: filteredData.length }
+        filteredData.forEach(record => { counts[workStatusOf(record)] += 1 })
+        return counts
+    }, [filteredData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const listRows = useMemo(
+        () => (workStatus === 'all' ? filteredData : filteredData.filter(record => workStatusOf(record) === workStatus)),
+        [filteredData, workStatus] // eslint-disable-line react-hooks/exhaustive-deps
+    )
+
+    // Start where the work is: "Needs you" when there's anything in it, otherwise everything.
+    const [startedOn, setStartedOn] = useState(false)
+    useEffect(() => {
+        if (startedOn || !hasLoadedOnce) return
+        setStartedOn(true)
+        if (!workCounts['needs-you']) setWorkStatus('all')
+    }, [hasLoadedOnce]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => setListPage(1), [workStatus, searchText, dateRange])
+
+    // The open intervention: kept in step with reloads, first row when none is chosen (not on phones).
+    useEffect(() => {
+        if (detailsRecord) {
+            const fresh = baseData.find(row => row.id === detailsRecord.id ||
+                (!!detailsRecord.groupKeyResolved && row.groupKeyResolved === detailsRecord.groupKeyResolved))
+            if (fresh && fresh !== detailsRecord) setDetailsRecord(fresh)
+            if (fresh && listRows.some(row => row.id === fresh.id)) return
+        }
+        if (isMobile) return
+        if (listRows[0]) selectRecord(listRows[0], false)
+        else setDetailsRecord(null)
+    }, [baseData, listRows]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    /** The query a primary action answers: a dispute first, then the oldest open query. */
+    const firstOpenQuery = (record: DisplayIntervention) => {
+        const open = openQueriesOf(record).sort((a, b) => (toJsDate(a.createdAt)?.getTime() || 0) - (toJsDate(b.createdAt)?.getTime() || 0))
+        const query = open.find(q => String(q.queryType || q.type || '').startsWith('completion-reject')) || open[0]
+        if (!query) return null
+        const owner = (record.members || [record]).find(member => (member.queries || []).some(q => q.id === query.id)) || record
+        return { query, owner }
+    }
+
+    const answerQuery = (record: DisplayIntervention, query: QueryDoc) => {
+        const owner = (record.members || [record]).find(member => (member.queries || []).some(q => q.id === query.id)) || record
+        openPoeResolveModal(owner, query)
+    }
+
+    /** The one thing this intervention is waiting on the facilitator for. */
+    const primaryActionFor = (record: DisplayIntervention) => {
+        const status = resolveDisplayStatus(record)
+        const progress = record.progressResolved ?? getProgressPercent(record)
+        const next = firstOpenQuery(record)
+        if (next) {
+            const dispute = String(next.query.queryType || next.query.type || '').startsWith('completion-reject')
+            const waiting = openQueriesOf(record).length
+            if (!dispute && waiting > 1) {
+                return { key: 'answer', label: `Answer queries (${waiting})`, icon: <SendOutlined />, danger: false, onClick: () => setDetailsTab('queries') }
+            }
+            return { key: 'answer', label: dispute ? 'Respond to dispute' : 'Answer query', icon: <SendOutlined />, danger: dispute, onClick: () => openPoeResolveModal(next.owner, next.query) }
+        }
+        const catchUp = catchUpsOf(record)[0]
+        if (catchUp) {
+            const single = asSingle(catchUp)
+            return (single.progressResolved ?? 0) >= 100
+                ? { key: 'catchup', label: `Submit catch-up: ${memberName(catchUp)}`, icon: <CheckCircleOutlined />, onClick: () => void prepareCompletionStep(single) }
+                : { key: 'catchup', label: `Catch-up progress: ${memberName(catchUp)}`, icon: <EditOutlined />, onClick: () => openProgressModal(single) }
+        }
+        if (canCompleteRecord(record)) return { key: 'complete', label: 'Submit completion', icon: <CheckCircleOutlined />, onClick: () => void prepareCompletionStep(record) }
+        if (record.lifecycleBucket !== 'completed' && progress < 100 && status !== 'disputed') return { key: 'progress', label: 'Add progress', icon: <EditOutlined />, onClick: () => openProgressModal(record) }
+        if (status === 'awaiting-confirmation' && canSendReminderRecord(record)) {
+            return { key: 'remind', label: record.isGroupedDisplay ? 'Remind SMEs to confirm' : 'Remind SME to confirm', icon: <BellOutlined />, onClick: () => void sendReminder(record) }
+        }
+        if (!getEvidenceEntriesFromRecord(record).length && !isDocumentTarget(record)) return { key: 'evidence', label: 'Add evidence', icon: <UploadOutlined />, onClick: () => openManageEvidenceModal(record) }
+        return null
+    }
+
+    /** Everything else that can be done, after the primary action. */
+    const secondaryActionsFor = (record: DisplayIntervention, primaryKey?: string) => {
+        const progress = record.progressResolved ?? getProgressPercent(record)
+        const evidenceCount = getEvidenceEntriesFromRecord(record).length
+        return [
+            // A disputed completion is answered first; choosing "deliver what's missing" re-opens progress.
+            record.lifecycleBucket !== 'completed' && progress < 100 && primaryKey !== 'progress' && resolveDisplayStatus(record) !== 'disputed'
+                ? { key: 'progress', label: 'Add progress', icon: <EditOutlined />, onClick: () => openProgressModal(record) } : null,
+            // Evidence comes with completion (the completion form asks for the POE); before
+            // that there's only something to manage if some was already added.
+            primaryKey !== 'evidence' && (progress >= 100 || record.lifecycleBucket === 'completed' || evidenceCount > 0)
+                ? { key: 'evidence', label: isDocumentTarget(record) ? 'Documents' : evidenceCount ? `Evidence (${evidenceCount})` : 'Add evidence', icon: <UploadOutlined />, onClick: () => openManageEvidenceModal(record) } : null,
+            canSendReminderRecord(record) && primaryKey !== 'remind'
+                ? { key: 'remind', label: 'Remind', icon: <BellOutlined />, onClick: () => void sendReminder(record) } : null,
+            record.lifecycleBucket === 'completed'
+                ? { key: 'register', label: 'Register', icon: <CalendarOutlined />, onClick: () => void generateRegisterForRecord(record) } : null,
+            record.lifecycleBucket !== 'completed' && isOverdueRecord(record)
+                ? { key: 'overdue', label: 'Overdue reason', icon: <ClockCircleOutlined />, onClick: () => openOverdueModal(record) } : null
+        ].filter(Boolean) as { key: string; label: string; icon: React.ReactNode; onClick: () => void }[]
+    }
+
+    const STATUS_PILL: Record<DisplayStatus, { label: string; tone: string }> = {
+        disputed: { label: 'Disputed', tone: 'danger' },
+        closed: { label: 'Closed', tone: 'neutral' },
+        'no-attendance': { label: 'No attendance', tone: 'danger' },
+        completed: { label: 'Completed', tone: 'success' },
+        'awaiting-confirmation': { label: 'Awaiting sign-off', tone: 'info' },
+        declined: { label: 'Declined', tone: 'danger' },
+        'awaiting-response': { label: 'Awaiting RSVP', tone: 'warning' },
+        'in-delivery': { label: 'In delivery', tone: 'info' },
+        active: { label: 'Assigned', tone: 'neutral' }
+    }
+
+    /** The timeline of progress updates and evidence uploads, newest first. */
+    const renderProgressUpdates = () => detailsProgressUpdates.length ? (
+        <ol className="al-timeline">
+            {detailsProgressUpdates.map((update: any, index: number) => {
+                const isEvidence = String(update.type || '').startsWith('evidence-uploaded') || update.type === 'poe-uploaded'
+                const date = toJsDate(update.createdAt)
+                const done = Number(update.computedProgress || 0) >= 100
+                return (
+                    <li key={`${String(update.createdAt || index)}-${index}`} className={`al-timeline-item${done ? ' is-done' : ''}`}>
+                        <span className="al-timeline-dot" aria-hidden="true" />
+                        <div className="al-timeline-head">
+                            <span className="al-timeline-what">{isEvidence ? `POE uploaded${update.participantCount > 1 ? ` for ${update.participantCount} SMEs` : ''}` : Number.isFinite(Number(update.computedProgress)) ? `${clampPercent(update.computedProgress)}%` : 'Update'}</span>
+                            {update.participantNames?.length === 1 && <span className="al-timeline-who">{update.participantNames[0]}</span>}
+                            <span className="al-timeline-when">{date ? dayjs(date).format('D MMM YYYY, HH:mm') : ''}</span>
+                        </div>
+                        <p className="al-timeline-text">{isEvidence ? 'Evidence added to the intervention.' : update.note || 'Progress updated.'}</p>
+                    </li>
+                )
+            })}
+        </ol>
+    ) : (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No progress updates yet" />
+    )
+
+    const renderWorkList = () => {
+        const pageRows = listRows.slice((listPage - 1) * LIST_PAGE_SIZE, listPage * LIST_PAGE_SIZE)
+        return (
+            <div data-guide="allocated-table">
+                <MotionCard>
+                    {listRows.length === 0 ? (
+                        <Empty className="ws-list-empty" description={workStatus === 'needs-you' ? 'Nothing needs you right now.' : 'No interventions match.'} />
+                    ) : (
+                        <>
+                            <div className="ws-rows" role="listbox" aria-label="Interventions">
+                                {pageRows.map(record => {
+                                    const status = resolveDisplayStatus(record)
+                                    const progress = record.progressResolved ?? getProgressPercent(record)
+                                    const pill = STATUS_PILL[status]
+                                    const who = record.isGroupedDisplay
+                                        ? `${record.memberCount || record.members?.length || 0} SMEs`
+                                        : record.participantName || record.beneficiaryName || 'SME'
+                                    const flags = needsOf(record)
+                                    return (
+                                        <button
+                                            key={record.id}
+                                            type="button"
+                                            role="option"
+                                            aria-selected={record.id === detailsRecord?.id}
+                                            className={`ws-row${record.id === detailsRecord?.id ? ' is-selected' : ''}`}
+                                            onClick={() => selectRecord(record, true)}
+                                        >
+                                            {renderSmeAvatar(record, 36)}
+                                            <div className="ws-row-main">
+                                                <div className="ws-row-name">{record.interventionTitle || 'Untitled intervention'}</div>
+                                                <div className="ws-row-meta">
+                                                    {[who, getSubInterventionLabel(record), record.lifecycleBucket !== 'completed' && status !== 'awaiting-confirmation' ? `${clampPercent(progress)}%` : null].filter(Boolean).join(' · ')}
+                                                </div>
+                                                {flags.length > 0 && (
+                                                    <div className="mv-row-flags">
+                                                        {flags.map(flag => <span key={flag.label} className={`mv-flag is-${flag.tone}`}>{flag.label}</span>)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="ws-row-side">
+                                                <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
+                                            </div>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                            {listRows.length > LIST_PAGE_SIZE && (
+                                <div className="ws-pagination">
+                                    <Pagination size="small" current={listPage} pageSize={LIST_PAGE_SIZE} total={listRows.length} onChange={setListPage} showSizeChanger={false} showLessItems />
+                                </div>
+                            )}
+                        </>
+                    )}
+                </MotionCard>
+            </div>
+        )
+    }
+
+    const renderDetailPanel = (record: DisplayIntervention) => {
+        const primary = primaryActionFor(record)
+        const secondary = secondaryActionsFor(record, primary?.key)
+        const progress = record.progressResolved ?? getProgressPercent(record)
+        const status = resolveDisplayStatus(record)
+        const pill = STATUS_PILL[status]
+        const queries = Array.from(new Map((record.queries || []).map(q => [q.id, q])).values())
+        const waiting = queries.filter(q => String(q.status || 'open').toLowerCase() === 'open')
+        const earlier = queries.filter(q => String(q.status || 'open').toLowerCase() !== 'open')
+        const evidence = getEvidenceEntriesFromRecord(record)
+        const overdue = record.lifecycleBucket !== 'completed' && isOverdueRecord(record)
+        const tabs = [
+            { label: 'Overview', value: 'overview' as const, icon: <AppstoreOutlined /> },
+            ...(record.isGroupedDisplay ? [{ label: 'Members', value: 'members' as const, icon: <TeamOutlined /> }] : []),
+            { label: 'Sessions', value: 'sessions' as const, icon: <CalendarOutlined /> },
+            { label: 'Updates', value: 'updates' as const, icon: <HistoryOutlined /> },
+            { label: `Queries${waiting.length ? ` (${waiting.length})` : ''}`, value: 'queries' as const, icon: <QuestionCircleOutlined /> }
+        ]
+        return (
+            <div className="ws-detail">
+                <MotionCard>
+                    <header className="ws-detail-head">
+                        {renderSmeAvatar(record, 52)}
+                        <div className="ws-detail-identity">
+                            <h2 className="ws-detail-name">{record.interventionTitle || 'Untitled intervention'}</h2>
+                            <div className="ws-detail-sub">
+                                {[record.isGroupedDisplay ? `Grouped · ${record.memberCount || record.members?.length || 0} SMEs` : record.participantName || record.beneficiaryName, getSubInterventionLabel(record)].filter(Boolean).join(' · ')}
+                            </div>
+                            <div className="ws-detail-tags">
+                                <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
+                                {overdue && <StatusPill tone="danger">Overdue</StatusPill>}
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="mv-detail-body">
+                        {(primary || secondary.length > 0) && (
+                            <div className="mv-actions">
+                                {primary && (
+                                    <Button
+                                        type="primary"
+                                        danger={(primary as any).danger}
+                                        icon={primary.icon}
+                                        loading={(primary.key === 'remind' && remindingIds.includes(record.id))}
+                                        onClick={primary.onClick}
+                                    >
+                                        {primary.label}
+                                    </Button>
+                                )}
+                                {secondary.map(action => (
+                                    <Button
+                                        key={action.key}
+                                        icon={action.icon}
+                                        loading={(action.key === 'remind' && remindingIds.includes(record.id)) || (action.key === 'register' && generatingRegisterId === record.id)}
+                                        onClick={action.onClick}
+                                    >
+                                        {action.label}
+                                    </Button>
+                                ))}
+                            </div>
+                        )}
+
+                        {status === 'disputed' && (
+                            <Alert
+                                type="error"
+                                showIcon
+                                message={`${record.isGroupedDisplay ? 'An SME' : 'The SME'} disputes the completion`}
+                                description={getCompletionRejectionReason((record.members || [record]).find(m => resolveAssignmentLifecycle(m).key === 'participant-rejected') || record) || 'Respond to say whether you’ll correct it, deliver what’s missing, or stand by the record.'}
+                            />
+                        )}
+
+                        {/* Progress only while it's being delivered; a disputed delivery is explained above instead. */}
+                        {['in-delivery', 'active', 'awaiting-response'].includes(status) && (
+                            <Progress percent={clampPercent(progress)} status="active" />
+                        )}
+
+                        <SetupSegmented fullWidth value={detailsTab} onChange={value => setDetailsTab(value)} options={tabs} />
+
+                        <div key={detailsTab} className="allocated-tab-pane">
+                            {detailsTab === 'overview' && (
+                                <>
+                                    {/* The overview carries its own dates and completion status. */}
+                                    {renderDetailsDescriptions(record)}
+                                    {!isDocumentTarget(record) && (evidence.length > 0 || progress >= 100 || record.lifecycleBucket === 'completed') && (
+                                        <section>
+                                            <h3 className="ws-section-title">Evidence</h3>
+                                            {evidence.length ? (
+                                                <div className="qc-evidence">
+                                                    {evidence.map((entry, index) => (
+                                                        <Button key={`${entry.value}-${index}`} size="small" icon={<EyeOutlined />} onClick={() => window.open(entry.value, '_blank', 'noopener')}>
+                                                            {evidenceDisplayName(entry, index)}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <Text type="secondary">No evidence yet.</Text>
+                                            )}
+                                        </section>
+                                    )}
+                                </>
+                            )}
+                            {record.isGroupedDisplay && detailsTab === 'members' && renderGroupedMembers(record)}
+                            {detailsTab === 'sessions' && renderSessionsPanel(record)}
+                            {detailsTab === 'updates' && renderProgressUpdates()}
+                            {detailsTab === 'queries' && (
+                                queries.length ? (
+                                    <>
+                                        {waiting.length > 0 && (
+                                            <section>
+                                                <h3 className="ws-section-title">Waiting for your answer</h3>
+                                                <QueryInbox queries={waiting} onAnswer={q => answerQuery(record, q)} />
+                                            </section>
+                                        )}
+                                        {earlier.length > 0 && (
+                                            <section>
+                                                <h3 className="ws-section-title">{waiting.length ? 'Earlier' : 'Queries'}</h3>
+                                                <QueryThread queries={earlier} readOnly />
+                                            </section>
+                                        )}
+                                    </>
+                                ) : (
+                                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No queries on this intervention." />
+                                )
+                            )}
+                        </div>
+                    </div>
+                </MotionCard>
+            </div>
+        )
+    }
+
     const showInitialLoading = identityLoading || (loading && !hasLoadedOnce)
 
     return (
-        <div style={{ padding: '5px 24px' }}>
+        <div className="ws-page">
             <Helmet>
-                <title>Allocated Interventions | Smart Incubation</title>
+                <title>My interventions | Smart Incubation</title>
             </Helmet>
+
+            <style>{`
+                .allocated-card-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+                .allocated-card-actions > .ant-btn { flex: 1 1 0; min-width: fit-content; justify-content: center; }
+                .ant-tag { border-radius: 999px; }
+                .allocated-clickable-row { cursor: pointer; }
+                @keyframes allocatedTabIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+                .allocated-tab-pane { display: flex; flex-direction: column; gap: 10px; animation: allocatedTabIn 0.25s ease-out; }
+                @media (prefers-reduced-motion: reduce) { .allocated-tab-pane { animation: none; } }
+                .allocated-clickable-row:focus-visible { outline: 2px solid #1677ff; outline-offset: -2px; }
+                .allocated-remind-all { display: flex !important; }
+                .allocated-remind-all > .ant-space-item { flex: 1 1 100%; }
+            `}</style>
 
             {showInitialLoading ? (
                 <PageSkeleton variant='list' />
             ) :
                 (
                     <>
-                        {/*
-                          The metrics are the workflow filter. They already
-                          carry the counts, so a separate Segmented repeated the
-                          same four choices directly underneath them. Selecting
-                          a metric filters the table; selecting it again clears
-                          back to Total.
-                        */}
-                        <div data-guide="allocated-status">
-                            <Row data-guide="allocated-metrics" gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                                <Col flex={metricColFlex} style={{ minWidth: 0 }}>
-                                    <MotionCard.Metric
-                                        loading={loading}
-                                        title="Total"
-                                        value={metrics.total}
-                                        icon={<TeamOutlined style={{ color: '#1677ff' }} />}
-                                        iconBg="rgba(22,119,255,.12)"
-                                        onClick={() => setQuickStatus('all')}
-                                        wrapperStyle={quickStatusStyle('all')}
-                                    />
-                                </Col>
+                        <DashboardFilterBar>
+                            <div className="ws-toolbar" data-guide="allocated-filters">
+                                {/* Status first: what needs the facilitator is the first thing to see. */}
+                                <Segmented
+                                    data-guide="allocated-status"
+                                    className="ws-toolbar-status mv-status-strip"
+                                    block
+                                    value={workStatus}
+                                    onChange={value => setWorkStatus(value as WorkStatus)}
+                                    aria-label="Filter by status"
+                                    options={WORK_SEGMENTS.map(segment => ({
+                                        value: segment.value,
+                                        label: (
+                                            <span className="mv-seg">
+                                                {segment.label}
+                                                {!loading && <span className={`mv-seg-count qtx-tone-${segment.tone}`}>{workCounts[segment.value]}</span>}
+                                            </span>
+                                        )
+                                    }))}
+                                />
+                                <Input
+                                    className="ws-toolbar-search"
+                                    allowClear
+                                    prefix={<SearchOutlined />}
+                                    placeholder="Search SME, intervention or sector"
+                                    value={searchText}
+                                    onChange={event => setSearchText(event.target.value)}
+                                    aria-label="Search interventions"
+                                />
+                                <Popover
+                                    trigger="click"
+                                    placement="bottomLeft"
+                                    title="Filters"
+                                    content={
+                                        <FilterPanel canReset={!!(dateRange?.[0] || dateRange?.[1])} onReset={() => setDateRange(null)}>
+                                            <div>
+                                                <label className="ws-filter-label" htmlFor="allocated-dates">
+                                                    Assigned (or completed) between
+                                                </label>
+                                                <RangePicker
+                                                    id="allocated-dates"
+                                                    style={{ width: '100%' }}
+                                                    value={dateRange}
+                                                    onChange={values => setDateRange(values as [Dayjs | null, Dayjs | null] | null)}
+                                                    allowEmpty={[true, true]}
+                                                    format="D MMM YYYY"
+                                                />
+                                            </div>
+                                        </FilterPanel>
+                                    }
+                                >
+                                    <Badge className="ws-toolbar-button" count={dateRange?.[0] || dateRange?.[1] ? 1 : 0} size="small" offset={[-6, 4]}>
+                                        <Button block icon={<FilterOutlined />}>Filters</Button>
+                                    </Badge>
+                                </Popover>
+                                {/* Remind everyone only where it applies: the "Awaiting sign-off" list. */}
+                                {workStatus === 'awaiting' && workCounts.awaiting > 0 && (
+                                    <Button className="ws-toolbar-button" icon={<BellOutlined />} loading={bulkReminding} onClick={sendReminderToAllVisible}>
+                                        Remind all
+                                    </Button>
+                                )}
+                            </div>
+                        </DashboardFilterBar>
 
-                                <Col flex={metricColFlex} style={{ minWidth: 0 }}>
-                                    <MotionCard.Metric
-                                        loading={loading}
-                                        title="In Delivery"
-                                        value={metrics.inDelivery}
-                                        icon={<EditOutlined style={{ color: '#722ed1' }} />}
-                                        iconBg="rgba(114,46,209,.12)"
-                                        onClick={() => toggleQuickStatus('in-delivery')}
-                                        wrapperStyle={quickStatusStyle('in-delivery')}
-                                    />
-                                </Col>
-
-                                <Col flex={metricColFlex} style={{ minWidth: 0 }}>
-                                    <MotionCard.Metric
-                                        loading={loading}
-                                        title="Pending Sign-off"
-                                        value={metrics.awaitingSmeCompletionConfirm}
-                                        icon={<FileProtectOutlined style={{ color: '#eb2f96' }} />}
-                                        iconBg="rgba(235,47,150,.12)"
-                                        onClick={() => toggleQuickStatus('awaiting-confirmation')}
-                                        wrapperStyle={quickStatusStyle('awaiting-confirmation')}
-                                    />
-                                </Col>
-
-                                <Col flex={metricColFlex} style={{ minWidth: 0 }}>
-                                    <MotionCard.Metric
-                                        loading={loading}
-                                        title="Completed"
-                                        value={metrics.completed}
-                                        icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                                        iconBg="rgba(82,196,26,.12)"
-                                        onClick={() => toggleQuickStatus('completed')}
-                                        wrapperStyle={quickStatusStyle('completed')}
-                                    />
-                                </Col>
-
-                                <Col flex={metricColFlex} style={{ minWidth: 0 }}>
-                                    <div data-guide="open-queries-metric">
-                                        <MotionCard.Metric
-                                            loading={loading}
-                                            title="Open Queries"
-                                            value={historyQueryMetrics.totalOpen}
-                                            icon={<WarningOutlined style={{ color: '#fa8c16' }} />}
-                                            iconBg="rgba(250,140,22,.12)"
-                                            onClick={openAllOpenQueriesModal}
-                                        />
-                                    </div>
-                                </Col>
-                            </Row>
-                        </div>
-
-                        <MotionCard
-                            filterBar={
-                                <Row data-guide="allocated-filters" gutter={[12, 12]} align="middle">
-                                    <Col xs={24} md={12} lg={7}>
-                                        <Search
-                                            placeholder="Search beneficiary, intervention, sector, province..."
-                                            allowClear
-                                            value={searchText}
-                                            onChange={e => setSearchText(e.target.value)}
-                                        />
-                                    </Col>
-
-                                    <Col xs={24} md={12} lg={6}>
-                                        <RangePicker
-                                            value={dateRange}
-                                            onChange={values => setDateRange(values as [Dayjs | null, Dayjs | null] | null)}
-                                            allowEmpty={[true, true]}
-                                            placeholder={['Activity from', 'Activity to']}
-                                            style={{ width: '100%' }}
-                                        />
-                                    </Col>
-
-                                    <Col xs={24} md={12} lg={5}>
-                                        <Select
-                                            value={workflowFilter}
-                                            onChange={setWorkflowFilter}
-                                            style={{ width: '100%' }}
-                                            options={[
-                                                { value: 'all', label: 'All workflows' },
-                                                { value: 'awaiting-participant-acceptance', label: 'Awaiting appointment response' },
-                                                { value: 'in-delivery', label: 'In delivery' },
-                                                { value: 'awaiting-participant-confirmation', label: 'Awaiting SME confirmation' },
-                                                { value: 'participant-rejected', label: 'Completion rejected' },
-                                                { value: 'completed', label: 'Completed' },
-                                                { value: 'no-attendance', label: 'No sessions attended' }
-                                            ]}
-                                        />
-                                    </Col>
-
-                                    <Col xs={24} md={12} lg={6}>
-                                        <Space wrap style={{ width: '100%', justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
-                                            <Button
-                                                shape="round"
-                                                variant="filled"
-                                                color="orange"
-                                                style={{ border: '1px solid orange' }}
-                                                icon={<BellOutlined />}
-                                                loading={bulkReminding}
-                                                onClick={sendReminderToAllVisible}
-                                            >
-                                                Remind All Confirmations
-                                            </Button>
-                                        </Space>
-                                    </Col>
-                                </Row>
-                            }
-                        >
-                            {filteredData.length === 0 ? (
-                                <Empty description="No interventions found." />
-                            ) : isMobile ? (
-                                <div data-guide="allocated-table">
-                                    <List
-                                        dataSource={filteredData}
-                                        renderItem={(item) =>
-                                            item.lifecycleBucket === 'completed'
-                                                ? renderHistoryCard(item)
-                                                : renderAllocatedCard(item)
-                                        }
-                                    />
-                                </div>
-                            ) : (
-                                <div data-guide="allocated-table">
-                                    <Table
-                                        columns={columns}
-                                        dataSource={filteredData}
-                                        rowKey="id"
-                                        pagination={{
-                                            pageSize: 5,
-                                            showSizeChanger: false,
-                                            position: ['bottomCenter']
-                                        }}
-                                        scroll={{ x: 'max-content' }}
-                                    />
+                        <div className="ws-layout">
+                            {renderWorkList()}
+                            {!isMobile && (
+                                <div className="ws-detail-sticky">
+                                    {detailsRecord ? renderDetailPanel(detailsRecord) : (
+                                        <MotionCard>
+                                            <Empty className="ws-detail-empty" description="Select an intervention to see it here." />
+                                        </MotionCard>
+                                    )}
                                 </div>
                             )}
+                        </div>
 
-                            <Modal
-                                centered
-                                styles={compactModalStyles}
-                                open={detailsModalOpen}
-                                title="Intervention Details"
-                                footer={
-                                    detailsRecord && detailsRecord.lifecycleBucket === 'active'
-                                        ? [
-                                            ...(Number(detailsRecord.progressResolved ?? getProgressPercent(detailsRecord)) < 100 ? [
-                                                <Button
-                                                    key="progress"
-                                                    type="primary"
-                                                    icon={<EditOutlined />}
-                                                    onClick={() => {
-                                                        const record = detailsRecord
-                                                        setDetailsModalOpen(false)
-                                                        setDetailsRecord(null)
-                                                        openProgressModal(record)
-                                                    }}
-                                                >
-                                                    Add Progress
-                                                </Button>
-                                            ] : []),
-                                            canSendReminderRecord(detailsRecord) ? (
-                                                <Button
-                                                    key="remind"
-                                                    shape="round"
-                                                    variant="filled"
-                                                    color="orange"
-                                                    style={{ border: '1px solid orange' }}
-                                                    icon={<BellOutlined />}
-                                                    loading={remindingIds.includes(detailsRecord.id)}
-                                                    onClick={() => sendReminder(detailsRecord)}
-                                                >
-                                                    {detailsRecord.isGroupedDisplay ? 'Remind All Confirmations' : 'Send Confirmation Reminder'}
-                                                </Button>
-                                            ) : null,
-                                            <Button
-                                                key="close"
-                                                danger
-                                                onClick={() => {
-                                                    setDetailsModalOpen(false)
-                                                    setDetailsRecord(null)
-                                                }}
-                                            >
-                                                Close
-                                            </Button>
-                                        ].filter(Boolean)
-                                        : [
-                                            <Button
-                                                danger
-                                                key="close"
-                                                onClick={() => {
-                                                    setDetailsModalOpen(false)
-                                                    setDetailsRecord(null)
-                                                }}
-                                            >
-                                                Close
-                                            </Button>
-                                        ]
-                                }
-                                width={isMobile ? '100%' : 'min(1100px, calc(100vw - 32px))'}
-                                onCancel={() => {
-                                    setDetailsModalOpen(false)
-                                    setDetailsRecord(null)
-                                }}
-                                destroyOnClose
+                        {isMobile && (
+                            <Drawer
+                                className="ws-drawer ws-sheet"
+                                open={detailsModalOpen && !!detailsRecord}
+                                onClose={() => setDetailsModalOpen(false)}
+                                placement="bottom"
+                                height="92vh"
+                                title={detailsRecord?.interventionTitle || 'Intervention'}
                             >
-                                {!detailsRecord ? (
-                                    <Empty description="No intervention selected" />
-                                ) : (
-                                    <Space direction="vertical" style={{ width: '100%' }} size={10}>
-                                        {/*
-                                          The summary strip carries everything
-                                          you need before choosing a tab: what
-                                          it is, who it is for, where it stands
-                                          and the dates. Progress lives here
-                                          rather than inside Overview so it does
-                                          not disappear when you switch tabs.
-                                        */}
-                                        <Card
-                                            size="small"
-                                            styles={{ body: { padding: 14 } }}
-                                            style={{
-                                                borderRadius: 12,
-                                                background: isDark ? 'rgba(255,255,255,0.03)' : '#fafafa',
-                                                border: `1px solid ${isDark ? 'rgba(255,255,255,0.10)' : '#f0f0f0'}`
-                                            }}
-                                        >
-                                            <Row gutter={[16, 12]} align="middle">
-                                                <Col xs={24} md={14}>
-                                                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                                        <Text strong style={{ fontSize: 15 }}>
-                                                            {detailsRecord.interventionTitle || 'Untitled intervention'}
-                                                        </Text>
-                                                        <Space wrap size={[8, 4]}>
-                                                            {detailsRecord.isGroupedDisplay ? (
-                                                                <Tag color="purple" icon={<AppstoreOutlined />} style={{ marginInlineEnd: 0 }}>
-                                                                    Grouped • {detailsRecord.memberCount || detailsRecord.members?.length || 0} SMEs
-                                                                </Tag>
-                                                            ) : (
-                                                                <Text type="secondary">
-                                                                    {detailsRecord.participantName || detailsRecord.beneficiaryName || detailsRecord.participantId || '-'}
-                                                                </Text>
-                                                            )}
-                                                            {detailsRecord.isGroupedDisplay
-                                                                ? groupedStatusTag(detailsRecord)
-                                                                : statusTag(detailsRecord)}
-                                                        </Space>
-                                                        <Text type="secondary" style={{ fontSize: 12 }}>
-                                                            {getSubInterventionLabel(detailsRecord) || 'No sub-intervention'}
-                                                        </Text>
-                                                    </Space>
-                                                </Col>
+                                {detailsRecord && renderDetailPanel(detailsRecord)}
+                            </Drawer>
+                        )}
 
-                                                <Col xs={24} md={10}>
-                                                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                                        <Progress
-                                                            percent={detailsRecord.progressResolved ?? getProgressPercent(detailsRecord)}
-                                                            status={detailsRecord.lifecycleBucket === 'completed' ? 'success' : 'active'}
-                                                            strokeWidth={10}
-                                                        />
-                                                        <Space wrap size={[12, 2]}>
-                                                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                                                Assigned {formatDate(detailsRecord.assignedAtResolved ?? getAssignedAt(detailsRecord))}
-                                                            </Text>
-                                                            {detailsRecord.lifecycleBucket === 'completed' ? (
-                                                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                                                    Completed {formatDate(detailsRecord.completedAtResolved)}
-                                                                </Text>
-                                                            ) : (
-                                                                <Text
-                                                                    type={isOverdueRecord(detailsRecord) ? 'danger' : 'secondary'}
-                                                                    style={{ fontSize: 12 }}
-                                                                >
-                                                                    Due {formatDate(detailsRecord.dueDate)}
-                                                                </Text>
-                                                            )}
-                                                        </Space>
-                                                    </Space>
-                                                </Col>
-                                            </Row>
-                                        </Card>
-
-                                        <Segmented
-                                            block
-                                            value={detailsTab}
-                                            onChange={(value) => setDetailsTab(value as typeof detailsTab)}
-                                            options={[
-                                                { label: 'Overview', value: 'overview' },
-                                                ...(detailsRecord.isGroupedDisplay
-                                                    ? [{ label: 'Members', value: 'members' }]
-                                                    : []),
-                                                { label: 'Sessions', value: 'sessions' },
-                                                { label: 'Progress updates', value: 'updates' }
-                                            ]}
-                                        />
-
-                                        {/* Progress now lives in the summary strip above. */}
-                                        {detailsTab === 'overview'
-                                            ? renderDetailsDescriptions(detailsRecord)
-                                            : null}
-
-                                        {detailsRecord.isGroupedDisplay && detailsTab === 'members' ? (
-                                            renderGroupedMembers(detailsRecord)
-                                        ) : null}
-
-                                        {detailsTab === 'sessions' ? (
-                                            renderSessionsPanel(detailsRecord)
-                                        ) : null}
-
-                                        {detailsTab === 'updates' && detailsProgressImages.length ? (
-                                            <Card size="small" title="Progress images" style={{ borderRadius: 12 }}>
-                                                <Carousel arrows dots>
-                                                    {detailsProgressImages.map((resource, index) => (
-                                                        <div key={`${resource.link}-${index}`}>
-                                                            <div style={{
-                                                                height: isMobile ? 260 : 420,
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                background: '#f5f5f5',
-                                                                borderRadius: 10,
-                                                                overflow: 'hidden'
-                                                            }}>
-                                                                <Image
-                                                                    src={resource.link}
-                                                                    alt={resource.label || `Progress image ${index + 1}`}
-                                                                    style={{ maxHeight: isMobile ? 250 : 410, objectFit: 'contain' }}
-                                                                />
-                                                            </div>
-                                                            <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-                                                                {resource.updateNote || resource.label}
-                                                            </Text>
-                                                        </div>
-                                                    ))}
-                                                </Carousel>
-                                            </Card>
-                                        ) : null}
-
-                                        {detailsTab === 'updates' ? <Card size="small" title="Progress updates" style={{ borderRadius: 12 }}>
-                                            {detailsProgressUpdates.length ? (
-                                                <div style={{ maxHeight: 320, overflowY: 'auto', overflowX: 'hidden', padding: '14px 8px 14px 4px' }}>
-                                                    {detailsProgressUpdates.map((update, index) => {
-                                                        const isEvidence = String(update.type || '').startsWith('evidence-uploaded') || update.type === 'poe-uploaded'
-                                                        const date = toJsDate(update.createdAt)
-                                                        return (
-                                                            <div key={`${String(update.createdAt || index)}-${index}`} style={{ display: 'flex', width: '100%', minWidth: 0 }}>
-                                                                <div style={{ width: 156, flex: '0 0 156px', paddingRight: 12, textAlign: 'right', color: '#595959', fontSize: 12 }}>
-                                                                    {date ? dayjs(date).format('DD MMM YYYY, HH:mm') : 'Date unavailable'}
-                                                                </div>
-                                                                <div style={{ width: 18, flex: '0 0 18px', position: 'relative', display: 'flex', justifyContent: 'center' }}>
-                                                                    {index < detailsProgressUpdates.length - 1 ? <div style={{ position: 'absolute', top: 8, bottom: -16, width: 2, background: '#d9d9d9' }} /> : null}
-                                                                    <span style={{ position: 'relative', zIndex: 1, marginTop: 4, width: 9, height: 9, borderRadius: '50%', background: Number(update.computedProgress || 0) >= 100 ? '#52c41a' : '#1677ff', border: '2px solid #fff', boxShadow: '0 0 0 1px currentColor' }} />
-                                                                </div>
-                                                                <div style={{ flex: 1, minWidth: 0, padding: '0 0 18px 12px' }}>
-                                                                    <Space direction="vertical" size={2} style={{ maxWidth: '100%', minWidth: 0 }}>
-                                                                        <Space wrap>
-                                                                            {isEvidence ? <Text strong>POE uploaded{update.participantCount > 1 ? ` (${update.participantCount})` : ''}</Text> : null}
-                                                                            {update.participantNames?.length === 1 ? <Tag>{update.participantNames[0]}</Tag> : null}
-                                                                            {Number.isFinite(Number(update.computedProgress)) ? <Tag color="blue">{clampPercent(update.computedProgress)}%</Tag> : null}
-                                                                        </Space>
-                                                                        <Text style={{ overflowWrap: 'anywhere' }}>
-                                                                            {isEvidence ? 'Evidence added to the intervention.' : (update.note || 'Progress updated.')}
-                                                                        </Text>
-                                                                    </Space>
-                                                                </div>
-                                                            </div>
-                                                        )
-                                                    })}
-                                                </div>
-                                            ) : (
-                                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No progress updates yet" />
-                                            )}
-                                        </Card> : null}
-                                    </Space>
-                                )}
-                            </Modal>
-
+                        <>
                             <Modal
                                 className="guide-progress-modal"
                                 styles={progressModalStyles}
@@ -5122,8 +4839,11 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                             {completionProgressEvidence.length ? (
                                                 <Button
                                                     size="large"
+                                                    shape="round"
+                                                    icon={<ArrowLeftOutlined />}
                                                     onClick={() => setProgressModalStep(1)}
                                                     disabled={savingEvidence}
+                                                    style={{ flex: '0 0 40%' }}
                                                 >
                                                     Back
                                                 </Button>
@@ -5132,6 +4852,8 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                 block
                                                 type="primary"
                                                 size="large"
+                                                shape="round"
+                                                icon={<CheckCircleOutlined />}
                                                 className="guide-progress-submit"
                                                 loading={savingEvidence}
                                                 disabled={
@@ -5192,7 +4914,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                         styles={{ body: { padding: 14 } }}
                                                         style={{
                                                             borderRadius: 14,
-                                                            borderColor: isDark ? 'rgba(74,155,255,0.24)' : '#e6eaf0',
+                                                            borderColor: isDark ? 'rgba(74, 155, 255,0.24)' : '#e6eaf0',
                                                             background: isDark ? 'rgba(255,255,255,0.035)' : '#fafbfc'
                                                         }}
                                                     >
@@ -5564,36 +5286,26 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                         scrollToFirstError
                                     >
                                         <Space direction="vertical" size={14} style={{ width: '100%' }}>
-                                            <Card
-                                                size="small"
-                                                styles={{ body: { padding: '9px 12px' } }}
-                                                style={{
-                                                    borderRadius: 12,
-                                                    borderColor: isDark ? 'rgba(82,196,26,0.26)' : '#d9f7be',
-                                                    background: isDark ? 'rgba(82,196,26,0.08)' : '#f6ffed'
-                                                }}
-                                            >
-                                                <div
-                                                    style={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'space-between',
-                                                        gap: 12,
-                                                        flexWrap: 'wrap'
-                                                    }}
-                                                >
-                                                    <Space size={8}>
-                                                        <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                                                        <Text strong>Delivery complete</Text>
-                                                        <Tag color="green" style={{ marginInlineEnd: 0 }}>100%</Tag>
+                                            <IncubateeBanner
+                                                participantId={progressRecord?.isGroupedDisplay ? null : progressRecord?.participantId}
+                                                companyName={progressRecord?.beneficiaryName || progressRecord?.participantName}
+                                                photoUrl={photoByParticipantId[String(progressRecord?.participantId || '')]}
+                                                groupCount={progressRecord?.isGroupedDisplay ? completionMovAssignments.length + completionMovExcludedAssignments.length : undefined}
+                                                groupTitle={progressRecord?.interventionTitle}
+                                                subtitle={progressRecord?.isGroupedDisplay ? undefined : progressRecord?.interventionTitle}
+                                                extra={
+                                                    <Space direction="vertical" size={4} align="end">
+                                                        <Tag color="green" icon={<CheckCircleOutlined />} style={pillTag}>
+                                                            Delivery complete · 100%
+                                                        </Tag>
+                                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                                            {completionDeliveryMethod
+                                                                ? `Delivery: ${completionDeliveryMethod}`
+                                                                : 'Delivery method not recorded'}
+                                                        </Text>
                                                     </Space>
-                                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                                        {completionDeliveryMethod
-                                                            ? `Delivery: ${completionDeliveryMethod}`
-                                                            : 'Delivery method not recorded'}
-                                                    </Text>
-                                                </div>
-                                            </Card>
+                                                }
+                                            />
 
                                             {completionFailureMessage ? (
                                                 <Alert
@@ -5708,30 +5420,25 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
 
                                             {progressModalStep === 2 ? (
                                                 <>
-                                                    <Row gutter={[16, 16]}>
+                                                    <Row gutter={[20, 20]}>
                                                         <Col xs={24} md={12}>
                                                             <Card
-                                                                size="small"
-                                                                style={{ borderRadius: 12, height: '100%' }}
-                                                                styles={{ body: { padding: 12 } }}
-                                                                title={
-                                                                    <Space size={8} wrap>
-                                                                        <FileProtectOutlined />
-                                                                        <Text strong>MOV</Text>
-                                                                        <Tag color="red" style={{ marginInlineEnd: 0 }}>Required</Tag>
+                                                                {...evidenceCardProps}
+                                                                title={<EvidenceCardTitle title="MOV" tone="required" />}
+                                                                extra={
+                                                                    <Space size={6}>
+                                                                        <Tag color="red" style={pillTag}>Required</Tag>
+                                                                        <Tag
+                                                                            color={completionMovUploadedCount === completionMovAssignments.length ? 'green' : 'gold'}
+                                                                            style={pillTag}
+                                                                        >
+                                                                            {completionMovUploadedCount}/{completionMovAssignments.length} ready
+                                                                        </Tag>
                                                                     </Space>
                                                                 }
-                                                                extra={
-                                                                    <Tag
-                                                                        color={completionMovUploadedCount === completionMovAssignments.length ? 'green' : 'gold'}
-                                                                        style={{ marginInlineEnd: 0 }}
-                                                                    >
-                                                                        {completionMovUploadedCount}/{completionMovAssignments.length} ready
-                                                                    </Tag>
-                                                                }
                                                             >
-                                                                <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                                                                    <Text type="secondary" style={{ fontSize: 13 }}>
                                                                         Proof the service was delivered.{' '}
                                                                         {progressRecord?.isGroupedDisplay
                                                                             ? 'Upload the signed MOV for each SME who received it.'
@@ -5746,7 +5453,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                     ) : null}
 
                                                     {completionMovAssignments.length ? (
-                                                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                                        <Space direction="vertical" size={18} style={{ width: '100%' }}>
                                                             {completionMovAssignments.map(assignment => {
                                                                 const selectedFile = completionMovFilesByAssignment[assignment.id]
                                                                 const rawFile = selectedFile?.originFileObj || selectedFile
@@ -5758,17 +5465,8 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                                     'SME'
 
                                                                 return (
-                                                                    <Card
-                                                                        key={assignment.id}
-                                                                        size="small"
-                                                                        styles={{ body: { padding: 10 } }}
-                                                                        style={{
-                                                                            borderRadius: 11,
-                                                                            borderColor: selectedFile
-                                                                                ? isDark ? 'rgba(82,196,26,0.30)' : '#b7eb8f'
-                                                                                : undefined
-                                                                        }}
-                                                                    >
+                                                                    <div key={assignment.id}>
+                                                                        {progressRecord?.isGroupedDisplay ? (
                                                                         <div
                                                                             style={{
                                                                                 display: 'flex',
@@ -5807,12 +5505,17 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
 
                                                                             <Tag
                                                                                 color={selectedFile ? 'green' : 'gold'}
-                                                                                style={{ marginInlineEnd: 0, flex: '0 0 auto' }}
+                                                                                style={{ ...pillTag, flex: '0 0 auto' }}
                                                                             >
                                                                                 {selectedFile ? 'MOV ready' : 'MOV required'}
                                                                             </Tag>
 
+                                                                        </div>
+                                                                        ) : null}
+
+                                                                        <div style={{ marginTop: progressRecord?.isGroupedDisplay ? 10 : 0 }}>
                                                                             <Upload
+                                                                                className="completion-upload"
                                                                                 maxCount={1}
                                                                                 showUploadList={false}
                                                                                 beforeUpload={() => false}
@@ -5829,42 +5532,24 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                                                 accept=".pdf,.doc,.docx"
                                                                             >
                                                                                 <Button
-                                                                                    size="small"
+                                                                                    block
+                                                                                    shape="round"
+                                                                                    size="large"
+                                                                                    type="dashed"
                                                                                     icon={<UploadOutlined />}
                                                                                 >
-                                                                                    {selectedFile ? 'Replace' : 'Upload MOV'}
+                                                                                    {selectedFile ? 'Replace MOV' : 'Upload signed MOV'}
                                                                                 </Button>
                                                                             </Upload>
                                                                         </div>
 
                                                                         {selectedFile ? (
-                                                                            <div
-                                                                                style={{
-                                                                                    marginTop: 8,
-                                                                                    display: 'flex',
-                                                                                    alignItems: 'center',
-                                                                                    gap: 8,
-                                                                                    padding: '6px 8px',
-                                                                                    borderRadius: 8,
-                                                                                    background: isDark ? 'rgba(82,196,26,0.07)' : '#f6ffed'
-                                                                                }}
-                                                                            >
-                                                                                <span style={{ color: '#52c41a', fontSize: 18 }}>
-                                                                                    {getProgressFileIcon(fileName, rawFile?.type)}
-                                                                                </span>
-                                                                                <Text
-                                                                                    ellipsis={{ tooltip: fileName }}
-                                                                                    style={{ flex: 1, minWidth: 0, fontSize: 12 }}
-                                                                                >
-                                                                                    {fileName}
-                                                                                </Text>
-                                                                                <Button
-                                                                                    type="text"
-                                                                                    size="small"
-                                                                                    danger
-                                                                                    icon={<CloseOutlined />}
-                                                                                    aria-label={`Remove MOV for ${participantName}`}
-                                                                                    onClick={() => setCompletionMovFilesByAssignment(current => {
+                                                                            <div style={{ marginTop: 12 }}>
+                                                                                <EvidenceFileRow
+                                                                                    name={fileName}
+                                                                                    type={rawFile?.type}
+                                                                                    size={rawFile?.size}
+                                                                                    onRemove={() => setCompletionMovFilesByAssignment(current => {
                                                                                         const next = { ...current }
                                                                                         delete next[assignment.id]
                                                                                         return next
@@ -5872,7 +5557,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                                                 />
                                                                             </div>
                                                                         ) : null}
-                                                                    </Card>
+                                                                    </div>
                                                                 )
                                                             })}
                                                         </Space>
@@ -5889,23 +5574,19 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                         </Col>
                                                         <Col xs={24} md={12}>
                                                             <Card
-                                                                size="small"
-                                                                style={{ borderRadius: 12, height: '100%' }}
-                                                                styles={{ body: { padding: 12 } }}
+                                                                {...evidenceCardProps}
                                                                 title={
-                                                                    <Space size={8} wrap>
-                                                                        <FileProtectOutlined />
-                                                                        <Text strong>
-                                                                            {completionDeliverable.isConfigured
-                                                                                ? completionDeliverable.name
-                                                                                : 'Proof of Execution (POE)'}
-                                                                        </Text>
-                                                                        <Tag style={{ marginInlineEnd: 0 }}>Optional</Tag>
-                                                                    </Space>
+                                                                    <EvidenceCardTitle
+                                                                        title={completionDeliverable.isConfigured
+                                                                            ? completionDeliverable.name
+                                                                            : 'Proof of Execution (POE)'}
+                                                                        tone="optional"
+                                                                    />
                                                                 }
+                                                                extra={<Tag style={pillTag}>Optional</Tag>}
                                                             >
-                                                                <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                                                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                                                                    <Text type="secondary" style={{ fontSize: 13 }}>
                                                                         {completionDeliverable.isConfigured
                                                                             ? 'What was produced from this intervention. You can add it now or leave it out.'
                                                                             : 'Anything produced from this intervention. You can add it now or leave it out.'}
@@ -5917,7 +5598,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                                 <Space size={8}>
                                                                     <FileProtectOutlined />
                                                                     <Text strong>Current POEs</Text>
-                                                                    <Tag style={{ marginInlineEnd: 0 }}>{completionCurrentPoes.length}</Tag>
+                                                                    <Tag style={pillTag}>{completionCurrentPoes.length}</Tag>
                                                                 </Space>
                                                             }
                                                             styles={{ body: { padding: 8 } }}
@@ -6000,6 +5681,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                     ) : null}
 
                                                     <Upload
+                                                        className="completion-upload"
                                                         multiple
                                                         showUploadList={false}
                                                         beforeUpload={() => false}
@@ -6009,100 +5691,33 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                     >
                                                         <Button
                                                             block
+                                                            shape="round"
                                                             size="large"
+                                                            type="dashed"
                                                             icon={<UploadOutlined />}
-                                                            style={{ height: 44, borderRadius: 12 }}
                                                         >
                                                             {completionCurrentPoes.length || selectedProgressPoeUrls.length || completionPoeFiles.length ? 'Add another' : 'Add'} {completionDeliverable.isConfigured ? completionDeliverable.name : 'POE'}
                                                         </Button>
                                                     </Upload>
 
                                                     {completionPoePreviews.length ? (
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                                        <Space direction='vertical' size={6} style={{ width: '100%' }}>
                                                             {completionPoePreviews.map(preview => (
-                                                                <div
+                                                                <EvidenceFileRow
                                                                     key={preview.uid}
-                                                                    style={{
-                                                                        position: 'relative',
-                                                                        width: 112,
-                                                                        minHeight: 72,
-                                                                        borderRadius: 10,
-                                                                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#e8ecf3'}`,
-                                                                        background: isDark ? 'rgba(255,255,255,0.035)' : '#fafbfc',
-                                                                        padding: 8,
-                                                                        display: 'flex',
-                                                                        flexDirection: 'column',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        gap: 4
-                                                                    }}
-                                                                >
-                                                                    {preview.url ? (
-                                                                        <img
-                                                                            src={preview.url}
-                                                                            alt={preview.name}
-                                                                            style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6 }}
-                                                                        />
-                                                                    ) : (
-                                                                        <span style={{ fontSize: 24, color: '#8c8c8c' }}>
-                                                                            {getProgressFileIcon(preview.name, preview.type)}
-                                                                        </span>
+                                                                    name={preview.name}
+                                                                    type={preview.type}
+                                                                    onRemove={() => setCompletionPoeFiles(files =>
+                                                                        files.filter(file => String(file?.uid || '') !== preview.uid)
                                                                     )}
-                                                                    <Text
-                                                                        type="secondary"
-                                                                        ellipsis={{ tooltip: preview.name }}
-                                                                        style={{ fontSize: 10, width: '100%', textAlign: 'center' }}
-                                                                    >
-                                                                        {preview.name}
-                                                                    </Text>
-                                                                    <Button
-                                                                        type="text"
-                                                                        size="small"
-                                                                        icon={<CloseOutlined style={{ fontSize: 9, color: '#fff' }} />}
-                                                                        onClick={() => setCompletionPoeFiles(files =>
-                                                                            files.filter(file => String(file?.uid || '') !== preview.uid)
-                                                                        )}
-                                                                        style={{
-                                                                            position: 'absolute',
-                                                                            top: 3,
-                                                                            right: 3,
-                                                                            width: 17,
-                                                                            height: 17,
-                                                                            minWidth: 17,
-                                                                            padding: 0,
-                                                                            borderRadius: 9,
-                                                                            background: 'rgba(0,0,0,0.58)'
-                                                                        }}
-                                                                    />
-                                                                </div>
+                                                                />
                                                             ))}
-                                                        </div>
+                                                        </Space>
                                                     ) : null}
                                                                 </Space>
                                                             </Card>
                                                         </Col>
                                                     </Row>
-
-                                                    <div
-                                                        style={{
-                                                            display: 'flex',
-                                                            alignItems: 'flex-end',
-                                                            width: '100%',
-                                                            border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : '#e8ecf3'}`,
-                                                            borderRadius: 12,
-                                                            padding: '8px 11px',
-                                                            background: isDark ? 'rgba(255,255,255,0.02)' : '#fff'
-                                                        }}
-                                                    >
-                                                        <Form.Item name="notes" noStyle>
-                                                            <Input.TextArea
-                                                                autoSize={{ minRows: 1, maxRows: 4 }}
-                                                                variant="borderless"
-                                                                placeholder="Optional final note about the completion..."
-                                                                style={{ padding: 0, resize: 'none' }}
-                                                            />
-                                                        </Form.Item>
-                                                    </div>
                                                 </>
                                             ) : null}
                                         </Space>
@@ -6110,111 +5725,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                 )}
                             </Modal>
 
-                            <Modal
-                                centered
-                                styles={compactModalStyles}
-                                open={evidenceModalOpen}
-                                title="Proof of Execution / Evidence"
-                                footer={[
-                                    <Button
-                                        key="close"
-                                        danger
-                                        onClick={() => {
-                                            setEvidenceModalOpen(false)
-                                            setEvidencePoePage(1)
-                                        }}
-                                    >
-                                        Close
-                                    </Button>
-                                ]}
-                                onCancel={() => {
-                                    setEvidenceModalOpen(false)
-                                    setEvidencePoePage(1)
-                                }}
-                            >
-                                {!evidenceRecord || evidenceEntries.length === 0 ? (
-                                    <Empty description="No evidence found for this intervention" />
-                                ) : (
-                                    <Space direction="vertical" style={{ width: '100%' }} size={10}>
-                                        <Card
-                                            size="small"
-                                            styles={{ body: { padding: 10 } }}
-                                            style={{ background: '#fafafa' }}
-                                        >
-                                            <Space direction="vertical" style={{ width: '100%' }}>
-                                                <Text strong>
-                                                    {evidenceRecord.participantName ||
-                                                        evidenceRecord.beneficiaryName ||
-                                                        evidenceRecord.participantId ||
-                                                        '-'}
-                                                </Text>
-
-                                                <Text type="secondary">
-                                                    {evidenceRecord.interventionTitle || 'Untitled intervention'}
-                                                </Text>
-                                            </Space>
-                                        </Card>
-
-                                        <Row gutter={[0, 12]}>
-                                            <Col span={24}>
-                                                {pagedEvidenceEntries.map(entry => (
-                                                    <Card
-                                                        key={entry.value}
-                                                        size="small"
-                                                        style={{
-                                                            borderRadius: 8,
-                                                            border: '1px solid #f0f0f0',
-                                                            marginBottom: 8
-                                                        }}
-                                                    >
-                                                        <Space direction="vertical" style={{ width: '100%' }} size={6}>
-                                                            <Text strong>{entry.label}</Text>
-                                                            {entry.originalName ? (
-                                                                <Text type="secondary">{entry.originalName}</Text>
-                                                            ) : null}
-
-                                                            {entry.value.startsWith('http') ? (
-                                                                <Button
-                                                                    variant="filled"
-                                                                    color="green"
-                                                                    style={{ border: '1px solid limegreen' }}
-                                                                    icon={<EyeOutlined />}
-                                                                    onClick={() => window.open(entry.value, '_blank')}
-                                                                >
-                                                                    View POE
-                                                                </Button>
-                                                            ) : (
-                                                                <Space>
-                                                                    <FileOutlined />
-                                                                    <Text>{entry.value}</Text>
-                                                                </Space>
-                                                            )}
-                                                        </Space>
-                                                    </Card>
-                                                ))}
-
-                                                {evidenceEntries.length > POE_PAGE_SIZE ? (
-                                                    <div
-                                                        style={{
-                                                            display: 'flex',
-                                                            justifyContent: 'center',
-                                                            marginTop: 16
-                                                        }}
-                                                    >
-                                                        <Pagination
-                                                            current={evidencePoePage}
-                                                            pageSize={POE_PAGE_SIZE}
-                                                            total={evidenceEntries.length}
-                                                            showSizeChanger={false}
-                                                            onChange={setEvidencePoePage}
-                                                        />
-                                                    </div>
-                                                ) : null}
-                                            </Col>
-                                        </Row>
-                                    </Space>
-                                )}
-                            </Modal>
 
                             <Modal
                                 centered
@@ -6339,7 +5849,8 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                     name: effectiveUser?.name || effectiveUser?.displayName || null,
                                     email: effectiveUser?.email || null,
                                     role: effectiveUser?.role || 'coordinator',
-                                    departmentName: effectiveUser?.departmentName || null
+                                    departmentName: effectiveUser?.departmentName || null,
+                                    departmentId: effectiveUser?.departmentId || null
                                 }}
                                 onClose={() => {
                                     setPoeUploadModalOpen(false)
@@ -6350,16 +5861,6 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                     if (selectedRecord) {
                                         const rows = await fetchQueriesForIntervention(selectedRecord)
                                         setRecordQueriesLocally(selectedRecord.id, rows)
-                                        if (queriesModalScope === 'open') {
-                                            setSelectedQueries(previous => {
-                                                const refreshed = new Map(rows.map(row => [row.id, row]))
-                                                return previous
-                                                    .map(row => refreshed.get(row.id) || row)
-                                                    .filter(row => isOpenQuery(row.status))
-                                            })
-                                        } else {
-                                            setSelectedQueries(rows)
-                                        }
                                     }
                                     setPoeUploadModalOpen(false)
                                     setSelectedRecord(null)
@@ -6375,49 +5876,41 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                 title={
                                     manageEvidenceRecord && isDocumentTarget(manageEvidenceRecord)
                                         ? 'Manage Documents'
-                                        : 'Manage POE'
+                                        : 'Manage evidence'
+                                }
+                                width={
+                                    isMobile
+                                        ? 'calc(100vw - 20px)'
+                                        : manageEvidenceRecord && !isDocumentTarget(manageEvidenceRecord)
+                                            ? 900
+                                            : 520
                                 }
                                 onCancel={() => {
                                     setManageEvidenceOpen(false)
                                     setManageEvidenceRecord(null)
+                                    setPendingEvidenceFiles([])
+                                    setPendingReplaceTarget(undefined)
                                     setGroupEvidenceMode('bulk')
                                     setGroupEvidenceMemberId(undefined)
                                     setManageEvidencePoePage(1)
 
                                     manageEvidenceForm.resetFields()
                                 }}
-                                footer={(
-                                    <Row gutter={[12, 12]} style={{ width: '100%' }}>
-                                        {(manageEvidenceRecord as DisplayIntervention)?.isGroupedDisplay && groupEvidenceMode === 'single' ? (
-                                            <Col span={24}>
-                                                <Button
-                                                    block
-                                                    type="primary"
-                                                    shape="round"
-                                                    icon={<UploadOutlined />}
-                                                    loading={savingEvidence}
-                                                    disabled={!groupEvidenceMemberId || !pendingEvidenceFiles.length}
-                                                    onClick={() => void submitManageEvidence(manageEvidenceForm.getFieldsValue(true))}
-                                                >
-                                                    Upload selected files ({pendingEvidenceFiles.length})
-                                                </Button>
-                                            </Col>
-                                        ) : null}
-                                        <Col span={24}>
-                                            <Button
-                                                danger
-                                                block
-                                                shape="round"
-                                                onClick={() => {
-                                                    setManageEvidenceOpen(false)
-                                                    setManageEvidenceRecord(null)
-                                                    manageEvidenceForm.resetFields()
-                                                }}>
-                                                Close
-                                            </Button>
-                                        </Col>
-                                    </Row>
-                                )}
+                                footer={pendingEvidenceFiles.length ? (
+                                    <Button
+                                        block
+                                        type="primary"
+                                        shape="round"
+                                        icon={<UploadOutlined />}
+                                        loading={savingEvidence}
+                                        onClick={saveStagedEvidence}
+                                    >
+                                        Save {pendingEvidenceFiles.length} file{pendingEvidenceFiles.length === 1 ? '' : 's'}
+                                        {evidenceForMember
+                                            ? ` for ${((manageEvidenceRecord as DisplayIntervention)?.members || []).find(member => member.id === evidenceForMember)?.participantName || 'this SME'}`
+                                            : isGroupEvidence ? ' for the whole group' : ''}
+                                    </Button>
+                                ) : null}
                                 destroyOnClose
                             >
                                 {manageEvidenceRecord ? (
@@ -6428,195 +5921,32 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                         onFinishFailed={showEvidenceValidationError}
                                         scrollToFirstError
                                     >
-                                        <Space direction="vertical" style={{ width: '100%', marginBottom: 8 }} size={3}>
-                                            <Text strong>
-                                                {(manageEvidenceRecord as DisplayIntervention).isGroupedDisplay
-                                                    ? `${manageEvidenceRecord.interventionTitle || 'Untitled intervention'} · SMEs: ${(manageEvidenceRecord as DisplayIntervention).memberCount || 0}`
-                                                    : manageEvidenceRecord.participantName || manageEvidenceRecord.beneficiaryName || manageEvidenceRecord.participantId || '-'}
-                                            </Text>
-                                            {(manageEvidenceRecord as DisplayIntervention).isGroupedDisplay && manageEvidenceRecord.subInterventionTitle ? (
-                                                <Text type="secondary">{manageEvidenceRecord.subInterventionTitle}</Text>
-                                            ) : !((manageEvidenceRecord as DisplayIntervention).isGroupedDisplay) ? (
-                                                <Text type="secondary">{manageEvidenceRecord.interventionTitle || 'Untitled intervention'}</Text>
-                                            ) : null}
-                                        </Space>
+                                        <div style={{ marginBottom: 16 }}>
+                                            <IncubateeBanner
+                                                participantId={(manageEvidenceRecord as DisplayIntervention).isGroupedDisplay ? null : manageEvidenceRecord.participantId}
+                                                companyName={manageEvidenceRecord.beneficiaryName || manageEvidenceRecord.participantName}
+                                                photoUrl={photoByParticipantId[String(manageEvidenceRecord.participantId || '')]}
+                                                groupCount={(manageEvidenceRecord as DisplayIntervention).isGroupedDisplay
+                                                    ? (manageEvidenceRecord as DisplayIntervention).memberCount || 0
+                                                    : undefined}
+                                                groupTitle={manageEvidenceRecord.interventionTitle}
+                                                subtitle={(manageEvidenceRecord as DisplayIntervention).isGroupedDisplay
+                                                    ? manageEvidenceRecord.subInterventionTitle
+                                                    : manageEvidenceRecord.interventionTitle || 'Untitled intervention'}
+                                            />
+                                        </div>
 
-                                        {(manageEvidenceRecord as DisplayIntervention).isGroupedDisplay && !isDocumentTarget(manageEvidenceRecord) ? (
-                                            <>
-                                                <div data-guide="group-poe-mode">
-                                                    <Form.Item label="Group POE upload mode" style={{ marginBottom: 8 }}>
-                                                        <Segmented
-                                                            block
-                                                            value={groupEvidenceMode}
-                                                            onChange={value => {
-                                                                const next = value as 'bulk' | 'single'
-                                                                setGroupEvidenceMode(next)
-                                                                setGroupEvidenceMemberId(undefined)
-                                                                manageEvidenceForm.setFieldsValue({ files: [], replaceTarget: undefined })
-                                                            }}
-                                                            options={[
-                                                                { label: 'Bulk Upload', value: 'bulk' },
-                                                                { label: 'Single Upload', value: 'single' }
-                                                            ]}
-                                                        />
-                                                    </Form.Item>
-                                                </div>
-                                                {groupEvidenceMode === 'single' ? (
-                                                    <Card size="small" style={{ marginBottom: 12 }}>
-                                                        <Table
-                                                            size="small"
-                                                            rowKey="id"
-                                                            pagination={{ pageSize: 6, showSizeChanger: false, position: ['bottomCenter'] }}
-                                                            dataSource={(manageEvidenceRecord as DisplayIntervention).members || []}
-                                                            columns={[
-                                                                {
-                                                                    title: 'SME',
-                                                                    key: 'sme',
-                                                                    render: (_: unknown, member: AssignedIntervention) => (
-                                                                        <Text strong>{member.participantName || member.beneficiaryName || member.participantId || member.id}</Text>
-                                                                    )
-                                                                },
-                                                                {
-                                                                    title: 'POEs',
-                                                                    key: 'poes',
-                                                                    width: 90,
-                                                                    render: (_: unknown, member: AssignedIntervention) => (
-                                                                        <Tag color={getPoeResourcesFromRecord(member).length ? 'green' : 'orange'}>
-                                                                            {getPoeResourcesFromRecord(member).length}
-                                                                        </Tag>
-                                                                    )
-                                                                },
-                                                                {
-                                                                    title: 'Upload',
-                                                                    key: 'upload',
-                                                                    width: 150,
-                                                                    render: (_: unknown, member: AssignedIntervention) => (
-                                                                        <Upload
-                                                                            multiple
-                                                                            showUploadList={false}
-                                                                            beforeUpload={(file, selectedFiles) => {
-                                                                                // Ant calls this once per file. Store the whole
-                                                                                // selection once so batched state updates cannot
-                                                                                // discard all but the last selected file.
-                                                                                if (file !== selectedFiles[0]) return false
-                                                                                const switchingMember = groupEvidenceMemberId && groupEvidenceMemberId !== member.id
-                                                                                setGroupEvidenceMemberId(member.id)
-                                                                                const existingFiles = switchingMember ? [] : (manageEvidenceForm.getFieldValue('files') || [])
-                                                                                const nextFiles = [...existingFiles, ...selectedFiles.map(selected => ({
-                                                                                    uid: selected.uid,
-                                                                                    name: selected.name,
-                                                                                    originFileObj: selected
-                                                                                }))].slice(0, 10)
-                                                                                setPendingEvidenceFiles(nextFiles.map(item => item.originFileObj || item))
-                                                                                manageEvidenceForm.setFieldsValue({
-                                                                                    files: nextFiles
-                                                                                })
-                                                                                return false
-                                                                            }}
-                                                                            disabled={savingEvidence}
-                                                                        >
-                                                                            <Button size="small" icon={<UploadOutlined />}>
-                                                                                Choose POE
-                                                                            </Button>
-                                                                        </Upload>
-                                                                    )
-                                                                }
-                                                            ] as ColumnsType<AssignedIntervention>}
-                                                            expandable={{
-                                                                expandedRowRender: member => {
-                                                                    const memberPoes = getPoeResourcesFromRecord(member)
-                                                                    return memberPoes.length ? (
-                                                                        <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                                                                            <Popconfirm
-                                                                                title="Remove all POEs for this SME?"
-                                                                                okText="Remove all"
-                                                                                cancelText="Cancel"
-                                                                                okButtonProps={{ danger: true }}
-                                                                                onConfirm={() => removeAllPoe(member)}
-                                                                            >
-                                                                                <Button size="small" danger loading={deletingPoeUrl === '__all__'}>
-                                                                                    Delete all for this SME
-                                                                                </Button>
-                                                                            </Popconfirm>
-                                                                            {memberPoes.map(resource => (
-                                                                                <Row key={resource.link} justify="space-between" align="middle" gutter={[8, 8]}>
-                                                                                    <Col flex="auto" style={{ minWidth: 0 }}>
-                                                                                        <Text ellipsis={{ tooltip: resource.originalName || resource.link }}>
-                                                                                            {resource.originalName || resource.label || 'POE'}
-                                                                                        </Text>
-                                                                                    </Col>
-                                                                                    <Col>
-                                                                                        <Space>
-                                                                                            <Button size="small" icon={<EyeOutlined />} onClick={() => window.open(resource.link, '_blank')}>View</Button>
-                                                                                            <Popconfirm
-                                                                                                title="Remove this POE?"
-                                                                                                okText="Remove"
-                                                                                                cancelText="Cancel"
-                                                                                                okButtonProps={{ danger: true }}
-                                                                                                onConfirm={() => removePoe(member, resource.link)}
-                                                                                            >
-                                                                                                <Button
-                                                                                                    size="small"
-                                                                                                    danger
-                                                                                                    icon={<DeleteOutlined />}
-                                                                                                    loading={deletingPoeUrl === resource.link}
-                                                                                                    disabled={!!deletingPoeUrl && deletingPoeUrl !== resource.link}
-                                                                                                >
-                                                                                                    Remove
-                                                                                                </Button>
-                                                                                            </Popconfirm>
-                                                                                        </Space>
-                                                                                    </Col>
-                                                                                </Row>
-                                                                            ))}
-                                                                        </Space>
-                                                                    ) : <Text type="secondary">No POEs uploaded for this SME.</Text>
-                                                                }
-                                                            }}
-                                                            onRow={member => ({
-                                                                onClick: () => {
-                                                                    if (groupEvidenceMemberId !== member.id) {
-                                                                        setGroupEvidenceMemberId(member.id)
-                                                                        manageEvidenceForm.setFieldsValue({ files: [] })
-                                                                        setPendingEvidenceFiles([])
-                                                                    }
-                                                                },
-                                                                style: { cursor: 'pointer', background: member.id === groupEvidenceMemberId ? '#e6f4ff' : undefined }
-                                                            })}
-                                                        />
-                                                        <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-                                                            {groupEvidenceMemberId
-                                                                ? 'Files selected for the highlighted SME. Click Upload to save them.'
-                                                                : 'Choose a POE in a row, then click Upload below.'}
-                                                        </Text>
-                                                    </Card>
-                                                ) : null}
-                                            </>
-                                        ) : null}
-
-                                        {!((manageEvidenceRecord as DisplayIntervention).isGroupedDisplay && groupEvidenceMode === 'single') ? (
-                                            <>
-                                                <input
-                                                    ref={manageEvidenceFileInputRef}
-                                                    type="file"
-                                                    hidden
-                                                    multiple
-                                                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
-                                                    onChange={handleManageEvidenceFileSelection}
-                                                />
-                                                <div data-guide="evidence-manager-content">
-                                                    <EvidenceManagerPanel
-                                                        participantLabel={manageEvidenceRecord.participantName || manageEvidenceRecord.beneficiaryName}
-                                                        interventionLabel={manageEvidenceRecord.interventionTitle}
-                                                        resources={manageEvidenceEntries.map(entry => ({
-                                                            link: entry.value,
-                                                            label: entry.label,
-                                                            originalName: entry.originalName
-                                                        }))}
-                                                        showHeader={false}
-                                                        showUpload={false}
-                                                        headerActions={
-                                                            <Space size={6}>
+                                        <Row gutter={[20, 20]} align="top">
+                                        {(
+                                            <Col xs={24} md={isDocumentTarget(manageEvidenceRecord) ? 24 : 12}>
+                                            <Card
+                                                {...evidenceCardProps}
+                                                style={{ ...evidenceCardProps.style, height: 'auto' }}
+                                                extra={manageEvidenceRecord ? (
+                                                    <Space size={6}>
+                                                                {!isDocumentTarget(manageEvidenceRecord) ? (
+                                                                    <Tag style={pillTag}>Optional</Tag>
+                                                                ) : null}
                                                                 {manageEvidenceEntries.length ? (
                                                                     <Popconfirm
                                                                         title="Remove all POEs?"
@@ -6636,33 +5966,117 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                                         </Button>
                                                                     </Popconfirm>
                                                                 ) : null}
-                                                                <Dropdown
-                                                                    trigger={['click']}
-                                                                    menu={{
-                                                                        items: [
-                                                                            { key: 'add-new', label: 'Add new' },
-                                                                            { key: 'replace-all', label: 'Replace all' }
-                                                                        ],
-                                                                        onClick: ({ key }) =>
-                                                                            openManageEvidenceFilePicker(
-                                                                                key === 'replace-all' ? 'all' : undefined
-                                                                            )
-                                                                    }}
-                                                                >
-                                                                    <Button
-                                                                        data-guide="add-poe-action"
-                                                                        size="small"
-                                                                        type="primary"
-                                                                        shape='round'
-                                                                        icon={<UploadOutlined />}
-                                                                        loading={savingEvidence}
-                                                                    >
-                                                                        Add POE
-                                                                    </Button>
-                                                                </Dropdown>
                                                             </Space>
-                                                        }
-                                                        onReplace={resource => openManageEvidenceFilePicker(resource.link)}
+                                                ) : null}
+                                                title={
+                                                    <EvidenceCardTitle
+                                                        tone="optional"
+                                                        title={isDocumentTarget(manageEvidenceRecord) ? 'Documents' : isGroupEvidence ? `Group ${manageEvidenceAddLabel}` : manageEvidenceDeliverableName}
+                                                    />
+                                                }
+                                            >
+                                            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                                                <Text type="secondary" style={{ fontSize: 13 }}>
+                                                    {isGroupEvidence
+                                                        ? `Shared with all ${(manageEvidenceRecord as DisplayIntervention).memberCount || (manageEvidenceRecord as DisplayIntervention).members?.length || 0} SMEs in the group.`
+                                                        : isDocumentTarget(manageEvidenceRecord)
+                                                        ? 'Documents on file for this SME.'
+                                                        : 'What was produced from this intervention.'}
+                                                </Text>
+                                                {manageEvidenceEntries.length ? (
+                                                    <Dropdown
+                                                        trigger={['click']}
+                                                        menu={{
+                                                            items: [
+                                                                { key: 'add-new', label: 'Add new' },
+                                                                { key: 'replace-all', label: 'Replace all' }
+                                                            ],
+                                                            onClick: ({ key }) =>
+                                                                pickEvidenceFiles(null, 
+                                                                    key === 'replace-all' ? 'all' : undefined
+                                                                )
+                                                        }}
+                                                    >
+                                                        <Button
+                                                            data-guide="add-poe-action"
+                                                            block
+                                                            shape="round"
+                                                            size="large"
+                                                            type="dashed"
+                                                            icon={<UploadOutlined />}
+                                                            loading={savingEvidence}
+                                                        >
+                                                            {pendingEvidenceFiles.length ? 'Add more' : `Add ${manageEvidenceAddLabel}`}
+                                                        </Button>
+                                                    </Dropdown>
+                                                ) : (
+                                                    <Button
+                                                        data-guide="add-poe-action"
+                                                        block
+                                                        shape="round"
+                                                        size="large"
+                                                        type="dashed"
+                                                        icon={<UploadOutlined />}
+                                                        loading={savingEvidence}
+                                                        onClick={() => pickEvidenceFiles(null, )}
+                                                    >
+                                                        {pendingEvidenceFiles.length ? 'Add more' : `Add ${manageEvidenceAddLabel}`}
+                                                    </Button>
+                                                )}
+                                                <input
+                                                    ref={manageEvidenceFileInputRef}
+                                                    type="file"
+                                                    hidden
+                                                    multiple
+                                                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                                    onChange={handleManageEvidenceFileSelection}
+                                                />
+                                                {pendingEvidenceFiles.length && !evidenceForMember ? (
+                                                    <div>
+                                                        <Text strong style={{ display: 'block', marginBottom: 6 }}>
+                                                            Ready to save ({pendingEvidenceFiles.length})
+                                                        </Text>
+                                                        {pendingReplaceTarget ? (
+                                                            <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
+                                                                {pendingReplaceTarget === 'all'
+                                                                    ? 'These will replace all the files currently on file.'
+                                                                    : 'These will replace the file you chose to replace.'}
+                                                            </Text>
+                                                        ) : null}
+                                                        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                                            {pendingEvidenceFiles.map((file, index) => (
+                                                                <EvidenceFileRow
+                                                                    key={`${file.name}-${file.size}-${index}`}
+                                                                    name={file.name}
+                                                                    type={file.type}
+                                                                    size={file.size}
+                                                                    disabled={savingEvidence}
+                                                                    onRemove={() => {
+                                                                        setPendingEvidenceFiles(current => {
+                                                                            const next = current.filter((_, position) => position !== index)
+                                                                            if (!next.length) setPendingReplaceTarget(undefined)
+                                                                            return next
+                                                                        })
+                                                                    }}
+                                                                />
+                                                            ))}
+                                                        </Space>
+                                                    </div>
+                                                ) : null}
+                                                {manageEvidenceEntries.length ? (
+                                                <div data-guide="evidence-manager-content">
+                                                    <EvidenceManagerPanel
+                                                        participantLabel={manageEvidenceRecord.participantName || manageEvidenceRecord.beneficiaryName}
+                                                        interventionLabel={manageEvidenceRecord.interventionTitle}
+                                                        resources={manageEvidenceEntries.map(entry => ({
+                                                            link: entry.value,
+                                                            label: entry.label,
+                                                            originalName: entry.originalName
+                                                        }))}
+                                                        showHeader={false}
+                                                        showUpload={false}
+                                                        bare
+                                                        onReplace={resource => pickEvidenceFiles(null, resource.link)}
                                                         onUpload={() => undefined}
                                                         onRemove={resource => isDocumentTarget(manageEvidenceRecord)
                                                             ? removeManagedDocument(manageEvidenceRecord, resource.link)
@@ -6670,117 +6084,76 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                                         uploading={savingEvidence}
                                                     />
                                                 </div>
-                                            </>
-                                        ) : null}
-
-                                        {false && manageEvidenceEntries.length > 0 ? (
-                                            <Card
-                                                size="small"
-                                                style={{ background: '#fafafa', marginBottom: 12 }}
-                                                title={
-                                                    <Text type="secondary">
-                                                        Currently on file ({manageEvidenceEntries.length})
-                                                    </Text>
-                                                }
-                                            >
-                                                <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                                                    {pagedManageEvidenceEntries.map(entry => (
-                                                        <Card
-                                                            key={entry.value}
-                                                            size="small"
-                                                            style={{
-                                                                width: '100%',
-                                                                borderRadius: 8,
-                                                                border: '1px solid #f0f0f0'
-                                                            }}
-                                                        >
-                                                            <Row
-                                                                gutter={[12, 8]}
-                                                                align="middle"
-                                                                justify="space-between"
-                                                            >
-                                                                <Col flex="auto" style={{ minWidth: 0 }}>
-                                                                    <Text strong>{entry.label}</Text>
-                                                                    {entry.originalName ? (
-                                                                        <Text
-                                                                            type="secondary"
-                                                                            ellipsis={{ tooltip: entry.originalName }}
-                                                                            style={{ display: 'block', maxWidth: 360 }}
-                                                                        >
-                                                                            {entry.originalName}
-                                                                        </Text>
-                                                                    ) : null}
-                                                                </Col>
-
-                                                                <Col>
-                                                                    <Space wrap>
-                                                                        {entry.value.startsWith('http') ? (
-                                                                            <Button
-                                                                                size="small"
-                                                                                variant="filled"
-                                                                                color="green"
-                                                                                shape='round'
-                                                                                style={{ border: '1px solid limegreen' }}
-                                                                                icon={<EyeOutlined />}
-                                                                                onClick={() => window.open(entry.value, '_blank')}
-                                                                            >
-                                                                                View
-                                                                            </Button>
-                                                                        ) : null}
-
-                                                                        {entry.removable && manageEvidenceRecord ? (
-                                                                            <Popconfirm
-                                                                                title={`Remove ${entry.label}?`}
-                                                                                description="This removes the POE reference from the intervention and MOV evidence list."
-                                                                                okText="Remove"
-                                                                                cancelText="Cancel"
-                                                                                okButtonProps={{ danger: true }}
-                                                                                onConfirm={() => isDocumentTarget(manageEvidenceRecord)
-                                                                                    ? removeManagedDocument(manageEvidenceRecord, entry.value)
-                                                                                    : removePoe(manageEvidenceRecord, entry.value)}
-                                                                            >
-                                                                                <Button
-                                                                                    size="small"
-                                                                                    danger
-                                                                                    shape='round'
-                                                                                    icon={<DeleteOutlined />}
-                                                                                    loading={deletingPoeUrl === entry.value}
-                                                                                    disabled={
-                                                                                        !!deletingPoeUrl &&
-                                                                                        deletingPoeUrl !== entry.value
-                                                                                    }
-                                                                                >
-                                                                                    Remove
-                                                                                </Button>
-                                                                            </Popconfirm>
-                                                                        ) : null}
-                                                                    </Space>
-                                                                </Col>
-                                                            </Row>
-                                                        </Card>
-                                                    ))}
-
-                                                    {manageEvidenceEntries.length > POE_PAGE_SIZE ? (
-                                                        <div
-                                                            style={{
-                                                                display: 'flex',
-                                                                justifyContent: 'center',
-                                                                width: '100%',
-                                                                marginTop: 8
-                                                            }}
-                                                        >
-                                                            <Pagination
-                                                                current={manageEvidencePoePage}
-                                                                pageSize={POE_PAGE_SIZE}
-                                                                total={manageEvidenceEntries.length}
-                                                                showSizeChanger={false}
-                                                                onChange={setManageEvidencePoePage}
-                                                            />
-                                                        </div>
-                                                    ) : null}
-                                                </Space>
+                                                ) : null}
+                                            </Space>
                                             </Card>
+                                            </Col>
+                                        )}
+                                        {!isDocumentTarget(manageEvidenceRecord) ? (
+                                            <Col
+                                                xs={24}
+                                                md={12}
+                                            >
+                                                <ManageMovCard
+                                                    targets={(
+                                                        (manageEvidenceRecord as DisplayIntervention).isGroupedDisplay
+                                                            ? ((manageEvidenceRecord as DisplayIntervention).members || [])
+                                                            : [manageEvidenceRecord]
+                                                    ).map((row: any) => ({
+                                                        id: String(row.id),
+                                                        name: String(row.participantName || row.beneficiaryName || row.participantId || 'SME'),
+                                                        programId: row.programId || null,
+                                                        participantId: row.participantId || null
+                                                    }))}
+                                                />
+                                            </Col>
                                         ) : null}
+                                        </Row>
+
+                                        {isGroupEvidence && (
+                                            <section className="al-sme-evidence">
+                                                <h3 className="ws-section-title">Per SME</h3>
+                                                <p className="al-muted">Evidence for one SME only, such as their own signed register. It isn't shared with the group.</p>
+                                                <ul className="al-sme-list">
+                                                    {((manageEvidenceRecord as DisplayIntervention).members || []).map(member => {
+                                                        const own = memberOwnUploads(manageEvidenceRecord as DisplayIntervention, member)
+                                                        const picking = evidenceForMember === member.id
+                                                        return (
+                                                            <li key={member.id} className={`al-sme-item${picking ? ' is-active' : ''}`}>
+                                                                <div className="al-sme-head">
+                                                                    <span className="al-sme-name">{member.participantName || member.beneficiaryName || 'SME'}</span>
+                                                                    <span className="al-muted">{own.length ? `${own.length} file${own.length === 1 ? '' : 's'}` : 'Group POE only'}</span>
+                                                                    <Button size="small" icon={<UploadOutlined />} disabled={savingEvidence} onClick={() => pickEvidenceFiles(member.id)}>
+                                                                        Add
+                                                                    </Button>
+                                                                </div>
+                                                                {own.map(resource => (
+                                                                    <EvidenceFileRow
+                                                                        key={resource.link}
+                                                                        name={resource.originalName || resource.label || 'POE'}
+                                                                        href={resource.link}
+                                                                        disabled={!!deletingPoeUrl}
+                                                                        onRemove={() => void removePoe(member, resource.link)}
+                                                                        confirmTitle="Remove this SME's file?"
+                                                                        confirmDescription="It's taken off this SME's evidence and their MOV."
+                                                                    />
+                                                                ))}
+                                                                {picking && pendingEvidenceFiles.map((file, index) => (
+                                                                    <EvidenceFileRow
+                                                                        key={`${file.name}-${file.size}-${index}`}
+                                                                        name={file.name}
+                                                                        type={file.type}
+                                                                        size={file.size}
+                                                                        disabled={savingEvidence}
+                                                                        onRemove={() => setPendingEvidenceFiles(current => current.filter((_, position) => position !== index))}
+                                                                    />
+                                                                ))}
+                                                            </li>
+                                                        )
+                                                    })}
+                                                </ul>
+                                            </section>
+                                        )}
 
                                         {(manageEvidenceRecord as any)?.isSensitive && USE_SENSITIVE_DEPARTMENT_SUMMARY_INSTEAD_OF_POE && !isDocumentTarget(manageEvidenceRecord) ? (
                                             <Form.Item name="evidenceMode" initialValue={evidenceMode}>
@@ -6807,146 +6180,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                                 )}
                             </Modal>
 
-                            <Modal
-                                centered
-                                styles={compactModalStyles}
-                                open={queriesModalOpen}
-                                title={queriesModalScope === 'open'
-                                    ? `Open Queries (${selectedQueries.length})`
-                                    : 'Intervention Queries'}
-                                onCancel={closeQueriesModal}
-                                footer={[
-                                    <Button
-                                        key="close"
-                                        danger
-                                        onClick={closeQueriesModal}
-                                    >
-                                        Close
-                                    </Button>
-                                ]}
-                                width={isMobile ? '100%' : 820}
-                                destroyOnClose
-                            >
-                                {queriesLoading ? (
-                                    <Skeleton active paragraph={{ rows: 4 }} />
-                                ) : selectedQueries.length > 0 ? (
-                                    <List
-                                        dataSource={selectedQueries}
-                                        pagination={{
-                                            pageSize: 5,
-                                            showSizeChanger: false,
-                                            position: 'bottom',
-                                            align: 'center'
-                                        }}
-                                        renderItem={item => {
-                                            const queryRecord = selectedQueryRecord || findRecordForQuery(item)
-                                            return (
-                                                <List.Item>
-                                                    <Descriptions
-                                                        bordered
-                                                        size="small"
-                                                        column={isMobile ? 1 : 2}
-                                                        style={{ width: '100%' }}
-                                                        items={[
-                                                            {
-                                                                key: 'sme',
-                                                                label: 'SME',
-                                                                children: queryRecord?.participantName ||
-                                                                    queryRecord?.beneficiaryName ||
-                                                                    queryRecord?.participantId || '-'
-                                                            },
-                                                            {
-                                                                key: 'intervention',
-                                                                label: 'Intervention',
-                                                                children: queryRecord?.interventionTitle || '-'
-                                                            },
-                                                            {
-                                                                key: 'type',
-                                                                label: 'Type',
-                                                                children: item.queryType || '-'
-                                                            },
-                                                            {
-                                                                key: 'status',
-                                                                label: 'Status',
-                                                                children: (
-                                                                    <Tag color={isOpenQuery(item.status) ? 'orange' : 'green'}>
-                                                                        {item.status || 'unknown'}
-                                                                    </Tag>
-                                                                )
-                                                            },
-                                                            {
-                                                                key: 'created',
-                                                                label: 'Created At',
-                                                                children: formatDateTime(item.createdAt)
-                                                            },
-                                                            {
-                                                                key: 'updated',
-                                                                label: 'Updated At',
-                                                                children: formatDateTime(item.updatedAt)
-                                                            },
-                                                            {
-                                                                key: 'message',
-                                                                label: 'Message',
-                                                                span: 2,
-                                                                children: item.queryMessage || '-'
-                                                            },
-                                                            {
-                                                                key: 'notes',
-                                                                label: 'Resolution Notes',
-                                                                span: 2,
-                                                                children: item.resolutionNotes || '-'
-                                                            },
-                                                            {
-                                                                key: 'file',
-                                                                label: 'Uploaded File',
-                                                                span: 2,
-                                                                children: item.uploadedFileUrl ? (
-                                                                    <Button
-                                                                        shape="round"
-                                                                        variant="filled"
-                                                                        color="green"
-                                                                        style={{ border: '1px solid limegreen' }}
-                                                                        icon={<EyeOutlined />}
-                                                                        onClick={() => window.open(item.uploadedFileUrl!, '_blank')}
-                                                                    >
-                                                                        View File
-                                                                    </Button>
-                                                                ) : (
-                                                                    <Text type="secondary">No file uploaded</Text>
-                                                                )
-                                                            },
-                                                            {
-                                                                key: 'action',
-                                                                label: 'Action',
-                                                                span: 2,
-                                                                children: isOpenQuery(item.status)
-                                                                    ? queryRecord ? (
-                                                                        <Button
-                                                                            type="primary"
-                                                                            shape="round"
-                                                                            icon={<UploadOutlined />}
-                                                                            onClick={() => openPoeResolveModal(queryRecord, item)}
-                                                                        >
-                                                                            Upload POE & Resolve
-                                                                        </Button>
-                                                                    ) : (
-                                                                        <Tag>Intervention unavailable</Tag>
-                                                                    )
-                                                                    : <Tag color="green">Resolved</Tag>
-                                                            }
-                                                        ]}
-                                                    />
-                                                </List.Item>
-                                            )
-                                        }}
-                                    />
-                                ) : (
-                                    <Empty description={queriesModalScope === 'open'
-                                        ? 'No open queries found'
-                                        : 'No queries found for this intervention'} />
-                                )}
-                            </Modal>
-                        </MotionCard>
+                        </>
                     </>
                 )}
         </div>

@@ -18,8 +18,7 @@ type AppInterventionItem = {
   id?: string
   interventionId?: string
   title?: string
-  area?: string
-  areaOfSupport?: string
+  departmentId?: string
   status?: string
   completedAt?: any
   acceptedAt?: any
@@ -36,7 +35,6 @@ type ApplicationDoc = {
 }
 
 const norm = (s: any) => String(s ?? "").trim()
-const normLower = (s: any) => norm(s).toLowerCase()
 
 const anyTsToDayjs = (t: any) => {
   if (!t) return null
@@ -120,14 +118,14 @@ async function fetchApplications(programId: string) {
   return snap.docs.map(d => d.data() as any) as ApplicationDoc[]
 }
 
-function computeByType(apps: ApplicationDoc[], deptName: string, start: dayjs.Dayjs, end: dayjs.Dayjs) {
+function computeByType(apps: ApplicationDoc[], departmentId: string | null | undefined, start: dayjs.Dayjs, end: dayjs.Dayjs) {
   const map: Record<string, ByTypeRow> = {}
   const bump = (title: string, k: keyof ByTypeRow) => {
     if (!map[title]) map[title] = { title, required: 0, assigned: 0, completed: 0 }
     map[title][k] += 1
   }
 
-  const matchesDept = (area: any) => normLower(area) === normLower(deptName)
+  const matchesDept = (it: AppInterventionItem) => !!norm(departmentId) && norm(it.departmentId) === norm(departmentId)
 
   for (const app of apps) {
     const ints = app?.interventions || {}
@@ -136,22 +134,19 @@ function computeByType(apps: ApplicationDoc[], deptName: string, start: dayjs.Da
     const completed = Array.isArray(ints.completed) ? ints.completed : []
 
     required.forEach(it => {
-      const area = norm(it.areaOfSupport) || norm(it.area)
-      if (!matchesDept(area)) return
+      if (!matchesDept(it)) return
       bump(norm(it.title) || "Untitled", "required")
     })
 
     assigned.forEach(it => {
-      const area = norm(it.areaOfSupport) || norm(it.area)
-      if (!matchesDept(area)) return
+      if (!matchesDept(it)) return
       const d = anyTsToDayjs((it as any).acceptedAt)
       if (!d) return
       if (inRangeInclusive(d, start, end)) bump(norm(it.title) || "Untitled", "assigned")
     })
 
     completed.forEach(it => {
-      const area = norm(it.areaOfSupport) || norm(it.area)
-      if (!matchesDept(area)) return
+      if (!matchesDept(it)) return
       const d = anyTsToDayjs((it as any).completedAt)
       if (!d) return
       if (inRangeInclusive(d, start, end)) bump(norm(it.title) || "Untitled", "completed")
@@ -168,7 +163,7 @@ export async function buildMonthlyReportWithCharts(params: BuildParams): Promise
   // 2) charts
   const { start, end } = periodRange(params.period)
   const apps = await fetchApplications(params.programId)
-  const byType = computeByType(apps, params.departmentName, start, end)
+  const byType = computeByType(apps, params.departmentId, start, end)
 
   const requiredTotal = byType.reduce((s, r) => s + r.required, 0)
   const completedTotal = byType.reduce((s, r) => s + r.completed, 0)

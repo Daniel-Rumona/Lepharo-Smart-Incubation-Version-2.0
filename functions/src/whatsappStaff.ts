@@ -20,10 +20,12 @@ export type StaffIdentity = {
   phoneNumber: string;
   departmentId: string | null;
   branchId: string | null;
+  /** Where the request came from; recorded as createdVia. Defaults to WhatsApp. */
+  channel?: "whatsapp" | "web";
 };
 
 export type RoleGroup =
-  | "admin"
+  | "system_admin"
   | "director"
   | "hod"
   | "coordinator"
@@ -38,7 +40,7 @@ const roleKey = (role: unknown) => clean(role).toLowerCase().replace(/[\s_-]/g, 
 
 export const roleGroupOf = (role: unknown): RoleGroup => {
   const key = roleKey(role);
-  if (key === "admin" || key === "systemadmin") return "admin";
+  if (key === "systemadmin") return "system_admin";
   if (key === "director") return "director";
   if (["operations", "headofdepartment", "headsofdepartment"].includes(key)) return "hod";
   if (["projectadmin", "coordinator"].includes(key)) return "coordinator";
@@ -52,7 +54,7 @@ const TIME_ZONE = "Africa/Johannesburg";
 // South Africa and Zimbabwe do not observe daylight saving, so the offset is fixed.
 const TZ_OFFSET = "+02:00";
 
-class UserError extends Error {
+export class UserError extends Error {
   constructor(message: string, readonly code = "invalid_request") {
     super(message);
   }
@@ -139,7 +141,7 @@ export async function resolveStaffByPhone(phoneNumber: string): Promise<StaffIde
     roleGroup: roleGroupOf(role),
     email: clean(data.email) || null,
     phoneNumber: clean(data.phone || data.phoneNumber) || phoneNumber,
-    departmentId: clean(data.department || data.departmentId) || null,
+    departmentId: clean(data.departmentId) || null,
     branchId: clean(data.assignedBranch || data.branchId) || null,
   };
 }
@@ -159,7 +161,7 @@ const tally = (values: string[]) => {
 };
 
 async function staffOverview(identity: StaffIdentity): Promise<GatewayResult> {
-  if (!["admin", "director", "hod"].includes(identity.roleGroup)) return fail(403, "not_permitted");
+  if (!["system_admin", "director", "hod"].includes(identity.roleGroup)) return fail(403, "not_permitted");
 
   const [participants, assignments, upcoming] = await Promise.all([
     db.collection("participants").count().get(),
@@ -190,7 +192,7 @@ async function staffOverview(identity: StaffIdentity): Promise<GatewayResult> {
 }
 
 async function governanceSummary(identity: StaffIdentity): Promise<GatewayResult> {
-  if (!["admin", "director"].includes(identity.roleGroup)) return fail(403, "not_permitted");
+  if (!["system_admin", "director"].includes(identity.roleGroup)) return fail(403, "not_permitted");
 
   const [features, meetings] = await Promise.all([
     db.collection("featureGovernance").get(),
@@ -254,7 +256,7 @@ async function myAppointments(identity: StaffIdentity): Promise<GatewayResult> {
 
   const now = Date.now();
   let docs: FirebaseFirestore.QueryDocumentSnapshot[];
-  const orgWide = ["admin", "director", "receptionist"].includes(identity.roleGroup);
+  const orgWide = ["system_admin", "director", "receptionist"].includes(identity.roleGroup);
   if (orgWide) {
     const snapshot = await db.collection("appointmentSessions")
       .where("startAt", ">=", admin.firestore.Timestamp.fromMillis(now - 60 * 60 * 1000))
@@ -347,14 +349,14 @@ async function searchAssignments(identity: StaffIdentity, payload: any): Promise
 
 /* ---------------------------------------------------------------- proposals */
 
-const ROLE_CHOICES = ["admin", "director", "operations", "coordinator", "projectadmin", "receptionist", "employee", "incubatee", "funder"];
+const ROLE_CHOICES = ["system_admin", "director", "operations", "coordinator", "projectadmin", "receptionist", "employee", "incubatee", "funder"];
 const DELIVERY_METHODS = ["in_person", "virtual", "telephonically"];
 const DELIVERY_LABEL: Record<string, string> = { in_person: "In person", virtual: "Virtual", telephonically: "Telephonic" };
 
-type Validated = { params: Record<string, unknown>; summary: string };
+export type Validated = { params: Record<string, unknown>; summary: string };
 
 function validateLogMeeting(identity: StaffIdentity, raw: any): Validated {
-  if (identity.roleGroup !== "admin") throw new UserError("Only system administrators can log governance meetings.", "not_permitted");
+  if (identity.roleGroup !== "system_admin") throw new UserError("Only system administrators can log governance meetings.", "not_permitted");
   const title = shortText(raw.title, 160);
   const withName = shortText(raw.withName, 120);
   if (!title) throw new UserError("What should the meeting be called?");
@@ -378,7 +380,7 @@ function validateLogMeeting(identity: StaffIdentity, raw: any): Validated {
 }
 
 function validateLogFeature(identity: StaffIdentity, raw: any): Validated {
-  if (identity.roleGroup !== "admin") throw new UserError("Only system administrators can log features.", "not_permitted");
+  if (identity.roleGroup !== "system_admin") throw new UserError("Only system administrators can log features.", "not_permitted");
   const title = shortText(raw.title, 160);
   const description = shortText(raw.description, 1500);
   if (!title) throw new UserError("What is the feature called?");
@@ -387,7 +389,7 @@ function validateLogFeature(identity: StaffIdentity, raw: any): Validated {
   const dueDate = raw.dueDate ? validDate(raw.dueDate) : null;
   if (raw.dueDate && !dueDate) throw new UserError("I couldn't read that target date. Please give it as a date, like 30 September 2026.");
   const roles = Array.from(new Set(
-    (Array.isArray(raw.roles) ? raw.roles : []).map((role: unknown) => roleKey(role)).filter((role: string) => ROLE_CHOICES.includes(role)),
+    (Array.isArray(raw.roles) ? raw.roles : []).map((role: unknown) => clean(role).toLowerCase().replace(/[\s-]/g, "_")).filter((role: string) => ROLE_CHOICES.includes(role)),
   ));
   const summary = [
     type === "pipeline" ? "Add a feature to the pipeline" : "Log a feature request",
@@ -468,7 +470,7 @@ async function loadSchedule(identity: StaffIdentity, params: any): Promise<Sched
   return { assignment, assignmentId, sessionId, start, end, participant: participantSnapshot.exists ? participantSnapshot.data() : {} };
 }
 
-async function validateSchedule(identity: StaffIdentity, raw: any): Promise<Validated> {
+export async function validateSchedule(identity: StaffIdentity, raw: any): Promise<Validated> {
   const context = await loadSchedule(identity, raw);
   const deliveryMethod = DELIVERY_METHODS.includes(clean(raw.deliveryMethod)) ? clean(raw.deliveryMethod) : "in_person";
   const location = deliveryMethod === "in_person" ? shortText(raw.location, 200) : "";
@@ -500,7 +502,7 @@ async function validateSchedule(identity: StaffIdentity, raw: any): Promise<Vali
   };
 }
 
-async function executeSchedule(identity: StaffIdentity, params: any): Promise<string> {
+export async function executeSchedule(identity: StaffIdentity, params: any): Promise<string> {
   const context = await loadSchedule(identity, params);
   const { assignment, participant, sessionId, start, end } = context;
   const deliveryMethod = DELIVERY_METHODS.includes(clean(params.deliveryMethod)) ? clean(params.deliveryMethod) : "in_person";
@@ -539,7 +541,7 @@ async function executeSchedule(identity: StaffIdentity, params: any): Promise<st
       attendanceSummary: { invitedCount: 1, attendedCount: 0, checkedInCount: 0, checkedOutCount: 0 },
       foodMenu: [],
       status: "scheduled",
-      createdVia: "whatsapp",
+      createdVia: identity.channel || "whatsapp",
       createdById: identity.id,
       createdAt: now,
       updatedAt: now,

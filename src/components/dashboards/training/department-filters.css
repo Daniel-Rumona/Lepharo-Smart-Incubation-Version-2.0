@@ -8,7 +8,7 @@
   max-width: 100%;
   padding: 3px 10px;
   border: 1px solid var(--filter-border);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--filter-surface);
   color: var(--filter-text);
   text-align: left;

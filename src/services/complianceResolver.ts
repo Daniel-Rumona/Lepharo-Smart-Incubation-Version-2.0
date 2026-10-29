@@ -48,6 +48,10 @@ export type AgreementTemplate = {
 
 type ResolveOptions = {
     departmentId?: string
+    /**
+     * SME-facing views. Department setups are subsets of the programme list,
+     * so this resolves to the full programme list.
+     */
     includeAllDepartments?: boolean
 }
 
@@ -93,6 +97,34 @@ const complianceDate = (value: any): Date | null => {
 
     const parsed = new Date(value)
     return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+/**
+ * When an uploaded document expires. The requirement's validity period applied
+ * to the document's issue date wins; otherwise the stored expiryDate. This is
+ * the rule the staff Compliance page uses (computeExpiryDate), and the expiry
+ * reminder function in functions/src/complianceExpiry.ts mirrors it.
+ */
+export const complianceEffectiveExpiry = (
+    document: any,
+    requirement?: { hasExpiry?: boolean; expiryMonths?: number | null } | null
+): Date | null => {
+    const months = requirement?.hasExpiry
+        ? Number(requirement.expiryMonths) || 0
+        : 0
+    const issued = complianceDate(document?.issueDate)
+
+    if (months > 0 && issued) {
+        // Clamp to the month's last day (31 Jan + 1 month = 28/29 Feb), as dayjs does.
+        const expiry = new Date(issued)
+        expiry.setDate(1)
+        expiry.setMonth(expiry.getMonth() + months)
+        const lastDay = new Date(expiry.getFullYear(), expiry.getMonth() + 1, 0).getDate()
+        expiry.setDate(Math.min(issued.getDate(), lastDay))
+        return expiry
+    }
+
+    return complianceDate(document?.expiryDate)
 }
 
 export const resolveComplianceDocumentStatus = (
@@ -379,57 +411,81 @@ export const normalizeComplianceRequirements = (
 }
 
 /**
- * Program requirements are canonical. Department requirements may override
- * presentation/config fields, but they must not accidentally remove the
- * programme-level onboarding classification.
+ * The programme's list is the master list. A department's setup only selects
+ * which programme requirements that department tracks, and may set its own
+ * expiry for them. Everything else (title, kind, onboarding scope, required at
+ * application) comes from the programme, and a department row whose programme
+ * requirement was deleted is dropped rather than kept alive.
  */
-const mergeComplianceRequirementSets = (
+export const selectDepartmentRequirements = (
     programRequirements: ComplianceRequirement[],
     departmentRequirements: ComplianceRequirement[],
     templates: AgreementTemplate[] = []
 ) => {
-    const merged = new Map<
-        string,
-        ComplianceRequirement
-    >()
-
-    programRequirements.forEach(requirement => {
-        merged.set(
-            complianceRequirementKey(
-                requirement,
-                templates
-            ),
+    const programByKey = new Map(
+        programRequirements.map(requirement => [
+            complianceRequirementKey(requirement, templates),
             requirement
-        )
-    })
+        ])
+    )
 
+    const selected = new Map<string, ComplianceRequirement>()
     departmentRequirements.forEach(requirement => {
-        const key = complianceRequirementKey(
-            requirement,
-            templates
-        )
-        const canonical = merged.get(key)
+        const key = complianceRequirementKey(requirement, templates)
+        const canonical = programByKey.get(key)
+        if (!canonical) return
 
-        merged.set(key, {
+        selected.set(key, {
             ...canonical,
-            ...requirement,
-
-            // If the programme requirement already defines the scope,
-            // keep it. This fixes older deptRequirements copies that do
-            // not yet contain isOnboarding.
-            isOnboarding:
-                requirement.kind === 'agreement'
-                    ? true
-                    : canonical?.isOnboarding ??
-                      requirement.isOnboarding,
-
-            departmentId:
-                requirement.departmentId ??
-                canonical?.departmentId
+            hasExpiry: requirement.hasExpiry,
+            expiryMonths: requirement.hasExpiry
+                ? requirement.expiryMonths
+                : null,
+            departmentId: requirement.departmentId
         })
     })
 
-    return [...merged.values()]
+    return [...selected.values()]
+}
+
+/**
+ * Programme requirements live on programs/{id}.programRequirements. Older
+ * programmes only have the requiredDocs subcollection, which /programs still
+ * mirrors, so fall back to it when the array is empty.
+ */
+const loadProgramRequirementRows = async (
+    programId: string,
+    program: any
+): Promise<any[]> => {
+    if (
+        Array.isArray(program?.programRequirements) &&
+        program.programRequirements.length
+    ) {
+        return program.programRequirements
+    }
+
+    const legacy = await getDocs(
+        collection(db, 'programs', programId, 'requiredDocs')
+    )
+
+    return legacy.docs.map(item => {
+        const row = item.data() as any
+        const isAgreement = row.type === 'agreement'
+        return {
+            key: item.id,
+            title: row.title || item.id,
+            kind: isAgreement ? 'agreement' : 'upload',
+            ...(isAgreement
+                ? { agreementId: row.agreementId || item.id }
+                : {}),
+            hasExpiry: Boolean(row.expiryRule),
+            expiryMonths: row.expiryRule?.months ?? null,
+            requiredAtApplication: Boolean(row.mandatory),
+            ...(typeof row.isOnboarding === 'boolean'
+                ? { isOnboarding: row.isOnboarding }
+                : {})
+        }
+    })
 }
 
 const getDepartmentComplianceScope = async (
@@ -564,7 +620,10 @@ export async function resolveComplianceRequirements(
 
     const programRequirements =
         normalizeComplianceRequirements(
-            program.programRequirements || [],
+            await loadProgramRequirementRows(
+                programId,
+                program
+            ),
             agreements
         )
 
@@ -601,8 +660,8 @@ export async function resolveComplianceRequirements(
                 }))
                 : []
 
-        const mergedRequirements =
-            mergeComplianceRequirementSets(
+        const selectedRequirements =
+            selectDepartmentRequirements(
                 programRequirements,
                 departmentRequirements,
                 agreements
@@ -610,7 +669,7 @@ export async function resolveComplianceRequirements(
 
         const visibleRequirements =
             filterComplianceRequirementsForDepartment(
-                mergedRequirements,
+                selectedRequirements,
                 departmentScope
             )
 
@@ -624,45 +683,6 @@ export async function resolveComplianceRequirements(
                     : [],
 
             departmentScope
-        }
-    }
-
-    if (options.includeAllDepartments) {
-        const departmentsSnapshot =
-            await getDocs(
-                collection(
-                    db,
-                    'programs',
-                    programId,
-                    'deptRequirements'
-                )
-            )
-
-        const departmentRequirements =
-            departmentsSnapshot.docs.flatMap(
-                item =>
-                    normalizeComplianceRequirements(
-                        (
-                            item.data() as any
-                        ).requiredDocuments || [],
-                        agreements
-                    ).map(requirement => ({
-                        ...requirement,
-                        departmentId: item.id
-                    }))
-            )
-
-        return {
-            requirements:
-                normalizeComplianceRequirements(
-                    [
-                        ...programRequirements,
-                        ...departmentRequirements
-                    ],
-                    agreements
-                ),
-            agreements,
-            departmentScope: null
         }
     }
 

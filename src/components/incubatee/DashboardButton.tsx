@@ -1,10 +1,13 @@
 import React from 'react'
-import { Button, theme, type ButtonProps } from 'antd'
+import { Button, type ButtonProps } from 'antd'
 
-/** Shared rounded action treatment for the incubatee dashboard and its dialogs. */
-export default function DashboardButton({ type: _type, variant: _variant, color, shape: _shape, style, danger, ...props }: ButtonProps) {
-    const { token } = theme.useToken()
-    return <Button {...props} danger={danger} shape="round" variant="filled"
-        color={danger ? 'danger' : color || 'geekblue'}
-        style={{ ...style, border: `1px solid ${danger ? token.colorError : token.colorPrimary}`, boxShadow: 'none' }} />
+/**
+ * The incubatee dashboard's action button: always the tonal variant (accent
+ * tint, accent border), whatever type/variant the caller passes. Shape,
+ * colours and hover come from the shared button design in styles/buttons.css.
+ */
+export default function DashboardButton({ type: _type, variant: _variant, color: _color, shape: _shape, danger, ...props }: ButtonProps) {
+    return <Button {...props} danger={danger} variant="filled"
+        color={danger ? 'danger' : 'primary'}
+        className={`dashboard-action-button${props.className ? ` ${props.className}` : ''}`} />
 }

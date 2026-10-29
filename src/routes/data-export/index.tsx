@@ -42,10 +42,11 @@ import {
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import dayjs, { Dayjs } from 'dayjs'
 import { Helmet } from 'react-helmet'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 const { Text } = Typography
 const { RangePicker } = DatePicker
 
@@ -293,21 +294,23 @@ const participantExportRecord = (participant: any) => {
     })
 }
 
-const interventionExportRecord = (item: any) => cleanRecord({
+type DepartmentNameOf = (departmentId?: string | null, fallback?: string) => string
+
+const interventionExportRecord = (item: any, nameOf: DepartmentNameOf) => cleanRecord({
     title: first(item.title, item.interventionTitle, item.name),
-    departmentName: first(item.departmentName, item.areaOfSupport, item.area),
+    departmentName: nameOf(item.departmentId, first(item.departmentName)),
     assignmentMode: first(item.assignmentMode, item.interventionMode, item.deliveryScheduleType),
     frequency: first(item.frequency, item.recurrencePreset, item.recurrence),
     hasSubInterventions: item.hasSubInterventions || (Array.isArray(item.subInterventions) && item.subInterventions.length > 0),
     subInterventions: joinLabels(item.subInterventions || []),
 })
 
-const assignedInterventionExportRecord = (item: any) => cleanRecord({
+const assignedInterventionExportRecord = (item: any, nameOf: DepartmentNameOf) => cleanRecord({
     beneficiaryName: first(item.beneficiaryName, item.participantName, item.businessName),
     smmeNo: first(item.smmeNo, item.smmENo),
     interventionTitle: first(item.interventionTitle, item.title, item.name),
     subInterventionTitle: item.subInterventionTitle,
-    departmentName: first(item.departmentName, item.areaOfSupport, item.area),
+    departmentName: nameOf(item.departmentId, first(item.departmentName)),
     assigneeName: first(item.assigneeName, item.facilitatorName),
     assigneeRole: item.assigneeRole,
     status: item.assignmentStatus,
@@ -320,13 +323,13 @@ const assignedInterventionExportRecord = (item: any) => cleanRecord({
     frequency: first(item.frequency, item.recurrencePreset, item.recurrence)
 })
 
-const movExportRecord = (item: any) => cleanRecord({
+const movExportRecord = (item: any, nameOf: DepartmentNameOf) => cleanRecord({
     beneficiaryName: first(item.beneficiaryName, item.smmeName, item.smmeCompanyName),
     smmeNo: first(item.smmeNo, item.smmENo),
     sector: first(item.smmeSector, item.sector),
     groupStage: item.groupStage,
     programName: item.programName,
-    departmentName: first(item.departmentName, item.areaOfSupport),
+    departmentName: nameOf(item.departmentId, first(item.departmentName)),
     interventionTitle: item.interventionTitle,
     interventionType: item.interventionType,
     interventionMethod: first(item.interventionMethod, item.deliveryMethod),
@@ -341,12 +344,12 @@ const movExportRecord = (item: any) => cleanRecord({
     attachments: joinLabels(item.attachments || [])
 })
 
-const exportRecord = (datasetKey: string, raw: any) => {
+const exportRecord = (datasetKey: string, raw: any, nameOf: DepartmentNameOf) => {
     if (datasetKey === 'smes') return smeExportRecord(raw)
     if (datasetKey === 'participants') return participantExportRecord(raw)
-    if (datasetKey === 'interventions') return interventionExportRecord(raw)
-    if (datasetKey === 'assignedInterventions') return assignedInterventionExportRecord(raw)
-    if (datasetKey === 'movs') return movExportRecord(raw)
+    if (datasetKey === 'interventions') return interventionExportRecord(raw, nameOf)
+    if (datasetKey === 'assignedInterventions') return assignedInterventionExportRecord(raw, nameOf)
+    if (datasetKey === 'movs') return movExportRecord(raw, nameOf)
     return flatten(raw)
 }
 
@@ -426,6 +429,7 @@ const TableSkeleton: React.FC<{ borderColor: string }> = ({ borderColor }) => (
 const DataExportPage: React.FC = () => {
     const { token } = theme.useToken()
     const { user, loading: identityLoading } = useFullIdentity()
+    const { nameOf } = useDepartmentRoles()
 
     const [selected, setSelected] = useState<string[]>(['smes'])
     const [previewKey, setPreviewKey] = useState<string>('smes')
@@ -436,9 +440,9 @@ const DataExportPage: React.FC = () => {
     const [allowedDatasetKeys, setAllowedDatasetKeys] = useState<string[]>([])
 
     const role = String(user?.role || '').toLowerCase().replace(/\s+/g, '')
-    const allowed = ['admin', 'director', 'operations', 'projectadmin', 'projectmanager'].includes(role)
+    const allowed = ['system_admin', 'director', 'operations', 'projectadmin', 'projectmanager'].includes(role)
     const departmentId = String(user?.departmentId || '')
-    const isUnrestricted = role === 'admin' || role === 'director'
+    const isUnrestricted = role === 'system_admin' || role === 'director'
 
     const visibleDatasets = isUnrestricted
         ? DATASETS
@@ -583,11 +587,11 @@ const DataExportPage: React.FC = () => {
                                     _participant: participantId
                                         ? participantsById.get(participantId)
                                         : null
-                                })
+                                }, nameOf)
                             })
                         } else {
                             rows = snapshot.docs.map(item =>
-                                exportRecord(dataset.key, item.data())
+                                exportRecord(dataset.key, item.data(), nameOf)
                             )
                         }
 
@@ -1127,9 +1131,9 @@ const DataExportPage: React.FC = () => {
                         style={{ marginBottom: 18 }}
                     >
                         <Col xs={12}>
-                            <MotionCard.Metric
+                            <MetricTile
                                 icon={<DatabaseOutlined />}
-                                iconBg="rgba(23,107,135,.12)"
+                                tone='info'
                                 title="Sources selected"
                                 value={selected.length}
                                 subtitle="Exported as separate Excel sheets"
@@ -1137,9 +1141,9 @@ const DataExportPage: React.FC = () => {
                         </Col>
 
                         <Col xs={12}>
-                            <MotionCard.Metric
+                            <MetricTile
                                 icon={<FileExcelOutlined />}
-                                iconBg="rgba(82,196,26,.12)"
+                                tone='success'
                                 title="Records loaded"
                                 value={totalLoaded.toLocaleString()}
                                 subtitle="Ready for export"

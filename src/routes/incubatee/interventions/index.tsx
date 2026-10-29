@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
     Card,
-    Table,
     Button,
     Space,
     Tag,
@@ -11,21 +10,20 @@ import {
     Select,
     Input,
     Rate,
-    Divider,
     Typography,
     notification,
     message,
-    Tooltip,
-    Row,
-    Col,
     Alert,
     List,
     Grid,
     Empty,
-    Tabs,
-    DatePicker,
-    Progress
+    Progress,
+    Segmented,
+    Pagination,
+    Skeleton
 } from 'antd'
+import { DisputeDeliveryModal } from '@/components/queries/DisputeDeliveryModal'
+import type { DisputeCategory } from '@/services/deliveryDisputeService'
 import {
     PlusOutlined,
     CheckCircleOutlined,
@@ -33,9 +31,8 @@ import {
     ExclamationCircleOutlined,
     FileSearchOutlined,
     ClockCircleOutlined,
-    LineChartOutlined,
-    EyeOutlined,
-    ArrowLeftOutlined
+    ArrowLeftOutlined,
+    RightOutlined
 } from '@ant-design/icons'
 import {
     collection,
@@ -51,23 +48,30 @@ import {
 } from 'firebase/firestore'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
-import { sendNotification } from '@/utils/sendNotification'
 import { v4 as uuidv4 } from 'uuid'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { motion } from 'framer-motion'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { useNavigate } from 'react-router-dom'
 import { toAssignedInterventionView } from '@/services/assignedInterventionService'
 import { resolveAssignmentLifecycle, assignmentCompletedDate } from '@/services/assignmentLifecycleService'
-import { MotionCard, DashboardFilterBar } from '@/components/dashboards/metrics/Header'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
 import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
+import {
+    getSmeResponseState,
+    isPastAppointment,
+    SME_RESPONSE_META,
+    type SmeResponseState
+} from '@/services/appointmentService'
 import { applyKpiDeltas } from '@/lib/kpis' // ⬅️ switched to new API
 import {
     confirmCompletion as confirmCompletionAction,
     rejectCompletion as rejectCompletionAction
 } from '@/lib/interventions'
+import AppointmentResponseSheet from '@/components/appointments/AppointmentResponseSheet'
+import { useSigningCeremony } from '@/components/shared/SignatureAnimation'
+import './interventions.css'
 
 const { Text } = Typography
 const { Option } = Select
@@ -77,7 +81,7 @@ const { useBreakpoint } = Grid
 interface RequiredIntervention {
     id: string
     title: string
-    area: string
+    departmentId?: string
 }
 interface Resource {
     type: 'document' | 'link' | 'image'
@@ -97,7 +101,7 @@ interface AssignedIntervention {
     participantName: string
     interventionTitle: string
     description?: string
-    areaOfSupport: string | string[] | Record<string, any>
+    departmentId?: string | null
     dueDate: any
     createdAt: string
     updatedAt: string
@@ -127,7 +131,7 @@ interface AssignedIntervention {
 
 interface InterventionRequest {
     id: string
-    areaOfSupport: string
+    departmentId?: string
     interventionTitle: string
     reason?: string
     status:
@@ -141,6 +145,32 @@ interface InterventionRequest {
     updatedAt?: any
     decisionReason?: string
 }
+
+/**
+ * The page's status chips. Each lifecycle status the SME can see falls into
+ * one group, so they filter by what matters to them rather than by the
+ * underlying workflow state.
+ */
+type StatusGroup = 'action' | 'active' | 'not-started' | 'completed' | 'issues'
+
+const GROUP_META: Record<StatusGroup, { label: string; tone: string; icon: React.ReactNode }> = {
+    action: { label: 'Needs you', tone: 'action', icon: <ExclamationCircleOutlined /> },
+    active: { label: 'In progress', tone: 'active', icon: <ClockCircleOutlined /> },
+    'not-started': { label: 'Not started', tone: 'idle', icon: <FileSearchOutlined /> },
+    completed: { label: 'Completed', tone: 'done', icon: <CheckCircleOutlined /> },
+    issues: { label: 'Issues', tone: 'issue', icon: <CloseCircleOutlined /> }
+}
+
+const STATUS_FILTERS: Array<{ key: 'all' | StatusGroup; label: string }> = [
+    { key: 'all', label: 'All' },
+    { key: 'action', label: GROUP_META.action.label },
+    { key: 'active', label: GROUP_META.active.label },
+    { key: 'not-started', label: GROUP_META['not-started'].label },
+    { key: 'completed', label: GROUP_META.completed.label },
+    { key: 'issues', label: GROUP_META.issues.label }
+]
+
+const PAGE_SIZE = 8
 
 const InterventionsTrackingView: React.FC = () => {
     const [loading, setLoading] = useState(false)
@@ -157,10 +187,17 @@ const InterventionsTrackingView: React.FC = () => {
     const [requests, setRequests] = useState<InterventionRequest[]>([])
     const [loadingRequests, setLoadingRequests] = useState(false)
     const [filters, setFilters] = useState<{
-        status: string
-        area: string
-        dateRange: [Dayjs | null, Dayjs | null] | null
-    }>({ status: 'all', area: 'all', dateRange: null })
+        status: 'all' | StatusGroup
+        department: string
+    }>({ status: 'all', department: 'all' })
+    const [view, setView] = useState<'required' | 'requests'>('required')
+    const [respondingAppointment, setRespondingAppointment] = useState<any | null>(null)
+    // Bumped after an appointment response so statuses come back from the
+    // source; the reload it triggers keeps the list on screen.
+    const [reloadKey, setReloadKey] = useState(0)
+    const quietReload = useRef(false)
+    const [page, setPage] = useState(1)
+    useEffect(() => setPage(1), [filters])
     const [isRequestModalVisible, setIsRequestModalVisible] = useState(false)
     const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false)
     const [completionReviewStep, setCompletionReviewStep] = useState<0 | 1>(0)
@@ -177,12 +214,13 @@ const InterventionsTrackingView: React.FC = () => {
     const [latestPlanId, setLatestPlanId] = useState<string | null>(null)
     const [planInterventions, setPlanInterventions] = useState<any[]>([])
     const [allInterventions, setAllInterventions] = useState<any[]>([])
-    const [selectedArea, setSelectedArea] = useState<string | null>(null)
+    const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null)
     const [isDeclineCompletionModalVisible, setIsDeclineCompletionModalVisible] =
         useState(false)
-    const [rejectCompletionForm] = Form.useForm()
 
     const { user } = useFullIdentity()
+    const signingCeremony = useSigningCeremony()
+    const { nameOf } = useDepartmentRoles()
     const navigate = useNavigate()
     const screens = useBreakpoint()
     const isMobile = !screens.md
@@ -260,9 +298,10 @@ const InterventionsTrackingView: React.FC = () => {
                 const email = String(user.email).trim().toLowerCase()
                 const exact = await getDocs(query(collection(db, 'participants'), where('email', '==', user.email)))
                 participantDoc = exact.docs[0] || null
+                // Only staff may scan participants; for an SME this finds nothing.
                 if (!participantDoc) {
-                    const participants = await getDocs(collection(db, 'participants'))
-                    participantDoc = participants.docs.find(item =>
+                    const participants = await getDocs(collection(db, 'participants')).catch(() => null)
+                    participantDoc = participants?.docs.find(item =>
                         String(item.data()?.email || '').trim().toLowerCase() === email
                     ) || null
                 }
@@ -404,7 +443,7 @@ const InterventionsTrackingView: React.FC = () => {
         let cancelled = false
 
         const fetchAssigned = async () => {
-            setLoading(true)
+            if (!quietReload.current) setLoading(true)
             try {
                 const q = query(
                     collection(db, 'assignedInterventions'),
@@ -432,8 +471,8 @@ const InterventionsTrackingView: React.FC = () => {
                         return {
                             id: docSnap.id,
                             ...data,
-                            areaOfSupport:
-                                interventionData['areaOfSupport'] || data.areaOfSupport || '',
+                            departmentId:
+                                data.departmentId || interventionData['departmentId'] || null,
                             type:
                                 interventionData['interventionType'] || data.type || 'singular'
                         }
@@ -464,9 +503,13 @@ const InterventionsTrackingView: React.FC = () => {
                                 const status = String(appointment?.status || 'scheduled')
                                     .trim()
                                     .toLowerCase()
+                                // A session that has already happened can no
+                                // longer be answered, so it is not waiting on
+                                // the SME (the dashboard hides it too).
                                 return (
                                     confirmation === 'pending' &&
-                                    !['cancelled', 'declined'].includes(status)
+                                    !['cancelled', 'declined'].includes(status) &&
+                                    !isPastAppointment(appointment as any)
                                 )
                             })
                             .map(appointment =>
@@ -480,6 +523,7 @@ const InterventionsTrackingView: React.FC = () => {
                 console.error('Error fetching interventions:', err)
                 notification.error({ message: 'Failed to load interventions.' })
             } finally {
+                quietReload.current = false
                 if (!cancelled) setLoading(false)
             }
         }
@@ -488,7 +532,7 @@ const InterventionsTrackingView: React.FC = () => {
         return () => {
             cancelled = true
         }
-    }, [participantId])
+    }, [participantId, reloadKey])
 
     // what’s already in applications.required
     const existingRequiredIds = new Set(
@@ -502,11 +546,13 @@ const InterventionsTrackingView: React.FC = () => {
         (assignedInterventions || []).map(i => normalize(i.interventionTitle))
     )
 
-    const areaOptions = Array.from(
-        new Set(allInterventions.map(i => i.areaOfSupport).filter(Boolean))
+    const departmentOptions = Array.from(
+        new Set(allInterventions.map(i => String(i.departmentId || '')).filter(Boolean))
     )
+        .map(id => ({ id, name: nameOf(id) }))
+        .sort((a, b) => a.name.localeCompare(b.name))
     const interventionOptions = allInterventions
-        .filter(i => i.areaOfSupport === selectedArea)
+        .filter(i => String(i.departmentId || '') === selectedDepartmentId)
         .filter(i => {
             const t = i.interventionTitle || i.title || ''
             return (
@@ -605,6 +651,26 @@ const InterventionsTrackingView: React.FC = () => {
         return { color, icon, label }
     }
 
+    const statusGroupOf = (record: AssignedIntervention): StatusGroup => {
+        switch (deriveDisplayStatus(record)) {
+            case 'Awaiting Your Acceptance':
+            case 'Awaiting Appointment Response':
+            case 'Awaiting Your Confirmation':
+                return 'action'
+            case 'Pending':
+            case 'Pending Assignment':
+                return 'not-started'
+            case 'Completed':
+                return 'completed'
+            case 'Declined':
+            case 'Facilitator Declined':
+            case 'Completion Rejected':
+                return 'issues'
+            default:
+                return 'active'
+        }
+    }
+
     // Accept / decline now happens by responding to the intervention's
     // appointment invite (see incubatee/appointments) rather than here.
 
@@ -630,16 +696,22 @@ const InterventionsTrackingView: React.FC = () => {
         setConfirmingCompletion(true)
         try {
             // 1) Centralized write + denorm + MOV + notifications
-            await confirmCompletionAction(
-                db,
-                record.id,
-                {
-                    rating: values.rating,
-                    comments: values.feedback
-                },
-                {
-                    signerSignatureUrl: user?.signatureURL || ''
-                }
+            // Confirming signs the MOV with the saved signature: show it being written.
+            await signingCeremony.sign(
+                user?.signatureURL,
+                () => confirmCompletionAction(
+                    db,
+                    record.id,
+                    {
+                        rating: values.rating,
+                        comments: values.feedback
+                    },
+                    {
+                        signerSignatureUrl: user?.signatureURL || ''
+                    }
+                ),
+                'Signing the MOV',
+                record.interventionTitle || undefined
             )
 
             // 2) Local UI state update
@@ -698,15 +770,6 @@ const InterventionsTrackingView: React.FC = () => {
                     return acc
                 }, {})
 
-                const areaStr =
-                    typeof record.areaOfSupport === 'string'
-                        ? record.areaOfSupport
-                        : Array.isArray(record.areaOfSupport)
-                            ? record.areaOfSupport.join(', ')
-                            : record.areaOfSupport && typeof record.areaOfSupport === 'object'
-                                ? Object.keys(record.areaOfSupport).join(', ')
-                                : ''
-
                 const q = Math.floor(dayjs().month() / 3) + 1
                 const quarterKey = `${dayjs().year()}-Q${q}`
 
@@ -714,7 +777,7 @@ const InterventionsTrackingView: React.FC = () => {
                     {
                         participantId: record.participantId,
                         programId,
-                        areaOfSupport: areaStr,
+                        departmentId: record.departmentId || undefined,
                         quarter: quarterKey,
                         payload: {
                             interventionId: record.interventionId,
@@ -742,13 +805,16 @@ const InterventionsTrackingView: React.FC = () => {
 
     const handleRejectCompletion = async (
         intervention: AssignedIntervention,
-        reason: string
+        reason: string,
+        category: DisputeCategory = 'other'
     ) => {
         try {
             await rejectCompletionAction(db, intervention.id, reason, {
                 deptName: user?.departmentName,
-                uid: user?.uid
-            })
+                uid: user?.uid,
+                name: (user as any)?.name || null,
+                email: user?.email || undefined
+            }, category)
             setAssignedInterventions(prev =>
                 prev.map(i =>
                     i.id === intervention.id
@@ -756,7 +822,7 @@ const InterventionsTrackingView: React.FC = () => {
                         : i
                 )
             )
-            message.success('Completion rejected.')
+            message.success('Sent to the facilitator. You’ll be asked to confirm again once it’s sorted.')
         } catch (err) {
             console.error(err)
             message.error('Failed to reject completion. Please try again.')
@@ -764,12 +830,8 @@ const InterventionsTrackingView: React.FC = () => {
     }
 
     // Filters
-    const areaLabel = (value: any): string => {
-        if (typeof value === 'string') return value
-        if (Array.isArray(value)) return value.filter(Boolean).join(', ')
-        if (value && typeof value === 'object') return Object.keys(value).join(', ')
-        return ''
-    }
+    const departmentLabel = (departmentId?: string | null): string =>
+        departmentId ? nameOf(departmentId, '') : ''
 
     // The list is sourced from the developmental plan: every intervention the
     // departments have added to the plan, cross-referenced with its live
@@ -839,7 +901,7 @@ const InterventionsTrackingView: React.FC = () => {
                     participantName: '',
                     interventionTitle: title,
                     description: '',
-                    areaOfSupport: planItem?.area ?? planItem?.areaOfSupport ?? '',
+                    departmentId: planItem?.departmentId ?? null,
                     dueDate: null,
                     createdAt: '',
                     updatedAt: '',
@@ -858,9 +920,11 @@ const InterventionsTrackingView: React.FC = () => {
         return [...uniqueAssigned, ...unassigned]
     }, [assignedInterventions, participantId, planInterventions])
 
-    const assignedAreaOptions = Array.from(new Set(
-        allWithUnassigned.map(item => areaLabel(item.areaOfSupport)).filter(Boolean)
-    )).sort((a, b) => a.localeCompare(b))
+    const assignedDepartmentOptions = Array.from(new Set(
+        allWithUnassigned.map(item => String(item.departmentId || '')).filter(Boolean)
+    ))
+        .map(id => ({ value: id, label: departmentLabel(id) || 'Unassigned' }))
+        .sort((a, b) => a.label.localeCompare(b.label))
 
     const interventionDate = (value: any) => {
         if (!value) return null
@@ -881,15 +945,8 @@ const InterventionsTrackingView: React.FC = () => {
 
     const filteredInterventions = useMemo(() => {
         return allWithUnassigned.filter(intervention => {
-            const status = deriveDisplayStatus(intervention).toLowerCase()
-            if (filters.status !== 'all' && status !== filters.status.toLowerCase()) return false
-            if (filters.area !== 'all' && areaLabel(intervention.areaOfSupport) !== filters.area) return false
-            if (filters.dateRange?.[0] || filters.dateRange?.[1]) {
-                const due = interventionDate(intervention.dueDate)
-                if (!due) return false
-                if (filters.dateRange[0] && due.isBefore(filters.dateRange[0].startOf('day'))) return false
-                if (filters.dateRange[1] && due.isAfter(filters.dateRange[1].endOf('day'))) return false
-            }
+            if (filters.status !== 'all' && statusGroupOf(intervention) !== filters.status) return false
+            if (filters.department !== 'all' && String(intervention.departmentId || '') !== filters.department) return false
             return true
         }).sort((left, right) => {
             const priority = actionPriority(left) - actionPriority(right)
@@ -921,7 +978,7 @@ const InterventionsTrackingView: React.FC = () => {
         date: Dayjs
         status?: string
         received?: boolean
-        participantConfirmed?: 'pending' | 'confirmed' | 'declined'
+        participantResponse?: SmeResponseState
     }
 
     type CycleGroup = {
@@ -954,9 +1011,7 @@ const InterventionsTrackingView: React.FC = () => {
                         date,
                         status,
                         received: status === 'completed',
-                        participantConfirmed:
-                            (String(appointment?.userConfirmation || 'pending').toLowerCase() as
-                                'pending' | 'confirmed' | 'declined')
+                        participantResponse: getSmeResponseState(appointment)
                     })
                 })
 
@@ -1000,13 +1055,7 @@ const InterventionsTrackingView: React.FC = () => {
         const intervention = progressIntervention
         if (!intervention) return null
 
-        const area = typeof intervention.areaOfSupport === 'string'
-            ? intervention.areaOfSupport
-            : Array.isArray(intervention.areaOfSupport)
-                ? intervention.areaOfSupport.join(', ')
-                : intervention.areaOfSupport && typeof intervention.areaOfSupport === 'object'
-                    ? Object.keys(intervention.areaOfSupport).join(', ')
-                    : 'Not specified'
+        const area = departmentLabel(intervention.departmentId) || 'Not specified'
         const overallProgress = Math.min(
             100,
             Math.max(
@@ -1021,22 +1070,25 @@ const InterventionsTrackingView: React.FC = () => {
         const desktopSelectedMonth = selectedMonth || months[0] || null
 
         const summaryTag = statusTagInfo(intervention)
+        const summaryTone = GROUP_META[statusGroupOf(intervention)].tone
 
         const summary = (
-            <Space direction='vertical' size={6} style={{ width: '100%' }}>
-                <Space wrap align='center' style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <Text strong style={{ fontSize: 16 }}>{intervention.interventionTitle}</Text>
-                    <Tag color={summaryTag.color} icon={summaryTag.icon}>{summaryTag.label}</Tag>
+            <div className={`iv-card iv-tone-${summaryTone}`}>
+                <Space direction='vertical' size={6} style={{ width: '100%' }}>
+                    <div className='iv-event-head'>
+                        <Text strong style={{ fontSize: 16 }}>{intervention.interventionTitle}</Text>
+                        <span className='iv-pill'>{summaryTag.label}</span>
+                    </div>
+                    <Text type='secondary'>
+                        {area}{intervention.assigneeName ? ` · ${intervention.assigneeName}` : ''}
+                    </Text>
+                    <Progress
+                        percent={overallProgress}
+                        size='small'
+                        status={overallProgress >= 100 ? 'success' : 'active'}
+                    />
                 </Space>
-                <Text type='secondary'>
-                    {area}{intervention.assigneeName ? ` · ${intervention.assigneeName}` : ''}
-                </Text>
-                <Progress
-                    percent={overallProgress}
-                    size='small'
-                    status={overallProgress >= 100 ? 'success' : 'active'}
-                />
-            </Space>
+            </div>
         )
 
         const eventKindTag = (kind: CycleEventKind) => {
@@ -1055,134 +1107,86 @@ const InterventionsTrackingView: React.FC = () => {
                 )
             }
             return (
-                <Space direction='vertical' size={10} style={{ width: '100%' }}>
+                <div className='iv-events'>
                     {group.events.map(event => (
-                        <div
-                            key={event.key}
-                            style={{ border: '1px solid #f0f0f0', borderRadius: 10, padding: '8px 10px' }}
-                        >
-                            <Space direction='vertical' size={6} style={{ width: '100%' }}>
-                                <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                                    <Text strong>{event.date.format('DD MMM YYYY')}</Text>
-                                    {eventKindTag(event.kind)}
-                                </Space>
-                                {event.kind === 'appointment' && (
-                                    <>
+                        <div key={event.key} className='iv-event'>
+                            <div className='iv-event-head'>
+                                <Text strong>{event.date.format('DD MMM YYYY')}</Text>
+                                {eventKindTag(event.kind)}
+                            </div>
+                            {event.kind === 'appointment' && (
+                                <>
+                                    <div className='iv-event-line'>
+                                        <Text type='secondary'>Session</Text>
                                         <Tag color={event.received ? 'green' : event.status === 'cancelled' ? 'red' : 'default'}>
                                             {event.received ? 'Received' : (event.status || '').replace(/_/g, ' ')}
                                         </Tag>
-                                        <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                                            <Text type='secondary'>Your confirmation</Text>
-                                            <Tag color={
-                                                event.participantConfirmed === 'confirmed' ? 'green'
-                                                    : event.participantConfirmed === 'declined' ? 'red' : 'default'
-                                            }>
-                                                {event.participantConfirmed === 'confirmed' ? 'Confirmed'
-                                                    : event.participantConfirmed === 'declined' ? 'Declined' : 'Pending'}
-                                            </Tag>
-                                        </Space>
-                                    </>
-                                )}
-                                {event.kind === 'completed' && group.record.feedback && (
-                                    <Space direction='vertical' size={2} style={{ width: '100%' }}>
-                                        <Rate disabled value={group.record.feedback.rating} style={{ fontSize: 14 }} />
-                                        {group.record.feedback.comments && (
-                                            <Text type='secondary'>{group.record.feedback.comments}</Text>
-                                        )}
-                                    </Space>
-                                )}
-                            </Space>
+                                    </div>
+                                    <div className='iv-event-line'>
+                                        <Text type='secondary'>Your confirmation</Text>
+                                        <Tag color={SME_RESPONSE_META[event.participantResponse || 'pending'].color}>
+                                            {SME_RESPONSE_META[event.participantResponse || 'pending'].label}
+                                        </Tag>
+                                    </div>
+                                </>
+                            )}
+                            {event.kind === 'completed' && group.record.feedback && (
+                                <Space direction='vertical' size={2} style={{ width: '100%' }}>
+                                    <Rate disabled value={group.record.feedback.rating} style={{ fontSize: 14 }} />
+                                    {group.record.feedback.comments && (
+                                        <Text type='secondary'>{group.record.feedback.comments}</Text>
+                                    )}
+                                </Space>
+                            )}
                         </div>
                     ))}
-                </Space>
+                </div>
             )
         }
 
-        const renderMonthsList = (onSelect: (key: string) => void, activeKey: string | null) => (
-            <List
-                size='small'
-                split={false}
-                dataSource={months}
-                locale={{
-                    emptyText: (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No activity recorded yet' />
-                    )
-                }}
-                renderItem={group => (
-                    <List.Item
-                        onClick={() => onSelect(group.key)}
-                        style={{
-                            cursor: 'pointer',
-                            borderRadius: 10,
-                            padding: '10px 12px',
-                            marginBottom: 8,
-                            border: `1px solid ${activeKey === group.key ? '#1677ff' : '#e6e6e6'}`,
-                            background: activeKey === group.key ? '#e6f4ff' : '#fff'
-                        }}
-                    >
-                        <Space
-                            align='center'
-                            style={{ justifyContent: 'space-between', width: '100%', flexWrap: 'nowrap' }}
-                        >
-                            <Text strong style={{ whiteSpace: 'nowrap' }}>{group.label}</Text>
-                            <Space size={4} style={{ flexWrap: 'nowrap' }}>
-                                {group.appointmentCount > 0 && (
-                                    <Tag color='blue' style={{ marginInlineEnd: 0 }}>
-                                        {group.receivedCount}/{group.appointmentCount} session{group.appointmentCount === 1 ? '' : 's'}
-                                    </Tag>
-                                )}
-                                {group.isCompleted ? (
-                                    <Tag color='green' style={{ marginInlineEnd: 0 }}>Completed</Tag>
-                                ) : (
-                                    <Tag color='blue' style={{ marginInlineEnd: 0 }}>{deriveDisplayStatus(group.record)}</Tag>
-                                )}
-                            </Space>
-                        </Space>
-                    </List.Item>
-                )}
-            />
-        )
+        const renderMonthsList = (onSelect: (key: string) => void, activeKey: string | null) =>
+            months.length ? (
+                <ul className='iv-months'>
+                    {months.map(group => (
+                        <li key={group.key}>
+                            <button
+                                type='button'
+                                className={`iv-month${activeKey === group.key ? ' is-active' : ''}`}
+                                aria-pressed={activeKey === group.key}
+                                onClick={() => onSelect(group.key)}
+                            >
+                                <span className='iv-month-label'>{group.label}</span>
+                                <span className='iv-month-tags'>
+                                    {group.appointmentCount > 0 && (
+                                        <Tag color='blue' style={{ marginInlineEnd: 0 }}>
+                                            {group.receivedCount}/{group.appointmentCount} session{group.appointmentCount === 1 ? '' : 's'}
+                                        </Tag>
+                                    )}
+                                    {group.isCompleted ? (
+                                        <Tag color='green' style={{ marginInlineEnd: 0 }}>Completed</Tag>
+                                    ) : (
+                                        <Tag style={{ marginInlineEnd: 0 }}>{deriveDisplayStatus(group.record)}</Tag>
+                                    )}
+                                </span>
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No activity recorded yet' />
+            )
 
-        const renderMobileTopBar = (label: string, onBack: () => void) => (
-            <div
-                style={{
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center',
-                    minHeight: 44,
-                    padding: '0 6px',
-                    borderRadius: 14,
-                    background: '#fff',
-                    border: '1px solid rgba(0,0,0,0.06)',
-                    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)'
-                }}
-            >
-                <Button
-                    shape='circle'
-                    icon={<ArrowLeftOutlined />}
-                    onClick={onBack}
-                />
-                <Text
-                    strong
-                    ellipsis
-                    style={{
-                        position: 'absolute',
-                        left: 44,
-                        right: 44,
-                        textAlign: 'center',
-                        fontSize: 15
-                    }}
-                >
-                    {label}
-                </Text>
-            </div>
+        const backButton = (label: string, onBack: () => void) => (
+            <Button type='text' icon={<ArrowLeftOutlined />} onClick={onBack} style={{ alignSelf: 'flex-start' }}>
+                {label}
+            </Button>
         )
 
         if (isMobile) {
             if (selectedMonth) {
                 return (
                     <Space direction='vertical' size={12} style={{ width: '100%' }}>
-                        {renderMobileTopBar('Back to months', () => setProgressSelectedKey(null))}
+                        {backButton('Back to months', () => setProgressSelectedKey(null))}
                         <Text strong style={{ fontSize: 15 }}>{selectedMonth.label}</Text>
                         {renderMonthDetail(selectedMonth)}
                     </Space>
@@ -1190,207 +1194,41 @@ const InterventionsTrackingView: React.FC = () => {
             }
             return (
                 <Space direction='vertical' size={12} style={{ width: '100%' }}>
-                    {renderMobileTopBar('Back to interventions', () => setProgressIntervention(null))}
+                    {backButton('Back to interventions', () => setProgressIntervention(null))}
                     {summary}
-                    <Divider style={{ margin: '4px 0' }} />
-                    {renderMonthsList(key => setProgressSelectedKey(key), null)}
+                    <div className='iv-card'>
+                        <p className='iv-card-title'>Months</p>
+                        {renderMonthsList(key => setProgressSelectedKey(key), null)}
+                    </div>
                 </Space>
             )
         }
 
         return (
             <Space direction='vertical' size={16} style={{ width: '100%' }}>
-                <Button
-                    icon={<ArrowLeftOutlined />}
-                    type='text'
-                    onClick={() => setProgressIntervention(null)}
-                >
-                    Back to interventions
-                </Button>
-                <Card size='small'>{summary}</Card>
-                <Row gutter={16} align='top'>
-                    <Col span={9}>
-                        <Card size='small' title='Months'>
-                            {renderMonthsList(
-                                key => setProgressSelectedKey(key),
-                                desktopSelectedMonth?.key || null
-                            )}
-                        </Card>
-                    </Col>
-                    <Col span={15}>
-                        <Card size='small' title={desktopSelectedMonth?.label || 'Details'}>
-                            {renderMonthDetail(desktopSelectedMonth)}
-                        </Card>
-                    </Col>
-                </Row>
+                {backButton('Back to interventions', () => setProgressIntervention(null))}
+                {summary}
+                <div className='iv-progress-grid'>
+                    <div className='iv-card'>
+                        <p className='iv-card-title'>Months</p>
+                        {renderMonthsList(key => setProgressSelectedKey(key), desktopSelectedMonth?.key || null)}
+                    </div>
+                    <div className='iv-card'>
+                        <p className='iv-card-title'>{desktopSelectedMonth?.label || 'Details'}</p>
+                        {renderMonthDetail(desktopSelectedMonth)}
+                    </div>
+                </div>
             </Space>
         )
     }
-
-    // Desktop columns
-    const interventionColumns = [
-        {
-            title: 'Intervention',
-            dataIndex: 'interventionTitle',
-            key: 'interventionTitle',
-            ellipsis: true,
-            render: (text: string, record: any) => (
-                <Space direction='vertical' size={0}>
-                    <Text strong ellipsis={{ tooltip: text }}>
-                        {text}
-                    </Text>
-                    {receivedCountFor(record) > 0 && (
-                        <Text type='secondary' ellipsis>
-                            {receivedCountFor(record)} received
-                        </Text>
-                    )}
-                    <Text type='secondary' ellipsis>
-                        {typeof record.area === 'string'
-                            ? record.area
-                            : typeof record.areaOfSupport === 'string'
-                                ? record.areaOfSupport
-                                : Array.isArray(record.areaOfSupport)
-                                    ? record.areaOfSupport.join(', ')
-                                    : typeof record.areaOfSupport === 'object'
-                                        ? Object.keys(record.areaOfSupport).join(', ')
-                                        : 'N/A'}
-                    </Text>
-                </Space>
-            )
-        },
-        {
-            title: 'Status',
-            key: 'status',
-            width: 210,
-            render: (_: any, record: AssignedIntervention) => {
-                const { color, icon, label } = statusTagInfo(record)
-                return (
-                    <Tag color={color} icon={icon}>
-                        {label}
-                    </Tag>
-                )
-            }
-        },
-        {
-            title: 'Actions',
-            key: 'actions',
-            width: 280,
-            render: (_: any, record: AssignedIntervention) => (
-                <Space wrap>
-                    <Button
-                        size='small'
-                        shape='round'
-                        icon={<EyeOutlined />}
-                        onClick={() => openProgressView(record)}
-                    >
-                        View Progress
-                    </Button>
-                    {resolveAssignmentLifecycle(record).key === 'awaiting-participant-acceptance' &&
-                        pendingAppointmentAssignmentIds.has(record.id) && (
-                            <Tooltip title="Open Appointments to accept or decline the appointment and intervention together">
-                                <Button
-                                    size='small'
-                                    shape='round'
-                                    onClick={() => navigate('/incubatee/appointments')}
-                                >
-                                    View Appointment
-                                </Button>
-                            </Tooltip>
-                        )}
-
-                    {resolveAssignmentLifecycle(record).key === 'awaiting-participant-confirmation' && (
-                        <>
-                            <Tooltip title='Confirm intervention was completed successfully'>
-                                <Button
-                                    size='small'
-                                    shape='round'
-                                    variant='filled'
-                                    color='blue'
-                                    style={{ border: '1px solid #1677ff' }}
-                                    onClick={() => openCompletionReview(record)}
-                                >
-                                    Confirm
-                                </Button>
-                            </Tooltip>
-                            <Tooltip title='Reject completion and provide a reason'>
-                                <Button
-                                    size='small'
-                                    shape='round'
-                                    variant='filled'
-                                    color='orange'
-                                    style={{ border: '1px solid #fa8c16' }}
-                                    onClick={() => {
-                                        setSelectedIntervention(record)
-                                        setIsDeclineCompletionModalVisible(true)
-                                    }}
-                                >
-                                    Reject
-                                </Button>
-                            </Tooltip>
-                        </>
-                    )}
-                </Space>
-            )
-        }
-    ]
-
-    const requestedColumns = [
-        {
-            title: 'Intervention',
-            dataIndex: 'interventionTitle',
-            key: 'title',
-            render: (text: string, r: InterventionRequest) => (
-                <Space direction='vertical' size={0}>
-                    <Text strong ellipsis={{ tooltip: text }}>
-                        {text}
-                    </Text>
-                    <Text type='secondary'>{r.areaOfSupport || '—'}</Text>
-                </Space>
-            )
-        },
-        {
-            title: 'Status',
-            dataIndex: 'status',
-            key: 'status',
-            width: 140,
-            render: (status: string) => {
-                const { label, color } = normalizeRequestStatus(status)
-                return <Tag color={color}>{label}</Tag>
-            }
-        },
-        {
-            title: 'Submitted',
-            dataIndex: 'createdAt',
-            key: 'createdAt',
-            width: 160,
-            render: (dt: any) =>
-                dt?.seconds ? dayjs(dt.seconds * 1000).format('YYYY-MM-DD') : '-'
-        },
-        {
-            title: 'Reason',
-            dataIndex: 'reason',
-            key: 'reason',
-            ellipsis: true
-        },
-        {
-            title: 'Decision Note',
-            key: 'decisionReason',
-            ellipsis: true,
-            render: (_: any, r: InterventionRequest) => {
-                const { label } = normalizeRequestStatus(r.status)
-                return label === 'Rejected' ? r.decisionReason || '—' : '—'
-            }
-        }
-    ]
 
     // Metrics
     const totalRequired = Math.max(allWithUnassigned.length, assignedInterventions.length)
     const completedCount = assignedInterventions.filter(
         i => resolveAssignmentLifecycle(i).isCompleted
     ).length
-    // Counted the same way the "In Progress" status filter matches, so the
-    // metric and the filter never disagree (isOpen also covers states like
-    // "Awaiting Your Confirmation" that "In Progress" deliberately excludes).
+    // Counted the same way the "In Progress" status matches, so the metric
+    // and the list never disagree.
     const ongoingCount = allWithUnassigned.filter(
         i => deriveDisplayStatus(i) === 'In Progress'
     ).length
@@ -1398,110 +1236,185 @@ const InterventionsTrackingView: React.FC = () => {
         ? Math.round((completedCount / totalRequired) * 100)
         : 0
 
-    const assignedFilterBar = (
-        <Row gutter={[12, 12]} align='middle'>
-            <Col xs={24} sm={12} lg={5}>
-                <Select
-                    value={filters.status}
-                    onChange={status => setFilters(current => ({ ...current, status }))}
-                    style={{ width: '100%' }}
-                    options={[
-                        ['all', 'All statuses'],
-                        ['pending assignment', 'Pending Assignment'],
-                        ['awaiting facilitator', 'Awaiting Facilitator'],
-                        ['appointment setup pending', 'Appointment Setup Pending'],
-                        ['awaiting appointment response', 'Awaiting Appointment Response'],
-                        ['in progress', 'In Progress'],
-                        ['awaiting your confirmation', 'Awaiting Your Confirmation'],
-                        ['completed', 'Completed'],
-                        ['declined', 'Declined'],
-                        ['facilitator declined', 'Facilitator Declined'],
-                        ['completion rejected', 'Completion Rejected']
-                    ].map(([value, label]) => ({ value, label }))}
-                />
-            </Col>
-            <Col xs={24} sm={12} lg={6}>
-                <Select
-                    showSearch
-                    optionFilterProp='label'
-                    value={filters.area}
-                    onChange={area => setFilters(current => ({ ...current, area }))}
-                    style={{ width: '100%' }}
-                    options={[
-                        { value: 'all', label: 'All areas' },
-                        ...assignedAreaOptions.map(value => ({ value, label: value }))
-                    ]}
-                />
-            </Col>
-            {screens.lg ? (
-                <Col lg={7}>
-                    <DatePicker.RangePicker
-                        value={filters.dateRange}
-                        onChange={dateRange => setFilters(current => ({
-                            ...current,
-                            dateRange: dateRange as [Dayjs | null, Dayjs | null] | null
-                        }))}
-                        allowEmpty={[true, true]}
-                        placeholder={['Due from', 'Due to']}
-                        style={{ width: '100%' }}
-                    />
-                </Col>
-            ) : null}
-            <Col xs={24} sm={24} lg={6}>
-                <Button
-                    block
-                    shape='round'
-                    variant='filled'
-                    color='blue'
-                    icon={<PlusOutlined />}
-                    style={{ border: '1px solid #1677ff' }}
-                    onClick={() => {
-                        setIsRequestModalVisible(true)
-                        setSelectedArea(null)
-                        requestForm.resetFields()
-                    }}
-                >
-                    Request New Intervention
-                </Button>
-            </Col>
-        </Row>
+    const openRequestModal = () => {
+        setIsRequestModalVisible(true)
+        setSelectedDepartmentId(null)
+        requestForm.resetFields()
+    }
+
+    // Chip counts follow the department filter, so a chip never promises rows
+    // that the current department hides.
+    const departmentFiltered = allWithUnassigned.filter(
+        item => filters.department === 'all' || String(item.departmentId || '') === filters.department
+    )
+    const groupCounts = departmentFiltered.reduce<Record<string, number>>((acc, item) => {
+        const group = statusGroupOf(item)
+        acc[group] = (acc[group] || 0) + 1
+        return acc
+    }, {})
+    const pageCount = Math.max(1, Math.ceil(filteredInterventions.length / PAGE_SIZE))
+    const currentPage = Math.min(page, pageCount)
+    const pagedInterventions = filteredInterventions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+    // The appointment waiting on the SME for an assignment: the earliest one
+    // still pending, matching how pendingAppointmentAssignmentIds is built.
+    const pendingAppointmentFor = (assignmentId: string) =>
+        (completionAppointmentsByAssignmentId[assignmentId] || [])
+            .filter(appointment =>
+                String(appointment?.userConfirmation || 'pending').trim().toLowerCase() === 'pending' &&
+                !['cancelled', 'declined'].includes(String(appointment?.status || 'scheduled').trim().toLowerCase()) &&
+                !isPastAppointment(appointment)
+            )
+            .sort((a, b) =>
+                (interventionDate(a.startTime)?.valueOf() ?? Number.MAX_SAFE_INTEGER) -
+                (interventionDate(b.startTime)?.valueOf() ?? Number.MAX_SAFE_INTEGER)
+            )[0] || null
+
+    const renderInterventionRow = (item: AssignedIntervention) => {
+        const lifecycleKey = resolveAssignmentLifecycle(item).key
+        const meta = GROUP_META[statusGroupOf(item)]
+        const { label } = statusTagInfo(item)
+        // Plan items without a delivery record yet have no progress to show.
+        const isPlaceholder = String(item.id).startsWith('unassigned-')
+        const received = receivedCountFor(item)
+        const needsAppointmentResponse =
+            lifecycleKey === 'awaiting-participant-acceptance' && pendingAppointmentAssignmentIds.has(item.id)
+        const needsConfirmation = lifecycleKey === 'awaiting-participant-confirmation'
+        const stop = (action: () => void) => (event: React.MouseEvent) => {
+            event.stopPropagation()
+            action()
+        }
+
+        return (
+            <li
+                key={item.id}
+                className={`iv-row iv-tone-${meta.tone}${isPlaceholder ? '' : ' is-clickable'}`}
+                role={isPlaceholder ? undefined : 'button'}
+                tabIndex={isPlaceholder ? undefined : 0}
+                aria-label={isPlaceholder ? undefined : `View progress for ${item.interventionTitle}`}
+                onClick={isPlaceholder ? undefined : () => openProgressView(item)}
+                onKeyDown={isPlaceholder ? undefined : event => {
+                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault()
+                        openProgressView(item)
+                    }
+                }}
+            >
+                <span className='iv-icon' aria-hidden='true'>{meta.icon}</span>
+                <div className='iv-text'>
+                    <Text strong className='iv-name'>{item.interventionTitle}</Text>
+                    <span className='iv-meta'>
+                        {[
+                            departmentLabel(item.departmentId) || 'Department not specified',
+                            received > 0 ? `${received} received` : '',
+                            item.assigneeName || ''
+                        ].filter(Boolean).join(' · ')}
+                    </span>
+                </div>
+                <span className='iv-pill'>{label}</span>
+                <div className='iv-actions'>
+                    {needsAppointmentResponse && (
+                        <Button
+                            size='small'
+                            type='primary'
+                            onClick={stop(() => {
+                                const pending = pendingAppointmentFor(item.id)
+                                if (pending) setRespondingAppointment(pending)
+                                else navigate('/incubatee/appointments')
+                            })}
+                        >
+                            Respond to appointment
+                        </Button>
+                    )}
+                    {needsConfirmation && (
+                        <>
+                            <Button
+                                size='small'
+                                danger
+                                onClick={stop(() => {
+                                    setSelectedIntervention(item)
+                                    setIsDeclineCompletionModalVisible(true)
+                                })}
+                            >
+                                Reject
+                            </Button>
+                            <Button
+                                size='small'
+                                type='primary'
+                                icon={<CheckCircleOutlined />}
+                                onClick={stop(() => openCompletionReview(item))}
+                            >
+                                Confirm
+                            </Button>
+                        </>
+                    )}
+                    {!isMobile && !isPlaceholder && <RightOutlined className='iv-chevron' aria-hidden='true' />}
+                </div>
+            </li>
+        )
+    }
+
+    const requestTone = (label: string) =>
+        label === 'Accepted' ? 'active' : label === 'Rejected' ? 'issue' : 'action'
+
+    const renderRequestRow = (r: InterventionRequest) => {
+        const { label } = normalizeRequestStatus(r.status)
+        return (
+            <li key={r.id} className={`iv-row iv-tone-${requestTone(label)}`}>
+                <span className='iv-icon' aria-hidden='true'><FileSearchOutlined /></span>
+                <div className='iv-text'>
+                    <Text strong className='iv-name'>{r.interventionTitle}</Text>
+                    <span className='iv-meta'>
+                        {[
+                            departmentLabel(r.departmentId),
+                            r.createdAt?.seconds ? `Requested ${dayjs(r.createdAt.seconds * 1000).format('D MMM YYYY')}` : ''
+                        ].filter(Boolean).join(' · ')}
+                    </span>
+                    {r.reason?.trim() ? (
+                        <span className='iv-note'><strong>Your reason:</strong> {r.reason}</span>
+                    ) : null}
+                    {label === 'Rejected' && r.decisionReason?.trim() ? (
+                        <span className='iv-note'><strong>Decision:</strong> {r.decisionReason}</span>
+                    ) : null}
+                </div>
+                <span className='iv-pill'>{label}</span>
+                <div className='iv-actions' />
+            </li>
+        )
+    }
+
+    const listPlaceholder = (content: React.ReactNode) => (
+        <div className='iv-list iv-empty'>{content}</div>
     )
 
     return (
-        <div
-            style={{
-                padding: isMobile ? 12 : 20,
-                minHeight: progressIntervention ? undefined : '100vh',
-                width: '100%',
-                maxWidth: '100%',
-                minWidth: 0,
-                overflowX: 'hidden'
-            }}
-        >
+        <div className='iv-page'>
             <Helmet>
                 <title>Interventions Tracking</title>
             </Helmet>
 
-            {!progressIntervention && (
-                <div style={{ marginBottom: 12 }}>
+            {progressIntervention ? (
+                renderProgressPage()
+            ) : (
+                <>
                     <MetricsGrid
                         metrics={[
                             {
                                 key: 'total',
-                                title: 'Total Required',
+                                title: 'Required',
                                 value: totalRequired,
-                                subtitle: 'Required interventions',
-                                icon: <FileSearchOutlined style={{ color: '#1677ff' }} />,
-                                iconBg: 'rgba(22,119,255,.12)',
+                                subtitle: 'In your development plan',
+                                icon: <FileSearchOutlined />,
+                                tone: 'accent' as const,
                                 loading
                             },
                             {
                                 key: 'ongoing',
-                                title: 'Ongoing',
+                                title: 'In progress',
                                 value: ongoingCount,
-                                subtitle: 'Open interventions',
-                                icon: <ClockCircleOutlined style={{ color: '#fa8c16' }} />,
-                                iconBg: 'rgba(250,140,22,.14)',
+                                subtitle: 'Being delivered now',
+                                icon: <ClockCircleOutlined />,
+                                tone: 'warning' as const,
                                 important: true,
                                 loading
                             },
@@ -1509,325 +1422,128 @@ const InterventionsTrackingView: React.FC = () => {
                                 key: 'completed',
                                 title: 'Completed',
                                 value: completedCount,
-                                subtitle: 'SME confirmed',
-                                icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />,
-                                iconBg: 'rgba(82,196,26,.14)',
-                                loading
-                            },
-                            {
-                                key: 'rate',
-                                title: 'Completion Rate',
-                                value: `${completionRate}%`,
-                                subtitle: 'Of required interventions',
-                                mobileSubtitle: `Of ${totalRequired} needed`,
-                                icon: <LineChartOutlined style={{ color: '#722ed1' }} />,
-                                iconBg: 'rgba(114,46,209,.12)',
+                                subtitle: `${completionRate}% of required, confirmed by you`,
+                                mobileSubtitle: `${completionRate}% done`,
+                                icon: <CheckCircleOutlined />,
+                                tone: 'success' as const,
                                 important: true,
                                 loading
                             }
                         ] as DashboardMetric[]}
                     />
-                </div>
-            )}
 
-            {progressIntervention ? (
-                renderProgressPage()
-            ) : (
-                <>
-                    {/* Interventions: Table (desktop) / Card List (mobile) */}
-                    <Tabs
-                        defaultActiveKey='assigned'
-                        centered
-                        items={[
-                            {
-                                key: 'assigned',
-                                label: 'Required',
-                                children: (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ duration: 0.4 }}
-                                    >
-                                        {isMobile ? (
-                                            <>
-                                                <DashboardFilterBar>{assignedFilterBar}</DashboardFilterBar>
-                                                <List
-                                                    loading={loading}
-                                                    dataSource={filteredInterventions}
-                                                    pagination={{ pageSize: 5, align: 'center' }}
-                                                    renderItem={(item: AssignedIntervention) => {
-                                                        const status = deriveDisplayStatus(item)
+                    <div className='iv-toolbar'>
+                        <div className='iv-toolbar-main'>
+                            <Segmented
+                                value={view}
+                                onChange={value => setView(value as 'required' | 'requests')}
+                                block={isMobile}
+                                options={[
+                                    { label: `Required (${allWithUnassigned.length})`, value: 'required' },
+                                    { label: `My requests (${requests.length})`, value: 'requests' }
+                                ]}
+                            />
+                            {view === 'required' ? (
+                                <div className='iv-chips' role='group' aria-label='Filter by status'>
+                                    {STATUS_FILTERS.map(option => {
+                                        const count = option.key === 'all' ? departmentFiltered.length : groupCounts[option.key] || 0
+                                        const active = filters.status === option.key
+                                        if (option.key !== 'all' && !count && !active) return null
+                                        return (
+                                            <button
+                                                key={option.key}
+                                                type='button'
+                                                className={`iv-chip${active ? ' is-active' : ''}`}
+                                                aria-pressed={active}
+                                                onClick={() => setFilters(current => ({ ...current, status: option.key }))}
+                                            >
+                                                {option.label}
+                                                <span className='iv-chip-count'>{count}</span>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className='iv-toolbar-side'>
+                            {view === 'required' && assignedDepartmentOptions.length > 1 ? (
+                                <Select
+                                    className='iv-area'
+                                    showSearch
+                                    optionFilterProp='label'
+                                    value={filters.department}
+                                    onChange={department => setFilters(current => ({ ...current, department }))}
+                                    options={[
+                                        { value: 'all', label: 'All departments' },
+                                        ...assignedDepartmentOptions
+                                    ]}
+                                />
+                            ) : null}
+                            <Button type='primary' icon={<PlusOutlined />} onClick={openRequestModal}>
+                                Request intervention
+                            </Button>
+                        </div>
+                    </div>
 
-                                                        const statusUi = (() => {
-                                                            const { color, icon, label } = statusTagInfo(item)
-                                                            return (
-                                                                <Tag color={color} icon={icon}>
-                                                                    {label}
-                                                                </Tag>
-                                                            )
-                                                        })()
-
-                                                        return (
-                                                            <List.Item
-                                                                style={{ paddingLeft: 0, paddingRight: 0 }}
-                                                            >
-                                                                <Card
-                                                                    size='small'
-                                                                    style={{
-                                                                        width: '100%',
-                                                                        borderRadius: 10,
-                                                                        border: '1px solid #e6f0ff'
-                                                                    }}
-                                                                >
-                                                                    <Space
-                                                                        direction='vertical'
-                                                                        size={6}
-                                                                        style={{ width: '100%' }}
-                                                                    >
-                                                                        <Space
-                                                                            align='baseline'
-                                                                            style={{
-                                                                                justifyContent: 'space-between',
-                                                                                width: '100%'
-                                                                            }}
-                                                                        >
-                                                                            <Text strong style={{ fontSize: 16 }}>
-                                                                                {item.interventionTitle}
-                                                                            </Text>
-                                                                            {statusUi}
-                                                                        </Space>
-                                                                        {receivedCountFor(item) > 0 && (
-                                                                            <Text type='secondary'>
-                                                                                {receivedCountFor(item)} received
-                                                                            </Text>
-                                                                        )}
-                                                                        <Text type='secondary'>
-                                                                            {typeof item.areaOfSupport === 'string'
-                                                                                ? item.areaOfSupport
-                                                                                : Array.isArray(item.areaOfSupport)
-                                                                                    ? item.areaOfSupport.join(', ')
-                                                                                    : typeof item.areaOfSupport === 'object'
-                                                                                        ? Object.keys(item.areaOfSupport).join(', ')
-                                                                                        : 'N/A'}
-                                                                        </Text>
-
-                                                                        {/* Actions (stack nicely on mobile) */}
-                                                                        <div style={{ width: '100%', marginTop: 6 }}>
-                                                                            <Button
-                                                                                size='small'
-                                                                                shape='round'
-                                                                                icon={<EyeOutlined />}
-                                                                                onClick={() => openProgressView(item)}
-                                                                                block
-                                                                            >
-                                                                                View Progress
-                                                                            </Button>
-                                                                        </div>
-                                                                        {(resolveAssignmentLifecycle(item).key === 'awaiting-participant-acceptance' &&
-                                                                            pendingAppointmentAssignmentIds.has(item.id)) && (
-                                                                                <div style={{ width: '100%' }}>
-                                                                                    <Button
-                                                                                        size='small'
-                                                                                        shape='round'
-                                                                                        block
-                                                                                        onClick={() => navigate('/incubatee/appointments')}
-                                                                                    >
-                                                                                        View Appointment
-                                                                                    </Button>
-                                                                                </div>
-                                                                            )}
-
-                                                                        {resolveAssignmentLifecycle(item).key === 'awaiting-participant-confirmation' && (
-                                                                            <Space wrap style={{ width: '100%' }}>
-                                                                                <Button
-                                                                                    size='small'
-                                                                                    shape='round'
-                                                                                    variant='filled'
-                                                                                    color='blue'
-                                                                                    style={{ border: '1px solid #1677ff' }}
-                                                                                    onClick={() => openCompletionReview(item)}
-                                                                                    block
-                                                                                >
-                                                                                    Confirm
-                                                                                </Button>
-                                                                                <Button
-                                                                                    size='small'
-                                                                                    shape='round'
-                                                                                    variant='filled'
-                                                                                    color='orange'
-                                                                                    style={{ border: '1px solid #fa8c16' }}
-                                                                                    onClick={() => {
-                                                                                        setSelectedIntervention(item)
-                                                                                        setIsDeclineCompletionModalVisible(
-                                                                                            true
-                                                                                        )
-                                                                                    }}
-                                                                                    block
-                                                                                >
-                                                                                    Reject
-                                                                                </Button>
-                                                                            </Space>
-                                                                        )}
-
-                                                                    </Space>
-                                                                </Card>
-                                                            </List.Item>
-                                                        )
-                                                    }}
-                                                />
-                                            </>
-                                        ) : (
-                                            <MotionCard filterBar={assignedFilterBar}>
-                                                <div style={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
-                                                    <Table
-                                                        dataSource={filteredInterventions}
-                                                        columns={interventionColumns as any}
-                                                        rowKey='id'
-                                                        tableLayout='fixed'
-                                                        pagination={{ pageSize: 5, responsive: true, position: ['bottomCenter'], showSizeChanger: false }}
-                                                        loading={loading}
-                                                        size='small'
-                                                        scroll={{ x: 900 }}
-                                                    />
-                                                </div>
-                                            </MotionCard>
-                                        )}
-                                    </motion.div>
+                    {view === 'required' ? (
+                        <>
+                            {loading ? (
+                                listPlaceholder(<Skeleton active />)
+                            ) : !filteredInterventions.length ? (
+                                listPlaceholder(
+                                    <Empty
+                                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                        description={
+                                            allWithUnassigned.length
+                                                ? 'Nothing matches these filters.'
+                                                : 'No interventions in your development plan yet.'
+                                        }
+                                    />
                                 )
-                            },
-                            {
-                                key: 'requested',
-                                label: `Requested (${requests.length})`,
-                                children: (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ duration: 0.4 }}
-                                    >
-                                        <Card
-                                            style={{
-                                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                                transition: 'all 0.3s ease',
-                                                borderRadius: 12,
-                                                border: '1px solid #d6e4ff'
-                                            }}
-                                        >
-                                            {requests.length === 0 && !loadingRequests ? (
-                                                <Empty
-                                                    description='No intervention requests yet'
-                                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                                >
-                                                    <Button
-                                                        type='primary'
-                                                        onClick={() => {
-                                                            setIsRequestModalVisible(true)
-                                                            setSelectedArea(null)
-                                                            requestForm.resetFields()
-                                                        }}
-                                                    >
-                                                        Request Your First Intervention
-                                                    </Button>
-                                                </Empty>
-                                            ) : isMobile ? (
-                                                <List
-                                                    loading={loadingRequests}
-                                                    dataSource={requests}
-                                                    pagination={{ pageSize: 6, align: 'center' }}
-                                                    renderItem={(r: InterventionRequest) => (
-                                                        <List.Item style={{ paddingLeft: 0, paddingRight: 0 }}>
-                                                            <Card
-                                                                size='small'
-                                                                style={{
-                                                                    width: '100%',
-                                                                    borderRadius: 10,
-                                                                    border: '1px solid #e6f0ff'
-                                                                }}
-                                                            >
-                                                                <Space
-                                                                    direction='vertical'
-                                                                    size={6}
-                                                                    style={{ width: '100%' }}
-                                                                >
-                                                                    <Space
-                                                                        align='baseline'
-                                                                        style={{
-                                                                            justifyContent: 'space-between',
-                                                                            width: '100%'
-                                                                        }}
-                                                                    >
-                                                                        <Text strong style={{ fontSize: 16 }}>
-                                                                            {r.interventionTitle}
-                                                                        </Text>
-                                                                        {(() => {
-                                                                            const { label, color } =
-                                                                                normalizeRequestStatus(r.status)
-                                                                            return <Tag color={color}>{label}</Tag>
-                                                                        })()}
-                                                                    </Space>
-                                                                    <Text type='secondary'>
-                                                                        {r.areaOfSupport || '—'}
-                                                                    </Text>
-                                                                    <Space
-                                                                        style={{
-                                                                            justifyContent: 'space-between',
-                                                                            width: '100%'
-                                                                        }}
-                                                                    >
-                                                                        <Text type='secondary'>
-                                                                            Submitted:{' '}
-                                                                            {r.createdAt?.seconds
-                                                                                ? dayjs(r.createdAt.seconds * 1000).format(
-                                                                                    'YYYY-MM-DD'
-                                                                                )
-                                                                                : '-'}
-                                                                        </Text>
-                                                                    </Space>
-
-                                                                    <Divider style={{ margin: '8px 0' }} />
-
-                                                                    <Text>
-                                                                        <strong>Your Reason:</strong>{' '}
-                                                                        {r.reason?.trim() ? (
-                                                                            r.reason
-                                                                        ) : (
-                                                                            <Text type='secondary'>—</Text>
-                                                                        )}
-                                                                    </Text>
-
-                                                                    {normalizeRequestStatus(r.status).label ===
-                                                                        'Rejected' && (
-                                                                            <Text>
-                                                                                <strong>Decision Note:</strong>{' '}
-                                                                                {r.decisionReason?.trim() ? (
-                                                                                    r.decisionReason
-                                                                                ) : (
-                                                                                    <Text type='secondary'>—</Text>
-                                                                                )}
-                                                                            </Text>
-                                                                        )}
-                                                                </Space>
-                                                            </Card>
-                                                        </List.Item>
-                                                    )}
-                                                />
-                                            ) : (
-                                                <Table
-                                                    rowKey='id'
-                                                    loading={loadingRequests}
-                                                    dataSource={requests}
-                                                    columns={requestedColumns as any}
-                                                    pagination={{ pageSize: 8, responsive: true, position: ['bottomCenter'] }}
-                                                    size='small'
-                                                />
-                                            )}
-                                        </Card>
-                                    </motion.div>
-                                )
-                            }
-                        ]}
-                    />
+                            ) : (
+                                <>
+                                    <ul className='iv-list'>{pagedInterventions.map(renderInterventionRow)}</ul>
+                                    {pageCount > 1 ? (
+                                        <div className='iv-pager'>
+                                            <Pagination
+                                                size='small'
+                                                current={currentPage}
+                                                pageSize={PAGE_SIZE}
+                                                total={filteredInterventions.length}
+                                                showSizeChanger={false}
+                                                onChange={setPage}
+                                            />
+                                        </div>
+                                    ) : null}
+                                </>
+                            )}
+                        </>
+                    ) : loadingRequests ? (
+                        listPlaceholder(<Skeleton active />)
+                    ) : requests.length ? (
+                        <ul className='iv-list'>{requests.map(renderRequestRow)}</ul>
+                    ) : (
+                        listPlaceholder(
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='No intervention requests yet'>
+                                <Button type='primary' onClick={openRequestModal}>
+                                    Request your first intervention
+                                </Button>
+                            </Empty>
+                        )
+                    )}
                 </>
             )}
+
+            {signingCeremony.element}
+            <AppointmentResponseSheet
+                appointment={respondingAppointment}
+                onClose={() => setRespondingAppointment(null)}
+                onResponded={() => {
+                    setRespondingAppointment(null)
+                    quietReload.current = true
+                    setReloadKey(key => key + 1)
+                }}
+            />
 
             {/* Request Modal */}
             <Modal
@@ -1835,7 +1551,7 @@ const InterventionsTrackingView: React.FC = () => {
                 open={isRequestModalVisible}
                 onCancel={() => {
                     setIsRequestModalVisible(false)
-                    setSelectedArea(null)
+                    setSelectedDepartmentId(null)
                     requestForm.resetFields()
                 }}
                 footer={[
@@ -1845,7 +1561,7 @@ const InterventionsTrackingView: React.FC = () => {
                     <Button
                         key='submit'
                         type='primary'
-                        disabled={!selectedArea || interventionOptions.length === 0}
+                        disabled={!selectedDepartmentId || interventionOptions.length === 0}
                         onClick={() => requestForm.submit()}
                     >
                         Submit
@@ -1862,8 +1578,17 @@ const InterventionsTrackingView: React.FC = () => {
                             const pickedTitle = String(values.interventionTitle || '')
                             const titleKey = normalize(pickedTitle)
                             const pickedIntervention = allInterventions.find(
-                                item => normalize(String(item.interventionTitle || item.title || '')) === titleKey
+                                item =>
+                                    String(item.departmentId || '') === values.departmentId &&
+                                    normalize(String(item.interventionTitle || item.title || '')) === titleKey
                             )
+                            const requestDepartmentId = String(pickedIntervention?.departmentId || '')
+                            if (!requestDepartmentId) {
+                                return notification.error({
+                                    message: 'This intervention has no department',
+                                    description: 'Please pick another intervention or contact the programme team.'
+                                })
+                            }
 
                             // (a) already in applications.required?
                             if (existingRequiredTitles.has(titleKey)) {
@@ -1889,7 +1614,6 @@ const InterventionsTrackingView: React.FC = () => {
                                     collection(db, 'interventionRequests'),
                                     where('participantId', '==', participantId || ''),
                                     where('interventionTitle', '==', pickedTitle)
-                                    // optionally also: where('areaOfSupport','==', values.areaOfSupport)
                                 )
                             )
                             const hasOpen = dupReqSnap.docs.some(d => {
@@ -1903,36 +1627,21 @@ const InterventionsTrackingView: React.FC = () => {
                                 })
                             }
 
-                            // proceed (unchanged)
-                            const docRef = await addDoc(
+                            // The department's HODs are told by onInterventionRequestCreated
+                            // (server side: an SME can't look up staff uids).
+                            await addDoc(
                                 collection(db, 'interventionRequests'),
                                 {
                                     participantId: participantId || '',
                                     programId: programId || '',
                                     interventionId: pickedIntervention?.id || '',
-                                    departmentId: pickedIntervention?.departmentId || '',
-                                    areaOfSupport: values.areaOfSupport,
+                                    departmentId: requestDepartmentId,
                                     interventionTitle: values.interventionTitle,
                                     reason: values.reason,
                                     status: 'pending',
                                     createdAt: new Date()
                                 }
                             )
-
-                            await sendNotification({
-                                type: 'intervention-request',
-                                recipientRoles: ['operations'],
-                                department: values.areaOfSupport,
-                                areaOfSupport: values.areaOfSupport,
-                                interventionTitle: values.interventionTitle,
-                                reason: values.reason,
-                                participantId: participantId || '',
-                                interventionRequestId: docRef.id,
-                                status: 'pending',
-                                message: {
-                                    operations: `A new intervention "${values.interventionTitle}" has been requested in ${values.areaOfSupport}. Reason: ${values.reason}`
-                                }
-                            })
 
                             notification.success({
                                 message:
@@ -1948,22 +1657,22 @@ const InterventionsTrackingView: React.FC = () => {
                     }}
                 >
                     <Form.Item
-                        name='areaOfSupport'
-                        label='Area of Support'
-                        rules={[{ required: true, message: 'Select area of support' }]}
+                        name='departmentId'
+                        label='Department'
+                        rules={[{ required: true, message: 'Select a department' }]}
                     >
                         <Select
-                            placeholder='Pick Area'
-                            value={selectedArea as any}
+                            placeholder='Pick department'
+                            value={selectedDepartmentId as any}
                             onChange={val => {
-                                setSelectedArea(val)
+                                setSelectedDepartmentId(val)
                                 requestForm.setFieldsValue({ interventionTitle: undefined })
                             }}
-                            disabled={areaOptions.length === 0}
+                            disabled={departmentOptions.length === 0}
                         >
-                            {areaOptions.map(area => (
-                                <Option key={area} value={area}>
-                                    {area}
+                            {departmentOptions.map(department => (
+                                <Option key={department.id} value={department.id}>
+                                    {department.name}
                                 </Option>
                             ))}
                         </Select>
@@ -1975,9 +1684,9 @@ const InterventionsTrackingView: React.FC = () => {
                     >
                         <Select
                             placeholder={
-                                selectedArea ? 'Pick intervention' : 'Pick area first'
+                                selectedDepartmentId ? 'Pick intervention' : 'Pick department first'
                             }
-                            disabled={!selectedArea}
+                            disabled={!selectedDepartmentId}
                         >
                             {interventionOptions.map(interv => (
                                 <Option key={interv.id} value={interv.title}>
@@ -1996,12 +1705,12 @@ const InterventionsTrackingView: React.FC = () => {
                             placeholder='Explain why you need this intervention'
                         />
                     </Form.Item>
-                    {selectedArea && interventionOptions.length === 0 && (
+                    {selectedDepartmentId && interventionOptions.length === 0 && (
                         <Alert
                             style={{ marginTop: 8 }}
                             type='info'
                             showIcon
-                            message='All interventions in this area are already in your plan.'
+                            message='All interventions in this department are already in your plan.'
                         />
                     )}
                 </Form>
@@ -2067,7 +1776,7 @@ const InterventionsTrackingView: React.FC = () => {
                         />
                         <Card size='small' title={selectedIntervention?.interventionTitle || 'Intervention'}>
                             <Descriptions size='small' column={1}>
-                                <Descriptions.Item label='Department'>{typeof selectedIntervention?.areaOfSupport === 'string' ? selectedIntervention.areaOfSupport : '—'}</Descriptions.Item>
+                                <Descriptions.Item label='Department'>{departmentLabel(selectedIntervention?.departmentId) || '—'}</Descriptions.Item>
                                 <Descriptions.Item label='Sessions attended'>{attendedCompletionAppointments.length} of {completionAppointments.length || Number((selectedIntervention as any)?.tracking?.sessionsLogged || 0)}</Descriptions.Item>
                             </Descriptions>
                         </Card>
@@ -2130,53 +1839,16 @@ const InterventionsTrackingView: React.FC = () => {
                 )}
             </Modal>
 
-            {/* Reject Completion Modal */}
-            <Modal
-                title='Reject Completion'
+            {/* Report a problem with a completion: the start of a delivery dispute. */}
+            <DisputeDeliveryModal
                 open={isDeclineCompletionModalVisible}
-                onCancel={() => setIsDeclineCompletionModalVisible(false)}
-                footer={[
-                    <Button
-                        key='cancel'
-                        onClick={() => setIsDeclineCompletionModalVisible(false)}
-                    >
-                        Cancel
-                    </Button>,
-                    <Button
-                        key='submit'
-                        type='primary'
-                        danger
-                        onClick={() => rejectCompletionForm.submit()}
-                    >
-                        Submit
-                    </Button>
-                ]}
-                width={screens.md ? 560 : '95%'}
-                centered
-            >
-                <Form
-                    form={rejectCompletionForm}
-                    layout='vertical'
-                    onFinish={values => {
-                        if (selectedIntervention) {
-                            handleRejectCompletion(selectedIntervention, values.reason)
-                            setIsDeclineCompletionModalVisible(false)
-                            rejectCompletionForm.resetFields()
-                        }
-                    }}
-                >
-                    <Form.Item
-                        name='reason'
-                        label='Reason for Rejection'
-                        rules={[{ required: true, message: 'Please provide a reason' }]}
-                    >
-                        <Input.TextArea
-                            rows={4}
-                            placeholder="Explain why you're rejecting this intervention's completion"
-                        />
-                    </Form.Item>
-                </Form>
-            </Modal>
+                interventionTitle={(selectedIntervention as any)?.interventionTitle}
+                facilitatorName={(selectedIntervention as any)?.assigneeName || (selectedIntervention as any)?.consultantName}
+                onClose={() => setIsDeclineCompletionModalVisible(false)}
+                onSubmit={async (category, reason) => {
+                    if (selectedIntervention) await handleRejectCompletion(selectedIntervention, reason, category)
+                }}
+            />
 
         </div>
     )

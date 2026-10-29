@@ -2,7 +2,9 @@ import {
     QueryConstraint,
     Timestamp,
     addDoc,
+    arrayUnion,
     collection,
+    increment,
     deleteDoc,
     doc,
     getDoc,
@@ -63,6 +65,17 @@ export interface ResolveWorkflowQueryInput {
     actor: WorkflowQueryActorInput
 }
 
+export interface AnswerWorkflowQueryInput {
+    message: string
+    attachmentUrls?: string[]
+    /** An evidence query answered with an explanation only. */
+    noNewEvidence?: boolean
+    /** Delivery disputes: what the facilitator did. */
+    outcome?: string | null
+    actorId: string
+    actor: WorkflowQueryActorInput
+}
+
 /**
  * Transitional read model used while existing screens move to the canonical
  * nested WorkflowQuery shape. All aliases are derived here; Firestore only
@@ -97,6 +110,9 @@ export type WorkflowQueryView = WorkflowQuery & {
     uploadedFileUrl?: string | null
     resolvedAt?: Timestamp | null
     repliedAt?: Timestamp | null
+    attachmentUrls?: string[]
+    noNewEvidence?: boolean
+    sentBackNotes?: string | null
     repliedByUser?: string | null
     repliedByName?: string | null
     repliedByEmail?: string | null
@@ -235,22 +251,77 @@ export const workflowQueryService = {
         const notes = String(input.notes || '').trim()
         const snapshot = actorSnapshot(actor)
         const now = serverTimestamp()
+        // Closing keeps the facilitator's answer (response) intact; it only adds the resolution.
         await updateDoc(doc(db, WORKFLOW_QUERIES_COLLECTION, id), {
             status: 'resolved',
-            response: {
-                message: notes,
-                attachmentUrl: input.attachmentUrl || null,
-                respondedById: actorId,
-                respondedBy: snapshot,
-                respondedAt: now
-            },
             resolution: {
                 notes,
+                attachmentUrl: input.attachmentUrl || null,
                 resolvedById: actorId,
                 resolvedBy: snapshot,
                 resolvedAt: now
             },
+            thread: arrayUnion({ kind: 'closed', message: notes, attachmentUrls: input.attachmentUrl ? [input.attachmentUrl] : [], byId: actorId, by: snapshot, at: Timestamp.now() }),
             updatedAt: now
+        })
+    },
+
+    /**
+     * The facilitator's answer: an explanation and/or evidence. The query then
+     * waits for the person who raised it to accept it or send it back.
+     */
+    async answer(id: string, input: AnswerWorkflowQueryInput) {
+        const actor = await resolveWorkflowQueryActor({ ...input.actor, id: input.actorId })
+        const actorId = actor.uid || String(input.actorId || '').trim()
+        if (!actorId) throw new Error('The answering user could not be identified.')
+        const message = String(input.message || '').trim()
+        if (!message) throw new Error('An answer is required.')
+        const urls = (input.attachmentUrls || []).filter(Boolean)
+        const snapshot = actorSnapshot(actor)
+        await updateDoc(doc(db, WORKFLOW_QUERIES_COLLECTION, id), stripUndefined({
+            status: 'answered',
+            response: {
+                message,
+                attachmentUrl: urls[0] || null,
+                attachmentUrls: urls,
+                noNewEvidence: !!input.noNewEvidence,
+                outcome: input.outcome || null,
+                respondedById: actorId,
+                respondedBy: snapshot,
+                respondedAt: serverTimestamp()
+            },
+            thread: arrayUnion(stripUndefined({ kind: 'answered', message, attachmentUrls: urls, noNewEvidence: !!input.noNewEvidence, outcome: input.outcome || null, byId: actorId, by: snapshot, at: Timestamp.now() })),
+            updatedAt: serverTimestamp()
+        }))
+    },
+
+    /** The raiser accepts the answer: the query is resolved. */
+    async accept(id: string, input: ResolveWorkflowQueryInput) {
+        const actor = await resolveWorkflowQueryActor({ ...input.actor, id: input.actorId })
+        const actorId = actor.uid || String(input.actorId || '').trim()
+        const notes = String(input.notes || '').trim() || 'Answer accepted.'
+        const snapshot = actorSnapshot(actor)
+        await updateDoc(doc(db, WORKFLOW_QUERIES_COLLECTION, id), {
+            status: 'resolved',
+            resolution: { notes, attachmentUrl: null, resolvedById: actorId, resolvedBy: snapshot, resolvedAt: serverTimestamp() },
+            thread: arrayUnion({ kind: 'accepted', message: notes, byId: actorId, by: snapshot, at: Timestamp.now() }),
+            updatedAt: serverTimestamp()
+        })
+    },
+
+    /** The raiser isn't satisfied: back to the facilitator with what's still needed. */
+    async sendBack(id: string, input: ResolveWorkflowQueryInput) {
+        const actor = await resolveWorkflowQueryActor({ ...input.actor, id: input.actorId })
+        const actorId = actor.uid || String(input.actorId || '').trim()
+        const notes = String(input.notes || '').trim()
+        if (!notes) throw new Error('Say what is still needed.')
+        const snapshot = actorSnapshot(actor)
+        await updateDoc(doc(db, WORKFLOW_QUERIES_COLLECTION, id), {
+            status: 'open',
+            lastSentBack: { notes, at: Timestamp.now(), by: snapshot },
+            sentBackCount: increment(1),
+            thread: arrayUnion({ kind: 'sent-back', message: notes, byId: actorId, by: snapshot, at: Timestamp.now() }),
+            updatedAt: serverTimestamp()
         })
     },
 
@@ -367,9 +438,13 @@ function toWorkflowQueryView(id: string, data: Record<string, any>): WorkflowQue
         movRowId: item.context?.movRowId,
         departmentName: item.context?.departmentName,
         poeUrl: item.context?.evidenceUrl,
+        // Older screens show this as the answer, so it falls back to the facilitator's reply.
         resolutionNotes: item.resolution?.notes || item.response?.message,
         consultantResponse: item.response?.message,
-        uploadedFileUrl: item.response?.attachmentUrl,
+        uploadedFileUrl: item.response?.attachmentUrl || item.resolution?.attachmentUrl,
+        attachmentUrls: item.response?.attachmentUrls || (item.response?.attachmentUrl ? [item.response.attachmentUrl] : []),
+        noNewEvidence: item.response?.noNewEvidence,
+        sentBackNotes: item.lastSentBack?.notes || null,
         resolvedAt: item.resolution?.resolvedAt,
         repliedAt: item.response?.respondedAt,
         repliedByUser: item.response?.respondedById,

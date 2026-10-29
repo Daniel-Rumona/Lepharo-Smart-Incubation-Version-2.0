@@ -54,3 +54,84 @@ body {
         height: 0;
     }
 }
+
+/*
+  Mobile: modals open as bottom sheets instead of floating in the middle.
+  Modals that ship their own mobile layout are left alone.
+*/
+@keyframes sheet-up {
+    from { transform: translateY(100%); opacity: 1; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes sheet-down {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(100%); opacity: 1; }
+}
+
+@media (max-width: 767px) {
+    .ant-modal:not(.workspace-more-modal):not(.auth-modal):not(.howto-modal):not(.story-reader-modal) {
+        position: fixed;
+        top: auto !important;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding-bottom: 0;
+        transform-origin: bottom center;
+    }
+
+    .ant-modal:not(.workspace-more-modal):not(.auth-modal):not(.howto-modal):not(.story-reader-modal) .ant-modal-content {
+        max-height: 92vh;
+        overflow-y: auto;
+        border-radius: 20px 20px 0 0;
+        padding-bottom: max(20px, env(safe-area-inset-bottom));
+    }
+
+    .ant-modal-root .ant-zoom-enter,
+    .ant-modal-root .ant-zoom-appear {
+        animation-name: sheet-up !important;
+        animation-duration: 0.28s !important;
+        transform: none;
+        opacity: 1;
+    }
+
+    .ant-modal-root .ant-zoom-leave {
+        animation-name: sheet-down !important;
+        animation-duration: 0.2s !important;
+    }
+
+    /* The drawer has its own X, so its Cancel / Close footer button is hidden
+       (marked by utils/mobileDrawerFooters.ts) and the other action fills the row. */
+    .drawer-cancel,
+    .ant-col:has(> .drawer-cancel),
+    .ant-space-item:has(> .drawer-cancel) {
+        display: none !important;
+    }
+
+    .ant-row:has(.drawer-cancel) > .ant-col {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    .ant-modal-footer:has(.drawer-cancel) .ant-btn,
+    .ant-modal-confirm-btns:has(.drawer-cancel) .ant-btn {
+        width: 100%;
+        margin: 0;
+    }
+}
+
+/* Modals scroll without a visible scrollbar. Wheel, touch and keyboard
+   scrolling still work. */
+.ant-modal-content,
+.ant-modal-body {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.ant-modal-content::-webkit-scrollbar,
+.ant-modal-body::-webkit-scrollbar {
+    display: none;
+}

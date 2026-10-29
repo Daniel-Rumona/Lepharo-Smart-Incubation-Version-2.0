@@ -26,6 +26,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncProgramToBranchCoordinators = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
+const syntheticData_1 = require("./syntheticData");
 const firebase_1 = require("./firebase");
 const branchIdOf = (data) => String(data?.assignedBranch?.id || data?.branchId || "").trim();
 exports.syncProgramToBranchCoordinators = (0, firestore_1.onDocumentWritten)("programs/{programId}", async (event) => {
@@ -34,6 +35,9 @@ exports.syncProgramToBranchCoordinators = (0, firestore_1.onDocumentWritten)("pr
         return;
     const programId = String(event.params.programId);
     const data = after.data();
+    // Demo programmes must not silently change real staff programme access.
+    if ((0, syntheticData_1.isSyntheticData)(data, programId))
+        return;
     const branchId = branchIdOf(data);
     if (!branchId)
         return;

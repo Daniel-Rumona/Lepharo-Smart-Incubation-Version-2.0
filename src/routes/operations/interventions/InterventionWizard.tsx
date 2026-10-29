@@ -1,10 +1,12 @@
 import React, { useMemo, useRef, useState } from "react";
+import dayjs from "dayjs";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
     Alert,
     Button,
     Card,
     Col,
+    DatePicker,
     Descriptions,
     Input,
     InputNumber,
@@ -37,6 +39,7 @@ import {
     type OutcomeOption,
     type ScheduleOption,
 } from "@/services/interventionDesignService";
+import { supportedRecurrenceFrom } from "@/services/interventionRecurrenceService";
 
 const { Text, Title } = Typography;
 
@@ -46,11 +49,13 @@ export type WizardValues = {
     compulsory: boolean;
     recurrencePreset: ScheduleOption["frequency"];
     recurrenceStrict: boolean;
-    recurrenceEndMode?: "fixed-cycles" | "until-closed" | "programme-end";
+    recurrenceEndMode?: "fixed-cycles" | "until-closed" | "programme-end" | "end-date";
     recurrenceCycles?: number;
+    recurrenceEndDate?: unknown;
     defaultPlannedSessions: number;
     hasSubInterventions: boolean;
-    subInterventions: { title: string; defaultPlannedSessions: number }[];
+    /** subId is kept when editing, so history and assignments stay attached to the same step. */
+    subInterventions: { subId?: string; title: string; defaultPlannedSessions: number }[];
     subInterventionRotationMode: "rotate" | "repeat";
     deliverableName: string;
     deliverableDescription: string;
@@ -62,7 +67,26 @@ export type WizardValues = {
     outcomeFromSuggestion: boolean;
 };
 
+/** Everything the wizard needs to open on an existing intervention. */
+export type WizardInitial = {
+    title: string;
+    deliverableName: string;
+    deliverableDescription: string;
+    intendedOutcome: string;
+    outcomeType: OutcomeType | "";
+    followUpAfterDays: number;
+    followUpRequired: boolean | null;
+    smeCheckIn: boolean;
+    schedule: ScheduleOption;
+    breakdown: BreakdownOption;
+    subs: { subId?: string; title: string; defaultPlannedSessions: number }[];
+    compulsory: boolean;
+};
+
 type Props = {
+    /** "edit" opens on the review with every section filled in and makes no assistant calls. */
+    mode?: "create" | "edit";
+    initial?: WizardInitial;
     departmentId: string;
     departmentName: string;
     /** Titles already in this department: shown as a hint and to avoid duplicates. */
@@ -98,6 +122,7 @@ const frequencyText = (o: ScheduleOption) => {
     const end =
         o.endMode === "fixed-cycles" ? `for ${o.cycles} cycles`
             : o.endMode === "programme-end" ? "until the programme ends"
+                : o.endMode === "end-date" ? `until ${o.endDate ? dayjs(o.endDate).format("D MMM YYYY") : "a chosen date"}`
                 : "until the HOD closes it";
     return `${base}, ${end}`;
 };
@@ -197,6 +222,12 @@ const ReviewRow: React.FC<{
     </div>
 );
 
+const STEP_SLIDE = {
+    enter: ({ d, r }: { d: number; r: boolean }) => ({ opacity: 0, x: r ? 0 : d * 28 }),
+    center: { opacity: 1, x: 0 },
+    exit: ({ d, r }: { d: number; r: boolean }) => ({ opacity: 0, x: r ? 0 : -d * 28 }),
+};
+
 const RowSkeletons: React.FC<{ count?: number }> = ({ count = 3 }) => (
     <Space direction="vertical" size={8} style={{ width: "100%" }}>
         {Array.from({ length: count }, (_, i) => i).map((i) => (
@@ -208,43 +239,53 @@ const RowSkeletons: React.FC<{ count?: number }> = ({ count = 3 }) => (
 );
 
 export const InterventionWizard: React.FC<Props> = ({
+    mode = "create",
+    initial,
     departmentId,
     departmentName,
-    existingTitles = [],
     saving,
     onSubmit,
     onCancel,
 }) => {
-    const [step, setStep] = useState(0);
+    const isEdit = mode === "edit" && !!initial;
+    const [step, setStep] = useState(isEdit ? 5 : 0);
+
+    // Direction of travel, so steps slide the way the person is moving.
+    const lastStep = useRef(step);
+    const direction = useRef(1);
+    if (lastStep.current !== step) {
+        direction.current = step > lastStep.current ? 1 : -1;
+        lastStep.current = step;
+    }
 
     // Step 0
-    const [title, setTitle] = useState("");
+    const [title, setTitle] = useState(initial?.title ?? "");
     const [context, setContext] = useState("");
 
     // Step 1: outcome & deliverable
     const [outcomes, setOutcomes] = useState<Loadable<OutcomeOption>>(idle());
     const [outcomePick, setOutcomePick] = useState<number | null>(null);
-    const [deliverableName, setDeliverableName] = useState("");
-    const [deliverableDescription, setDeliverableDescription] = useState("");
-    const [intendedOutcome, setIntendedOutcome] = useState("");
-    const [outcomeType, setOutcomeType] = useState<OutcomeType | "">("");
-    const [followUpAfterDays, setFollowUpAfterDays] = useState(0);
+    const [deliverableName, setDeliverableName] = useState(initial?.deliverableName ?? "");
+    const [deliverableDescription, setDeliverableDescription] = useState(initial?.deliverableDescription ?? "");
+    const [intendedOutcome, setIntendedOutcome] = useState(initial?.intendedOutcome ?? "");
+    const [outcomeType, setOutcomeType] = useState<OutcomeType | "">(initial?.outcomeType ?? "");
+    const [followUpAfterDays, setFollowUpAfterDays] = useState(initial?.followUpAfterDays ?? 0);
     const [ownMode, setOwnMode] = useState(false);
 
     // Step 2: follow-up. null = follow the default (on whenever an outcome is set).
-    const [followUpRequired, setFollowUpRequired] = useState<boolean | null>(null);
-    const [smeCheckIn, setSmeCheckIn] = useState(false);
+    const [followUpRequired, setFollowUpRequired] = useState<boolean | null>(initial?.followUpRequired ?? null);
+    const [smeCheckIn, setSmeCheckIn] = useState(initial?.smeCheckIn ?? false);
     const reduceMotion = useReducedMotion();
 
     // Step 2: schedule
     const [schedules, setSchedules] = useState<Loadable<ScheduleOption>>(idle());
-    const [schedule, setSchedule] = useState<ScheduleOption | null>(null);
+    const [schedule, setSchedule] = useState<ScheduleOption | null>(initial?.schedule ?? null);
 
     // Step 3: structure
     const [breakdowns, setBreakdowns] = useState<Loadable<BreakdownOption>>(idle());
-    const [breakdown, setBreakdown] = useState<BreakdownOption | null>(null);
-    const [subs, setSubs] = useState<{ title: string; defaultPlannedSessions: number }[]>([]);
-    const [compulsory, setCompulsory] = useState(false);
+    const [breakdown, setBreakdown] = useState<BreakdownOption | null>(initial?.breakdown ?? null);
+    const [subs, setSubs] = useState<{ subId?: string; title: string; defaultPlannedSessions: number }[]>(initial?.subs ?? []);
+    const [compulsory, setCompulsory] = useState(initial?.compulsory ?? false);
 
     const draft = () => ({
         deliverableName,
@@ -323,6 +364,8 @@ export const InterventionWizard: React.FC<Props> = ({
 
     const goTo = (next: number) => {
         setStep(next);
+        // Editing is about what is already decided, so it makes no assistant calls.
+        if (isEdit) return;
         if (next === 1 && outcomes.status === "idle") void load("outcomes", setOutcomes);
         if (next === 3 && schedules.status === "idle") void load("schedule", setSchedules);
         if (next === 4 && breakdowns.status === "idle") void load("breakdown", setBreakdowns, FALLBACK_BREAKDOWNS);
@@ -361,6 +404,9 @@ export const InterventionWizard: React.FC<Props> = ({
     }, [schedules.options]);
 
     // Structure choices: the assistant's, plus a plain single intervention that is always available.
+    function sameBreakdown(a: BreakdownOption | null, b: BreakdownOption) {
+        return !!a && a.label === b.label && a.rationale === b.rationale && a.hasSubInterventions === b.hasSubInterventions;
+    }
     const structureOptions = useMemo(() => {
         const suggested = breakdowns.status === "ready";
         // Best fit is listed first by the assistant; only that one is flagged.
@@ -368,10 +414,13 @@ export const InterventionWizard: React.FC<Props> = ({
         if (!rows.some((r) => !r.option.hasSubInterventions)) {
             rows.push({ option: FALLBACK_BREAKDOWNS[0], suggested: false });
         }
+        // When editing, the structure it already has is always one of the choices.
+        if (breakdown && !rows.some((r) => sameBreakdown(breakdown, r.option))) {
+            rows.unshift({ option: breakdown, suggested: false });
+        }
         return rows;
-    }, [breakdowns.options, breakdowns.status]);
-    const sameBreakdown = (a: BreakdownOption | null, b: BreakdownOption) =>
-        !!a && a.label === b.label && a.rationale === b.rationale && a.hasSubInterventions === b.hasSubInterventions;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [breakdowns.options, breakdowns.status, breakdown?.label, breakdown?.hasSubInterventions]);
 
     // Suggestions are the default; the manual fields show on request, or when there is nothing to suggest.
     const showOwn = ownMode || (outcomes.status !== "loading" && !outcomes.options.length);
@@ -384,7 +433,7 @@ export const InterventionWizard: React.FC<Props> = ({
 
     const canNext = useMemo(() => {
         if (step === 0) return title.trim().length > 0;
-        if (step === 3) return !!schedule;
+        if (step === 3) return !!schedule && (schedule.endMode !== "end-date" || !!schedule.endDate);
         if (step === 4) return !!breakdown && (!breakdown.hasSubInterventions || cleanSubs.length >= 2);
         return true;
     }, [step, title, schedule, breakdown, cleanSubs.length]);
@@ -398,6 +447,7 @@ export const InterventionWizard: React.FC<Props> = ({
             recurrenceStrict: schedule.frequency === "as-needed" ? true : schedule.strict,
             recurrenceEndMode: schedule.endMode || undefined,
             recurrenceCycles: schedule.endMode === "fixed-cycles" ? schedule.cycles : undefined,
+            recurrenceEndDate: schedule.endMode === "end-date" && schedule.endDate ? dayjs(schedule.endDate) : undefined,
             defaultPlannedSessions: breakdown?.plannedSessions || schedule.plannedSessions || 1,
             hasSubInterventions: hasSubs,
             subInterventions: hasSubs ? cleanSubs : [],
@@ -427,6 +477,16 @@ export const InterventionWizard: React.FC<Props> = ({
     return (
         <div>
 
+            <AnimatePresence mode="wait" initial={false} custom={{ d: direction.current, r: !!reduceMotion }}>
+            <motion.div
+                key={step}
+                custom={{ d: direction.current, r: !!reduceMotion }}
+                variants={STEP_SLIDE}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: reduceMotion ? 0 : 0.18, ease: "easeInOut" }}
+            >
             {step === 0 && (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
                     <Title level={5} style={{ margin: 0 }}>What is this intervention called?</Title>
@@ -440,14 +500,20 @@ export const InterventionWizard: React.FC<Props> = ({
                             // A new title makes earlier suggestions stale.
                             requestSeq.current += 1;
                             setOutcomes(idle()); setSchedules(idle()); setBreakdowns(idle());
-                            setOutcomePick(null); setSchedule(null); setBreakdown(null);
+                            setOutcomePick(null);
+                            if (!isEdit) { setSchedule(null); setBreakdown(null); }
                             setOwnMode(false);
                         }}
                         onPressEnter={() => title.trim() && goTo(1)}
                     />
                     <div>
-                        <Text strong>Anything I should know?</Text>{" "}
+                        <Text strong>Anything Thuso should know?</Text>{" "}
                         <Text type="secondary">(optional)</Text>
+                        <div>
+                            <Text type="secondary">
+                                Thuso, your AI assistant, will use this to suggest outcomes, a schedule and a breakdown for you.
+                            </Text>
+                        </div>
                         <Input.TextArea
                             rows={3}
                             style={{ marginTop: 6 }}
@@ -460,14 +526,6 @@ export const InterventionWizard: React.FC<Props> = ({
                             }}
                         />
                     </div>
-                    {departmentName ? (
-                        <Text type="secondary">
-                            This will be added to {departmentName}.
-                            {existingTitles.length
-                                ? ` Already there: ${existingTitles.slice(0, 4).join(", ")}${existingTitles.length > 4 ? "…" : ""}.`
-                                : ""}
-                        </Text>
-                    ) : null}
                 </Space>
             )}
 
@@ -682,8 +740,16 @@ export const InterventionWizard: React.FC<Props> = ({
                                                                         { value: "fixed-cycles", label: "After a set number of cycles" },
                                                                         { value: "until-closed", label: "Until the HOD closes it" },
                                                                         { value: "programme-end", label: "Until the programme ends" },
+                                                                        { value: "end-date", label: "On a specific date" },
                                                                     ]}
                                                                 />
+                                                                {schedule.endMode === "end-date" ? (
+                                                                    <DatePicker
+                                                                        style={{ flex: "0 1 170px" }}
+                                                                        value={schedule.endDate ? dayjs(schedule.endDate) : null}
+                                                                        onChange={(date) => setSchedule({ ...schedule, endDate: date ? date.format("YYYY-MM-DD") : null })}
+                                                                    />
+                                                                ) : null}
                                                                 {schedule.endMode === "fixed-cycles" ? (
                                                                     <>
                                                                         <InputNumber
@@ -774,6 +840,15 @@ export const InterventionWizard: React.FC<Props> = ({
                                                                         placeholder={`Step ${j + 1}`}
                                                                         onChange={(e) => setSubs(subs.map((x, k) => (k === j ? { ...x, title: e.target.value } : x)))}
                                                                     />
+                                                                    <InputNumber
+                                                                        min={1}
+                                                                        max={12}
+                                                                        style={{ width: 96 }}
+                                                                        addonAfter="sess."
+                                                                        aria-label="Typical sessions"
+                                                                        value={sub.defaultPlannedSessions || 1}
+                                                                        onChange={(value) => setSubs(subs.map((x, k) => (k === j ? { ...x, defaultPlannedSessions: Number(value) || 1 } : x)))}
+                                                                    />
                                                                     <Button icon={<DeleteOutlined />} aria-label="Remove step" onClick={() => setSubs(subs.filter((_, k) => k !== j))} />
                                                                 </Space.Compact>
                                                             ))}
@@ -791,6 +866,18 @@ export const InterventionWizard: React.FC<Props> = ({
                             })}
                         </>
                     )}
+                    {breakdown && !breakdown.hasSubInterventions ? (
+                        <Space align="center" wrap>
+                            <Text>Typical sessions</Text>
+                            <InputNumber
+                                min={1}
+                                max={12}
+                                value={breakdown.plannedSessions || 1}
+                                onChange={(value) => setBreakdown({ ...breakdown, plannedSessions: Number(value) || 1 })}
+                            />
+                            <Text type="secondary" style={{ fontSize: 12 }}>Pre-fills when it is assigned.</Text>
+                        </Space>
+                    ) : null}
                     <Text strong style={{ marginTop: 6 }}>Is it compulsory for every accepted SME?</Text>
                     <div style={{ display: "flex", gap: 8 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -811,7 +898,7 @@ export const InterventionWizard: React.FC<Props> = ({
 
             {step === 5 && schedule && (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                    <Title level={5} style={{ margin: 0 }}>Review and add</Title>
+                    <Title level={5} style={{ margin: 0 }}>{isEdit ? "Review and save" : "Review and add"}</Title>
                     <Card size="small" styles={{ body: { padding: 0 } }}>
                         <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(5,5,5,0.06)", display: "flex", alignItems: "center", gap: 8 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
@@ -870,6 +957,9 @@ export const InterventionWizard: React.FC<Props> = ({
                 </Space>
             )}
 
+            </motion.div>
+            </AnimatePresence>
+
             <div style={{ display: "flex", gap: 8, marginTop: 24 }}>
                 {editing && step < 5 ? (
                     <>
@@ -882,15 +972,17 @@ export const InterventionWizard: React.FC<Props> = ({
                     </>
                 ) : (
                     <>
-                        <Button
-                            block
-                            size="large"
-                            shape="round"
-                            style={{ flex: 1 }}
-                            onClick={step === 0 ? onCancel : () => setStep(step - 1)}
-                        >
-                            {step === 0 ? "Cancel" : "Back"}
-                        </Button>
+                        {step === 0 ? null : (
+                            <Button
+                                block
+                                size="large"
+                                shape="round"
+                                style={{ flex: 1 }}
+                                onClick={isEdit && step === 5 ? onCancel : () => setStep(step - 1)}
+                            >
+                                {isEdit && step === 5 ? "Cancel" : "Back"}
+                            </Button>
+                        )}
                         {step === 1 ? (
                             <Button
                                 block
@@ -930,7 +1022,7 @@ export const InterventionWizard: React.FC<Props> = ({
                                 onClick={submit}
                                 className="guide-intervention-submit"
                             >
-                                Add intervention
+                                {isEdit ? "Save changes" : "Add intervention"}
                             </Button>
                         )}
                     </>
@@ -941,3 +1033,68 @@ export const InterventionWizard: React.FC<Props> = ({
 };
 
 export default InterventionWizard;
+
+
+/** Turn a saved intervention into the wizard's starting point for editing. */
+export function wizardInitialFrom(record: any): WizardInitial {
+    const toIso = (value: any) => {
+        const date = typeof value?.toDate === "function" ? value.toDate() : value ? new Date(value) : null;
+        return date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : null;
+    };
+
+    const preset =
+        record?.frequency === "as-needed" || ["ad-hoc", "once-off"].includes(record?.assignmentMode)
+            ? "as-needed"
+            : supportedRecurrenceFrom(record) || "as-needed";
+    const standard = STANDARD_SCHEDULES.find((s) => s.frequency === preset) || STANDARD_SCHEDULES[0];
+    const end = record?.recurrenceEnd;
+    const plannedSessions = Math.max(1, Number(record?.defaultPlannedSessions) || 1);
+
+    const schedule: ScheduleOption =
+        preset === "as-needed"
+            ? { ...standard, plannedSessions }
+            : {
+                ...standard,
+                strict: record?.recurrenceStrict !== false,
+                endMode: ["fixed-cycles", "until-closed", "programme-end", "end-date"].includes(end?.mode) ? end.mode : "until-closed",
+                cycles: Math.max(0, Number(end?.cycles) || 0),
+                endDate: toIso(end?.endDate),
+                plannedSessions,
+            };
+
+    const activeSubs = (record?.subInterventions || [])
+        .filter((sub: any) => sub && sub.active !== false && !sub.archivedAt && String(sub.title || "").trim())
+        .map((sub: any) => ({
+            subId: String(sub.subId || ""),
+            title: String(sub.title),
+            defaultPlannedSessions: Math.max(1, Number(sub.defaultPlannedSessions) || 1),
+        }));
+    const hasSubs = !!record?.hasSubInterventions && activeSubs.length > 0;
+
+    const def = record?.outcomeDef;
+    const hasOutcome = !!String(def?.intendedOutcome || "").trim();
+
+    return {
+        title: String(record?.interventionTitle || ""),
+        deliverableName: String(def?.deliverable?.name || ""),
+        deliverableDescription: String(def?.deliverable?.description || ""),
+        intendedOutcome: String(def?.intendedOutcome || ""),
+        outcomeType: (def?.outcomeType as OutcomeType) || "",
+        followUpAfterDays: Number(def?.followUpAfterDays) || 0,
+        followUpRequired: typeof def?.followUp?.required === "boolean" ? def.followUp.required : hasOutcome ? false : null,
+        smeCheckIn: !!def?.followUp?.smeCheckIn,
+        schedule,
+        breakdown: hasSubs
+            ? {
+                label: "Current structure",
+                rationale: `${activeSubs.length} steps, in delivery order.`,
+                hasSubInterventions: true,
+                rotationMode: record?.subInterventionRotationMode === "repeat" ? "repeat" : "rotate",
+                subInterventions: activeSubs,
+                plannedSessions,
+            }
+            : { ...FALLBACK_BREAKDOWNS[0], plannedSessions },
+        subs: activeSubs,
+        compulsory: !!record?.compulsory,
+    };
+}

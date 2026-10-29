@@ -8,7 +8,7 @@ import type { AccentTheme, ResolvedColorMode } from "@/contexts/ThemeContext";
  * blue reads as muddy against a dark surface.
  */
 const PRIMARY_LIGHT = "#1677FF";
-const PRIMARY_DARK = "#4A9BFF";
+const PRIMARY_DARK = "#4a9bff";
 
 /**
  * Per-accent primaries, one pair per colour mode. Mirrors the CSS custom
@@ -17,6 +17,8 @@ const PRIMARY_DARK = "#4A9BFF";
  * track whichever accent is selected instead of only the hand-written chrome.
  */
 const ACCENT_PRIMARY: Record<AccentTheme, { light: string; dark: string }> = {
+    // Lepharo brand red, as on the landing and sign-in screens.
+    crimson: { light: "#C8102E", dark: "#F0475A" },
     blue: { light: PRIMARY_LIGHT, dark: PRIMARY_DARK },
     ocean: { light: "#0E9488", dark: "#2DD4BF" },
     violet: { light: "#7C3AED", dark: "#A78BFA" },
@@ -30,15 +32,15 @@ const ACCENT_PRIMARY: Record<AccentTheme, { light: string; dark: string }> = {
  */
 const DARK_SURFACE = {
     /** Page background — the furthest back plane. */
-    layout: "#0E1117",
+    layout: "#1e2024",
     /** Cards, tables, inputs — the default panel. */
-    container: "#171B22",
+    container: "#26292e",
     /** Modals, dropdowns, popovers — anything floating above a panel. */
-    elevated: "#1F242D",
+    elevated: "#2e3238",
     /** Hairlines between sections. */
-    border: "#2A313C",
+    border: "#3b4047",
     /** Stronger dividers and input outlines. */
-    borderSecondary: "#222831",
+    borderSecondary: "#33373d",
     /** Hover/active wash on list rows and menu items. */
     fill: "rgba(255, 255, 255, 0.08)",
     fillSecondary: "rgba(255, 255, 255, 0.05)",
@@ -62,11 +64,33 @@ const sharedToken: ThemeConfig["token"] = {
     fontSize: 14,
 };
 
+/**
+ * One button shape for the whole app — pages, tables, modals and drawers
+ * alike: a pill (icon-only buttons become circles), semibold label, roomier
+ * padding. Shadows are zeroed here because styles/buttons.css owns elevation,
+ * so light and dark mode get the same treatment from one place.
+ */
+const buttonComponent: NonNullable<ThemeConfig["components"]>["Button"] = {
+    borderRadius: 999,
+    borderRadiusLG: 999,
+    borderRadiusSM: 999,
+    fontWeight: 600,
+    paddingInline: 18,
+    paddingInlineLG: 22,
+    paddingInlineSM: 12,
+    defaultShadow: "none",
+    primaryShadow: "none",
+    dangerShadow: "none",
+};
+
 const lightTheme: ThemeConfig = {
     algorithm: antdTheme.defaultAlgorithm,
     token: {
         ...sharedToken,
         colorPrimary: PRIMARY_LIGHT,
+    },
+    components: {
+        Button: buttonComponent,
     },
 };
 
@@ -106,6 +130,7 @@ const darkTheme: ThemeConfig = {
         boxShadowSecondary: "0 6px 20px rgba(0, 0, 0, 0.55)",
     },
     components: {
+        Button: buttonComponent,
         Layout: {
             bodyBg: DARK_SURFACE.layout,
             headerBg: DARK_SURFACE.container,
@@ -122,7 +147,7 @@ const darkTheme: ThemeConfig = {
             colorBgContainer: DARK_SURFACE.container,
         },
         Table: {
-            headerBg: "#1C222B",
+            headerBg: "#2a2e34",
             headerSplitColor: DARK_SURFACE.border,
             rowHoverBg: DARK_SURFACE.fillTertiary,
             borderColor: DARK_SURFACE.borderSecondary,
@@ -136,7 +161,7 @@ const darkTheme: ThemeConfig = {
             colorBgElevated: DARK_SURFACE.elevated,
         },
         Tooltip: {
-            colorBgSpotlight: "#2C333E",
+            colorBgSpotlight: "#383d44",
             colorTextLightSolid: DARK_TEXT.primary,
         },
         Select: {
@@ -158,19 +183,30 @@ const darkTheme: ThemeConfig = {
 
 export const getAntdTheme = (
     mode: ResolvedColorMode,
-    accent: AccentTheme = "blue",
+    accent: AccentTheme = "crimson",
 ): ThemeConfig => {
     const primary = mode === "dark" ? ACCENT_PRIMARY[accent].dark : ACCENT_PRIMARY[accent].light;
     const base = mode === "dark" ? darkTheme : lightTheme;
-
-    if (accent === "blue") return base;
 
     return {
         ...base,
         token: {
             ...base.token,
             colorPrimary: primary,
+            // Text links follow the accent in both modes (dark mode already did via colorInfo).
+            colorLink: primary,
             ...(mode === "dark" ? { colorInfo: primary } : null),
+        },
+        components: {
+            ...base.components,
+            // Link buttons follow the accent like every other button; antd
+            // otherwise derives them from colorInfo, which stays blue.
+            Button: {
+                ...buttonComponent,
+                colorLink: primary,
+                colorLinkHover: primary,
+                colorLinkActive: primary,
+            },
         },
     };
 };

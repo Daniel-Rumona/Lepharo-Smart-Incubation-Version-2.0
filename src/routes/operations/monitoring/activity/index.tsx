@@ -40,6 +40,7 @@ import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { Helmet } from 'react-helmet'
 
@@ -1120,9 +1121,9 @@ export const MonitoringActivity: React.FC = () => {
             <Row gutter={[16, 16]} style={{ marginBottom: 15 }}>
                 <Col xs={24} md={8}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={<UserOutlined />}
-                            iconBg="rgba(82,196,26,0.12)"
+                            tone='success'
                             title="Active Now"
                             value={activeNow}
                             subtitle={
@@ -1136,9 +1137,9 @@ export const MonitoringActivity: React.FC = () => {
 
                 <Col xs={24} md={8}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={<TeamOutlined />}
-                            iconBg="rgba(22,119,255,0.12)"
+                            tone='info'
                             title={`Active Users (${windowLabel})`}
                             value={sessionsToday}
                             subtitle={
@@ -1152,9 +1153,9 @@ export const MonitoringActivity: React.FC = () => {
 
                 <Col xs={24} md={8}>
                     <MotionCard>
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={<HourglassOutlined />}
-                            iconBg="rgba(114,46,209,0.12)"
+                            tone='info'
                             title={`Avg Duration (${windowLabel})`}
                             value={`${avgMinsWindow} min`}
                             subtitle={
@@ -1308,12 +1309,12 @@ export const MonitoringActivity: React.FC = () => {
                                 <Card
                                     hoverable
                                 >
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         title="User"
                                         value={selectedUser.name || '—'}
                                         subtitle={selectedUser.departmentName || '—'}
                                         icon={<UserOutlined />}
-                                        iconBg="rgba(22,119,255,0.12)"
+                                        tone='info'
                                     />
                                 </Card>
                             </Col>
@@ -1322,12 +1323,12 @@ export const MonitoringActivity: React.FC = () => {
                                 <Card
                                     hoverable
                                 >
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         title={`Sessions (${windowDays}d)`}
                                         value={selectedUser.sessionsWindow}
                                         subtitle={`${selectedUser.sessionsToday} today`}
                                         icon={<TeamOutlined />}
-                                        iconBg="rgba(82,196,26,0.12)"
+                                        tone='success'
                                     />
                                 </Card>
                             </Col>
@@ -1336,12 +1337,12 @@ export const MonitoringActivity: React.FC = () => {
                                 <Card
                                     hoverable
                                 >
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         title={`Duration (${windowDays}d)`}
                                         value={formatDuration(selectedUser.durWindowMins)}
                                         subtitle={selectedUser.active ? 'Active now' : 'Idle'}
                                         icon={<HourglassOutlined />}
-                                        iconBg="rgba(114,46,209,0.12)"
+                                        tone='info'
                                     />
                                 </Card>
                             </Col>
@@ -1386,7 +1387,7 @@ export const MonitoringActivity: React.FC = () => {
                                 <Card
                                     hoverable
                                 >
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         title="Last Login"
                                         value={formatDateCell(selectedUser.lastStartedAt)}
                                         subtitle="Latest start time"
@@ -1398,7 +1399,7 @@ export const MonitoringActivity: React.FC = () => {
                                 <Card
                                     hoverable
                                 >
-                                    <MotionCard.Metric
+                                    <MetricTile
                                         title="Last Seen"
                                         value={formatDateCell(selectedUser.lastSeenAt)}
                                         subtitle="Latest activity time"

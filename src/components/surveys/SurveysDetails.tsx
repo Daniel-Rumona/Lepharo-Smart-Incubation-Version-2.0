@@ -58,6 +58,7 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '../dashboards/metrics/Header'
+import { MetricTile } from '../dashboards/metrics/MetricTile'
 import SurveyResponseViewer from './response/viewer'
 
 type ViewKey = 'sent' | 'templates'
@@ -1568,14 +1569,9 @@ const SurveysDetailsPage = () => {
                         } invited`,
                     icon: (
                         <SendOutlined
-                            style={{
-                                color:
-                                    token.colorPrimary
-                            }}
                         />
                     ),
-                    iconBg:
-                        token.colorPrimaryBg
+                    tone: 'accent' as const
                 },
                 {
                     key: 'responses',
@@ -1586,14 +1582,9 @@ const SurveysDetailsPage = () => {
                         'Completed responses',
                     icon: (
                         <BarChartOutlined
-                            style={{
-                                color:
-                                    token.colorSuccess
-                            }}
                         />
                     ),
-                    iconBg:
-                        token.colorSuccessBg
+                    tone: 'success' as const
                 },
                 {
                     key: 'completion',
@@ -1604,14 +1595,9 @@ const SurveysDetailsPage = () => {
                         'Across invited participants',
                     icon: (
                         <FileSearchOutlined
-                            style={{
-                                color:
-                                    token.colorWarning
-                            }}
                         />
                     ),
-                    iconBg:
-                        token.colorWarningBg
+                    tone: 'warning' as const
                 }
             ]
         }
@@ -1630,14 +1616,9 @@ const SurveysDetailsPage = () => {
                     }`,
                 icon: (
                     <TableOutlined
-                        style={{
-                            color:
-                                token.colorPrimary
-                        }}
                     />
                 ),
-                iconBg:
-                    token.colorPrimaryBg
+                tone: 'accent' as const
             },
             {
                 key: 'questions',
@@ -1648,14 +1629,9 @@ const SurveysDetailsPage = () => {
                     'Answerable fields',
                 icon: (
                     <BarChartOutlined
-                        style={{
-                            color:
-                                token.colorSuccess
-                        }}
                     />
                 ),
-                iconBg:
-                    token.colorSuccessBg
+                tone: 'success' as const
             },
             {
                 key: 'updated',
@@ -1668,14 +1644,9 @@ const SurveysDetailsPage = () => {
                     'Latest visible template',
                 icon: (
                     <CalendarOutlined
-                        style={{
-                            color:
-                                token.colorInfo
-                        }}
                     />
                 ),
-                iconBg:
-                    token.colorInfoBg
+                tone: 'info' as const
             }
         ]
     }, [
@@ -1898,9 +1869,9 @@ const SurveysDetailsPage = () => {
                         xs={24}
                         md={8}
                     >
-                        <MotionCard.Metric
+                        <MetricTile
                             icon={metric.icon}
-                            iconBg={metric.iconBg}
+                            tone={metric.tone}
                             title={metric.title}
                             value={metric.value}
                             subtitle={metric.subtitle}

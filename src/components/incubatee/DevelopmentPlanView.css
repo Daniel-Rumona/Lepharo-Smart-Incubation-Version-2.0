@@ -1,0 +1,356 @@
+/* ============================================================================
+   SME development plan (DevelopmentPlanView.tsx). Colours arrive from the
+   antd theme as --dp-* custom properties, so the page follows the colour mode
+   and the chosen accent. Every class here is `dp-` prefixed.
+   ========================================================================== */
+
+/* --- Page frame (routes/incubatee/roadmap) -------------------------------- */
+
+/* Full workspace width with the dashboard's 24px gutter, like the other
+   incubatee pages. */
+.dp-page {
+  padding: 24px;
+}
+.dp-page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 18px;
+}
+.dp-page-title.ant-typography {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+.dp {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+/* --- Summary -------------------------------------------------------------- */
+
+.dp-summary {
+  padding: 18px 20px;
+  border: 1px solid var(--dp-line);
+  border-radius: 14px;
+  background: var(--dp-surface);
+}
+.dp-summary.is-finalized {
+  border-color: color-mix(in srgb, var(--dp-success) 45%, var(--dp-line));
+  background: color-mix(in srgb, var(--dp-success) 7%, var(--dp-surface));
+}
+
+.dp-summary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.dp-summary-count {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.dp-summary-done {
+  align-self: center;
+  color: var(--dp-success);
+  font-size: 20px;
+}
+.dp-summary-number {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.dp-summary-total {
+  color: var(--dp-faint);
+  font-size: 18px;
+  font-weight: 600;
+}
+.dp-summary-label {
+  color: var(--dp-muted);
+  font-size: 14px;
+}
+.dp-summary-sub {
+  color: var(--dp-faint);
+  font-size: 12.5px;
+}
+
+.dp-segments {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 10px;
+}
+.dp-segment {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--dp-track);
+}
+.dp-segment.is-confirmed {
+  background: var(--dp-success);
+}
+.dp-segment.is-ready {
+  background: color-mix(in srgb, var(--dp-accent) 55%, transparent);
+}
+
+.dp-summary-line {
+  margin: 0;
+  color: var(--dp-muted);
+  font-size: 13.5px;
+}
+
+/* --- Departments ---------------------------------------------------------- */
+
+.dp-depts.ant-collapse {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: transparent;
+}
+
+.dp-depts > .dp-dept.ant-collapse-item {
+  border: 1px solid var(--dp-line);
+  border-radius: 14px !important;
+  background: var(--dp-surface);
+  overflow: hidden;
+}
+.dp-depts > .dp-dept.is-ready {
+  border-color: color-mix(in srgb, var(--dp-accent) 40%, var(--dp-line));
+}
+
+.dp-depts > .dp-dept > .ant-collapse-header {
+  align-items: center !important;
+  padding: 14px 18px !important;
+}
+.dp-depts > .dp-dept.ant-collapse-item-disabled > .ant-collapse-header {
+  cursor: default !important;
+}
+
+.dp-dept-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dp-dept-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--dp-fill);
+  color: var(--dp-faint);
+  font-size: 13px;
+}
+.is-ready .dp-dept-mark {
+  background: color-mix(in srgb, var(--dp-accent) 14%, transparent);
+}
+.dp-dept-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dp-accent);
+}
+.is-confirmed .dp-dept-mark {
+  background: color-mix(in srgb, var(--dp-success) 16%, transparent);
+  color: var(--dp-success);
+}
+
+.dp-dept-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.is-waiting .dp-dept-name {
+  color: var(--dp-muted);
+  font-weight: 500;
+}
+
+.dp-dept-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 10px;
+}
+.dp-dept-count {
+  color: var(--dp-faint);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.dp-pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--dp-fill);
+  color: var(--dp-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dp-pill.is-ready {
+  background: color-mix(in srgb, var(--dp-accent) 14%, transparent);
+  color: var(--dp-accent);
+}
+.dp-pill.is-confirmed {
+  background: color-mix(in srgb, var(--dp-success) 14%, transparent);
+  color: var(--dp-success);
+}
+
+.dp-depts > .dp-dept > .ant-collapse-content > .ant-collapse-content-box {
+  padding: 0 18px 16px !important;
+}
+
+/* --- Interventions -------------------------------------------------------- */
+
+.dp-ivs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--dp-line);
+}
+.dp-iv {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--dp-line);
+}
+.dp-iv-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dp-iv-title {
+  overflow-wrap: anywhere;
+}
+.dp-iv-area {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--dp-muted);
+  font-size: 12.5px;
+}
+.dp-iv-tag {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dp-accent) 12%, transparent);
+  color: var(--dp-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.dp-iv-remove.ant-btn {
+  color: var(--dp-faint);
+}
+.dp-iv-remove.ant-btn:hover {
+  color: var(--ant-color-error, #ff4d4f) !important;
+}
+
+.dp-note {
+  margin: 12px 0 0;
+  color: var(--dp-muted);
+  font-size: 13px;
+}
+.dp-note.is-done {
+  color: var(--dp-success);
+  font-weight: 500;
+}
+
+.dp-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-top: 14px;
+}
+.dp-confirm .dp-note {
+  margin: 0;
+}
+.dp-confirm .ant-btn {
+  flex: none;
+}
+
+/* --- Wide screens --------------------------------------------------------- */
+
+/* The summary becomes a sticky side column so it stays in view while the
+   department list scrolls, and the list gets the rest of the width. */
+@media (min-width: 1200px) {
+  .dp {
+    display: grid;
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+  }
+  /* Loading and empty states are a single block across the full width. */
+  .dp.dp-single {
+    display: flex;
+  }
+  .dp-summary {
+    position: sticky;
+    top: 16px;
+  }
+  .dp-summary-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .dp-summary-number {
+    font-size: 34px;
+  }
+}
+
+/* --- Phones --------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .dp-page {
+    padding: 14px;
+  }
+  .dp-page-title.ant-typography {
+    font-size: 20px;
+  }
+  .dp {
+    gap: 12px;
+  }
+  .dp-summary {
+    padding: 16px;
+  }
+  .dp-summary-number {
+    font-size: 24px;
+  }
+  .dp-depts > .dp-dept > .ant-collapse-header {
+    padding: 12px 14px !important;
+  }
+  .dp-dept-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  /* Status and count move under the name, aligned with it. */
+  .dp-dept-meta {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    padding-left: 42px;
+  }
+  .dp-depts > .dp-dept > .ant-collapse-content > .ant-collapse-content-box {
+    padding: 0 14px 14px !important;
+  }
+  .dp-confirm {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dp-confirm .ant-btn {
+    width: 100%;
+  }
+}

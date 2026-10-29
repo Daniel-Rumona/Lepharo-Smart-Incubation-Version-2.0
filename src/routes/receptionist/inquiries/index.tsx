@@ -54,9 +54,8 @@ import {
     type InquiryChannel
 } from '@/utils/inquirySource'
 import { useAuth } from '@/hooks/useAuth'
-import {
-    MotionCard
-} from '@/components/dashboards/metrics/Header'
+import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import InquiryForm from '@/components/receptionist/InquiryForm'
 import InquiryEditModal from '@/components/receptionist/InquiryEditModal'
 import InquiryDetail from '@/components/receptionist/InquiryDetail'
@@ -648,10 +647,10 @@ const InquiriesList: React.FC = () => {
         <div style={{ padding: 24, minHeight: '100vh' }}>
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
+                    <MetricTile
                         {...metricProps('all')}
-                        icon={<MessageOutlined style={{ color: '#1677ff' }} />}
-                        iconBg="rgba(22,119,255,0.12)"
+                        icon={<MessageOutlined />}
+                        tone='accent'
                         title="Total Inquiries"
                         value={metrics.total}
                         subtitle="Click to show all"
@@ -659,10 +658,10 @@ const InquiriesList: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
+                    <MetricTile
                         {...metricProps('New')}
-                        icon={<ExclamationCircleOutlined style={{ color: '#faad14' }} />}
-                        iconBg="rgba(250,173,20,0.14)"
+                        icon={<ExclamationCircleOutlined />}
+                        tone='warning'
                         title="New"
                         value={metrics.newCount}
                         subtitle="Awaiting first action"
@@ -670,10 +669,10 @@ const InquiriesList: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
+                    <MetricTile
                         {...metricProps('group:progress')}
-                        icon={<ClockCircleOutlined style={{ color: '#722ed1' }} />}
-                        iconBg="rgba(114,46,209,0.12)"
+                        icon={<ClockCircleOutlined />}
+                        tone='info'
                         title="In Progress"
                         value={metrics.inProgressCount}
                         subtitle="Being handled or followed up"
@@ -681,10 +680,10 @@ const InquiriesList: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
+                    <MetricTile
                         {...metricProps('group:resolved')}
-                        icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                        iconBg="rgba(82,196,26,0.12)"
+                        icon={<CheckCircleOutlined />}
+                        tone='success'
                         title="Resolved / Closed"
                         value={metrics.resolvedCount}
                         subtitle="Completed outcomes"

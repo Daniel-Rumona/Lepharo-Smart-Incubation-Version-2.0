@@ -23,13 +23,15 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendComplianceReminderEmail = exports.sendApplicationReceivedEmail = exports.resendAccountCreationEmails = exports.sendAdminTestEmail = exports.queueSystemStatusBroadcast = exports.onMailCampaignQueued = void 0;
+exports.deliverComplianceReminder = exports.sendComplianceReminderEmail = exports.sendApplicationReceivedEmail = exports.resendAccountCreationEmails = exports.sendAdminTestEmail = exports.queueSystemStatusBroadcast = exports.onMailCampaignQueued = void 0;
 const admin = __importStar(require("firebase-admin"));
 const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
 const firebase_functions_1 = require("firebase-functions");
 const mailer_1 = require("./mail/mailer");
 const brevoClient_1 = require("./brevoClient");
+const inAppNotifications_1 = require("./inAppNotifications");
+const config_1 = require("./config");
 if (!admin.apps.length)
     admin.initializeApp();
 const db = admin.firestore();
@@ -251,7 +253,7 @@ function assertCampaignValid(c) {
 }
 const ACCOUNT_CREATION_LOGIN_URL = process.env.APP_LOGIN_URL || 'https://lepharosmartinc.co.za/login';
 const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ADMIN_EMAIL_ROLES = new Set(['admin', 'system_admin', 'system admin', 'superadmin', 'director']);
+const ADMIN_EMAIL_ROLES = new Set(['system_admin', 'system admin', 'superadmin', 'director']);
 const SYSTEM_BROADCAST_EXCLUDED_DOMAIN = '@quantilytix.co.za';
 const SYSTEM_BROADCAST_COPY_RECIPIENTS = ['helperzhou@gmail.com', 'admin@quantilytix.com'];
 const CALLABLE_CORS = [
@@ -676,6 +678,17 @@ exports.queueSystemStatusBroadcast = (0, https_1.onCall)({ region: 'us-central1'
             });
             await batch.commit();
         }
+        // In-app copy for every account (not only email-deliverable ones),
+        // chunked to stay well inside Firestore's per-document index limits.
+        const allUids = usersSnap.docs.map((userDoc) => userDoc.id);
+        for (let index = 0; index < allUids.length; index += 1000) {
+            await (0, inAppNotifications_1.notifyInApp)({
+                type: `system_${kind}`,
+                message: `${subject}: ${message}`,
+                recipientIds: allUids.slice(index, index + 1000),
+                mailCampaignId: campaignRef.id,
+            });
+        }
         await campaignRef.set({ status: 'queued', queuedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     }
     catch (err) {
@@ -741,7 +754,18 @@ exports.sendAdminTestEmail = (0, https_1.onCall)({ region: 'us-central1', cors: 
         throw new https_1.HttpsError('internal', error);
     }
 });
-exports.resendAccountCreationEmails = (0, https_1.onCall)({ region: 'us-central1', cors: CALLABLE_CORS }, async (req) => {
+exports.resendAccountCreationEmails = (0, https_1.onCall)({ region: 'us-central1', cors: CALLABLE_CORS, timeoutSeconds: 540, memory: '512MiB' }, async (req) => {
+    try {
+        return await runResendAccountCreationEmails(req);
+    }
+    catch (err) {
+        if (err instanceof https_1.HttpsError)
+            throw err;
+        firebase_functions_1.logger.error('resendAccountCreationEmails.failed', { error: String(err?.message || err), stack: err?.stack });
+        throw new https_1.HttpsError('internal', `Account creation emails failed: ${String(err?.message || err)}`);
+    }
+});
+async function runResendAccountCreationEmails(req) {
     const actor = await requireEmailAdmin(req);
     const targets = await collectUsersForAccountCreation({
         userIds: req.data?.userIds,
@@ -816,8 +840,9 @@ exports.resendAccountCreationEmails = (0, https_1.onCall)({ region: 'us-central1
     const sent = results.filter((r) => r.status === 'sent').length;
     const failed = results.filter((r) => r.status === 'failed').length;
     const skipped = results.filter((r) => r.status === 'skipped').length;
+    firebase_functions_1.logger.info('resendAccountCreationEmails.done', { total: results.length, sent, failed, skipped });
     return { ok: true, dryRun, total: results.length, sent, failed, skipped, results };
-});
+}
 exports.sendApplicationReceivedEmail = (0, https_1.onCall)({ region: 'us-central1', cors: CALLABLE_CORS }, async (req) => {
     if (!req.auth)
         throw new https_1.HttpsError('unauthenticated', 'Login required.');
@@ -852,7 +877,7 @@ exports.sendApplicationReceivedEmail = (0, https_1.onCall)({ region: 'us-central
         throw new https_1.HttpsError('internal', 'Application confirmation email failed.');
     }
 });
-exports.sendComplianceReminderEmail = (0, https_1.onCall)({ region: 'us-central1', cors: CALLABLE_CORS }, async (req) => {
+exports.sendComplianceReminderEmail = (0, https_1.onCall)({ ...config_1.BREVO_EGRESS, region: 'us-central1', cors: CALLABLE_CORS }, async (req) => {
     if (!req.auth)
         throw new https_1.HttpsError('unauthenticated', 'Login required.');
     const to = safeLower(req.data?.email);
@@ -869,6 +894,20 @@ exports.sendComplianceReminderEmail = (0, https_1.onCall)({ region: 'us-central1
     if (!issues.length) {
         throw new https_1.HttpsError('invalid-argument', 'At least one outstanding compliance item is required.');
     }
+    try {
+        const messageId = await deliverComplianceReminder({ to, name, programName, participantId, programId, issues });
+        return { ok: true, messageId };
+    }
+    catch {
+        throw new https_1.HttpsError('internal', 'Compliance reminder email failed.');
+    }
+});
+/**
+ * Emails one SME their outstanding compliance items and posts the matching in-app
+ * notification. Logs the send either way; throws if the email could not be sent.
+ */
+async function deliverComplianceReminder(input) {
+    const { to, name, programName, participantId, programId, issues } = input;
     const subject = `Action required: outstanding details for ${programName}`;
     const issueList = issues.map((issue) => `<li>${issue.replace(/[&<>"']/g, (char) => ({
         '&': '&amp;',
@@ -893,7 +932,15 @@ exports.sendComplianceReminderEmail = (0, https_1.onCall)({ region: 'us-central1
             participantId,
             programId,
         });
-        return { ok: true, messageId };
+        await (0, inAppNotifications_1.notifyInApp)({
+            type: 'compliance_details_outstanding',
+            message: `Please complete ${issues.length} outstanding item${issues.length === 1 ? '' : 's'} for ${programName}: ${issues.slice(0, 3).join('; ')}${issues.length > 3 ? ' …' : ''}`,
+            recipientIds: [await (0, inAppNotifications_1.uidForParticipant)(participantId, to)],
+            participantId,
+            programId,
+            link: '/incubatee/compliance',
+        });
+        return messageId;
     }
     catch (err) {
         const error = String(err?.message || err);
@@ -906,7 +953,8 @@ exports.sendComplianceReminderEmail = (0, https_1.onCall)({ region: 'us-central1
             participantId,
             programId,
         });
-        throw new https_1.HttpsError('internal', 'Compliance reminder email failed.');
+        throw err;
     }
-});
+}
+exports.deliverComplianceReminder = deliverComplianceReminder;
 //# sourceMappingURL=emailCampaigns.js.map

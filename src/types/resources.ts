@@ -1,3 +1,11 @@
+// internal: branch inventory only, never booked
+// external: SMEs can request and be allocated it
+export type ResourceVisibility = 'internal' | 'external'
+
+export const isBookableResource = (resource: {
+  visibility?: ResourceVisibility | string
+}) => resource.visibility !== 'internal'
+
 export interface ResourceItem {
     id: string;
     name: string;
@@ -9,6 +17,11 @@ export interface ResourceItem {
     description: string;
     location?: string;
     maintainer?: string;
+    branchId?: string | null;
+    // Size of a single-unit resource, e.g. seats in a vehicle or boardroom
+    seats?: number | null;
+    // Missing on resources created before visibility existed; treated as external
+    visibility?: ResourceVisibility;
   }
 
   export interface Allocation {

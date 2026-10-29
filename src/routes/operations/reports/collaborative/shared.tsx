@@ -1,96 +1,77 @@
 import React from 'react'
-import { Button, Card, Col, Row, Space, Tag, Typography } from 'antd'
-import {
-  ArrowLeftOutlined,
-  CheckCircleFilled,
-  ClockCircleOutlined,
-  EditOutlined,
-  FileTextOutlined,
-  SendOutlined
-} from '@ant-design/icons'
-import type { ReportBlockStatus, ReportContentType, ReportStatus } from './types'
+import { Button } from 'antd'
+import { ArrowLeftOutlined } from '@ant-design/icons'
+import { StatusPill } from '@/routes/operations/movs/movParts'
+import type { ReportBlock, ReportBlockStatus, ReportContentType, ReportStatus } from './types'
 
-const { Title, Text } = Typography
-
+/**
+ * A plain page header: back, title, one line under it, and the page's actions.
+ * (Replaces the large "hero" card with an eyebrow line.)
+ */
 export const PageHeader: React.FC<{
   title: React.ReactNode
   subtitle?: React.ReactNode
+  /** Kept for older callers; no longer shown. */
   eyebrow?: React.ReactNode
   onBack?: () => void
   actions?: React.ReactNode
-}> = ({ title, subtitle, eyebrow, onBack, actions }) => (
-  <Card className="report-hero" styles={{ body: { padding: 20 } }}>
-    <Row align="middle" justify="space-between" gutter={[14, 14]}>
-      <Col flex="auto">
-        <Space align="start" size={12}>
-          {onBack ? <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} /> : null}
-          <div>
-            {eyebrow ? <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>{eyebrow}</Text> : null}
-            <Title level={3} style={{ margin: eyebrow ? '3px 0 2px' : '0 0 2px' }}>{title}</Title>
-            {subtitle ? <Text type="secondary">{subtitle}</Text> : null}
-          </div>
-        </Space>
-      </Col>
-      {actions ? <Col>{actions}</Col> : null}
-    </Row>
-  </Card>
+}> = ({ title, subtitle, onBack, actions }) => (
+  <div className="cr-header">
+    {onBack ? <Button shape="circle" icon={<ArrowLeftOutlined />} aria-label="Back" onClick={onBack} /> : null}
+    <div className="cr-header-text">
+      <h1 className="cr-header-title">{title}</h1>
+      {subtitle ? <div className="cr-header-sub">{subtitle}</div> : null}
+    </div>
+    {actions ? <div className="cr-header-actions">{actions}</div> : null}
+  </div>
 )
 
-export const MetricCard: React.FC<{
-  icon: React.ReactNode
-  iconBg: string
-  title: string
-  value: React.ReactNode
-  subtitle?: string
-}> = ({ icon, iconBg, title, value, subtitle }) => (
-  <Card className="report-soft-card report-metric-card">
-    <div className="report-metric">
-      <div className="report-metric-icon" style={{ background: iconBg }}>{icon}</div>
-      <div style={{ minWidth: 0 }}>
-        <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>{title}</Text>
-        <div style={{ fontSize: 25, fontWeight: 750, lineHeight: 1.15 }}>{value}</div>
-        {subtitle ? <Text type="secondary" style={{ fontSize: 11 }}>{subtitle}</Text> : null}
-      </div>
-    </div>
-  </Card>
-)
+/** What a report's status means, in plain words. */
+export const REPORT_STATUS: Record<ReportStatus, { label: string; tone: string }> = {
+  draft: { label: 'Not started', tone: 'neutral' },
+  in_progress: { label: 'Writing', tone: 'info' },
+  review: { label: 'Waiting for review', tone: 'warning' },
+  approved: { label: 'Done', tone: 'success' },
+  archived: { label: 'Archived', tone: 'neutral' }
+}
 
 export const ReportStatusTag: React.FC<{ status: ReportStatus }> = ({ status }) => {
-  if (status === 'approved') return <Tag color="success">Approved</Tag>
-  if (status === 'review') return <Tag color="processing">Under Review</Tag>
-  if (status === 'in_progress') return <Tag color="blue">In Progress</Tag>
-  if (status === 'archived') return <Tag>Archived</Tag>
-  return <Tag>Draft</Tag>
+  const s = REPORT_STATUS[status] || REPORT_STATUS.draft
+  return <StatusPill tone={s.tone}>{s.label}</StatusPill>
 }
 
-export const BlockStatusTag: React.FC<{ status: ReportBlockStatus }> = ({ status }) => {
-  if (status === 'approved') return <Tag color="success" icon={<CheckCircleFilled />}>Approved</Tag>
-  if (status === 'submitted') return <Tag color="processing" icon={<SendOutlined />}>Submitted</Tag>
-  if (status === 'changes_requested') return <Tag color="warning" icon={<EditOutlined />}>Changes Requested</Tag>
-  if (status === 'draft') return <Tag color="blue">Draft</Tag>
-  return <Tag icon={<ClockCircleOutlined />}>Not Started</Tag>
-}
-
-export const ContentTypeTag: React.FC<{ value: ReportContentType }> = ({ value }) => {
-  const config: Record<ReportContentType, { label: string; color?: string }> = {
-    static: { label: 'Static' },
-    narrative: { label: 'Narrative', color: 'cyan' },
-    table: { label: 'Structured Table', color: 'geekblue' },
-    kpi: { label: 'KPI Block', color: 'purple' }
+/** A section's status, including who it is waiting on. */
+export const sectionStatus = (block: Pick<ReportBlock, 'status' | 'submittedTo'>): { label: string; tone: string } => {
+  if (block.status === 'approved') return { label: 'Done', tone: 'success' }
+  if (block.status === 'submitted') {
+    return block.submittedTo === 'department'
+      ? { label: 'With department head', tone: 'info' }
+      : { label: 'Waiting for review', tone: 'warning' }
   }
-  return <Tag color={config[value].color}>{config[value].label}</Tag>
+  if (block.status === 'changes_requested') return { label: 'Changes asked', tone: 'danger' }
+  if (block.status === 'draft') return { label: 'In progress', tone: 'info' }
+  return { label: 'Not started', tone: 'neutral' }
 }
 
-export const FileBadge: React.FC<{ label?: string }> = ({ label = 'DOCX' }) => (
-  <div style={{ width: 48, height: 48, borderRadius: 14, display: 'grid', placeItems: 'center', background: '#eef5ff', color: '#165d9f', fontWeight: 800, position: 'relative' }}>
-    <FileTextOutlined style={{ fontSize: 22 }} />
-    <span style={{ position: 'absolute', bottom: 3, fontSize: 8 }}>{label}</span>
-  </div>
+export const BlockStatusTag: React.FC<{ status: ReportBlockStatus; submittedTo?: ReportBlock['submittedTo'] }> = ({ status, submittedTo }) => {
+  const s = sectionStatus({ status, submittedTo: submittedTo ?? null })
+  return <StatusPill tone={s.tone}>{s.label}</StatusPill>
+}
+
+export const CONTENT_TYPE_LABEL: Record<ReportContentType, string> = {
+  static: 'Fixed text',
+  narrative: 'Written',
+  table: 'Table',
+  kpi: 'KPI table'
+}
+
+export const ContentTypeTag: React.FC<{ value: ReportContentType }> = ({ value }) => (
+  <StatusPill tone="neutral">{CONTENT_TYPE_LABEL[value] || value}</StatusPill>
 )
 
 export const formatTimestamp = (value: any) => {
   if (!value) return '—'
   const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString()
+  return date.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }

@@ -1,70 +1,388 @@
 /* ============================================================================
-   Account settings modal
-   ----------------------------------------------------------------------------
-   The app's global scrollbar (styles/scrollbars.css) is a 12px "classic" bar
-   with visible up/down arrow buttons — right for a full page, too heavy for a
-   compact modal, where it reads as a stray grey stripe even when only a
-   sliver of content overflows. This slims it down and drops the arrows for
-   the one scroll region this modal has.
+   Account settings modal. Colours come from the --app-* tokens, so light,
+   dark and every accent palette follow without per-theme rules.
    ========================================================================== */
 
-.account-settings-scroll::-webkit-scrollbar {
-    width: 6px;
+.acs {
+    display: flex;
+    flex-direction: column;
+    /* A tall cap rather than a tight one: on most screens the content never
+       reaches it, so the scroll region stays dormant. */
+    max-height: min(90vh, 780px);
+    background: var(--app-surface);
+    color: var(--app-text);
 }
 
-.account-settings-scroll::-webkit-scrollbar-button {
-    display: none;
+/* --- Header -------------------------------------------------------------- */
+
+.acs-head {
+    min-height: 72px;
+    padding: 15px 20px;
+    display: grid;
+    /* Equal flanking columns are what actually centre the title. */
+    grid-template-columns: 32px 1fr 32px;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid var(--app-border);
+    text-align: center;
+}
+.acs-head-title {
+    display: block;
+    font-size: 16px;
+    font-weight: 600;
+}
+.acs-head-sub {
+    font-size: 12px;
+    color: var(--app-text-muted);
 }
 
-.account-settings-scroll::-webkit-scrollbar-thumb {
-    border-width: 1px;
+/* Closing loses nothing, so it should look neutral, not destructive. */
+.acs-close {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    justify-self: end;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--app-border);
+    background: transparent;
+    color: var(--app-text-muted);
+    font: inherit;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+}
+.acs-close:hover {
+    background: var(--app-surface-sunken);
+    color: var(--app-text);
+}
+.acs-close:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
 }
 
-@supports (scrollbar-width: thin) {
-    .account-settings-scroll {
-        scrollbar-width: thin;
-    }
+.acs-tabs {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--app-border);
 }
-
-/* Edit-profile row: a plain <button> styled as a card, so it needs its own
-   hover affordance instead of antd's. */
-.account-settings-row {
-    transition: background-color 140ms ease, border-color 140ms ease;
-}
-
-.account-settings-row:hover,
-.account-settings-row:focus-visible {
-    background: var(--app-surface-sunken) !important;
-    border-color: var(--app-accent-border) !important;
-    outline: none;
-}
-
-/* Close button — same red-circle recipe as every other modal's close button
-   (styles/modal-footer.css's .ant-modal-close), replicated by hand because
-   this modal draws its own header instead of using antd's built-in one. */
-.account-settings-close {
-    transition: color 160ms ease, border-color 160ms ease,
-        background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.account-settings-close:hover,
-.account-settings-close:focus-visible {
-    border-color: #ff7875;
-    color: #ff7875;
-    background: color-mix(in srgb, #ff4d4f 16%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, #ff4d4f 18%, transparent);
-    outline: none;
-}
-
-.account-settings-close:active {
-    transform: scale(0.96);
-}
-
-/* Segmented: centre the icon+label pair in each item rather than leaving it
-   packed to one side. */
-.account-settings-segmented .ant-segmented-item-label {
+/* Centre the icon + label pair in each Segmented item. */
+.acs-tabs .ant-segmented-item-label {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
+}
+
+/* --- Section frame: scrolling body + optional footer --------------------- */
+
+.acs-section {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.acs-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 22px 20px;
+}
+.acs-footer {
+    display: flex;
+    gap: 10px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--app-border);
+}
+.acs-footer > .ant-btn {
+    flex: 1;
+    min-width: 0;
+}
+
+/* The app-wide scrollbar is a heavy 12px bar with arrows; slim it here. */
+.acs-body::-webkit-scrollbar {
+    width: 6px;
+}
+.acs-body::-webkit-scrollbar-button {
+    display: none;
+}
+.acs-body::-webkit-scrollbar-thumb {
+    border-width: 1px;
+}
+@supports (scrollbar-width: thin) {
+    .acs-body {
+        scrollbar-width: thin;
+    }
+}
+
+/* --- Building blocks ----------------------------------------------------- */
+
+.acs-section-head {
+    margin-bottom: 22px;
+}
+.acs-section-title {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+}
+.acs-section-sub {
+    margin: 0;
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.acs-card {
+    border: 1px solid var(--app-border);
+    border-radius: 20px;
+}
+
+.acs-tile {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    background: var(--app-surface-sunken);
+    color: var(--app-text-muted);
+}
+
+.acs-label {
+    display: block;
+    font-weight: 600;
+}
+.acs-hint {
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.acs-note {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: var(--app-surface-sunken);
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+.acs-note ul {
+    margin: 0;
+    padding-left: 16px;
+}
+
+/* A setting shown as one row: icon tile, label + hint, action at the end. */
+.acs-row {
+    width: 100%;
+    margin-top: 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 16px;
+    background: var(--app-surface);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+.acs-row-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+button.acs-row {
+    cursor: pointer;
+    transition: background-color 140ms ease, border-color 140ms ease;
+}
+button.acs-row:hover,
+button.acs-row:focus-visible {
+    background: var(--app-surface-sunken);
+    border-color: var(--app-accent-border);
+    outline: none;
+}
+
+/* A selectable option card (signature method, signature style). */
+.acs-choice {
+    width: 100%;
+    padding: 16px;
+    border: 1px solid var(--app-border);
+    border-radius: 16px;
+    background: var(--app-surface);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 140ms ease, background-color 140ms ease;
+}
+.acs-choice:hover {
+    border-color: var(--app-accent-border);
+}
+.acs-choice.is-selected {
+    border-color: var(--app-accent);
+    background: var(--app-accent-soft);
+}
+.acs-choice.is-selected .acs-tile {
+    background: var(--app-accent);
+    color: var(--app-accent-contrast);
+}
+.acs-choice:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.acs-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+}
+
+/* --- Profile ------------------------------------------------------------- */
+
+.acs-profile {
+    padding: 24px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 24px;
+    align-items: center;
+}
+.acs-avatar {
+    position: relative;
+    width: 88px;
+    height: 88px;
+}
+.acs-name {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+.acs-email {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+    overflow-wrap: anywhere;
+}
+
+.acs-camera {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 50%;
+    color: var(--app-text);
+    background: var(--app-surface-sunken);
+    border: 2px solid var(--app-surface);
+    box-shadow: 0 2px 8px rgb(15 23 42 / 18%);
+    font: inherit;
+    cursor: pointer;
+    transition: color 140ms ease, background-color 140ms ease,
+        border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.acs-camera:hover,
+.acs-camera:focus-visible {
+    color: var(--app-accent-contrast);
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+    box-shadow: 0 0 0 3px var(--app-accent-glow), 0 3px 10px rgb(15 23 42 / 28%);
+    outline: none;
+}
+.acs-camera:active {
+    transform: scale(0.94);
+}
+.acs-camera:disabled {
+    cursor: wait;
+}
+html[data-theme="dark"] .acs-camera {
+    box-shadow: 0 2px 8px rgb(0 0 0 / 48%);
+}
+
+/* --- Signature ----------------------------------------------------------- */
+
+.acs-sig-preview {
+    min-height: 190px;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    border-radius: 20px 20px 0 0;
+    background: var(--app-surface-sunken);
+}
+.acs-sig-preview img {
+    max-width: 100%;
+    max-height: 120px;
+    object-fit: contain;
+}
+.acs-sig-empty {
+    min-height: 250px;
+    padding: 28px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    border: 1px dashed var(--app-border-strong);
+    border-radius: 20px;
+}
+.acs-sig-empty .acs-tile {
+    width: 54px;
+    height: 54px;
+    margin: 0 auto 14px;
+    border-radius: 16px;
+    font-size: 21px;
+}
+
+.acs-font-sample {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Signatures are saved as dark ink on white, so the pad stays white in both
+   themes — what you draw is what gets stored. */
+.acs-pad {
+    position: relative;
+    width: 100%;
+    height: 190px;
+    overflow: hidden;
+    border-radius: 16px;
+    border: 1px dashed var(--app-border-strong);
+    background: #fff;
+}
+.acs-pad-hint {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    font-size: 13px;
+    color: #b7b7b7;
+}
+.acs-pad-line {
+    position: absolute;
+    left: 30px;
+    right: 30px;
+    bottom: 38px;
+    height: 1px;
+    background: #ddd;
+    pointer-events: none;
+}
+
+@media (max-width: 520px) {
+    .acs-profile {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        text-align: center;
+    }
+    .acs-email {
+        justify-content: center;
+    }
 }

@@ -19,6 +19,8 @@ deny everything not listed as covered below. Check the deployed rules first.
 | Path | Written by |
 |---|---|
 | `library/{userId}/{file}` | `routes/shared/library` |
+| `signatures/{uid}_{ts}.png` | `components/layout/account-settings` (owner writes an image; any signed-in user reads) |
+| `signatures/{uid}/{file}` | `components/modals/WelcomeWizard` (as above) |
 | `intervention-evidence/{programId}/{participantId}/{assignmentId}/{file}` | `routes/operations/assignments/RomMovWorkspace`, `routes/shared/allocated`, `services/interventionCompletionService` |
 | `participant_documents/{file}` | `routes/registration/onboarding`, `routes/operations/participants/new` |
 | `agreements/{participantId}/{file}` | `utils/generateContractPdf` (signed contract PDFs) |
@@ -30,8 +32,6 @@ deny everything not listed as covered below. Check the deployed rules first.
 
 | Path | Written by | Access needed |
 |---|---|---|
-| `signatures/{uid}_{ts}.png` | `components/layout/account-settings` | Owner writes their own saved signature; broad read (rendered into agreements) |
-| `signatures/{uid}/{file}` | `components/modals/WelcomeWizard` | as above |
 | `logos/{uid}/{file}` | `routes/applicant/profile`, `utilities/firebaseLogo` | Owner writes; broad read |
 | `programLogos/{programId}/{file}` | `routes/programs` | Staff write; broad read |
 | `compliance-documents/{file}` | `routes/shared/compliance` | Staff + participant write; staff read |

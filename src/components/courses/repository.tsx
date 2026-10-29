@@ -2,7 +2,10 @@ import React, { useEffect, useState } from "react";
 import {
   Alert,
   App,
+  Badge,
   Button,
+  Popover,
+  Segmented,
   Empty,
   Input,
   Select,
@@ -22,7 +25,6 @@ import {
   UndoOutlined,
   PlusOutlined,
   SearchOutlined,
-  CheckCircleOutlined,
   FileTextOutlined,
   CloudSyncOutlined,
   FilterOutlined,
@@ -30,12 +32,15 @@ import {
   PlayCircleOutlined,
   ApartmentOutlined,
   ClockCircleOutlined,
+  ScheduleOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
-import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
-import { MotionCard } from "@/components/dashboards/metrics/Header";
+import { DashboardFilterBar, MotionCard } from "@/components/dashboards/metrics/Header";
+import { FilterPanel } from "@/components/workspace";
+import "@/routes/operations/movs/movs.css";
 import {
   listCourses,
   setCourseDeleted,
@@ -45,61 +50,10 @@ import {
   type Enrollment,
   type Course,
 } from "./courseStorage";
-import MetricsGrid from "@/components/dashboards/metrics/MetricsGrid";
 import { MaterialPreview } from "./Materials";
+import { learnerCoursePath } from "./learnerCourses";
+import { listTrainings, type Training } from "@/components/trainings/trainingStorage";
 import "./styles.css";
-export function AcademyCatalog() {
-  const { user } = useFullIdentity();
-  const [courses, setCourses] = useState<any[]>([]),
-    [error, setError] = useState(""),
-    [loading, setLoading] = useState(true),
-    navigate = useNavigate();
-  useEffect(() => {
-    getDocs(collection(db, "academyCatalog"))
-      .then((s) =>
-        setCourses(
-          s.docs
-            .filter((d) => !d.data().deletedAt)
-            .map((d) => ({ ...d.data(), id: d.id }))
-            .filter(
-              (course) =>
-                course.publishTo?.mode !== "selected" ||
-                course.owner === user?.uid ||
-                (user?.participantId && course.publishTo.participantIds?.includes(user.participantId))
-            )
-        )
-      )
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [user?.uid, user?.participantId]);
-  return (
-    <div style={{ padding: 24 }}>
-      <Typography.Title level={3}>Training Academy courses</Typography.Title>
-      {error ? (
-        <Alert type="error" message={error} />
-      ) : loading ? (
-        <Spin />
-      ) : !courses.length ? (
-        <Empty description="No published courses yet" />
-      ) : (
-        <div className="course-repository-grid">
-          {courses.map((course) => (
-            <MotionCard key={course.id}>
-              <Typography.Title level={4}>{course.title}</Typography.Title>
-              <Typography.Paragraph>{course.description}</Typography.Paragraph>
-              <Button
-                type="primary"
-                onClick={() => navigate(`/academy/${course.id}`)}
-              >
-                Open course
-              </Button>
-            </MotionCard>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 export default function CoursesRepository() {
   const { token } = theme.useToken();
   const [status, setStatus] = useState("all");
@@ -118,7 +72,11 @@ export default function CoursesRepository() {
     [queue, setQueue] = useState<Enrollment[]>([]),
     [versions, setVersions] = useState<Record<string, Course>>({}),
     [feedback, setFeedback] = useState<Record<string, string>>({}),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [trainings, setTrainings] = useState<Training[]>([]);
+  useEffect(() => {
+    listTrainings().then(setTrainings).catch(() => setTrainings([]));
+  }, []);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -169,6 +127,7 @@ export default function CoursesRepository() {
     return m ? `${h}h ${m}m` : `${h}h`;
   };
   const activeCourses = courses.filter(c => !c.deletedAt);
+  const trainingsFor = (courseId: string) => trainings.filter((t) => t.courseIds?.includes(courseId));
   async function remove(course: SavedCourse, deleted: boolean) {
     await setCourseDeleted(course, deleted);
     setRetry(n => n + 1);
@@ -203,51 +162,28 @@ export default function CoursesRepository() {
       content: (
         <Input
           readOnly
-          value={`${window.location.origin}/academy/${course.id}`}
+          value={`${window.location.origin}${learnerCoursePath(course.id)}`}
           onFocus={(e) => e.target.select()}
         />
       ),
       okText: "Done",
     });
-  const count = (value: number) => (loading ? "…" : error ? "—" : value);
-  const metrics = [
-    {
-      key: "all",
-      title: "Total courses",
-      value: count(activeCourses.length),
-      subtitle: "Your course repository",
-      icon: <BookOutlined style={{ color: token.colorPrimary }} />,
-      important: true,
-      onClick: () => setStatus("all"),
-    },
-    {
-      key: "published",
-      title: "Published",
-      value: count(activeCourses.filter((c) => c.publishedRevision).length),
-      subtitle: "Have a published version",
-      icon: <CheckCircleOutlined style={{ color: token.colorSuccess }} />,
-      important: true,
-      onClick: () => setStatus("published"),
-    },
-    {
-      key: "draft",
-      title: "Unpublished",
-      value: count(activeCourses.filter((c) => !c.publishedRevision).length),
-      subtitle: "Still being prepared",
-      icon: <FileTextOutlined style={{ color: token.colorWarning }} />,
-      important: true,
-      onClick: () => setStatus("draft"),
-    },
-    {
-      key: "recovery",
-      title: "Not synced",
-      value: count(activeCourses.filter(recoveryOnly).length),
-      subtitle: "Local recovery copies",
-      icon: <CloudSyncOutlined style={{ color: token.colorError }} />,
-      important: true,
-      onClick: () => setStatus("recovery"),
-    },
-  ];
+  const statusCounts: Record<string, number> = {
+    all: activeCourses.length,
+    published: activeCourses.filter((c) => c.publishedRevision).length,
+    draft: activeCourses.filter((c) => !c.publishedRevision).length,
+    recovery: activeCourses.filter(recoveryOnly).length,
+    deleted: courses.filter((c) => c.deletedAt).length,
+  };
+  // "Not synced" and "Deleted" only show when there's something in them.
+  const statusSegments = [
+    { value: "all", label: "All", tone: "neutral" },
+    { value: "published", label: "Published", tone: "success" },
+    { value: "draft", label: "Unpublished", tone: "warning" },
+    { value: "recovery", label: "Not synced", tone: "danger" },
+    { value: "deleted", label: "Deleted", tone: "neutral" },
+  ].filter((segment) => !["recovery", "deleted"].includes(segment.value) || statusCounts[segment.value] > 0 || status === segment.value);
+  const extraFilters = [level !== "all", sort !== "recent"].filter(Boolean).length;
   return (
     <div
       className="course-repository"
@@ -261,16 +197,26 @@ export default function CoursesRepository() {
         } as React.CSSProperties
       }
     >
-      <MetricsGrid metrics={metrics} />
-      <MotionCard
-        size="small"
-        className="course-repository-filter"
-        styles={{ body: { padding: "14px 16px" } }}
-      >
-        <div className="course-repository-filter-controls">
-          <FilterOutlined style={{ color: token.colorPrimary, fontSize: 18 }} />
+      <DashboardFilterBar>
+        <div className="ws-toolbar">
+          <Segmented
+            className="ws-toolbar-status mv-status-strip"
+            block
+            value={status}
+            onChange={(value) => setStatus(String(value))}
+            aria-label="Course status"
+            options={statusSegments.map((segment) => ({
+              value: segment.value,
+              label: (
+                <span className="mv-seg">
+                  {segment.label}
+                  {!loading && !error && <span className={`mv-seg-count qtx-tone-${segment.tone}`}>{statusCounts[segment.value]}</span>}
+                </span>
+              ),
+            }))}
+          />
           <Input
-            className="course-repository-search"
+            className="ws-toolbar-search"
             prefix={<SearchOutlined />}
             placeholder="Search courses"
             aria-label="Search courses"
@@ -278,50 +224,52 @@ export default function CoursesRepository() {
             onChange={(e) => setSearch(e.target.value)}
             allowClear
           />
-          <Select
-            aria-label="Course status"
-            value={status}
-            onChange={setStatus}
-            options={[
-              { value: "all", label: "All statuses" },
-              { value: "published", label: "Published" },
-              { value: "draft", label: "Unpublished" },
-              { value: "recovery", label: "Not synced" },
-              { value: "deleted", label: "Deleted" },
-            ]}
-          />
-          <Select
-            aria-label="Course level"
-            value={level}
-            onChange={setLevel}
-            options={[
-              { value: "all", label: "All levels" },
-              ...["Beginner", "Intermediate", "Advanced"].map((value) => ({
-                value,
-                label: value,
-              })),
-            ]}
-          />
-          <Select
-            aria-label="Sort courses"
-            value={sort}
-            onChange={setSort}
-            options={[
-              { value: "recent", label: "Recently updated" },
-              { value: "oldest", label: "Oldest first" },
-              { value: "title", label: "Title A–Z" },
-            ]}
-          />
+          <Popover
+            trigger="click"
+            placement="bottomLeft"
+            title="Filters"
+            content={
+              <FilterPanel canReset={extraFilters > 0} onReset={() => { setLevel("all"); setSort("recent"); }}>
+                <div>
+                  <span className="ws-filter-label">Level</span>
+                  <Segmented
+                    block
+                    value={level}
+                    onChange={(value) => setLevel(String(value))}
+                    options={[{ value: "all", label: "Any" }, ...["Beginner", "Intermediate", "Advanced"].map((value) => ({ value, label: value }))]}
+                  />
+                </div>
+                <div>
+                  <label className="ws-filter-label" htmlFor="course-sort">Order</label>
+                  <Select
+                    id="course-sort"
+                    style={{ width: "100%" }}
+                    value={sort}
+                    onChange={setSort}
+                    options={[
+                      { value: "recent", label: "Recently updated" },
+                      { value: "oldest", label: "Oldest first" },
+                      { value: "title", label: "Title A–Z" },
+                    ]}
+                  />
+                </div>
+              </FilterPanel>
+            }
+          >
+            <Badge className="ws-toolbar-button" count={extraFilters} size="small" offset={[-6, 4]}>
+              <Button block icon={<FilterOutlined />}>Filters</Button>
+            </Badge>
+          </Popover>
           <Button
+            className="ws-toolbar-button"
             type="primary"
-            shape="round"
             icon={<PlusOutlined />}
             onClick={() => navigate("/operations/training/courses/builder")}
           >
             New course
           </Button>
         </div>
-      </MotionCard>
+      </DashboardFilterBar>
       {loading ? (
         <Spin />
       ) : error ? (
@@ -404,6 +352,13 @@ export default function CoursesRepository() {
                         {course.deletedAt ? "Deleted" : course.publishedRevision ? `Published v${course.publishedRevision}` : "Draft"}
                       </Tag>
                       <Typography.Text type="secondary">{course.level}</Typography.Text>
+                      {trainingsFor(course.id).map((t) => (
+                        <Tooltip key={t.id} title="Linked training — its SMEs take this course in their portal">
+                          <Tag color="blue" icon={<ScheduleOutlined />} style={{ cursor: "pointer" }} onClick={() => navigate("/operations/training/trainings")}>
+                            {t.name}
+                          </Tag>
+                        </Tooltip>
+                      ))}
                     </Space>
                   </div>
                   <div className="course-repository-row-details">
@@ -426,7 +381,7 @@ export default function CoursesRepository() {
                     ) : (
                       <>
                         <Button type="primary" shape="round" icon={<EditOutlined />} onClick={() => navigate(`/operations/training/courses/builder/${course.id}`)}>Edit draft</Button>
-                        {!!course.publishedRevision && <Button shape="round" icon={<PlayCircleOutlined />} onClick={() => navigate(`/academy/${course.id}`)}>Learner view</Button>}
+                        {!!course.publishedRevision && <Button shape="round" icon={<PlayCircleOutlined />} onClick={() => navigate(learnerCoursePath(course.id))}>Learner view</Button>}
                       </>
                     )}
                     <Dropdown trigger={["click"]} menu={{ items: menuItems }}>

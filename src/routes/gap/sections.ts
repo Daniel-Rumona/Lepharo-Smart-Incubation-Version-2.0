@@ -6,6 +6,8 @@
  * cannot drift apart again.
  */
 
+import type { DepartmentRoleKey } from '@/services/departmentRoleLogic'
+
 /** ===== Question banks ===== */
 export const financialManagementQ = [
     'Do you have current or previous Accountant?',
@@ -93,26 +95,37 @@ export const trainingNeedsYNQ = [
     'Do you have training needs of support staff (Administrators, Finance, HR)?'
 ]
 
-export const lepharoDepartments = [
-    'ROM (Recruitment, Onboarding and Maintenance)',
-    'HSE (Health, Safety & Environment) and Labour Compliance',
-    'IHF (InHouse Finance)',
-    'M&E (Monitoring and Evaluation',
-    'Financial Compliance',
-    'PDS (Personal Development Services)',
-    'Legal Advisory Services',
-    'Wellness Services',
-    'Training Academy',
-    'Marketing and Communication',
-    'Market Linkages',
-    'QMS (Quality Management System)',
-    'NVC (New Venture Creation)'
-] as const
-
 /** ===== Types & helpers ===== */
 export type QA = { answer?: string; comment?: string }
 
 export const yes = (a?: string) => (a || '').toLowerCase() === 'yes'
+
+/**
+ * Question polarity. Most questions ask about something the SME should have, so
+ * "No" is the gap. These ask about a need or a problem instead, so "Yes" is the
+ * gap. Indexes into each section's qText. Mirrors yesIsGap sent to gap_mapping.py.
+ */
+export const YES_IS_GAP: Partial<Record<string, number[]>> = {
+    finance: [9, 10, 11, 14], // tender pricing help, funding need, finance training, legacy accounting problems
+    legal: [1, 4, 5], // B-BBEE help, illegal immigrants, legal needs
+    wellness: [4], // interested in incorporating wellness
+    training: [4, 5, 6, 7], // training needs at each level
+    nvc: [4, 5, 6, 7] // same questions as training
+}
+
+/** Informational prompts with no right answer; never scored as a gap. */
+export const NOT_SCORED: Partial<Record<string, number[]>> = {
+    finance: [15], // read-only bank access request
+    training: [1], // "If yes, to which SETA?"
+    nvc: [1]
+}
+
+/** Whether one answer is a gap: unanswered, or the answer that signals a need. */
+export const isGapAnswer = (section: string, index: number, answer?: string): boolean => {
+    if (NOT_SCORED[section]?.includes(index)) return false
+    if (answer == null || String(answer).trim() === '') return true
+    return YES_IS_GAP[section]?.includes(index) ? yes(answer) : !yes(answer)
+}
 
 export const getQAArray = (obj: any): QA[] =>
     Array.isArray(obj) ? obj : Array.isArray(obj?.q) ? obj.q : []
@@ -184,48 +197,43 @@ export const SECTION_ORDER: SectionKey[] = [
     'training'
 ]
 
-const DEPT_SECTION_MAP: Record<
-    (typeof lepharoDepartments)[number],
-    SectionKey[] | 'ALL'
-> = {
-    'ROM (Recruitment, Onboarding and Maintenance)': 'ALL',
-    'HSE (Health, Safety & Environment) and Labour Compliance': ['hr'],
-    'IHF (InHouse Finance)': ['finance'],
-    'M&E (Monitoring and Evaluation': 'ALL',
-    'Financial Compliance': ['finance'],
-    'PDS (Personal Development Services)': ['psychometric'],
-    'Legal Advisory Services': ['legal'],
-    'Wellness Services': ['wellness'],
-    'Training Academy': ['training', 'quality'],
-    'NVC (New Venture Creation)': ['training'],
-    'Marketing and Communication': ['marketing'],
-    'Market Linkages': ['market'],
-    'QMS (Quality Management System)': ['quality']
+const ROLE_SECTION_MAP: Partial<Record<DepartmentRoleKey, SectionKey[] | 'ALL'>> = {
+    rom: 'ALL',
+    monitoring: 'ALL',
+    hse: ['hr'],
+    inhouseFinance: ['finance'],
+    financialCompliance: ['finance'],
+    pds: ['psychometric'],
+    legal: ['legal'],
+    wellness: ['wellness'],
+    training: ['training', 'quality'],
+    nvc: ['training'],
+    marketing: ['marketing'],
+    marketLinkages: ['market'],
+    qms: ['quality']
 }
 
-export function getAllowedSectionsForDept(departmentName?: string): SectionKey[] | 'ALL' {
-    if (!departmentName) return []
-    const key = lepharoDepartments.find(d => d === departmentName)
-    if (!key) return []
-    return DEPT_SECTION_MAP[key]
+export function getAllowedSectionsForDept(role?: DepartmentRoleKey | null): SectionKey[] | 'ALL' {
+    if (!role) return []
+    return ROLE_SECTION_MAP[role] ?? []
 }
 
 /**
- * Which department actually delivers each section.
+ * Which department role actually delivers each section.
  *
  * Mirrors GAP_SECTION_OWNER in ai-backend/gap_mapping.py.
  */
-export const SECTION_OWNER_DEPARTMENT: Record<SectionKey, string> = {
-    marketing: 'Marketing and Communication',
-    psychometric: 'PDS (Personal Development Services)',
-    finance: 'IHF (InHouse Finance)',
-    hr: 'HSE (Health, Safety & Environment) and Labour Compliance',
-    wellness: 'Wellness Services',
-    legal: 'Legal Advisory Services',
-    market: 'Market Linkages',
-    quality: 'QMS (Quality Management System)',
-    training: 'Training Academy',
-    nvc: 'NVC (New Venture Creation)'
+export const SECTION_OWNER_ROLE: Record<SectionKey, DepartmentRoleKey> = {
+    marketing: 'marketing',
+    psychometric: 'pds',
+    finance: 'inhouseFinance',
+    hr: 'hse',
+    wellness: 'wellness',
+    legal: 'legal',
+    market: 'marketLinkages',
+    quality: 'qms',
+    training: 'training',
+    nvc: 'nvc'
 }
 
 /**
@@ -235,19 +243,20 @@ export const SECTION_OWNER_DEPARTMENT: Record<SectionKey, string> = {
  * empty list here. Use this wherever the answer drives building or assigning
  * work; use getAllowedSectionsForDept for read access.
  */
-export function getOwnedSectionsForDept(departmentName?: string): SectionKey[] {
-    const name = String(departmentName || '').trim()
-    if (!name) return []
-
-    // DEPT_SECTION_MAP already lists what each department is responsible for
-    // (Training Academy runs both training and quality). Only 'ALL' — the
-    // oversight roles — needs excluding.
-    const allowed = getAllowedSectionsForDept(name)
+export function getOwnedSectionsForDept(role?: DepartmentRoleKey | null): SectionKey[] {
+    // ROLE_SECTION_MAP already lists what each role is responsible for
+    // (Training runs both training and quality). Only 'ALL' — the oversight
+    // roles — needs excluding.
+    const allowed = getAllowedSectionsForDept(role)
     return allowed === 'ALL' ? [] : allowed
 }
 
-/** Answer state for a single question — drives both the gap strip and the rows. */
-export type AnswerState = 'yes' | 'no' | 'blank'
+/**
+ * Answer state for a single question — drives both the gap strip and the rows.
+ * 'yes' / 'no' mean the answer is fine / is a gap (see isGapAnswer), whatever
+ * word the SME chose; 'info' is a question that is not scored.
+ */
+export type AnswerState = 'yes' | 'no' | 'blank' | 'info'
 
 export type SectionStats = {
     key: SectionKey
@@ -266,8 +275,9 @@ export function getAnswerStates(gap: any, sec: SectionKey): AnswerState[] {
     const qas = def.getQA(gap)
     return def.qText.map((_, i) => {
         const a = qas?.[i]?.answer
+        if (NOT_SCORED[sec]?.includes(i)) return 'info'
         if (a == null || String(a).trim() === '') return 'blank'
-        return yes(a) ? 'yes' : 'no'
+        return isGapAnswer(sec, i, a) ? 'no' : 'yes'
     })
 }
 
@@ -284,7 +294,28 @@ export function getSectionStats(gap: any, sec: SectionKey): SectionStats {
         yes: y,
         no: n,
         blank: b,
-        total: states.length,
+        total: states.filter(s => s !== 'info').length,
         yesPct: answered ? Math.round((y / answered) * 100) : null
     }
+}
+
+/** Confirmed / Pending for a gapAnalysis record or a manual (uploaded) GAP. */
+export function getGapStatus(r: any): 'Confirmed' | 'Pending' {
+    if (!r) return 'Pending'
+
+    if (r?.manuallyCreated) {
+        const raw = r?.gapAgreement?.raw
+        if (!raw) return 'Pending'
+        if (raw?.status === 'confirmed') return 'Confirmed'
+        if (raw?.romReview?.status === 'Confirmed') return 'Confirmed'
+        if (raw?.romReview?.confirmedAt) return 'Confirmed'
+        if (raw?.verifiedAt) return 'Confirmed'
+        if (raw?.acceptedAt) return 'Confirmed'
+        return 'Pending'
+    }
+
+    if (r?.confirmationStatus === 'Confirmed') return 'Confirmed'
+    if (r?.romReview?.status === 'Confirmed') return 'Confirmed'
+    if (r?.romReview?.confirmedAt) return 'Confirmed'
+    return 'Pending'
 }

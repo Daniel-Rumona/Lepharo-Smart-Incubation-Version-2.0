@@ -92,12 +92,9 @@ export async function saveCourse(course: SavedCourse): Promise<SavedCourse> {
   await backupCourse(course).catch(() => undefined);
   const material = async (m: Material): Promise<Material> => {
     if (!m.url.startsWith("data:")) return m;
-    const location = ref(
-      storage,
-      `academyMaterials/${course.owner}/${course.id}/${
-        m.id
-      }_${crypto.randomUUID()}`
-    );
+    // A fixed path per material: saving again (or after a failed save) overwrites
+    // the same file instead of uploading another copy under a new name.
+    const location = ref(storage, `academyMaterials/${course.owner}/${course.id}/${m.id}`);
     await uploadString(location, m.url, "data_url");
     return { ...m, url: await getDownloadURL(location) };
   };

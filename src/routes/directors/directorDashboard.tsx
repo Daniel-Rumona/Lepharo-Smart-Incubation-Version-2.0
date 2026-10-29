@@ -38,7 +38,7 @@ import dayjs from 'dayjs'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 const { Text, Title } = Typography
 
 type DashboardInvoice = {
@@ -173,12 +173,7 @@ const getDepartmentName = (
     departmentNamesById: Record<string, string>
 ) => {
     return (
-        intervention?.snapshot?.departmentName ||
-        intervention?.departmentName ||
         departmentNamesById[String(intervention?.departmentId || '')] ||
-        intervention?.department ||
-        intervention?.assignedDepartment ||
-        intervention?.areaOfSupport ||
         'Unknown Department'
     )
 }
@@ -353,7 +348,7 @@ export const DirectorDashboard: React.FC = () => {
                     if (!dueDate || dueDate >= now || isComplete) return
 
                     const departmentName = getDepartmentName(intervention, departmentNamesById)
-                    const departmentId = String(intervention.departmentId || departmentName)
+                    const departmentId = String(intervention.departmentId || 'unknown')
                     const key = `${departmentId}:${departmentName}`
 
                     overdueCounts.set(key, (overdueCounts.get(key) || 0) + 1)
@@ -623,10 +618,10 @@ export const DirectorDashboard: React.FC = () => {
             <div style={{ padding: 24, minHeight: '100vh' }}>
                 <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                     <Col xs={24} sm={12} xl={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading}
                             icon={<TeamOutlined />}
-                            iconBg='rgba(22,119,255,.12)'
+                            tone='accent'
                             title='Total SMEs'
                             value={totalIncubatees}
                             subtitle='Accepted into programmes'
@@ -634,10 +629,10 @@ export const DirectorDashboard: React.FC = () => {
                     </Col>
 
                     <Col xs={24} sm={12} xl={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading}
                             icon={<BarChartOutlined />}
-                            iconBg='rgba(82,196,26,.12)'
+                            tone='success'
                             title='Active Programmes'
                             value={activePrograms}
                             subtitle='Currently running'
@@ -645,10 +640,10 @@ export const DirectorDashboard: React.FC = () => {
                     </Col>
 
                     <Col xs={24} sm={12} xl={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading}
                             icon={<CheckCircleOutlined />}
-                            iconBg='rgba(19,194,194,.12)'
+                            tone='info'
                             title='Compliance Rate'
                             value={`${overallComplianceRate}%`}
                             subtitle='Average across SMEs'
@@ -656,10 +651,10 @@ export const DirectorDashboard: React.FC = () => {
                     </Col>
 
                     <Col xs={24} sm={12} xl={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             loading={loading}
                             icon={<RiseOutlined />}
-                            iconBg='rgba(114,46,209,.12)'
+                            tone='info'
                             title='Average Progress'
                             value={`${averageProgress}%`}
                             subtitle='Across assigned interventions'

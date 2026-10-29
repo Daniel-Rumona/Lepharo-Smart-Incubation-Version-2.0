@@ -1,9 +1,9 @@
 .report-phase-two {
-    --rp-border: #e7edf5;
-    --rp-soft: #f7f9fc;
-    --rp-text: #132238;
-    --rp-muted: #68778c;
-    --rp-blue: #15457b;
+    --rp-border: var(--app-border);
+    --rp-soft: var(--app-surface-sunken);
+    --rp-text: var(--app-text);
+    --rp-muted: var(--app-text-muted);
+    --rp-blue: var(--app-accent);
     min-height: 100%;
     color: var(--rp-text);
 }
@@ -19,8 +19,8 @@
 }
 
 .report-hero {
-    border: 1px solid #dce8f6 !important;
-    background: linear-gradient(135deg, #f4f8ff 0%, #ffffff 58%, #f9fbff 100%) !important;
+    border: 1px solid var(--app-border) !important;
+    background: linear-gradient(135deg, var(--app-surface-sunken) 0%, var(--app-surface) 58%, var(--app-surface-sunken) 100%) !important;
     box-shadow: 0 12px 34px rgba(29, 64, 105, 0.08);
 }
 
@@ -53,7 +53,7 @@
     padding: 12px;
     border: 1px solid var(--rp-border);
     border-radius: 12px;
-    background: #fbfcfe;
+    background: var(--app-surface-sunken);
 }
 
 .report-card-row {
@@ -62,7 +62,7 @@
 
 .report-card-row:hover {
     transform: translateY(-2px);
-    border-color: #c7d8ee !important;
+    border-color: var(--app-border-strong) !important;
     box-shadow: 0 14px 34px rgba(15, 35, 60, 0.09);
 }
 
@@ -75,12 +75,12 @@
 
 .create-option:hover {
     transform: translateY(-3px);
-    border-color: #b8cdea !important;
+    border-color: var(--app-border-strong) !important;
     box-shadow: 0 16px 34px rgba(23, 62, 108, 0.10);
 }
 
 .create-option.selected {
-    border-color: #1677ff !important;
+    border-color: var(--app-accent) !important;
     box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.08), 0 16px 34px rgba(23, 62, 108, 0.10);
 }
 
@@ -99,7 +99,7 @@
 .section-detection-card {
     border: 1px solid var(--rp-border);
     border-radius: 12px;
-    background: #fff;
+    background: var(--app-surface);
     padding: 14px;
 }
 
@@ -129,7 +129,7 @@
 .workspace-panel {
     border: 1px solid var(--rp-border);
     border-radius: 14px;
-    background: #fff;
+    background: var(--app-surface);
     overflow: hidden;
     box-shadow: 0 7px 24px rgba(17, 37, 64, 0.045);
 }
@@ -137,7 +137,7 @@
 .workspace-panel-header {
     padding: 14px 16px;
     border-bottom: 1px solid var(--rp-border);
-    background: #fbfcfe;
+    background: var(--app-surface-sunken);
 }
 
 .workspace-section-list {
@@ -161,12 +161,12 @@
 }
 
 .workspace-section-item:hover {
-    background: #f5f8fc;
+    background: var(--app-surface-sunken);
 }
 
 .workspace-section-item.active {
-    background: #edf5ff;
-    color: #0e57a3;
+    background: var(--app-surface-sunken);
+    color: var(--app-accent);
 }
 
 .workspace-editor-header {
@@ -177,7 +177,7 @@
 .workspace-toolbar {
     padding: 9px 12px;
     border-bottom: 1px solid var(--rp-border);
-    background: #fbfcfe;
+    background: var(--app-surface-sunken);
     display: flex;
     gap: 4px;
     flex-wrap: wrap;
@@ -189,7 +189,7 @@
     outline: none;
     font-size: 15px;
     line-height: 1.75;
-    color: #1b2638;
+    color: var(--app-text);
 }
 
 .rich-editor p {
@@ -197,7 +197,7 @@
 }
 
 .rich-editor:focus {
-    background: #fff;
+    background: var(--app-surface);
 }
 
 .collab-body {
@@ -217,7 +217,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #8ca6c5;
+    background: var(--app-accent-border);
 }
 
 .activity-item::after {
@@ -227,7 +227,7 @@
     top: 15px;
     bottom: -1px;
     width: 1px;
-    background: #e3eaf2;
+    background: var(--app-border);
 }
 
 .activity-item:last-child::after {
@@ -235,7 +235,7 @@
 }
 
 .preview-wrap {
-    background: #e9eef5;
+    background: var(--app-border);
     border-radius: 14px;
     padding: 24px;
     overflow: auto;
@@ -258,7 +258,7 @@
     position: absolute;
     left: 0;
     width: 10px;
-    background: #123d70;
+    background: var(--app-accent);
 }
 
 .report-paper::before {
@@ -280,7 +280,7 @@
 
 .paper-logo {
     font-weight: 800;
-    color: #103f75;
+    color: var(--app-accent);
     font-size: 21px;
     line-height: 1.05;
     letter-spacing: .4px;
@@ -290,7 +290,7 @@
     display: block;
     font-size: 10px;
     letter-spacing: 2.2px;
-    color: #425b79;
+    color: var(--app-text);
     margin-top: 4px;
 }
 
@@ -306,14 +306,14 @@
     font-weight: 800;
     text-decoration: underline;
     margin-bottom: 24px;
-    color: #203146;
+    color: var(--app-text);
 }
 
 .paper-copy {
     font-size: 12.4px;
     line-height: 1.48;
     text-align: justify;
-    color: #222;
+    color: var(--app-text);
 }
 
 .paper-copy p {
@@ -328,7 +328,7 @@
     display: flex;
     justify-content: space-between;
     font-size: 8px;
-    color: #8c94a1;
+    color: var(--app-text-muted);
 }
 
 .preview-kpi-table {
@@ -340,14 +340,14 @@
 
 .preview-kpi-table th,
 .preview-kpi-table td {
-    border: 1px solid #aeb7c2;
+    border: 1px solid var(--app-border-strong);
     padding: 6px;
     text-align: left;
     vertical-align: top;
 }
 
 .preview-kpi-table th {
-    background: #eef2f6;
+    background: var(--app-surface-sunken);
 }
 
 .preview-top-nav {
@@ -410,7 +410,7 @@
 
 .create-modal-option:hover {
     transform: translateY(-3px);
-    border-color: #b8cdea !important;
+    border-color: var(--app-border-strong) !important;
     box-shadow: 0 14px 32px rgba(23, 62, 108, 0.10);
 }
 
@@ -423,13 +423,13 @@
 
 .template-choice:hover,
 .carry-choice:hover {
-    border-color: #b9cde6 !important;
+    border-color: var(--app-border-strong) !important;
 }
 
 .template-choice.selected,
 .carry-choice.selected {
-    border-color: #1677ff !important;
-    background: #f7fbff;
+    border-color: var(--app-accent) !important;
+    background: var(--app-surface-sunken);
     box-shadow: 0 0 0 2px rgba(22, 119, 255, .07);
 }
 
@@ -453,15 +453,15 @@
   border: 1px solid var(--rp-border);
   border-radius: 11px;
   padding: 11px 12px;
-  background: #fff;
+  background: var(--app-surface);
   cursor: pointer;
   transition: background .2s ease, border-color .2s ease;
 }
 
 .template-block-row:hover,
 .template-block-row.active {
-  background: #f4f8ff;
-  border-color: #bcd1ee;
+  background: var(--app-surface-sunken);
+  border-color: var(--app-border-strong);
 }
 
 .contribution-card {
@@ -510,15 +510,15 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #fafcff;
+  background: var(--app-surface-sunken);
   flex-wrap: wrap;
 }
 
 .template-preview-paper {
   width: min(100%, 680px);
   margin: 0 auto;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 4px;
   box-shadow: 0 18px 50px rgba(15, 35, 60, .10);
   padding: 48px 52px 64px;
@@ -526,7 +526,7 @@
 }
 
 .template-preview-cover {
-  border-bottom: 2px solid #1f4e79;
+  border-bottom: 2px solid var(--app-text);
   padding-bottom: 22px;
   margin-bottom: 30px;
 }
@@ -537,7 +537,7 @@
 
 .template-preview-block {
   position: relative;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--app-border-strong);
   border-radius: 9px;
   padding: 14px;
   margin-bottom: 14px;
@@ -546,14 +546,14 @@
 }
 
 .template-preview-block:hover {
-  border-color: #91b7e4;
-  background: #f8fbff;
+  border-color: var(--app-accent-border);
+  background: var(--app-surface-sunken);
 }
 
 .template-preview-block.active {
   border-style: solid;
-  border-color: #1677ff;
-  background: #f4f8ff;
+  border-color: var(--app-accent);
+  background: var(--app-surface-sunken);
   box-shadow: 0 0 0 3px rgba(22,119,255,.08);
 }
 
@@ -581,18 +581,18 @@
    ========================================================================== */
 
 html[data-theme="dark"] .report-phase-two {
-    --rp-border: #2a313c;
+    --rp-border: #3b4047;
     --rp-soft: rgba(255, 255, 255, 0.04);
     --rp-text: rgba(255, 255, 255, 0.88);
     --rp-muted: rgba(255, 255, 255, 0.62);
-    --rp-blue: #6aa9ff;
+    --rp-blue: #4a9bff;
 }
 
 /* --- Hero / page header --- */
 
 html[data-theme="dark"] .report-phase-two .report-hero {
     border-color: rgba(74, 155, 255, 0.22) !important;
-    background: linear-gradient(135deg, #1a2130 0%, #171b22 58%, #191f2b 100%) !important;
+    background: linear-gradient(135deg, #2a2d33 0%, #26292e 58%, #282b30 100%) !important;
     box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
 }
 
@@ -635,7 +635,7 @@ html[data-theme="dark"] .report-phase-two .report-program-context {
 html[data-theme="dark"] .report-phase-two .workspace-panel,
 html[data-theme="dark"] .report-phase-two .section-detection-card,
 html[data-theme="dark"] .report-phase-two .template-block-row {
-    background: #171b22;
+    background: #26292e;
     border-color: var(--rp-border);
     color: var(--rp-text);
 }
@@ -685,7 +685,7 @@ html[data-theme="dark"] .report-phase-two .activity-item::after {
 /* The mat the paper sits on. The paper itself stays white on purpose; the
    surround has to go dark or the preview is a full-bleed white rectangle. */
 html[data-theme="dark"] .report-phase-two .preview-wrap {
-    background: #0e1117;
+    background: #1e2024;
 }
 
 /* --- Template preview blocks (the editor's drop targets, not the paper) --- */

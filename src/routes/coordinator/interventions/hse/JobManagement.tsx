@@ -58,6 +58,7 @@ import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import {
     guideTarget,
     usePageGuides,
@@ -994,10 +995,9 @@ const JobManagementPage: React.FC = () => {
                 <Button
                     data-guide='job-management-manage-action'
                     variant='filled'
-                    color='blue'
+                    color='primary'
                     shape='round'
                     icon={<FolderOpenOutlined />}
-                    style={{ border: '1px solid dodgerblue' }}
                     onClick={() => openDocumentsModal(row)}
                 >
                     Manage
@@ -1185,9 +1185,9 @@ const JobManagementPage: React.FC = () => {
                 style={{ marginBottom: 16 }}
             >
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<TeamOutlined style={{ fontSize: 18, color: '#1677ff' }} />}
-                        iconBg='rgba(22,119,255,0.12)'
+                    <MetricTile
+                        icon={<TeamOutlined style={{ fontSize: 18 }} />}
+                        tone='accent'
                         title='Total SMEs'
                         value={metrics.totalSMEs}
                         subtitle='Based on current filters'
@@ -1195,9 +1195,9 @@ const JobManagementPage: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<UserOutlined style={{ fontSize: 18, color: '#13c2c2' }} />}
-                        iconBg='rgba(19,194,194,0.12)'
+                    <MetricTile
+                        icon={<UserOutlined style={{ fontSize: 18 }} />}
+                        tone='accent'
                         title='Total Employees'
                         value={metrics.totalEmployees}
                         subtitle={`As at ${historyMonth.format('MMM YYYY')}`}
@@ -1205,9 +1205,9 @@ const JobManagementPage: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<FilePdfOutlined style={{ fontSize: 18, color: '#52c41a' }} />}
-                        iconBg='rgba(82,196,26,0.12)'
+                    <MetricTile
+                        icon={<FilePdfOutlined style={{ fontSize: 18 }} />}
+                        tone='success'
                         title='Permanent Employees'
                         value={metrics.permanentEmployees}
                         subtitle={`In ${historyMonth.format('MMM YYYY')}`}
@@ -1215,9 +1215,9 @@ const JobManagementPage: React.FC = () => {
                 </Col>
 
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<ClockCircleOutlined style={{ fontSize: 18, color: '#fa8c16' }} />}
-                        iconBg='rgba(250,140,22,0.12)'
+                    <MetricTile
+                        icon={<ClockCircleOutlined style={{ fontSize: 18 }} />}
+                        tone='warning'
                         title='Temporal Expiring Soon'
                         value={metrics.expiringSoon}
                         subtitle={`From ${historyMonth.format('MMM YYYY')} month-end`}
