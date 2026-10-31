@@ -19,6 +19,7 @@ import {
     Dropdown,
     Alert
 } from 'antd'
+import type { MenuProps } from 'antd'
 import {
     UserAddOutlined,
     MailOutlined,
@@ -58,8 +59,14 @@ import {
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+import { MetricsGrid } from '@/components/dashboards/metrics/MetricsGrid'
+import { MobileCardList } from '@/components/shared/MobileCardList'
+import '@/components/shared/setup-segmented.css'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { branchService } from '@/services/branchService'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
+import { isStaffRole } from '@/lib/roleLabels'
 import { functionsBaseUrl } from '@/firebaseConfig'
 
 dayjs.extend(isBetween)
@@ -85,6 +92,8 @@ type EmployeeRow = {
     branch?: string
     branchId?: string | null
     status?: 'Active' | 'Inactive'
+    lineManagerId?: string | null
+    lineManagerSource?: 'default' | 'manual'
 }
 
 type DepartmentOption = {
@@ -128,7 +137,19 @@ const EmployeeRegistration: React.FC<{
     departments: DepartmentOption[]
     branches: BranchOption[]
     positionOptions: string[]
-}> = ({ form, mode, initialEmployee, onSubmit, departments, branches, positionOptions }) => {
+    lineManagerOptions?: { value: string; label: string }[]
+    canEditLineManager?: boolean
+}> = ({
+    form,
+    mode,
+    initialEmployee,
+    onSubmit,
+    departments,
+    branches,
+    positionOptions,
+    lineManagerOptions = [],
+    canEditLineManager = false
+}) => {
     const workerType = Form.useWatch('workerType', form)
     const selectedRoleDisplay = Form.useWatch('role', form)
 
@@ -151,7 +172,11 @@ const EmployeeRegistration: React.FC<{
                     branches.find(branch => branch.name === initialEmployee.branch)?.id,
                 startDate: initialEmployee.startDate ? dayjs(initialEmployee.startDate) : null,
                 endDate: initialEmployee.endDate ? dayjs(initialEmployee.endDate) : null,
-                status: initialEmployee.status !== 'Inactive'
+                status: initialEmployee.status !== 'Inactive',
+                lineManagerId:
+                    initialEmployee.lineManagerSource === 'manual'
+                        ? initialEmployee.lineManagerId || ''
+                        : ''
             })
         } else {
             form.resetFields()
@@ -362,6 +387,36 @@ const EmployeeRegistration: React.FC<{
                     </Col>
                 )}
 
+                {mode === 'edit' && canEditLineManager && (
+                    <Col xs={24} md={12}>
+                        <Form.Item
+                            label='Line Manager'
+                            name='lineManagerId'
+                            tooltip='Defaults: HoD reports to the CEO, coordinators to their HoD, employees and receptionists to their branch Centre Coordinator.'
+                        >
+                            <Select
+                                showSearch
+                                optionFilterProp='label'
+                                options={[
+                                    {
+                                        value: '',
+                                        label:
+                                            initialEmployee?.lineManagerSource !== 'manual' &&
+                                            initialEmployee?.lineManagerId
+                                                ? `Default (currently ${
+                                                      lineManagerOptions.find(
+                                                          option => option.value === initialEmployee.lineManagerId
+                                                      )?.label || 'unknown'
+                                                  })`
+                                                : 'Default (automatic)'
+                                    },
+                                    ...lineManagerOptions.filter(option => option.value !== initialEmployee?.id)
+                                ]}
+                            />
+                        </Form.Item>
+                    </Col>
+                )}
+
                 <Col span={24}>
                     <Form.Item name='status' label='Status' valuePropName='checked'>
                         <Switch checkedChildren='Active' unCheckedChildren='Inactive' />
@@ -494,8 +549,18 @@ function sumTime(values: string[] = []) {
 }
 
 const EmployeesPage: React.FC = () => {
+    const { user } = useFullIdentity()
+    const isMobile = useIsMobile()
+    const { hasRole } = useDepartmentRoles()
+    const userRole = String(user?.role || '').toLowerCase().trim()
+    const canEditLineManager =
+        ['director', 'hr', 'system_admin', 'superadmin'].includes(userRole) ||
+        hasRole(String((user as any)?.departmentId || ''), 'hr')
+
     const [loading, setLoading] = useState(true)
     const [employees, setEmployees] = useState<EmployeeRow[]>([])
+    const [directors, setDirectors] = useState<{ id: string; name: string }[]>([])
+    const [recalculatingManagers, setRecalculatingManagers] = useState(false)
     const [search, setSearch] = useState('')
     const [positionFilter, setPositionFilter] = useState<string | undefined>()
     const [departmentFilter, setDepartmentFilter] = useState<string | undefined>()
@@ -710,12 +775,23 @@ const EmployeesPage: React.FC = () => {
                             ? branchNameById[assignedBranch] || assignedBranch
                             : '',
 
-                        status: data.status || 'Active'
+                        status: data.status || 'Active',
+                        lineManagerId: data.lineManagerId || null,
+                        lineManagerSource: (data.lineManagerSource === 'manual' ? 'manual' : 'default') as EmployeeRow['lineManagerSource']
                     }
                 })
+                .filter(e => isStaffRole(e.role))
                 .filter(e => !isControlEmail(e.email))
 
+            const directorSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'director')))
+
             setEmployees(list)
+            setDirectors(
+                directorSnap.docs.map(d => {
+                    const data: any = d.data()
+                    return { id: d.id, name: data.name || data.fullName || data.email?.split('@')[0] || 'Director' }
+                })
+            )
         } catch (error) {
             console.error(error)
             message.error('Failed to load employees.')
@@ -1077,7 +1153,14 @@ const EmployeesPage: React.FC = () => {
                 assignedBranch: selectedBranch?.id || null,
 
                 status: employee.status ? 'Active' : 'Inactive',
-                updatedAt: new Date().toISOString()
+                updatedAt: new Date().toISOString(),
+
+                // Blank means the default; the lineManagers function fills it in.
+                ...(canEditLineManager
+                    ? employee.lineManagerId
+                        ? { lineManagerId: employee.lineManagerId, lineManagerSource: 'manual' }
+                        : { lineManagerSource: 'default' }
+                    : {})
             }
 
             await updateDoc(doc(db, 'users', editingEmployee.id), patch)
@@ -1429,6 +1512,96 @@ const EmployeesPage: React.FC = () => {
         }
     }
 
+    const lineManagerOptions = useMemo(
+        () =>
+            [
+                ...directors.map(d => ({ value: d.id, label: `${d.name} (CEO)` })),
+                ...employees
+                    .filter(e => e.status !== 'Inactive')
+                    .map(e => ({ value: e.id, label: `${e.name || e.email || e.id} (${displayRole(e.role)})` }))
+            ].sort((a, b) => a.label.localeCompare(b.label)),
+        [directors, employees]
+    )
+
+    const lineManagerName = (id?: string | null) => {
+        if (!id) return null
+        const director = directors.find(d => d.id === id)
+        if (director) return `${director.name} (CEO)`
+        const employee = employees.find(e => e.id === id)
+        return employee ? employee.name || employee.email || id : id
+    }
+
+    const onRecalculateLineManagers = async () => {
+        setRecalculatingManagers(true)
+        try {
+            const recalculate = httpsCallable(functions, 'recalculateLineManagers')
+            const result: any = await recalculate({})
+            const { usersUpdated = 0, recordsUpdated = 0 } = result?.data || {}
+            message.success(
+                `Line managers recalculated: ${usersUpdated} employee${usersUpdated === 1 ? '' : 's'} and ${recordsUpdated} performance record${recordsUpdated === 1 ? '' : 's'} updated.`
+            )
+            await loadEmployees()
+        } catch (error: any) {
+            console.error(error)
+            message.error(error?.message || 'Could not recalculate line managers.')
+        } finally {
+            setRecalculatingManagers(false)
+        }
+    }
+
+    const accountMenuItems = (r: EmployeeRow): MenuProps['items'] => [
+        {
+            key: 'email',
+            icon: <SwapOutlined />,
+            label: 'Change login email',
+            onClick: () => openEmailChange(r)
+        },
+        {
+            key: 'password',
+            icon: <KeyOutlined />,
+            label: 'Send password reset',
+            onClick: () => sendPasswordReset(r)
+        },
+        {
+            key: 'resendWelcome',
+            icon: <MailOutlined />,
+            label: 'Resend account setup email',
+            onClick: () => resendAccountSetupEmail(r)
+        },
+        {
+            key: 'status',
+            icon: r.status === 'Inactive' ? <PlayCircleOutlined /> : <StopOutlined />,
+            label: r.status === 'Inactive' ? 'Reactivate account' : 'Disable account',
+            onClick: () => setAccountStatus(r, r.status === 'Inactive')
+        },
+        { type: 'divider' },
+        {
+            key: 'delete',
+            danger: true,
+            icon: <DeleteOutlined />,
+            label: 'Permanently delete',
+            onClick: () => permanentlyDeleteEmployee(r)
+        }
+    ]
+
+    const openEdit = (r: EmployeeRow) => {
+        setEditingEmployee(r)
+        setEditOpen(true)
+    }
+
+    const openTimesheet = (r: EmployeeRow) => {
+        setSelectedEmployee(r)
+        setTimesheetOpen(true)
+    }
+
+    const branchDepartmentText = (r: EmployeeRow) => {
+        const parts = [
+            roleNeedsBranch(r.role) ? r.branch : '',
+            roleNeedsDepartment(r.role) ? r.department : ''
+        ].filter(Boolean)
+        return parts.join(' · ') || '—'
+    }
+
     const employeeColumns = [
         {
             title: 'Name',
@@ -1490,6 +1663,24 @@ const EmployeesPage: React.FC = () => {
             }
         },
         {
+            title: 'Line Manager',
+            key: 'lineManager',
+            render: (_: any, r: EmployeeRow) => {
+                const name = lineManagerName(r.lineManagerId)
+                if (!name) return '—'
+                return (
+                    <Space direction='vertical' size={0}>
+                        <span>{name}</span>
+                        {r.lineManagerSource === 'manual' ? (
+                            <Tag color='purple' style={{ borderRadius: 999 }}>Set by HR</Tag>
+                        ) : (
+                            <Text type='secondary' style={{ fontSize: 12 }}>Default</Text>
+                        )}
+                    </Space>
+                )
+            }
+        },
+        {
             title: 'Actions',
             key: 'actions',
             render: (_: any, r: EmployeeRow) => (
@@ -1497,10 +1688,7 @@ const EmployeesPage: React.FC = () => {
                     <Button
                         shape='round'
                         icon={<EditOutlined />}
-                        onClick={() => {
-                            setEditingEmployee(r)
-                            setEditOpen(true)
-                        }}
+                        onClick={() => openEdit(r)}
                     >
                         Edit
                     </Button>
@@ -1508,10 +1696,7 @@ const EmployeesPage: React.FC = () => {
                     <Button
                         shape='round'
                         icon={<FileTextOutlined />}
-                        onClick={() => {
-                            setSelectedEmployee(r)
-                            setTimesheetOpen(true)
-                        }}
+                        onClick={() => openTimesheet(r)}
                     >
                         View Timesheet
                     </Button>
@@ -1526,49 +1711,7 @@ const EmployeesPage: React.FC = () => {
 
                     <Dropdown
                         trigger={['click']}
-                        menu={{
-                            items: [
-                                {
-                                    key: 'email',
-                                    icon: <SwapOutlined />,
-                                    label: 'Change login email',
-                                    onClick: () => openEmailChange(r)
-                                },
-                                {
-                                    key: 'password',
-                                    icon: <KeyOutlined />,
-                                    label: 'Send password reset',
-                                    onClick: () => sendPasswordReset(r)
-                                },
-                                {
-                                    key: 'resendWelcome',
-                                    icon: <MailOutlined />,
-                                    label: 'Resend account setup email',
-                                    onClick: () => resendAccountSetupEmail(r)
-                                },
-                                {
-                                    key: 'status',
-                                    icon:
-                                        r.status === 'Inactive'
-                                            ? <PlayCircleOutlined />
-                                            : <StopOutlined />,
-                                    label:
-                                        r.status === 'Inactive'
-                                            ? 'Reactivate account'
-                                            : 'Disable account',
-                                    onClick: () =>
-                                        setAccountStatus(r, r.status === 'Inactive')
-                                },
-                                { type: 'divider' },
-                                {
-                                    key: 'delete',
-                                    danger: true,
-                                    icon: <DeleteOutlined />,
-                                    label: 'Permanently delete',
-                                    onClick: () => permanentlyDeleteEmployee(r)
-                                }
-                            ]
-                        }}
+                        menu={{ items: accountMenuItems(r) }}
                     >
                         <Button
                             shape='round'
@@ -1589,107 +1732,91 @@ const EmployeesPage: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: 24, minHeight: '100vh' }}>
-            <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12} md={8} lg={4}>
-                    <MotionCard>
-                        <MetricTile
-                            loading={loading}
-                            icon={<TeamOutlined />}
-                            tone='accent'
-                            title='Total Staff'
-                            value={metrics.totalStaff}
-                            subtitle='Active visible staff'
-                        />
-                    </MotionCard>
-                </Col>
-
-                <Col xs={24} sm={12} md={8} lg={4}>
-                    <MotionCard>
-                        <MetricTile
-                            loading={loading}
-                            icon={<ApartmentOutlined />}
-                            tone='success'
-                            title='Departments'
-                            value={metrics.departments}
-                            subtitle='Distinct departments'
-                        />
-                    </MotionCard>
-                </Col>
-
-                <Col xs={24} sm={12} md={8} lg={4}>
-                    <MotionCard>
-                        <MetricTile
-                            loading={loading}
-                            icon={<IdcardOutlined />}
-                            tone='warning'
-                            title='Positions'
-                            value={metrics.positions}
-                            subtitle='Distinct positions'
-                        />
-                    </MotionCard>
-                </Col>
-
-                <Col xs={24} sm={12} md={8} lg={4}>
-                    <MotionCard>
-                        <MetricTile
-                            loading={loading || metricsLoading}
-                            icon={<CalendarOutlined />}
-                            tone='info'
-                            title='Leave Pending'
-                            value={metrics.pendingLeave}
-                            subtitle='Awaiting action'
-                        />
-                    </MotionCard>
-                </Col>
-
-                <Col xs={24} sm={12} md={8} lg={4}>
-                    <MotionCard>
-                        <MetricTile
-                            loading={loading || metricsLoading}
-                            icon={<CalendarOutlined />}
-                            tone='info'
-                            title='On Leave Today'
-                            value={metrics.onLeaveToday}
-                            subtitle='Approved leave'
-                        />
-                    </MotionCard>
-                </Col>
-
-                <Col xs={24} sm={12} md={8} lg={4}>
-                    <MotionCard>
-                        <MetricTile
-                            loading={loading || metricsLoading}
-                            icon={<CheckCircleOutlined />}
-                            tone='success'
-                            title='Checked-in Today'
-                            value={metrics.checkedInToday}
-                            subtitle='Timesheet activity today'
-                        />
-                    </MotionCard>
-                </Col>
-            </Row>
+        <div style={{ padding: isMobile ? '5px 12px 16px' : 24, minHeight: '100vh' }}>
+            <MetricsGrid
+                metrics={[
+                    {
+                        key: 'staff',
+                        important: true,
+                        loading,
+                        icon: <TeamOutlined />,
+                        tone: 'accent',
+                        title: 'Total Staff',
+                        mobileTitle: 'Staff',
+                        value: metrics.totalStaff,
+                        subtitle: 'Active visible staff',
+                        mobileSubtitle: 'Active'
+                    },
+                    {
+                        key: 'departments',
+                        loading,
+                        icon: <ApartmentOutlined />,
+                        tone: 'success',
+                        title: 'Departments',
+                        value: metrics.departments,
+                        subtitle: 'Distinct departments'
+                    },
+                    {
+                        key: 'positions',
+                        loading,
+                        icon: <IdcardOutlined />,
+                        tone: 'warning',
+                        title: 'Positions',
+                        value: metrics.positions,
+                        subtitle: 'Distinct positions'
+                    },
+                    {
+                        key: 'pendingLeave',
+                        important: true,
+                        loading: loading || metricsLoading,
+                        icon: <CalendarOutlined />,
+                        tone: 'info',
+                        title: 'Leave Pending',
+                        value: metrics.pendingLeave,
+                        subtitle: 'Awaiting action',
+                        mobileSubtitle: 'To action'
+                    },
+                    {
+                        key: 'onLeave',
+                        loading: loading || metricsLoading,
+                        icon: <CalendarOutlined />,
+                        tone: 'info',
+                        title: 'On Leave Today',
+                        value: metrics.onLeaveToday,
+                        subtitle: 'Approved leave'
+                    },
+                    {
+                        key: 'checkedIn',
+                        loading: loading || metricsLoading,
+                        icon: <CheckCircleOutlined />,
+                        tone: 'success',
+                        title: 'Checked-in Today',
+                        value: metrics.checkedInToday,
+                        subtitle: 'Timesheet activity today'
+                    }
+                ]}
+            />
 
             <MotionCard
                 style={{ marginTop: 16 }}
                 loading={loading}
-                skeleton='table'
+                skeleton={isMobile ? 'list' : 'table'}
                 skeletonRows={8}
                 skeletonColumns={6}
                 filterBar={
-                    <Row gutter={[12, 12]} align='middle'>
-                        <Col xs={24} md={8} lg={7}>
+                    <div className='setup-toolbar'>
+                        <div className='setup-toolbar-search'>
                             <Input.Search
                                 placeholder='Search name, email, position, department, branch'
                                 allowClear
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                             />
-                        </Col>
+                        </div>
 
-                        <Col xs={24} sm={12} md={6} lg={5}>
+                        <div className='setup-toolbar-filter'>
                             <Select
-                                placeholder='Filter position'
+                                placeholder='Position'
                                 allowClear
                                 style={{ width: '100%' }}
                                 value={positionFilter}
@@ -1701,11 +1828,11 @@ const EmployeesPage: React.FC = () => {
                                     </Option>
                                 ))}
                             </Select>
-                        </Col>
+                        </div>
 
-                        <Col xs={24} sm={12} md={6} lg={5}>
+                        <div className='setup-toolbar-filter'>
                             <Select
-                                placeholder='Filter department'
+                                placeholder='Department'
                                 allowClear
                                 style={{ width: '100%' }}
                                 value={departmentFilter}
@@ -1717,25 +1844,35 @@ const EmployeesPage: React.FC = () => {
                                     </Option>
                                 ))}
                             </Select>
-                        </Col>
+                        </div>
 
-                        <Col xs={24} md={4} lg={7}>
-                            <Space wrap style={{ width: '100%', justifyContent: 'flex-end' }}>
-                                <Button
-                                    shape='round'
-                                    disabled={!selectedEmployeeIds.length}
-                                    onClick={() => setBulkPositionOpen(true)}
-                                >
-                                    Bulk Edit Position ({selectedEmployeeIds.length})
-                                </Button>
+                        <div className='setup-toolbar-action'>
+                            <Space wrap>
+                                {isMobile ? null : (
+                                    <Button
+                                        shape='round'
+                                        disabled={!selectedEmployeeIds.length}
+                                        onClick={() => setBulkPositionOpen(true)}
+                                    >
+                                        Bulk Edit Position ({selectedEmployeeIds.length})
+                                    </Button>
+                                )}
 
-                                <Button
-                                    shape='round'
-                                    icon={<ReloadOutlined />}
-                                    onClick={loadEmployees}
-                                >
-                                    Refresh
-                                </Button>
+                                <Tooltip title='Refresh'>
+                                    <Button shape={isMobile ? 'default' : 'circle'} icon={<ReloadOutlined />} onClick={loadEmployees} aria-label='Refresh' />
+                                </Tooltip>
+
+                                {canEditLineManager && (
+                                    <Tooltip title='Recalculate line managers'>
+                                        <Button
+                                            shape={isMobile ? 'default' : 'circle'}
+                                            icon={<ApartmentOutlined />}
+                                            loading={recalculatingManagers}
+                                            onClick={onRecalculateLineManagers}
+                                            aria-label='Recalculate line managers'
+                                        />
+                                    </Tooltip>
+                                )}
 
                                 <Button
                                     type='primary'
@@ -1747,26 +1884,63 @@ const EmployeesPage: React.FC = () => {
                                         (!departments.length && !branches.length)
                                     }
                                 >
-                                    Add Employee
+                                    {isMobile ? 'Add' : 'Add Employee'}
                                 </Button>
                             </Space>
-                        </Col>
-                    </Row>
+                        </div>
+                    </div>
                 }
-                filterBarProps={{
-                    background: '#f8fafc',
-                    borderColor: '#d9e8ff',
-                    borderRadius: 14,
-                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)'
-                }}
             >
-                <Table
-                    rowKey='id'
-                    rowSelection={rowSelection}
-                    dataSource={filtered}
-                    columns={employeeColumns as any}
-                    pagination={{ pageSize: 10, showSizeChanger: false }}
-                />
+                {isMobile ? (
+                    <MobileCardList
+                        data={filtered}
+                        getKey={r => r.id}
+                        emptyText='No employees match these filters.'
+                        renderCard={(r: EmployeeRow) => ({
+                            title: r.name || r.email || '—',
+                            subtitle: r.position || undefined,
+                            badge: (
+                                <Tag color={r.status === 'Inactive' ? 'default' : r.workerType === 'intern' ? 'gold' : 'green'} style={{ borderRadius: 999, margin: 0 }}>
+                                    {r.status === 'Inactive' ? 'Inactive' : formatWorkerType(r.workerType)}
+                                </Tag>
+                            ),
+                            fields: [
+                                { label: 'Branch / Dept', value: branchDepartmentText(r) },
+                                { label: 'Line manager', value: lineManagerName(r.lineManagerId) || '—' }
+                            ],
+                            note: r.email ? <Text type='secondary' style={{ fontSize: 12 }}>{r.email}</Text> : undefined,
+                            actions: [
+                                <Button key='edit' icon={<EditOutlined />} onClick={() => openEdit(r)}>
+                                    Edit
+                                </Button>,
+                                <Dropdown
+                                    key='more'
+                                    trigger={['click']}
+                                    menu={{
+                                        items: [
+                                            { key: 'timesheet', icon: <FileTextOutlined />, label: 'View timesheet', onClick: () => openTimesheet(r) },
+                                            { key: 'leave', icon: <CalendarOutlined />, label: 'Put on leave', onClick: () => openLeaveFor(r) },
+                                            { type: 'divider' },
+                                            ...(accountMenuItems(r) || [])
+                                        ]
+                                    }}
+                                >
+                                    <Button icon={<UserOutlined />} loading={accountBusyId === r.id}>
+                                        More
+                                    </Button>
+                                </Dropdown>
+                            ]
+                        })}
+                    />
+                ) : (
+                    <Table
+                        rowKey='id'
+                        rowSelection={rowSelection}
+                        dataSource={filtered}
+                        columns={employeeColumns as any}
+                        pagination={{ pageSize: 10, showSizeChanger: false }}
+                    />
+                )}
             </MotionCard>
 
             <Modal
@@ -1812,6 +1986,8 @@ const EmployeesPage: React.FC = () => {
                     departments={departments}
                     branches={branches}
                     positionOptions={positionOptions}
+                    lineManagerOptions={lineManagerOptions}
+                    canEditLineManager={canEditLineManager}
                 />
             </Modal>
 
@@ -1930,41 +2106,43 @@ const EmployeesPage: React.FC = () => {
                             </Col>
                         </Row>
 
-                        <Row gutter={[16, 16]} style={{ marginBottom: 12 }}>
-                            <Col xs={24} md={8}>
-                                <MotionCard>
-                                    <MetricTile
-                                        icon={<ClockCircleOutlined />}
-                                        tone='accent'
-                                        title='Total Hours'
-                                        value={weeklySummary.hours}
-                                    />
-                                </MotionCard>
-                            </Col>
+                        <div style={{ marginBottom: 12 }}>
+                            <MetricsGrid
+                                mobileColumns={3}
+                                metrics={[
+                                    { key: 'hours', important: true, icon: <ClockCircleOutlined />, tone: 'accent', title: 'Total Hours', mobileTitle: 'Hours', value: weeklySummary.hours },
+                                    { key: 'overtime', important: true, icon: <CheckCircleOutlined />, tone: 'success', title: 'Overtime', value: weeklySummary.overtime },
+                                    { key: 'late', important: true, icon: <CalendarOutlined />, tone: 'warning', title: 'Late Total', mobileTitle: 'Late', value: weeklySummary.late }
+                                ]}
+                            />
+                        </div>
 
-                            <Col xs={24} md={8}>
-                                <MotionCard>
-                                    <MetricTile
-                                        icon={<CheckCircleOutlined />}
-                                        tone='success'
-                                        title='Overtime'
-                                        value={weeklySummary.overtime}
-                                    />
-                                </MotionCard>
-                            </Col>
-
-                            <Col xs={24} md={8}>
-                                <MotionCard>
-                                    <MetricTile
-                                        icon={<CalendarOutlined />}
-                                        tone='warning'
-                                        title='Late Total'
-                                        value={weeklySummary.late}
-                                    />
-                                </MotionCard>
-                            </Col>
-                        </Row>
-
+                        {isMobile ? (
+                            <MobileCardList
+                                data={timesheet}
+                                loading={sheetLoading}
+                                getKey={r => r.id || `${r.userId}_${r.date}`}
+                                emptyText='No timesheet entries in this range.'
+                                renderCard={(r: TimesheetEntry) => ({
+                                    title: r.date,
+                                    subtitle: r.locationLabel || r.location || undefined,
+                                    badge:
+                                        r.status === 'checked_in' ? (
+                                            <Tag color='green' style={{ margin: 0 }}>Checked In</Tag>
+                                        ) : r.status === 'on_break' ? (
+                                            <Tag color='gold' style={{ margin: 0 }}>On Break</Tag>
+                                        ) : (
+                                            <Tag style={{ margin: 0 }}>Checked Out</Tag>
+                                        ),
+                                    fields: [
+                                        { label: 'In / Out', value: `${r.checkIn || '-'} – ${r.checkOut || '-'}` },
+                                        { label: 'Hours', value: r.hoursWorked || '0h 0m' },
+                                        { label: 'Late', value: r.lateBy && r.lateBy !== '0m' ? r.lateBy : 'On time' },
+                                        { label: 'Overtime', value: r.overtime && r.overtime !== '0h 0m' ? `+${r.overtime}` : '-' }
+                                    ]
+                                })}
+                            />
+                        ) : (
                         <Table<TimesheetEntry>
                             rowKey={r => r.id || `${r.userId}_${r.date}`}
                             loading={sheetLoading}
@@ -2047,6 +2225,7 @@ const EmployeesPage: React.FC = () => {
                                 }
                             ]}
                         />
+                        )}
                     </>
                 )}
             </Modal>

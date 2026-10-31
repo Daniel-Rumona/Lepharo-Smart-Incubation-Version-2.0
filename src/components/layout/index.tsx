@@ -981,6 +981,12 @@ export const CustomLayout: React.FC = () => {
                         label: "Leave",
                         icon: <CalendarOutlined />,
                     },
+                    {
+                        key: "my-performance",
+                        to: "/performance",
+                        label: "My Performance",
+                        icon: <TrophyOutlined />,
+                    },
                 ],
             },
             {
@@ -1311,6 +1317,12 @@ export const CustomLayout: React.FC = () => {
                         label: "Leave",
                         icon: <CalendarOutlined />,
                     },
+                    {
+                        key: "my-performance",
+                        to: "/performance",
+                        label: "My Performance",
+                        icon: <TrophyOutlined />,
+                    },
                 ],
             },
 
@@ -1427,6 +1439,12 @@ export const CustomLayout: React.FC = () => {
                 to: "/director/hr/quality-objectives",
                 label: "Quality Objectives",
                 icon: <FileProtectOutlined />,
+            },
+            {
+                key: "performance",
+                to: "/director/hr/performance",
+                label: "Performance",
+                icon: <TrophyOutlined />,
             },
         ],
 
@@ -1669,6 +1687,12 @@ export const CustomLayout: React.FC = () => {
                 to: "/operations/hr/employees",
                 label: "Employees",
                 icon: <TeamOutlined />,
+            },
+            {
+                key: "performance",
+                to: "/operations/hr/performance",
+                label: "Performance",
+                icon: <TrophyOutlined />,
             },
             {
                 key: "quality-objectives",
@@ -2060,6 +2084,12 @@ export const CustomLayout: React.FC = () => {
                 icon: <DoubleRightOutlined />,
             },
             {
+                key: "my-performance",
+                to: "/performance",
+                label: "My Performance",
+                icon: <TrophyOutlined />,
+            },
+            {
                 key: "timesheet",
                 to: "/timesheet",
                 label: "Timesheet",
@@ -2108,6 +2138,12 @@ export const CustomLayout: React.FC = () => {
                 to: "/leave",
                 label: "Leave",
                 icon: <DoubleRightOutlined />,
+            },
+            {
+                key: "my-performance",
+                to: "/performance",
+                label: "My Performance",
+                icon: <TrophyOutlined />,
             },
         ],
     };

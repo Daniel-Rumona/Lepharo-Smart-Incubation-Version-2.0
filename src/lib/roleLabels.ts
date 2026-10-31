@@ -16,6 +16,29 @@ const ROLE_LABELS: Record<string, string> = {
     center_coordinator: 'Center Coordinator'
 }
 
+// Lepharo's own staff: everyone HR manages. SMEs, training SMEs, funders,
+// government viewers and system admins are not staff.
+const STAFF_ROLE_KEYS = new Set([
+    'director',
+    'operations',
+    'headofdepartment',
+    'headsofdepartment',
+    'hod',
+    'projectadmin',
+    'centercoordinator',
+    'coordinator',
+    'consultant',
+    'hr',
+    'employee',
+    'auxiliary',
+    'receptionist',
+    'receiptionist',
+    'projectmanager'
+])
+
+export const isStaffRole = (role?: string): boolean =>
+    STAFF_ROLE_KEYS.has(String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, ''))
+
 export const formatRole = (role?: string): string => {
     if (!role) return 'User'
 

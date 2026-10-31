@@ -21,6 +21,8 @@ export {
 export * from "./syncAssignedInterventions";
 export * from "./syncCoordinatorPrograms";
 export * from "./departmentNameCascade";
+export * from "./lineManagers";
+export * from "./ipmReminders";
 export * from "./complianceExpiry";
 export * from "./kpiReminders";
 export * from "./planRoadmapCheckIns";

@@ -832,6 +832,7 @@ const App = () => {
                                                         <Route path="calendar" element={<MyCalendarPage />} />
                                                         <Route path="timesheet" element={<ClockinPage />} />
                                                         <Route path="leave" element={<EmployeeLeave />} />
+                                                        <Route path="performance" element={<EmployeePerformancePage />} />
                                                         <Route
                                                             path="data-export"
                                                             element={<DataExportPage />}

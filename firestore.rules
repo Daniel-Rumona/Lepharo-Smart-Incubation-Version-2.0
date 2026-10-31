@@ -105,6 +105,24 @@ service cloud.firestore {
         );
     }
 
+    // Individual performance (IPM) is confidential. HR (the department in the
+    // 'hr' role) is the process custodian and the director is the CEO; both
+    // see every record. Everyone else sees only their own records and those
+    // of the people who report to them (users/{uid}.lineManagerId).
+    function canOverseePerformance() {
+      return isSuperAdmin() || (hasProfile() && (
+        myRole() in ['director', 'hr'] || userDepartmentHasRole('hr')
+      ));
+    }
+    function isLineManagerOf(employeeUid) {
+      return request.auth != null && employeeUid is string && employeeUid != '' &&
+        exists(/databases/$(database)/documents/users/$(employeeUid)) &&
+        get(/databases/$(database)/documents/users/$(employeeUid)).data.get('lineManagerId', '') == request.auth.uid;
+    }
+    function performanceCollections() {
+      return ['employeePerformanceCompacts', 'employeePerformanceReviews', 'performanceCheckIns', 'performanceEnhancementPlans', 'performanceReviews'];
+    }
+
     // Coverage is recorded by the session facilitator or a delivery manager.
     // This is deliberately narrower than general appointment editing.
     function canRecordAppointmentCoverage(data) {
@@ -138,7 +156,11 @@ service cloud.firestore {
       function privilegedUserFields() {
         return ['role', 'departmentId', 'department', 'departmentName', 'assignedBranch', 'branchId',
           'assignedPrograms', 'participantId', 'trainingRole', 'trainingAttendeeId', 'companyCode',
-          'status', 'permissions', 'acceptance'];
+          'status', 'permissions', 'acceptance', 'lineManagerId', 'lineManagerSource'];
+      }
+      // Who reports to whom decides who sees performance records.
+      function lineManagerFields() {
+        return ['lineManagerId', 'lineManagerSource'];
       }
       function isAdminRole(data) {
         return data.get('role', '').lower().trim() in adminRoles();
@@ -156,9 +178,11 @@ service cloud.firestore {
       // Staff read the directory and manage other people's docs (user
       // management, HR, application decisions), but not admins' docs.
       allow read: if isStaff();
-      allow create: if isStaff() && request.auth.uid != userId && !isAdminRole(request.resource.data);
+      allow create: if isStaff() && request.auth.uid != userId && !isAdminRole(request.resource.data) &&
+        (canOverseePerformance() || !request.resource.data.keys().hasAny(lineManagerFields()));
       allow update: if isStaff() && request.auth.uid != userId &&
-        !isAdminRole(resource.data) && !isAdminRole(request.resource.data);
+        !isAdminRole(resource.data) && !isAdminRole(request.resource.data) &&
+        (canOverseePerformance() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(lineManagerFields()));
       allow delete: if isStaff() && request.auth.uid != userId && !isAdminRole(resource.data);
 
       // External logins see staff profiles (facilitators, HODs), their own doc
@@ -1240,12 +1264,141 @@ service cloud.firestore {
       allow read, write: if isFunderUser();
     }
 
+    // IPM cycles (financial years and their review windows): every staff
+    // member reads them; HR, as process custodian, and the CEO run them.
+    match /performanceCycles/{cycleId} {
+      allow read: if isStaff();
+      allow write: if canOverseePerformance();
+    }
+
+    // The competency library compacts draw from; HR maintains it.
+    match /ipmCompetencies/{competencyId} {
+      allow read: if isStaff();
+      allow write: if canOverseePerformance();
+    }
+
+    // IPM records carry employeeAuthUid and the employee's lineManagerId, so
+    // "my records" and "my team's records" are provable as list queries.
+    // Managers write only for people who currently report to them; nobody
+    // but a super-admin deletes a record.
+    //
+    // Compacts carry signoff.{manager, employee, hr}. Each person writes only
+    // their own signature; anyone who may edit the compact may withdraw
+    // signatures (editing what was agreed does), but never write another's.
+    match /{performanceCollection}/{recordId} {
+      function signoffOf(data) {
+        return data.get('signoff', {});
+      }
+      function keepsOrClears(role) {
+        return !signoffOf(request.resource.data).keys().hasAny([role]) ||
+          signoffOf(request.resource.data).get(role, null) == signoffOf(resource.data).get(role, null);
+      }
+      function signsAsSelf(role) {
+        return signoffOf(request.resource.data).get(role, {}).get('uid', '') == request.auth.uid;
+      }
+      function isOwnRecord(data) {
+        return data.get('employeeAuthUid', '') == request.auth.uid;
+      }
+      // Whose record it is, and for which cycle and phase, is fixed once set.
+      function keepsIdentity() {
+        return ['employeeAuthUid', 'cycleId', 'phase'].toSet().intersection(
+          request.resource.data.diff(resource.data).changedKeys().union(
+            request.resource.data.diff(resource.data).removedKeys())).size() == 0;
+      }
+      // Only the employee writes their self-assessment.
+      function keepsSelfAssessment() {
+        return performanceCollection != 'performanceReviews' ||
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['self', 'selfSubmittedAt', 'overallSelfComment']);
+      }
+
+      allow read: if performanceCollection in performanceCollections() && request.auth != null && (
+        canOverseePerformance() ||
+        resource.data.get('employeeAuthUid', '') == request.auth.uid ||
+        resource.data.get('lineManagerId', '') == request.auth.uid
+      );
+      allow create: if performanceCollection in performanceCollections() && request.auth != null &&
+        !isOwnRecord(request.resource.data) &&
+        !signoffOf(request.resource.data).keys().hasAny(['employee', 'hr']) &&
+        (!signoffOf(request.resource.data).keys().hasAny(['manager']) || signsAsSelf('manager')) && (
+          canOverseePerformance() || (
+            request.resource.data.get('lineManagerId', '') == request.auth.uid &&
+            isLineManagerOf(request.resource.data.get('employeeAuthUid', ''))
+          )
+        );
+      // HR and the CEO, on someone else's record. HR signs its compliance
+      // check; signing as line manager still needs to be the line manager.
+      allow update: if performanceCollection in performanceCollections() && request.auth != null &&
+        canOverseePerformance() && !isOwnRecord(resource.data) &&
+        keepsIdentity() && keepsSelfAssessment() &&
+        keepsOrClears('employee') &&
+        (keepsOrClears('manager') || (signsAsSelf('manager') && isLineManagerOf(resource.data.get('employeeAuthUid', '')))) &&
+        (keepsOrClears('hr') ||
+          (signsAsSelf('hr') && signoffOf(request.resource.data).keys().hasAll(['manager', 'employee']))) &&
+        // Only the CEO validates review results.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['validation']) ||
+          isSuperAdmin() || myRole() == 'director');
+      // The line manager. Disputes are mediated, and results calibrated and
+      // validated, by HR and the CEO, never by the manager being reviewed against.
+      allow update: if performanceCollection in performanceCollections() && request.auth != null &&
+        resource.data.get('lineManagerId', '') == request.auth.uid &&
+        request.resource.data.get('lineManagerId', '') == request.auth.uid &&
+        keepsIdentity() &&
+        isLineManagerOf(resource.data.get('employeeAuthUid', '')) &&
+        keepsOrClears('employee') && keepsOrClears('hr') &&
+        (keepsOrClears('manager') || signsAsSelf('manager')) &&
+        !(performanceCollection == 'performanceReviews' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasAny(['dispute', 'calibration', 'validation', 'self', 'selfSubmittedAt', 'overallSelfComment']));
+      // Reviews: the employee writes their self-assessment until the manager
+      // submits theirs, raises at most one dispute, and adds their own signature.
+      allow create: if performanceCollection == 'performanceReviews' && request.auth != null &&
+        isOwnRecord(request.resource.data) &&
+        request.resource.data.get('lineManagerId', null) == currentUser().get('lineManagerId', null) &&
+        request.resource.data.keys().hasOnly(['employeeAuthUid', 'employeeId', 'employeeName', 'lineManagerId', 'cycleId',
+          'phase', 'self', 'overallSelfComment', 'selfSubmittedAt', 'createdAt', 'updatedAt']);
+      allow update: if performanceCollection == 'performanceReviews' && request.auth != null &&
+        isOwnRecord(resource.data) && resource.data.get('validation', null) == null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['self', 'overallSelfComment', 'selfSubmittedAt', 'dispute', 'signoff', 'updatedAt']) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['self', 'overallSelfComment', 'selfSubmittedAt']) ||
+          resource.data.get('managerSubmittedAt', null) == null) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['dispute']) || (
+          resource.data.get('dispute', null) == null &&
+          request.resource.data.dispute.get('raisedBy', '') == request.auth.uid &&
+          !request.resource.data.dispute.keys().hasAny(['resolution', 'resolvedBy', 'resolvedAt']))) &&
+        signoffOf(request.resource.data).diff(signoffOf(resource.data)).affectedKeys().hasOnly(['employee']) &&
+        (keepsOrClears('employee') || signsAsSelf('employee'));
+      // The employee: their development plan and their own signature only.
+      allow update: if performanceCollection == 'employeePerformanceCompacts' && request.auth != null &&
+        isOwnRecord(resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pdp', 'signoff', 'status', 'updatedAt']) &&
+        signoffOf(request.resource.data).diff(signoffOf(resource.data)).affectedKeys().hasOnly(['employee']) &&
+        (keepsOrClears('employee') || signsAsSelf('employee')) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['status']) ||
+          request.resource.data.status == (signoffOf(resource.data).keys().hasAny(['manager']) ? 'agreed' : 'awaiting-manager'));
+      // Check-ins are driven by the employee: they record their own, filed
+      // under their current line manager, and never write the manager's feedback.
+      allow create: if performanceCollection == 'performanceCheckIns' && request.auth != null &&
+        isOwnRecord(request.resource.data) &&
+        request.resource.data.get('lineManagerId', null) == currentUser().get('lineManagerId', null) &&
+        request.resource.data.get('managerFeedback', '') == '';
+      allow update: if performanceCollection == 'performanceCheckIns' && request.auth != null &&
+        isOwnRecord(resource.data) && isOwnRecord(request.resource.data) &&
+        request.resource.data.get('lineManagerId', '') == resource.data.get('lineManagerId', '') &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['managerFeedback']);
+      // Enhancement plans: the employee acknowledges and comments, nothing else.
+      allow update: if performanceCollection == 'performanceEnhancementPlans' && request.auth != null &&
+        isOwnRecord(resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signoff', 'employeeComment', 'updatedAt']) &&
+        signoffOf(request.resource.data).diff(signoffOf(resource.data)).affectedKeys().hasOnly(['employee']) &&
+        (keepsOrClears('employee') || signsAsSelf('employee'));
+      allow delete: if performanceCollection in performanceCollections() && isSuperAdmin();
+    }
+
     // Everything else is internal staff only. Super-admins can access every
     // collection, including the explicitly restricted collections above.
     match /{collectionId}/{document=**} {
       allow read, write: if isSuperAdmin();
       allow read, write: if isStaff() &&
-        !(collectionId in ['users', 'agentProposals', 'auditLogs', 'whatsappAgentProposals', 'whatsappAgentState', 'smeRiskSnapshots', 'interventionImpact', 'academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'trainingAttendees', 'trainingCompanyProgress', 'trainingCertificates', 'certificateTemplates', 'certificateCounters', 'trainingSettings', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'programs', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures', 'reports', 'reportBlocks', 'reportTemplates', 'reportActivity']);
+        !(collectionId in ['users', 'ipmReminderLog', 'agentProposals', 'auditLogs', 'whatsappAgentProposals', 'whatsappAgentState', 'smeRiskSnapshots', 'interventionImpact', 'academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'trainingAttendees', 'trainingCompanyProgress', 'trainingCertificates', 'certificateTemplates', 'certificateCounters', 'trainingSettings', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'programs', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures', 'reports', 'reportBlocks', 'reportTemplates', 'reportActivity', 'employeePerformanceCompacts', 'employeePerformanceReviews', 'performanceCycles', 'ipmCompetencies', 'performanceCheckIns', 'performanceEnhancementPlans', 'performanceReviews']);
     }
   }
 }
