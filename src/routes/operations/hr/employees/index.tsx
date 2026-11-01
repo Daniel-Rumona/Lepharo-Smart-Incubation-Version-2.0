@@ -68,6 +68,7 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useDepartmentRoles } from '@/services/departmentRoles'
 import { isStaffRole } from '@/lib/roleLabels'
 import { functionsBaseUrl } from '@/firebaseConfig'
+import { countLeaveDays } from '@/routes/operations/hr/leave/types'
 
 dayjs.extend(isBetween)
 
@@ -1309,6 +1310,12 @@ const EmployeesPage: React.FC = () => {
         if (!selectedEmployee) return
 
         const [from, to] = vals.dates || []
+        // Working days: weekends and public holidays aren't taken from the balance.
+        const days = from && to ? countLeaveDays(from.format('YYYY-MM-DD'), to.format('YYYY-MM-DD')) : 0
+        if (!days) {
+            message.error('These dates are all weekends or public holidays.')
+            return
+        }
 
         const payload = {
             employeeId: selectedEmployee.authUid || selectedEmployee.id,
@@ -1319,7 +1326,7 @@ const EmployeesPage: React.FC = () => {
             reason: vals.reason,
             from: from?.format('YYYY-MM-DD'),
             to: to?.format('YYYY-MM-DD'),
-            days: from && to ? to.diff(from, 'day') + 1 : 1,
+            days,
             status: 'pending' as const,
             appliedDate: dayjs().format('YYYY-MM-DD')
         }
@@ -1330,8 +1337,7 @@ const EmployeesPage: React.FC = () => {
             setLeaveOpen(false)
         } catch (error) {
             console.error(error)
-            message.warning('Saved locally (Firestore unavailable)')
-            setLeaveOpen(false)
+            message.error('The leave request didn’t save. Please try again.')
         }
     }
 

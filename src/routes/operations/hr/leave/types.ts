@@ -1,4 +1,5 @@
 import dayjs from 'dayjs'
+import { isSouthAfricanPublicHoliday } from '@/utils/southAfricanPublicHolidays'
 
 export type LeaveType =
     | 'annual'
@@ -60,8 +61,19 @@ export type Employee = {
     active?: boolean
 }
 
-export const countDaysInclusive = (fromISO: string, toISO: string) =>
-    Math.max(1, dayjs(toISO).diff(dayjs(fromISO), 'day') + 1)
+/**
+ * Leave days between two dates, both included: working days only, so
+ * weekends and South African public holidays aren't taken from the balance.
+ */
+export const countLeaveDays = (fromISO: string, toISO: string) => {
+    const end = dayjs(toISO)
+    let count = 0
+    for (let d = dayjs(fromISO).startOf('day'); !d.isAfter(end, 'day'); d = d.add(1, 'day')) {
+        const weekday = d.day()
+        if (weekday !== 0 && weekday !== 6 && !isSouthAfricanPublicHoliday(d.toDate())) count += 1
+    }
+    return count
+}
 
 export const typeLabel = (t: LeaveType) =>
     t === 'annual'

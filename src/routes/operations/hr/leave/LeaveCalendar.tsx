@@ -31,7 +31,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { type LeaveRequest, typeLabel } from './types'
+import { countLeaveDays, type LeaveRequest, typeLabel } from './types'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -1086,15 +1086,7 @@ export const LeaveCalendar: React.FC = () => {
                             </Descriptions.Item>
 
                             <Descriptions.Item label='Duration'>
-                                {selectedRequest.days ??
-                                    Math.max(
-                                        dayjs(selectedRequest.to).diff(
-                                            dayjs(selectedRequest.from),
-                                            'day'
-                                        ) + 1,
-                                        1
-                                    )}{' '}
-                                day(s)
+                                {countLeaveDays(selectedRequest.from, selectedRequest.to)} working day(s)
                             </Descriptions.Item>
 
                             {selectedRequest.reason && (
