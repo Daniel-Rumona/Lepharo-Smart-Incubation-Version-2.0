@@ -42,6 +42,7 @@ import {
     UnorderedListOutlined
 } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
+import { useSearchParams } from 'react-router-dom'
 import isoWeek from 'dayjs/plugin/isoWeek'
 import {
     collection,
@@ -150,6 +151,24 @@ const AdminLeaveManagement: React.FC = () => {
     const [deptFilter, setDeptFilter] = useState<string | undefined>()
 
     const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
+
+    // ?assign=<userId> (from HR Employees "Put on leave") opens the wizard with that person picked.
+    const [searchParams, setSearchParams] = useSearchParams()
+    const assignUserId = searchParams.get('assign')
+    useEffect(() => {
+        if (!assignUserId || empLoading) return
+        if (employees.some(employee => employee.id === assignUserId)) {
+            setSelectedUserIds([assignUserId])
+            setStep(0)
+            setWizardOpen(true)
+        } else {
+            message.warning('That employee cannot be put on leave (inactive or not listed).')
+        }
+        setSearchParams(params => {
+            params.delete('assign')
+            return params
+        }, { replace: true })
+    }, [assignUserId, empLoading, employees, setSearchParams])
 
     // on-leave view
     const todayISO = dayjs().format('YYYY-MM-DD')

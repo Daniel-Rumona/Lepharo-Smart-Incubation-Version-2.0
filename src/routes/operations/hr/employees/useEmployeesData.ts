@@ -50,12 +50,13 @@ async function loadStaff() {
         ),
         getDocs(query(collection(db, 'users'), where('role', '==', 'director')))
     ])
-    const employees = staffSnap.docs
-        .map(d => toEmployee(d.id, d.data()))
-        .filter(e => isStaffRole(e.role) && !isControlEmail(e.email))
-        .sort((a, b) => a.name.localeCompare(b.name))
+    const allStaff = staffSnap.docs.map(d => toEmployee(d.id, d.data())).filter(e => isStaffRole(e.role))
+    const employees = allStaff.filter(e => !isControlEmail(e.email)).sort((a, b) => a.name.localeCompare(b.name))
     const directors: NamedOption[] = directorSnap.docs.map(d => ({ id: d.id, name: displayName(d.data()) || 'CEO' }))
-    return { employees, directors }
+    // A line manager can be someone the list hides (a control login), so names cover everyone.
+    const names = new Map<string, string>(allStaff.map(e => [e.id, e.name]))
+    directors.forEach(d => names.set(d.id, `${d.name} (CEO)`))
+    return { employees, directors, names }
 }
 
 async function loadDepartments(): Promise<NamedOption[]> {
@@ -114,6 +115,7 @@ async function loadActivity(staffIds: string[]): Promise<ActivityStats> {
 export function useEmployeesData() {
     const [employees, setEmployees] = useState<EmployeeRow[]>([])
     const [directors, setDirectors] = useState<NamedOption[]>([])
+    const [personNames, setPersonNames] = useState<Map<string, string>>(() => new Map())
     const [departments, setDepartments] = useState<NamedOption[]>([])
     const [branches, setBranches] = useState<NamedOption[]>([])
     const [savedPositions, setSavedPositions] = useState<string[]>([])
@@ -143,6 +145,7 @@ export function useEmployeesData() {
             const result = await loadStaff()
             setEmployees(result.employees)
             setDirectors(result.directors)
+            setPersonNames(result.names)
             setError(null)
             void reloadActivity(result.employees)
         } catch (err) {
@@ -191,6 +194,7 @@ export function useEmployeesData() {
     return {
         employees,
         directors,
+        personNames,
         departments,
         branches,
         savedPositions,

@@ -1,10 +1,7 @@
 import React from 'react'
-import { Alert, DatePicker, Form, Input, Modal, Select } from 'antd'
-import dayjs from 'dayjs'
+import { Alert, Form, Input, Modal } from 'antd'
 import { PositionSelect } from './PositionSelect'
 import type { EmployeeRow } from './employeeShared'
-
-const { RangePicker } = DatePicker
 
 export const ChangeEmailModal: React.FC<{
     employee: EmployeeRow | null
@@ -90,66 +87,6 @@ export const BulkPositionModal: React.FC<{
             >
                 <Form.Item name='position' label='HR position' rules={[{ required: true, message: 'Select or type a position' }]}>
                     <PositionSelect positions={positions} />
-                </Form.Item>
-            </Form>
-        </Modal>
-    )
-}
-
-export type LeaveFormValues = {
-    type: 'annual' | 'sick' | 'personal'
-    dates: [dayjs.Dayjs, dayjs.Dayjs]
-    reason: string
-}
-
-export const LeaveModal: React.FC<{
-    employee: EmployeeRow | null
-    saving: boolean
-    onSubmit: (values: LeaveFormValues) => Promise<boolean>
-    onClose: () => void
-}> = ({ employee, saving, onSubmit, onClose }) => {
-    const [form] = Form.useForm<LeaveFormValues>()
-    const tomorrow = dayjs().add(1, 'day')
-    return (
-        <Modal
-            open={Boolean(employee)}
-            title={`Leave request${employee ? ` · ${employee.name}` : ''}`}
-            okText='Submit request'
-            onOk={() => form.submit()}
-            onCancel={onClose}
-            confirmLoading={saving}
-            cancelButtonProps={{ disabled: saving }}
-            destroyOnClose
-        >
-            <Alert
-                type='info'
-                showIcon
-                style={{ marginBottom: 16 }}
-                message='This creates a pending request. Approve it on the Leave page.'
-            />
-            <Form
-                form={form}
-                layout='vertical'
-                preserve={false}
-                initialValues={{ type: 'annual', dates: [tomorrow, tomorrow], reason: '' }}
-                onFinish={async values => {
-                    if (await onSubmit(values)) onClose()
-                }}
-            >
-                <Form.Item name='type' label='Leave type' rules={[{ required: true, message: 'Select a leave type' }]}>
-                    <Select
-                        options={[
-                            { value: 'annual', label: 'Annual leave' },
-                            { value: 'sick', label: 'Sick leave' },
-                            { value: 'personal', label: 'Personal leave' }
-                        ]}
-                    />
-                </Form.Item>
-                <Form.Item name='dates' label='Dates' rules={[{ required: true, message: 'Select the leave dates' }]}>
-                    <RangePicker allowClear={false} style={{ width: '100%' }} />
-                </Form.Item>
-                <Form.Item name='reason' label='Reason' rules={[{ required: true, whitespace: true, message: 'Give a reason' }]}>
-                    <Input.TextArea rows={3} placeholder='Reason for leave' />
                 </Form.Item>
             </Form>
         </Modal>

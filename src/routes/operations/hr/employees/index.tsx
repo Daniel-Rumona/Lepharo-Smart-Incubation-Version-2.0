@@ -20,9 +20,8 @@ import {
     TeamOutlined,
     UserAddOutlined
 } from '@ant-design/icons'
-import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
-import { addDoc, collection, doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore'
+import { doc, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '@/firebase'
 import { functionsBaseUrl } from '@/firebaseConfig'
@@ -35,7 +34,7 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useDepartmentRoles } from '@/services/departmentRoles'
 import { EmployeeFormModal } from './EmployeeFormModal'
 import { TimesheetModal } from './TimesheetModal'
-import { BulkPositionModal, ChangeEmailModal, LeaveModal, type LeaveFormValues } from './EmployeeDialogs'
+import { BulkPositionModal, ChangeEmailModal } from './EmployeeDialogs'
 import { useEmployeesData } from './useEmployeesData'
 import {
     errorMessage,
@@ -99,7 +98,6 @@ const EmployeesPage: React.FC = () => {
     const [saving, setSaving] = useState(false)
     const [bulkOpen, setBulkOpen] = useState(false)
     const [emailFor, setEmailFor] = useState<EmployeeRow | null>(null)
-    const [leaveFor, setLeaveFor] = useState<EmployeeRow | null>(null)
     const [timesheetFor, setTimesheetFor] = useState<EmployeeRow | null>(null)
     const [busyId, setBusyId] = useState<string | null>(null)
     const [recalculating, setRecalculating] = useState(false)
@@ -125,12 +123,7 @@ const EmployeesPage: React.FC = () => {
         [placement]
     )
 
-    const managerName = useMemo(() => {
-        const names = new Map<string, string>()
-        directors.forEach(d => names.set(d.id, `${d.name} (CEO)`))
-        employees.forEach(e => names.set(e.id, e.name))
-        return (id?: string | null) => (id ? names.get(id) || 'Unlisted user' : null)
-    }, [directors, employees])
+    const managerName = (id?: string | null) => (id ? data.personNames.get(id) || 'Unknown user' : null)
 
     const lineManagerOptions = useMemo(
         () =>
@@ -337,39 +330,6 @@ const EmployeesPage: React.FC = () => {
         }
     }
 
-    const submitLeave = async (values: LeaveFormValues) => {
-        if (!leaveFor) return false
-        const [from, to] = values.dates
-        setSaving(true)
-        try {
-            await addDoc(collection(db, 'leaveRequests'), {
-                // Same id the Leave page uses (the users doc id).
-                employeeId: leaveFor.id,
-                employeeEmail: leaveFor.email || '',
-                employeeName: leaveFor.name,
-                employeePhoto: '',
-                type: values.type,
-                reason: values.reason.trim(),
-                from: from.format('YYYY-MM-DD'),
-                to: to.format('YYYY-MM-DD'),
-                days: to.diff(from, 'day') + 1,
-                status: 'pending',
-                appliedDate: dayjs().format('YYYY-MM-DD'),
-                putByEmail: auth.currentUser?.email || '',
-                createdAt: serverTimestamp()
-            })
-            message.success(`Leave request for ${leaveFor.name} submitted.`)
-            void data.reloadActivity()
-            return true
-        } catch (error) {
-            console.error('[EmployeesPage] leave request failed:', error)
-            message.error('Could not submit the leave request. Nothing was saved.')
-            return false
-        } finally {
-            setSaving(false)
-        }
-    }
-
     /** Runs a per-row account action with the row's busy spinner. */
     const runAccountAction = async (employee: EmployeeRow, action: () => Promise<void>, fallback: string) => {
         setBusyId(employee.id)
@@ -507,7 +467,14 @@ const EmployeesPage: React.FC = () => {
         ...(withTimesheet
             ? [{ key: 'timesheet', icon: <FileTextOutlined />, label: 'View timesheet', onClick: () => setTimesheetFor(r) }]
             : []),
-        { key: 'leave', icon: <CalendarOutlined />, label: 'Request leave', onClick: () => setLeaveFor(r) },
+        {
+            key: 'leave',
+            icon: <CalendarOutlined />,
+            label: 'Put on leave',
+            // The Leave page's wizard approves it and applies the leave policy limits.
+            disabled: r.status === 'Inactive',
+            onClick: () => navigate(`/operations/hr/leave?assign=${encodeURIComponent(r.id)}`)
+        },
         { type: 'divider' },
         { key: 'email', icon: <SwapOutlined />, label: 'Change login email', onClick: () => setEmailFor(r) },
         { key: 'password', icon: <KeyOutlined />, label: 'Send password reset', disabled: !r.email, onClick: () => sendPasswordReset(r) },
@@ -850,7 +817,6 @@ const EmployeesPage: React.FC = () => {
                 onClose={() => setBulkOpen(false)}
             />
             <ChangeEmailModal employee={emailFor} saving={saving} onSubmit={submitEmail} onClose={() => setEmailFor(null)} />
-            <LeaveModal employee={leaveFor} saving={saving} onSubmit={submitLeave} onClose={() => setLeaveFor(null)} />
             <TimesheetModal employee={timesheetFor} onClose={() => setTimesheetFor(null)} />
         </div>
     )
