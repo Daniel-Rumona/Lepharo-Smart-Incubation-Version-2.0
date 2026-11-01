@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { Alert, Avatar, Button, Dropdown, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd'
+import { Alert, Avatar, Button, Dropdown, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography, message, theme } from 'antd'
 import type { MenuProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -76,6 +76,7 @@ const initials = (name: string) =>
 const EmployeesPage: React.FC = () => {
     const { user } = useFullIdentity()
     const isMobile = useIsMobile()
+    const { token } = theme.useToken()
     const navigate = useNavigate()
     const { hasRole } = useDepartmentRoles()
     const userRole = String(user?.role || '').toLowerCase().trim()
@@ -135,6 +136,13 @@ const EmployeesPage: React.FC = () => {
             ].sort((a, b) => a.label.localeCompare(b.label)),
         [directors, employees]
     )
+
+    // The edited person's current manager may be someone the list hides; keep them pickable by name.
+    const formManagerOptions = useMemo(() => {
+        const current = editing?.lineManagerId
+        if (!current || lineManagerOptions.some(option => option.value === current)) return lineManagerOptions
+        return [...lineManagerOptions, { value: current, label: data.personNames.get(current) || 'Unknown user' }]
+    }, [editing, lineManagerOptions, data.personNames])
 
     const positionOptions = useMemo(
         () =>
@@ -523,10 +531,11 @@ const EmployeesPage: React.FC = () => {
         {
             title: 'Employee',
             key: 'employee',
+            width: 260,
             sorter: (a, b) => a.name.localeCompare(b.name),
             render: (_, r) => (
                 <Space size={12} style={{ opacity: r.status === 'Inactive' ? 0.6 : 1 }}>
-                    <Avatar style={{ background: '#e6f4ff', color: '#1677ff', flexShrink: 0 }}>{initials(r.name)}</Avatar>
+                    <Avatar style={{ background: token.colorFillSecondary, color: token.colorText, fontWeight: 600, flexShrink: 0 }}>{initials(r.name)}</Avatar>
                     <Space direction='vertical' size={0} style={{ minWidth: 0 }}>
                         <Space size={6} wrap>
                             <Text strong>{r.name}</Text>
@@ -569,7 +578,7 @@ const EmployeesPage: React.FC = () => {
             title: 'Actions',
             key: 'actions',
             align: 'right',
-            width: 180,
+            width: 150,
             render: (_, r) => (
                 <Space size={4}>
                     <Button size='small' icon={<EditOutlined />} onClick={() => openEdit(r)}>
@@ -587,7 +596,7 @@ const EmployeesPage: React.FC = () => {
     ]
 
     const focusStyle = (key: Focus): React.CSSProperties =>
-        focus === key && key !== 'all' ? { outline: '2px solid #1677ff', borderRadius: 16 } : {}
+        focus === key && key !== 'all' ? { outline: `2px solid ${token.colorPrimary}`, borderRadius: 16 } : {}
     const toggleFocus = (key: Focus) => setFocus(current => (current === key ? 'all' : key))
     const activityValue = (key: 'pendingLeave' | 'onLeaveToday' | 'checkedInToday') => (data.activity ? data.activity[key] : '—')
 
@@ -788,7 +797,6 @@ const EmployeesPage: React.FC = () => {
                         columns={columns}
                         pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }}
                         locale={{ emptyText: employees.length ? 'No staff match these filters.' : 'No staff yet.' }}
-                        scroll={{ x: 900 }}
                     />
                 )}
             </MotionCard>
@@ -800,7 +808,7 @@ const EmployeesPage: React.FC = () => {
                 departments={departments}
                 branches={branches}
                 positions={positionOptions}
-                lineManagerOptions={lineManagerOptions}
+                lineManagerOptions={formManagerOptions}
                 canEditLineManager={canEditLineManager}
                 onSubmit={submitEmployee}
                 onClose={() => {

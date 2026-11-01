@@ -102,7 +102,7 @@ export const EmployeeFormModal: React.FC<Props> = ({
                         <Form.Item
                             label='Login email'
                             name='email'
-                            extra={isEdit ? 'Change it from Account › Change login email.' : undefined}
+                            extra={isEdit ? 'Use “Change login email” in the row menu.' : undefined}
                             rules={[
                                 { required: true, message: 'Enter the email address' },
                                 { type: 'email', message: 'Enter a valid email address' }
