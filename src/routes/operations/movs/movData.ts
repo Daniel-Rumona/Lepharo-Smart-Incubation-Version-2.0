@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import { collection, doc, getDoc, getDocs, limit as qlimit, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { readSchedule, schedulePreset, type Schedule } from '@/lib/recurrence'
 import type { ConsolidatedPack, MovDoc } from '@/types/mov'
 import { USE_SENSITIVE_DEPARTMENT_SUMMARY_INSTEAD_OF_POE } from '@/config/evidencePolicy'
 import {
@@ -195,11 +196,18 @@ const parseDeliveryFlags = (ai: any, existing: any) => {
 }
 
 const parseFrequency = (raw: any): FrequencyUI | undefined => {
+    if (raw && typeof raw === 'object') {
+        const unit = String(raw.unit ?? '').toLowerCase()
+        if (unit.startsWith('week')) return Number(raw.every) === 2 ? 'biweekly' : 'weekly'
+        if (unit.startsWith('month')) return 'monthly'
+        return undefined
+    }
     const s = String(raw ?? '').toLowerCase().trim()
     if (!s) return undefined
     if (s.includes('needed') || s.includes('ad-hoc') || s.includes('ad hoc')) return 'as-needed'
+    // Before 'week', or 'bi-weekly' would read as weekly.
+    if (s.includes('bi-week') || s.includes('biweek') || s.includes('two week') || s.includes('fortnight')) return 'biweekly'
     if (s.includes('week')) return 'weekly'
-    if (s.includes('two') || s.includes('bi')) return 'biweekly'
     if (s.includes('month')) return 'monthly'
     if (s.includes('once') || s.includes('one-off') || s.includes('one off')) return 'once'
     return undefined
@@ -211,14 +219,21 @@ const isExplicitlyNonRecurring = (obj: any): boolean => {
     return typeof v === 'boolean' ? v === false : false
 }
 
+/** The MOV's frequency from a stored schedule; undefined when the record states none. */
+const movFrequencyFrom = (schedule: Schedule): FrequencyUI | undefined => {
+    if (schedule.source === 'default') return undefined
+    if (schedule.scheduleMode !== 'recurring') return 'as-needed'
+    const preset = schedulePreset(schedule)
+    return preset === 'bi-weekly' ? 'biweekly' : preset === 'weekly' || preset === 'monthly' ? preset : undefined
+}
+
 const resolveFrequencyByInterventionId = async (interventionId?: string): Promise<FrequencyUI | undefined> => {
     if (!interventionId) return undefined
     try {
         const snap = await getDoc(doc(db, 'interventions', String(interventionId)))
         if (!snap.exists()) return undefined
         const data = snap.data() as any
-        if (isExplicitlyNonRecurring(data)) return 'once'
-        return parseFrequency(data.frequency ?? data.recurrence ?? data.recurrenceFrequency ?? data.interval ?? data.scheduleFrequency ?? data.repeat ?? '')
+        return movFrequencyFrom(readSchedule(data)) ?? (isExplicitlyNonRecurring(data) ? 'once' : undefined)
     } catch {
         return undefined
     }
@@ -323,7 +338,7 @@ export async function enrichMov(mov: Mov, activeProgramId?: string | null): Prom
     const { methodInPerson, methodOnline, methodTelephonic, methodOther } = parseDeliveryFlags(ai, mov)
     let frequency: FrequencyUI | undefined
     if (isExplicitlyNonRecurring(ai)) frequency = 'as-needed'
-    if (!frequency) frequency = parseFrequency(ai?.frequency)
+    if (!frequency) frequency = parseFrequency(ai?.frequency) ?? (ai ? movFrequencyFrom(readSchedule(ai)) : undefined)
     if (!frequency) frequency = parseFrequency(mov.frequency)
     if (!frequency) frequency = await resolveFrequencyByInterventionId(mov.interventionId)
     if (!frequency) frequency = 'once'

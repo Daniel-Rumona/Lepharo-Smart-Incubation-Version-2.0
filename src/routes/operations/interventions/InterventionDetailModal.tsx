@@ -7,6 +7,7 @@ import { summariseDelivery, type DeliverySummary } from "@/services/intervention
 import { EditOutlined } from "@ant-design/icons";
 import { OUTCOME_TYPE_LABELS, type OutcomeDef } from "@/services/evidenceModel";
 import { InterventionImpactSection } from "@/components/interventions/ImpactSummary";
+import { readSchedule, schedulePreset } from "@/lib/recurrence";
 
 const { Text, Title } = Typography;
 
@@ -15,8 +16,13 @@ export type DetailRecord = {
     interventionTitle: string;
     departmentId?: string | null;
     compulsory?: boolean;
+    scheduleMode?: string | null;
     recurring?: boolean;
     frequency?: string | null;
+    recurrencePreset?: string | null;
+    recurrenceFrequency?: string | null;
+    recurrence?: { every?: number; unit?: string; strict?: boolean } | null;
+    assignmentMode?: string | null;
     recurrenceStrict?: boolean | null;
     recurrenceEnd?: { mode?: string; cycles?: number | null; endDate?: any } | null;
     hasSubInterventions?: boolean;
@@ -228,13 +234,16 @@ export const InterventionDetailModal: React.FC<Props> = ({ record, departmentLab
                     <NotDefined onEdit={() => record && onEdit(record)} what="a check-back" />
                 );
             case "schedule": {
-                const freq = record.frequency || (record.recurring ? "monthly" : "as-needed");
+                const stored = readSchedule(record);
+                // A recurring interval the screens don't offer (e.g. quarterly) shows as not set.
+                const freq = schedulePreset(stored);
+                const strict = stored.strict;
                 const end = record.recurrenceEnd;
                 const endDate = toDate(end?.endDate);
                 return (
                     <>
-                        <Field label="Frequency">{FREQUENCY_LABELS[freq] || freq}</Field>
-                        {record.recurring ? (
+                        <Field label="Frequency">{freq ? FREQUENCY_LABELS[freq] : <NotSet />}</Field>
+                        {stored.scheduleMode === "recurring" ? (
                             <>
                                 <Field label="Runs">
                                     {end?.mode ? END_LABELS[end.mode] || end.mode : END_LABELS["until-closed"]}
@@ -242,10 +251,14 @@ export const InterventionDetailModal: React.FC<Props> = ({ record, departmentLab
                                     {end?.mode === "end-date" && endDate ? ` (${endDate.toLocaleDateString()})` : ""}
                                 </Field>
                                 <Field label="Expected every cycle">
-                                    <Tag style={{ borderRadius: 999 }}>{record.recurrenceStrict === false ? "No, can be skipped" : "Yes"}</Tag>
+                                    <Tag style={{ borderRadius: 999 }}>{strict === false ? "No, can be skipped" : "Yes"}</Tag>
                                 </Field>
                             </>
-                        ) : null}
+                        ) : (
+                            <Field label="More than once">
+                                <Tag style={{ borderRadius: 999 }}>{stored.scheduleMode === "ad-hoc" ? "Yes, whenever needed" : "No, once only"}</Tag>
+                            </Field>
+                        )}
                         {!record.hasSubInterventions ? (
                             <Field label="Typical sessions">{record.defaultPlannedSessions || 1}</Field>
                         ) : null}
@@ -291,8 +304,8 @@ export const InterventionDetailModal: React.FC<Props> = ({ record, departmentLab
                     <Title level={5} style={{ margin: 0 }}>{record?.interventionTitle}</Title>
                     <Space size={6} wrap>
                         {record?.compulsory ? <Tag color="red" style={{ marginInlineEnd: 0 }}>Compulsory</Tag> : null}
-                        <Tag color={record?.recurring ? "geekblue" : "blue"} style={{ marginInlineEnd: 0 }}>
-                            {record?.recurring ? "Scheduled" : "As needed"}
+                        <Tag color={record && readSchedule(record).scheduleMode === "recurring" ? "geekblue" : "blue"} style={{ marginInlineEnd: 0 }}>
+                            {record && readSchedule(record).scheduleMode === "recurring" ? "Scheduled" : "As needed"}
                         </Tag>
                     </Space>
                 </Space>

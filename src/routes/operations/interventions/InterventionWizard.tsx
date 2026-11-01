@@ -39,7 +39,7 @@ import {
     type OutcomeOption,
     type ScheduleOption,
 } from "@/services/interventionDesignService";
-import { supportedRecurrenceFrom } from "@/services/interventionRecurrenceService";
+import { readSchedule, schedulePreset } from "@/lib/recurrence";
 
 const { Text, Title } = Typography;
 
@@ -48,6 +48,8 @@ export type WizardValues = {
     interventionTitle: string;
     compulsory: boolean;
     recurrencePreset: ScheduleOption["frequency"];
+    /** For as-needed only: ad-hoc can be assigned again, once-off can't once completed. */
+    nonRecurringMode: NonRecurringMode;
     recurrenceStrict: boolean;
     recurrenceEndMode?: "fixed-cycles" | "until-closed" | "programme-end" | "end-date";
     recurrenceCycles?: number;
@@ -67,6 +69,8 @@ export type WizardValues = {
     outcomeFromSuggestion: boolean;
 };
 
+export type NonRecurringMode = "ad-hoc" | "once-off";
+
 /** Everything the wizard needs to open on an existing intervention. */
 export type WizardInitial = {
     title: string;
@@ -78,6 +82,7 @@ export type WizardInitial = {
     followUpRequired: boolean | null;
     smeCheckIn: boolean;
     schedule: ScheduleOption;
+    nonRecurringMode: NonRecurringMode;
     breakdown: BreakdownOption;
     subs: { subId?: string; title: string; defaultPlannedSessions: number }[];
     compulsory: boolean;
@@ -280,6 +285,7 @@ export const InterventionWizard: React.FC<Props> = ({
     // Step 2: schedule
     const [schedules, setSchedules] = useState<Loadable<ScheduleOption>>(idle());
     const [schedule, setSchedule] = useState<ScheduleOption | null>(initial?.schedule ?? null);
+    const [nonRecurringMode, setNonRecurringMode] = useState<NonRecurringMode>(initial?.nonRecurringMode ?? "ad-hoc");
 
     // Step 3: structure
     const [breakdowns, setBreakdowns] = useState<Loadable<BreakdownOption>>(idle());
@@ -444,6 +450,7 @@ export const InterventionWizard: React.FC<Props> = ({
             interventionTitle: title.trim(),
             compulsory,
             recurrencePreset: schedule.frequency,
+            nonRecurringMode,
             recurrenceStrict: schedule.frequency === "as-needed" ? true : schedule.strict,
             recurrenceEndMode: schedule.endMode || undefined,
             recurrenceCycles: schedule.endMode === "fixed-cycles" ? schedule.cycles : undefined,
@@ -780,6 +787,32 @@ export const InterventionWizard: React.FC<Props> = ({
                                                         </Space>
                                                     </Card>
                                                 </motion.div>
+                                            ) : chosen && schedule ? (
+                                                <motion.div
+                                                    key="repeat"
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: "auto", opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeInOut" }}
+                                                    style={{ overflow: "hidden" }}
+                                                >
+                                                    <Card size="small" title="Can an SME get it more than once?" style={{ marginTop: 8 }}>
+                                                        <div style={{ display: "flex", gap: 8 }}>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <OptionCard selected={nonRecurringMode === "ad-hoc"} onSelect={() => setNonRecurringMode("ad-hoc")}>
+                                                                    <Text strong>Yes, whenever needed</Text>
+                                                                    <div style={{ fontSize: 13, color: "rgba(0,0,0,0.55)" }}>Each assignment describes what is being done.</div>
+                                                                </OptionCard>
+                                                            </div>
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <OptionCard selected={nonRecurringMode === "once-off"} onSelect={() => setNonRecurringMode("once-off")}>
+                                                                    <Text strong>No, once only</Text>
+                                                                    <div style={{ fontSize: 13, color: "rgba(0,0,0,0.55)" }}>Can't be assigned again once completed.</div>
+                                                                </OptionCard>
+                                                            </div>
+                                                        </div>
+                                                    </Card>
+                                                </motion.div>
                                             ) : null}
                                         </AnimatePresence>
                                     </div>
@@ -935,7 +968,9 @@ export const InterventionWizard: React.FC<Props> = ({
                             <div>{frequencyText(schedule)}</div>
                             {schedule.frequency !== "as-needed" ? (
                                 <Tag style={{ marginInlineEnd: 0, borderRadius: 999 }}>{schedule.strict ? "Expected every cycle" : "Can be skipped"}</Tag>
-                            ) : null}
+                            ) : (
+                                <Tag style={{ marginInlineEnd: 0, borderRadius: 999 }}>{nonRecurringMode === "once-off" ? "Once only" : "Whenever needed"}</Tag>
+                            )}
                         </ReviewRow>
 
                         <ReviewRow label="Structure" onEdit={() => editSection(4)}>
@@ -1042,10 +1077,8 @@ export function wizardInitialFrom(record: any): WizardInitial {
         return date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : null;
     };
 
-    const preset =
-        record?.frequency === "as-needed" || ["ad-hoc", "once-off"].includes(record?.assignmentMode)
-            ? "as-needed"
-            : supportedRecurrenceFrom(record) || "as-needed";
+    const stored = readSchedule(record);
+    const preset = schedulePreset(stored) || "as-needed";
     const standard = STANDARD_SCHEDULES.find((s) => s.frequency === preset) || STANDARD_SCHEDULES[0];
     const end = record?.recurrenceEnd;
     const plannedSessions = Math.max(1, Number(record?.defaultPlannedSessions) || 1);
@@ -1055,7 +1088,7 @@ export function wizardInitialFrom(record: any): WizardInitial {
             ? { ...standard, plannedSessions }
             : {
                 ...standard,
-                strict: record?.recurrenceStrict !== false,
+                strict: stored.strict !== false,
                 endMode: ["fixed-cycles", "until-closed", "programme-end", "end-date"].includes(end?.mode) ? end.mode : "until-closed",
                 cycles: Math.max(0, Number(end?.cycles) || 0),
                 endDate: toIso(end?.endDate),
@@ -1084,6 +1117,7 @@ export function wizardInitialFrom(record: any): WizardInitial {
         followUpRequired: typeof def?.followUp?.required === "boolean" ? def.followUp.required : hasOutcome ? false : null,
         smeCheckIn: !!def?.followUp?.smeCheckIn,
         schedule,
+        nonRecurringMode: stored.scheduleMode === "ad-hoc" ? "ad-hoc" : "once-off",
         breakdown: hasSubs
             ? {
                 label: "Current structure",

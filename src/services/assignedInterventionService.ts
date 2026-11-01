@@ -297,7 +297,7 @@ export const DEPRECATED_ASSIGNMENT_FIELDS = [
     'assigneeNotes', 'consultantCompletedAt', 'consultantCompletionAt', 'facilitatorCompletionStatus',
     'countedForConsultant', 'countedForAssignee', 'groupedAssignment', 'groupAssignmentId', 'groupId', 'groupMeta',
     'groupMemberCount', 'assignmentMode', 'recurring', 'frequency', 'recurrencePreset',
-    'recurrenceStrict', 'progress', 'deliveryWorkProgress', 'timeSpent', 'completionStatus', 'deliveryMethod', 'notes',
+    'recurrenceStrict', 'recurrenceFrequency', 'progress', 'deliveryWorkProgress', 'timeSpent', 'completionStatus', 'deliveryMethod', 'notes',
     'poeFileUrl', 'proofOfExecutionUrl', 'poeUrl', 'evidenceUrl',
     'movFileUrl', 'evidenceFile', 'poeFile'
 ] as const

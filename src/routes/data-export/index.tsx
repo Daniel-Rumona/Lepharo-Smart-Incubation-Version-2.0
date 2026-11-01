@@ -41,6 +41,7 @@ import {
 } from '@ant-design/icons'
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { formatRecurrence, readSchedule, schedulePreset } from '@/lib/recurrence'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useDepartmentRoles } from '@/services/departmentRoles'
 import dayjs, { Dayjs } from 'dayjs'
@@ -296,11 +297,20 @@ const participantExportRecord = (participant: any) => {
 
 type DepartmentNameOf = (departmentId?: string | null, fallback?: string) => string
 
+/** Mode and frequency as text; blank when the record states no schedule. */
+const scheduleExport = (item: any) => {
+    const schedule = readSchedule(item)
+    if (schedule.source === 'default') return { assignmentMode: undefined, frequency: undefined }
+    return {
+        assignmentMode: schedule.scheduleMode,
+        frequency: schedulePreset(schedule) || formatRecurrence(schedule.recurrence, '')
+    }
+}
+
 const interventionExportRecord = (item: any, nameOf: DepartmentNameOf) => cleanRecord({
     title: first(item.title, item.interventionTitle, item.name),
     departmentName: nameOf(item.departmentId, first(item.departmentName)),
-    assignmentMode: first(item.assignmentMode, item.interventionMode, item.deliveryScheduleType),
-    frequency: first(item.frequency, item.recurrencePreset, item.recurrence),
+    ...scheduleExport(item),
     hasSubInterventions: item.hasSubInterventions || (Array.isArray(item.subInterventions) && item.subInterventions.length > 0),
     subInterventions: joinLabels(item.subInterventions || []),
 })
@@ -319,8 +329,7 @@ const assignedInterventionExportRecord = (item: any, nameOf: DepartmentNameOf) =
     dueDate: displayValue(item.dueDate, 'dueDate'),
     assignedAt: displayValue(first(item.assignedAt, item.createdAt), 'assignedAt'),
     completedAt: displayValue(first(item.completedAt, item.updatedAt), 'completedAt'),
-    assignmentMode: item.assignmentMode,
-    frequency: first(item.frequency, item.recurrencePreset, item.recurrence)
+    ...scheduleExport(item)
 })
 
 const movExportRecord = (item: any, nameOf: DepartmentNameOf) => cleanRecord({

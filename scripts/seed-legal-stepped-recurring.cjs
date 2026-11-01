@@ -59,14 +59,9 @@ const steppedDef = (id, title, steps, outcome) => {
         areaOfSupport: LEGAL.name,
         departmentId: LEGAL.id,
         compulsory: false,
-        assignmentMode: 'once-off',
-        recurring: false,
-        recurrencePreset: 'as-needed',
+        scheduleMode: 'once-off',
         recurrence: null,
-        recurrenceStrict: false,
         recurrenceEnd: null,
-        frequency: 'as-needed',
-        recurrenceFrequency: 'other',
         hasSubInterventions: true,
         subInterventions: steps.map((s, i) => ({
             subId: `sub_seed_${id}_${i + 1}`,
@@ -159,7 +154,8 @@ async function main() {
         const s = sme[smeKey]
         const sub = step ? iv.subInterventions[step - 1] : null
         const assignedAt = at(cycleDate, 8)
-        const recurring = iv.recurring === true && iv.recurrence
+        // Read as src/lib/recurrence.ts does: scheduleMode, else the older fields.
+        const recurring = (iv.scheduleMode || iv.assignmentMode || (iv.recurring === true ? 'recurring' : '')) === 'recurring' && iv.recurrence
         const cycleKey = recurring ? weekKey(assignedAt) : dayjs(assignedAt.toDate()).format('YYYY-MM')
         const assignmentId = `ai_${s.id}_${iv.id}_${sub ? sub.subId : 'nosub'}_${cycleKey}_seed`
         const done = state === 'approved'

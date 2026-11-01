@@ -254,7 +254,7 @@ const OfficeClientTable: React.FC<{ mov: any }> = ({ mov }) => {
 }
 
 const MethodFrequencyTable: React.FC<{ mov: any }> = ({ mov }) => {
-    const f = String(mov?.frequency || '').toLowerCase()
+    const f = String(mov?.frequency || '').toLowerCase().replace('bi-weekly', 'biweekly')
 
     return (
         <table style={TABLE}>

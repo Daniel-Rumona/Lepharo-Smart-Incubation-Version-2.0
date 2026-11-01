@@ -12,6 +12,7 @@ import {
     type Firestore
 } from 'firebase/firestore'
 import dayjs from 'dayjs'
+import { readSchedule, schedulePreset } from '@/lib/recurrence'
 import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
 
 export type MovSourceType = 'assignedIntervention' | 'diagnosticPlan' | 'custom'
@@ -951,14 +952,9 @@ export const createMovDraftFromAssignment = async ({
         deliveryMethod: deriveMovDeliveryMethod(appointmentInterventions, assignment.deliveryMethod),
         frequency:
             assignment.frequency ||
-            assignment.recurrencePreset ||
-            (assignment.recurrence?.unit === 'week' && assignment.recurrence?.every === 2
-                ? 'bi-weekly'
-                : assignment.recurrence?.unit === 'week'
-                    ? 'weekly'
-                    : assignment.recurrence?.unit === 'month'
-                        ? 'monthly'
-                        : null),
+            (readSchedule(assignment).scheduleMode === 'recurring'
+                ? schedulePreset(readSchedule(assignment))
+                : null),
 
         status: finalStatus,
         createdAt: now,

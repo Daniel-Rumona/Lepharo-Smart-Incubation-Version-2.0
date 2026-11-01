@@ -80,7 +80,6 @@ import {
 import {
     AssigneeRole,
     Assignment,
-    InterventionFrequency,
     InterventionType,
     Participant,
     Tracking,
@@ -111,22 +110,23 @@ import {
 } from "@/services/groupInterventionDeliveryService";
 import { ensureCompulsoryPlan } from '@/services/compulsoryInterventionService';
 import { eligiblePlanInterventions, isCompulsoryIntervention } from '@/utils/compulsoryInterventions';
+import {
+    cycleKeyForMode,
+    cycleKeyToRank,
+    formatRecurrence,
+    readSchedule,
+    recurrenceMeta,
+    toCycleKey,
+    type Recurrence,
+    type RecurrenceUnit,
+    type ScheduleMode,
+} from '@/lib/recurrence';
 
 dayjs.extend(weekOfYear);
 
 const { Title, Text, Paragraph } = Typography;
 
-type RecurrenceUnit = "day" | "week" | "month" | "quarter" | "year";
-type RecurrencePreset =
-    | "weekly"
-    | "bi-weekly"
-    | "monthly"
-    | "quarterly"
-    | "yearly"
-    | "custom";
-type Recurrence = { every: number; unit: RecurrenceUnit };
-
-type InterventionAssignmentMode = "recurring" | "once-off" | "ad-hoc";
+type InterventionAssignmentMode = ScheduleMode;
 
 type FirstAppointmentContext = {
     assignments: any[];
@@ -316,32 +316,12 @@ const makeGroupKey = (args: {
     return makeCycleGroupKey(args);
 };
 
-const getInterventionAssignmentMode = (iv: any): InterventionAssignmentMode => {
-    const mode = safeLower(
-        iv?.assignmentMode || iv?.interventionMode || iv?.deliveryScheduleType
-    );
+const getInterventionAssignmentMode = (iv: any): ScheduleMode =>
+    readSchedule(iv).scheduleMode;
 
-    if (mode === "once-off" || mode === "once_off" || mode === "onceoff")
-        return "once-off";
-    if (mode === "ad-hoc" || mode === "adhoc" || mode === "ad_hoc")
-        return "ad-hoc";
-
-    const meta = getRecurrenceFromIntervention(iv);
-    if (meta.recurring && meta.recurrence) return "recurring";
-
-    return "once-off";
-};
-
-const getCycleKeyForMode = (
-    mode: InterventionAssignmentMode,
-    rec: Recurrence | null,
-    due: dayjs.Dayjs
-) => {
-    if (mode === "recurring")
-        return rec ? toCycleKey(rec, due) : due.format("YYYY-MM");
-    if (mode === "ad-hoc") return due.format("YYYY-MM");
-    return due.format("YYYY-MM");
-};
+/** Reassigning keeps an ad-hoc assignment ad-hoc; anything else not recurring is once-off. */
+const nonRecurringModeOf = (assignment: any): ScheduleMode =>
+    readSchedule(assignment).scheduleMode === "ad-hoc" ? "ad-hoc" : "once-off";
 
 const getIvTitle = (iv: any) =>
     iv?.interventionTitle ||
@@ -351,155 +331,6 @@ const getIvTitle = (iv: any) =>
     iv?.intervention ||
     "Untitled";
 
-const legacyFrequencyToRecurrence = (f: any): Recurrence | null => {
-    if (!f) return null;
-    if (f === "weekly") return { every: 1, unit: "week" };
-    if (f === "bi-weekly") return { every: 2, unit: "week" };
-    if (f === "monthly") return { every: 1, unit: "month" };
-    if (f === "quarterly") return { every: 1, unit: "quarter" };
-    if (f === "yearly") return { every: 1, unit: "year" };
-    return null;
-};
-
-const presetToRecurrence = (preset: RecurrencePreset): Recurrence | null => {
-    if (preset === "weekly") return { every: 1, unit: "week" };
-    if (preset === "bi-weekly") return { every: 2, unit: "week" };
-    if (preset === "monthly") return { every: 1, unit: "month" };
-    if (preset === "quarterly") return { every: 1, unit: "quarter" };
-    if (preset === "yearly") return { every: 1, unit: "year" };
-    return null;
-};
-
-const formatRecurrence = (rec?: Recurrence | null) => {
-    if (!rec) return "—";
-    const unitLabel =
-        rec.unit === "day"
-            ? "day(s)"
-            : rec.unit === "week"
-                ? "week(s)"
-                : rec.unit === "month"
-                    ? "month(s)"
-                    : rec.unit === "quarter"
-                        ? "quarter(s)"
-                        : "year(s)";
-    return rec.every === 1
-        ? `Every ${unitLabel}`
-        : `Every ${rec.every} ${unitLabel}`;
-};
-
-const toCycleKey = (rec: Recurrence | null, due: dayjs.Dayjs) => {
-    if (!rec) return null;
-    if (rec.unit === "day") return due.format("YYYY-MM-DD");
-    if (rec.unit === "week")
-        return `${due.year()}-W${String(due.week()).padStart(2, "0")}`;
-    if (rec.unit === "month") return due.format("YYYY-MM");
-    // Derived by hand: dayjs' quarter helpers need the quarterOfYear plugin,
-    // which this app never registers (only weekOfYear is extended above), so
-    // due.quarter() returns undefined rather than throwing. month() is
-    // 0-indexed, so Jan–Mar lands in Q1.
-    if (rec.unit === "quarter")
-        return `${due.year()}-Q${Math.floor(due.month() / 3) + 1}`;
-    if (rec.unit === "year") return `${due.year()}`;
-    return null;
-};
-
-/**
- * Provides a sortable rank for cycle keys so previous cycles can be compared reliably.
- */
-const cycleKeyToRank = (unit: RecurrenceUnit, key: string): number | null => {
-    const k = String(key || "").trim();
-    if (!k) return null;
-
-    if (unit === "year") {
-        const y = Number(k);
-        return Number.isFinite(y) ? y : null;
-    }
-
-    if (unit === "quarter") {
-        const m = k.match(/^(\d{4})-Q([1-4])$/);
-        if (!m) return null;
-        const y = Number(m[1]);
-        const q = Number(m[2]);
-        return y * 10 + q;
-    }
-
-    if (unit === "month") {
-        const m = k.match(/^(\d{4})-(\d{2})$/);
-        if (!m) return null;
-        const y = Number(m[1]);
-        const mm = Number(m[2]);
-        if (!(mm >= 1 && mm <= 12)) return null;
-        return y * 100 + mm;
-    }
-
-    if (unit === "week") {
-        const m = k.match(/^(\d{4})-W(\d{2})$/);
-        if (!m) return null;
-        const y = Number(m[1]);
-        const w = Number(m[2]);
-        if (!(w >= 1 && w <= 53)) return null;
-        return y * 100 + w;
-    }
-
-    if (unit === "day") {
-        const m = k.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (!m) return null;
-        const y = Number(m[1]);
-        const mm = Number(m[2]);
-        const dd = Number(m[3]);
-        if (!(mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31)) return null;
-        return y * 10000 + mm * 100 + dd;
-    }
-
-    return null;
-};
-
-const deriveAssignmentFrequency = (
-    recPreset?: RecurrencePreset | null,
-    rec?: Recurrence | null
-): InterventionFrequency => {
-    const p = recPreset || null;
-    if (p === "weekly") return "weekly" as any;
-    if (p === "bi-weekly") return "bi-weekly" as any;
-    if (p === "monthly") return "monthly" as any;
-    if (p === "quarterly") return "other" as any;
-    if (p === "yearly") return "other" as any;
-
-    const r = rec || null;
-    if (r?.unit === "week" && r.every === 1) return "weekly" as any;
-    if (r?.unit === "week" && r.every === 2) return "bi-weekly" as any;
-    if (r?.unit === "month" && r.every === 1) return "monthly" as any;
-    return "other" as any;
-};
-
-const getRecurrenceFromIntervention = (iv: any) => {
-    const recurring =
-        typeof iv?.recurring === "boolean"
-            ? iv.recurring
-            : !!(
-                iv?.recurrence ||
-                iv?.recurrencePreset ||
-                iv?.recurrenceFrequency ||
-                iv?.frequency === "monthly" ||
-                iv?.frequency === "weekly" ||
-                iv?.frequency === "bi-weekly" ||
-                iv?.frequency === "quarterly" ||
-                iv?.frequency === "yearly"
-            );
-    const recurrencePreset: RecurrencePreset | null =
-        iv?.recurrencePreset ?? null;
-    const recFromNew: Recurrence | null = iv?.recurrence ?? null;
-    const recFromLegacy: Recurrence | null =
-        legacyFrequencyToRecurrence(iv?.recurrenceFrequency) ?? null;
-    const recurrence: Recurrence | null =
-        recFromNew ||
-        (recurrencePreset ? presetToRecurrence(recurrencePreset) : null) ||
-        recFromLegacy;
-    const recurrenceStrict: boolean | null =
-        typeof iv?.recurrenceStrict === "boolean" ? !!iv.recurrenceStrict : null;
-
-    return { recurring, recurrencePreset, recurrence, recurrenceStrict };
-};
 
 // Progress is derived automatically from held vs. planned sessions (see
 // shared/appointments coverage save, which is the real source of truth once
@@ -583,6 +414,7 @@ const normalizeInterventionDef = (
     hasSubInterventions: !!iv?.hasSubInterventions,
     subInterventions: getActiveSubInterventions(iv),
     definitionVersion: Math.max(1, Number(iv?.definitionVersion || 1)),
+    scheduleMode: iv?.scheduleMode ?? null,
     assignmentMode:
         iv?.assignmentMode || iv?.interventionMode || iv?.deliveryScheduleType || null,
     recurring: iv?.recurring ?? false,
@@ -1884,17 +1716,16 @@ export const InterventionsAssignments: React.FC = () => {
                     ) || null;
             }
 
-            const missingRec =
-                typeof iv?.recurring !== "boolean" ||
-                (!iv?.recurrence && !iv?.recurrencePreset);
-            if (missingRec) {
+            // A plan's copy of the definition can be stale, so anything not
+            // recurring is checked against the live definition.
+            if (readSchedule(iv).scheduleMode !== "recurring") {
                 const snap = await getDoc(doc(db, "interventions", String(ivId)));
                 if (snap.exists()) iv = { id: snap.id, ...(snap.data() as any) };
             }
 
             if (!iv) return;
 
-            const meta = getRecurrenceFromIntervention(iv);
+            const meta = recurrenceMeta(iv);
             const text =
                 meta.recurring && meta.recurrence
                     ? `${formatRecurrence(meta.recurrence)}${meta.recurrenceStrict === false
@@ -2370,11 +2201,11 @@ export const InterventionsAssignments: React.FC = () => {
         }
 
         if (assignmentMode === "recurring") {
-            const recurrence = getRecurrenceFromIntervention(intervention).recurrence;
+            const recurrence = recurrenceMeta(intervention).recurrence;
             if (!recurrence) return null;
 
             const due = watchedDueDate ? dayjs(watchedDueDate) : dayjs();
-            const newCycleKey = getCycleKeyForMode("recurring", recurrence, due);
+            const newCycleKey = cycleKeyForMode("recurring", recurrence, due);
             if (!newCycleKey) return null;
 
             const backlogGate = getOpenCyclePolicyDecision({
@@ -2708,32 +2539,15 @@ export const InterventionsAssignments: React.FC = () => {
         iv: any,
         assignedForParticipant: any[]
     ) => {
-        // 1) Prefer definitions (interventions collection)
-        const metaFromDef = getRecurrenceFromIntervention(iv);
-        if (typeof metaFromDef.recurring === "boolean" && metaFromDef.recurrence)
-            return metaFromDef;
-
-        // 2) Fallback: infer from ANY existing assignment for this intervention
-        const any = pickLatestByUpdated(
+        // The definition wins; the latest assignment for this intervention is
+        // the fallback when the definition states no schedule.
+        const latest = pickLatestByUpdated(
             assignedForParticipant.filter(
                 (a) => String(a?.interventionId) === String(ivId)
             )
         );
 
-        if (any) {
-            const recurring = !!any.recurring;
-            const recurrence = any.recurrence ?? null;
-            const recurrencePreset = any.recurrencePreset ?? null;
-            const recurrenceStrict =
-                typeof any.recurrenceStrict === "boolean"
-                    ? !!any.recurrenceStrict
-                    : null;
-
-            return { recurring, recurrence, recurrencePreset, recurrenceStrict };
-        }
-
-        // 3) Default
-        return metaFromDef;
+        return recurrenceMeta(iv, latest);
     };
 
     const getFilteredInterventions = (filter = interventionFilter) => {
@@ -3149,8 +2963,6 @@ export const InterventionsAssignments: React.FC = () => {
 
             const due = dayjs(values.dueDate);
             const recurrence: Recurrence | null = values.recurrence ?? null;
-            const recurrencePreset: RecurrencePreset | null =
-                values.recurrencePreset ?? null;
             const recurring = !!values.recurring;
             const recurrenceStrict: boolean | null =
                 typeof values.recurrenceStrict === "boolean"
@@ -3159,10 +2971,6 @@ export const InterventionsAssignments: React.FC = () => {
 
             const cycleKey =
                 recurring && recurrence ? toCycleKey(recurrence, due) : null;
-            const derivedFrequency: InterventionFrequency = deriveAssignmentFrequency(
-                recurrencePreset,
-                recurrence
-            );
 
             const deptId = String(
                 (user as any)?.departmentId || userDepartment?.id || ""
@@ -3236,7 +3044,7 @@ export const InterventionsAssignments: React.FC = () => {
 
                     dueDate: nextDueDate,
 
-                    scheduleMode: recurring ? "recurring" : "once-off",
+                    scheduleMode: recurring ? "recurring" : nonRecurringModeOf(prev),
                     recurrence: recurrence
                         ? { ...recurrence, strict: !!recurrenceStrict }
                         : null,
@@ -3264,7 +3072,7 @@ export const InterventionsAssignments: React.FC = () => {
 
                     dueDate: nextDueDate,
 
-                    scheduleMode: recurring ? "recurring" : "once-off",
+                    scheduleMode: recurring ? "recurring" : nonRecurringModeOf(prev),
                     recurrence: recurrence
                         ? {
                             ...recurrence,
@@ -3382,13 +3190,13 @@ export const InterventionsAssignments: React.FC = () => {
                         isActiveAssignment(a)
                 );
 
-                const ivMeta = getRecurrenceFromIntervention(fullIntervention);
+                const ivMeta = recurrenceMeta(fullIntervention);
                 const recurrenceLocal = ivMeta.recurrence ?? recurrence;
                 const assignedAt = values.assignedAt
                     ? dayjs(values.assignedAt)
                     : dayjs();
 
-                const cycleKeyLocal = getCycleKeyForMode(
+                const cycleKeyLocal = cycleKeyForMode(
                     assignmentMode,
                     recurrenceLocal,
                     assignedAt

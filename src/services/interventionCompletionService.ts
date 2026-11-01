@@ -1,5 +1,6 @@
 import {
     arrayUnion,
+    deleteField,
     doc,
     getDoc,
     runTransaction,
@@ -17,10 +18,10 @@ import { resolveAssignmentLifecycle } from './assignmentLifecycleService'
 import { groupDeliveryRef } from './groupInterventionDeliveryService'
 import { createMovDraftFromAssignment, type MovUserContext } from './movService'
 import {
-    recurrencePatch,
-    supportedRecurrenceFrom,
+    assignmentRecurrencePatch,
     SUPPORTED_RECURRENCE_OPTIONS
 } from './interventionRecurrenceService'
+import { LEGACY_SCHEDULE_FIELDS, presetFrom, scheduleFields, storedStrict } from '@/lib/recurrence'
 
 type Row = Record<string, any> & { id: string }
 export type CompletionEvidence = {
@@ -318,10 +319,7 @@ export async function loadInterventionCompletionContext(
         summaryAssignmentIds,
         needsRecurrence: assignments.some(
             (row) =>
-                !supportedRecurrenceFrom(
-                    row,
-                    definitions.get(row.interventionId)
-                )
+                !presetFrom(row, definitions.get(row.interventionId))
         ),
         requiresFiles: fileAssignments.length > 0,
         requiresSummary: summaryAssignmentIds.length > 0,
@@ -618,32 +616,33 @@ export async function completeIntervention(input: {
                         'Saved evidence was removed. Attach a POE file before completing.'
                     )
                 }
-                const preset =
-                    selected ||
-                    supportedRecurrenceFrom(
-                        row,
-                        context.definitions.get(row.interventionId)
-                    )
+                const definition = context.definitions.get(row.interventionId)
+                const preset = selected || presetFrom(row, definition)
                 return {
                     ...row,
                     resources,
                     computedProgress: 100,
-                    ...(preset ? recurrencePatch(preset) : {}),
+                    ...(selected
+                        ? assignmentRecurrencePatch(selected, row, definition)
+                        : {}),
+                    // In memory only, so the MOV raised below shows the frequency.
+                    ...(preset ? { frequency: preset } : {}),
                     assigneeCompletedAt: row.assigneeCompletedAt || now,
                     progressUpdates: [...(row.progressUpdates || []), update]
                 }
             })
+            // The stored schedule changes only when the user picked a frequency;
+            // completing never rewrites an assignment's existing recurrence.
             nextRows.forEach((row, index) => {
-                const preset =
-                    selected ||
-                    supportedRecurrenceFrom(
-                        row,
-                        context.definitions.get(row.interventionId)
-                    )
                 transaction.update(assignmentRefs[index], {
                     resources: row.resources,
                     computedProgress: 100,
-                    ...(preset ? recurrencePatch(preset) : {}),
+                    ...(selected
+                        ? {
+                              scheduleMode: row.scheduleMode,
+                              recurrence: row.recurrence
+                          }
+                        : {}),
                     progressUpdates: arrayUnion(update),
                     updatedAt: now
                 })
@@ -657,7 +656,12 @@ export async function completeIntervention(input: {
                     )
                 ].forEach((id) => {
                     transaction.update(doc(db, 'interventions', id), {
-                        ...recurrencePatch(selected),
+                        ...scheduleFields(selected, {
+                            strict: storedStrict(context.definitions.get(id))
+                        }),
+                        ...Object.fromEntries(
+                            LEGACY_SCHEDULE_FIELDS.map((field) => [field, deleteField()])
+                        ),
                         updatedAt: now
                     })
                 })

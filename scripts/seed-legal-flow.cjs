@@ -157,7 +157,7 @@ async function main() {
             areaOfSupport: iv.areaOfSupport || LEGAL_DEPARTMENT.name,
             departmentId: LEGAL_DEPARTMENT.id,
             programId: PROGRAM.id,
-            scheduleMode: iv.assignmentMode || 'ad-hoc',
+            scheduleMode: iv.scheduleMode || iv.assignmentMode || 'ad-hoc',
             cycleKey: new Date(createdAt.toMillis()).toISOString().slice(0, 7),
             recurrence: null,
             priorOpenCycleRisk: null,

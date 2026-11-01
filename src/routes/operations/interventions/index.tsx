@@ -74,20 +74,23 @@ import {
     usePageGuides,
     type PageGuideRegistration,
 } from "@/components/guide-me";
+import {
+    formatRecurrence as formatRecurrenceText,
+    LEGACY_SCHEDULE_FIELDS,
+    readSchedule,
+    scheduleFields,
+    schedulePreset,
+    type RecurrenceUnit,
+    type ScheduleMode,
+    type SchedulePreset,
+    type StoredRecurrence,
+} from "@/lib/recurrence";
 
 const { Option } = Select;
 const { Text } = Typography;
 
-type RecurrenceUnit = "day" | "week" | "month" | "quarter" | "year";
-type RecurrencePreset =
-    | "as-needed"
-    | "weekly"
-    | "bi-weekly"
-    | "monthly"
-    | "quarterly"
-    | "yearly"
-    | "custom";
-type SupportedFrequency = "as-needed" | "weekly" | "bi-weekly" | "monthly";
+type RecurrencePreset = SchedulePreset | "custom";
+type SupportedFrequency = SchedulePreset;
 type RecurrenceEndMode =
     | "fixed-cycles"
     | "end-date"
@@ -108,10 +111,12 @@ type InterventionDoc = {
     interventionTitle: string;
     departmentId?: string | null;
     compulsory?: boolean;
-    recurring?: boolean;
+    scheduleMode?: ScheduleMode;
+    recurrence?: { every: number; unit: RecurrenceUnit; strict?: boolean } | null;
 
+    // Older schedule fields, read only (through readSchedule) until migrated.
+    recurring?: boolean;
     recurrencePreset?: RecurrencePreset | null;
-    recurrence?: { every: number; unit: RecurrenceUnit } | null;
     recurrenceFrequency?: "monthly" | "weekly" | "bi-weekly" | "other" | null;
     frequency?: "as-needed" | "weekly" | "bi-weekly" | "monthly" | null;
     recurrenceStrict?: boolean | null;
@@ -139,58 +144,10 @@ type InterventionDoc = {
 
 type InterventionAssignmentMode = "once-off" | "ad-hoc" | "recurring";
 
-const presetToRecurrence = (
-    preset: RecurrencePreset
-): { every: number; unit: RecurrenceUnit } | null => {
-    if (preset === "weekly") return { every: 1, unit: "week" };
-    if (preset === "bi-weekly") return { every: 2, unit: "week" };
-    if (preset === "monthly") return { every: 1, unit: "month" };
-    if (preset === "quarterly") return { every: 1, unit: "quarter" };
-    if (preset === "yearly") return { every: 1, unit: "year" };
-    return null;
-};
-
-const derivePresetFromRecurrence = (
-    recurrence: { every: number; unit: RecurrenceUnit } | null | undefined
-): RecurrencePreset => {
-    if (!recurrence) return "custom";
-    if (recurrence.unit === "week" && recurrence.every === 1) return "weekly";
-    if (recurrence.unit === "week" && recurrence.every === 2) return "bi-weekly";
-    if (recurrence.unit === "month" && recurrence.every === 1) return "monthly";
-    if (recurrence.unit === "quarter" && recurrence.every === 1)
-        return "quarterly";
-    if (recurrence.unit === "year" && recurrence.every === 1) return "yearly";
-    return "custom";
-};
-
-const legacyFrequencyToRecurrence = (
-    f: InterventionDoc["recurrenceFrequency"]
-): { every: number; unit: RecurrenceUnit } | null => {
-    if (!f) return null;
-    if (f === "weekly") return { every: 1, unit: "week" };
-    if (f === "bi-weekly") return { every: 2, unit: "week" };
-    if (f === "monthly") return { every: 1, unit: "month" };
-    return null;
-};
-
-const formatRecurrence = (
-    rec: { every: number; unit: RecurrenceUnit } | null | undefined
-) => {
-    if (!rec) return "";
-    const unitLabel =
-        rec.unit === "day"
-            ? "day(s)"
-            : rec.unit === "week"
-                ? "week(s)"
-                : rec.unit === "month"
-                    ? "month(s)"
-                    : rec.unit === "quarter"
-                        ? "quarter(s)"
-                        : "year(s)";
-
-    return rec.every === 1
-        ? `Every ${unitLabel}`
-        : `Every ${rec.every} ${unitLabel}`;
+/** The preset shown for a definition; 'custom' when it states no schedule or one the screens don't offer. */
+const displayPreset = (record: InterventionDoc): RecurrencePreset => {
+    const schedule = readSchedule(record);
+    return schedule.source === "default" ? "custom" : schedulePreset(schedule) || "custom";
 };
 
 const isMonthlyCalendar = (
@@ -727,24 +684,10 @@ const InterventionsManager: React.FC = () => {
 
     const openModal = (record?: InterventionDoc) => {
         if (record) {
-            const recFromNew = record.recurrence || null;
-            const recFromLegacy =
-                legacyFrequencyToRecurrence(record.recurrenceFrequency) || null;
-            const recurrence = recFromNew || recFromLegacy;
-
-            const preset =
-                record.frequency === "as-needed" ||
-                    record.assignmentMode === "ad-hoc" ||
-                    record.assignmentMode === "once-off"
-                    ? "as-needed"
-                    : record.recurrencePreset || derivePresetFromRecurrence(recurrence);
-
-            const strict =
-                typeof record.recurrenceStrict === "boolean"
-                    ? record.recurrenceStrict
-                    : isMonthlyCalendar(recurrence)
-                        ? true
-                        : true;
+            const schedule = readSchedule(record);
+            const recurrence = schedule.recurrence;
+            const preset = displayPreset(record);
+            const strict = schedule.strict ?? true;
 
             const hasSubs = !!record.hasSubInterventions;
             const subs = activeSubList(record.subInterventions || []);
@@ -761,15 +704,11 @@ const InterventionsManager: React.FC = () => {
                 smeCheckIn: !!record.outcomeDef?.followUp?.smeCheckIn,
                 compulsory: !!record.compulsory,
                 assignmentMode: preset === "as-needed" ? "ad-hoc" : "recurring",
-                recurring: record.assignmentMode === "recurring" || !!record.recurring,
+                recurring: schedule.scheduleMode === "recurring",
 
                 recurrencePreset: preset,
-                recurrenceUnit:
-                    recurrence?.unit ||
-                    (preset !== "custom" ? presetToRecurrence(preset)?.unit : undefined),
-                recurrenceEvery:
-                    recurrence?.every ||
-                    (preset !== "custom" ? presetToRecurrence(preset)?.every : undefined),
+                recurrenceUnit: recurrence?.unit,
+                recurrenceEvery: recurrence?.every,
 
                 recurrenceStrict: strict,
                 recurrenceEndMode: record.recurrenceEnd?.mode || "until-closed",
@@ -858,29 +797,14 @@ const InterventionsManager: React.FC = () => {
                 return;
             }
             const recurring = selectedFrequency !== "as-needed";
-            const assignmentMode: InterventionAssignmentMode = recurring
-                ? "recurring"
-                : "ad-hoc";
-
-            let recurrencePreset: RecurrencePreset | null = null;
-            let recurrence: { every: number; unit: RecurrenceUnit } | null = null;
-            let recurrenceStrict: boolean | null = null;
+            const schedule = scheduleFields(selectedFrequency, {
+                strict: !!values.recurrenceStrict,
+                nonRecurringMode:
+                    values.nonRecurringMode === "once-off" ? "once-off" : "ad-hoc",
+            });
             let recurrenceEnd: InterventionDoc["recurrenceEnd"] = null;
 
             if (recurring) {
-                const preset = selectedFrequency;
-
-                recurrencePreset = preset;
-
-                const built = presetToRecurrence(preset);
-                if (!built) {
-                    message.error("Invalid recurrence preset");
-                    setLoading(false);
-                    return;
-                }
-                recurrence = built;
-
-                recurrenceStrict = !!values.recurrenceStrict;
                 const recurrenceEndMode = values.recurrenceEndMode as RecurrenceEndMode;
                 if (!recurrenceEndMode) {
                     message.error("Choose when recurring support should end.");
@@ -911,8 +835,6 @@ const InterventionsManager: React.FC = () => {
                 } else {
                     recurrenceEnd = { mode: recurrenceEndMode };
                 }
-            } else {
-                recurrenceStrict = null;
             }
 
             const hasSubInterventions = !!values.hasSubInterventions;
@@ -1021,17 +943,9 @@ const InterventionsManager: React.FC = () => {
                 interventionTitle: nextTitle,
                 departmentId: owningDeptId,
                 compulsory: !!values.compulsory,
-                assignmentMode,
-
-                recurring,
-                recurrencePreset,
-                recurrence,
-                recurrenceStrict,
+                scheduleMode: schedule.scheduleMode,
+                recurrence: schedule.recurrence as StoredRecurrence | null,
                 recurrenceEnd,
-                frequency:
-                    selectedFrequency === "as-needed" ? "as-needed" : selectedFrequency,
-                recurrenceFrequency:
-                    selectedFrequency === "as-needed" ? "other" : selectedFrequency,
 
                 hasSubInterventions,
                 subInterventions,
@@ -1056,6 +970,10 @@ const InterventionsManager: React.FC = () => {
             if (editId) {
                 await updateDoc(doc(db, "interventions", editId), {
                     ...(payload as any),
+                    // The schedule now lives in scheduleMode + recurrence only.
+                    ...Object.fromEntries(
+                        LEGACY_SCHEDULE_FIELDS.map((field) => [field, deleteField()])
+                    ),
                     // Clearing both fields removes the definition; untouched
                     // legacy records never gain the key.
                     ...(outcomeDef
@@ -1145,21 +1063,13 @@ const InterventionsManager: React.FC = () => {
             const matchesFlag =
                 flagFilter === "all" ||
                 (flagFilter === "compulsory" && !!item.compulsory) ||
-                (flagFilter === "recurring" && !!item.recurring) ||
+                (flagFilter === "recurring" &&
+                    readSchedule(item).scheduleMode === "recurring") ||
                 (flagFilter === "subInterventions" && !!item.hasSubInterventions) ||
                 (flagFilter === "noOutcome" && !item.outcomeDef?.intendedOutcome) ||
                 (flagFilter === "checkBack" && !!item.outcomeDef?.followUp?.required);
 
-            const frequency =
-                item.frequency === "as-needed" ||
-                    (!item.recurring &&
-                        ["ad-hoc", "once-off"].includes(item.assignmentMode || ""))
-                    ? "as-needed"
-                    : item.recurrencePreset ||
-                    derivePresetFromRecurrence(
-                        item.recurrence ||
-                        legacyFrequencyToRecurrence(item.recurrenceFrequency)
-                    );
+            const frequency = displayPreset(item);
 
             const matchesAssignmentMode =
                 assignmentModeFilter === "all" || frequency === assignmentModeFilter;
@@ -1229,16 +1139,14 @@ const InterventionsManager: React.FC = () => {
             title: "Flags",
             key: "flags",
             render: (_: any, r: InterventionDoc) => {
-                const rec =
-                    r.recurrence ||
-                    legacyFrequencyToRecurrence(r.recurrenceFrequency) ||
-                    null;
-                const recText = r.recurring ? formatRecurrence(rec) : "";
-                const strict =
-                    typeof r.recurrenceStrict === "boolean" ? r.recurrenceStrict : null;
+                const schedule = readSchedule(r);
+                const recurring = schedule.scheduleMode === "recurring";
+                const rec = schedule.recurrence;
+                const recText = recurring ? formatRecurrenceText(rec, "") : "";
+                const strict = schedule.strict;
 
                 const strictSuffix =
-                    r.recurring && rec
+                    recurring && rec
                         ? strict === false
                             ? "Optional"
                             : "Required"
@@ -1247,14 +1155,14 @@ const InterventionsManager: React.FC = () => {
                 return (
                     <Space wrap>
                         {r.compulsory && <Tag color="red">Compulsory</Tag>}
-                        {r.recurring && (
+                        {recurring && (
                             <Tag color="geekblue">
                                 Scheduled
                                 {recText ? ` — ${recText}` : ""}
                                 {strictSuffix ? ` — ${strictSuffix}` : ""}
                             </Tag>
                         )}
-                        {!r.recurring && <Tag color="blue">As needed</Tag>}
+                        {!recurring && <Tag color="blue">As needed</Tag>}
                         {r.hasSubInterventions && (
                             <Tag icon={<UnorderedListOutlined />} color="cyan">
                                 Sub-steps (MOV)
@@ -1299,7 +1207,10 @@ const InterventionsManager: React.FC = () => {
 
     const totalInterventions = interventions.length;
     const recurringCount = useMemo(
-        () => interventions.filter((i) => i.recurring).length,
+        () =>
+            interventions.filter(
+                (i) => readSchedule(i).scheduleMode === "recurring"
+            ).length,
         [interventions]
     );
     const outcomeDefinedCount = useMemo(

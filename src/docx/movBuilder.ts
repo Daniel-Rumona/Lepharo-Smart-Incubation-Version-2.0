@@ -482,7 +482,7 @@ export function frequencyBlock(m: any) {
     [
       row(cell("Frequency of intervention"), cell("")),
       freqRow("Once a month", m.frequency === "monthly"),
-      freqRow("Every two weeks", m.frequency === "biweekly"),
+      freqRow("Every two weeks", m.frequency === "biweekly" || m.frequency === "bi-weekly"),
       freqRow("Weekly", m.frequency === "weekly")
     ],
     [80, 20]
@@ -490,7 +490,7 @@ export function frequencyBlock(m: any) {
 }
 
 export function methodFrequencyBlock(m: any) {
-  const f = String(m.frequency || '').toLowerCase()
+  const f = String(m.frequency || '').toLowerCase().replace('bi-weekly', 'biweekly')
   const choice = (on: boolean, label: string) => styledCell(label, { fill: on ? '9BCB9B' : 'FFFFFF', alignment: AlignmentType.CENTER })
   return table([
     row(styledCell('Intervention method', { fill: 'BFBFBF', columnSpan: 9, alignment: AlignmentType.CENTER })),
