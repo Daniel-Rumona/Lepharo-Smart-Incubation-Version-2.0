@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { Alert, Avatar, Button, Dropdown, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography, message, theme } from 'antd'
+import { Alert, Avatar, Badge, Button, Drawer, Dropdown, Grid, Input, Modal, Popover, Select, Space, Table, Tag, Tooltip, Typography, message, theme } from 'antd'
 import type { MenuProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -8,13 +8,13 @@ import {
     CheckCircleOutlined,
     DeleteOutlined,
     EditOutlined,
+    FilterOutlined,
     FileTextOutlined,
     KeyOutlined,
     MailOutlined,
     MoreOutlined,
     PlayCircleOutlined,
     ReloadOutlined,
-    SolutionOutlined,
     StopOutlined,
     SwapOutlined,
     TeamOutlined,
@@ -36,6 +36,7 @@ import { EmployeeFormModal } from './EmployeeFormModal'
 import { TimesheetModal } from './TimesheetModal'
 import { BulkPositionModal, ChangeEmailModal } from './EmployeeDialogs'
 import { useEmployeesData } from './useEmployeesData'
+import { ChoiceFilter, FilterPanel } from '@/components/workspace'
 import {
     errorMessage,
     formatWorkerType,
@@ -52,10 +53,12 @@ const { Text } = Typography
 
 type Focus = 'all' | 'interns' | 'disabled'
 
+const FOCUS_LABELS: Record<Exclude<Focus, 'all'>, string> = { interns: 'Interns', disabled: 'Disabled logins' }
+
 const FOCUS_OPTIONS: { value: Focus; label: string }[] = [
     { value: 'all', label: 'All staff' },
-    { value: 'interns', label: 'Interns' },
-    { value: 'disabled', label: 'Disabled logins' }
+    { value: 'interns', label: FOCUS_LABELS.interns },
+    { value: 'disabled', label: FOCUS_LABELS.disabled }
 ]
 
 const CREATE_ERRORS: Record<string, string> = {
@@ -77,6 +80,7 @@ const EmployeesPage: React.FC = () => {
     const { user } = useFullIdentity()
     const isMobile = useIsMobile()
     const { token } = theme.useToken()
+    const screens = Grid.useBreakpoint()
     const navigate = useNavigate()
     const { hasRole } = useDepartmentRoles()
     const userRole = String(user?.role || '').toLowerCase().trim()
@@ -102,6 +106,7 @@ const EmployeesPage: React.FC = () => {
     const [timesheetFor, setTimesheetFor] = useState<EmployeeRow | null>(null)
     const [busyId, setBusyId] = useState<string | null>(null)
     const [recalculating, setRecalculating] = useState(false)
+    const [filtersOpen, setFiltersOpen] = useState(false)
 
     const departmentName = useMemo(() => new Map(departments.map(d => [d.id, d.name])), [departments])
     const branchName = useMemo(() => new Map(branches.map(b => [b.id, b.name])), [branches])
@@ -595,10 +600,47 @@ const EmployeesPage: React.FC = () => {
         }
     ]
 
-    const focusStyle = (key: Focus): React.CSSProperties =>
-        focus === key && key !== 'all' ? { outline: `2px solid ${token.colorPrimary}`, borderRadius: 16 } : {}
-    const toggleFocus = (key: Focus) => setFocus(current => (current === key ? 'all' : key))
     const activityValue = (key: 'pendingLeave' | 'onLeaveToday' | 'checkedInToday') => (data.activity ? data.activity[key] : '—')
+
+    // Below xl the three filters don't fit beside search and the actions, so they move behind a Filters button.
+    const filtersInline = Boolean(screens.xl)
+    const activeFilterCount = Number(focus !== 'all') + Number(Boolean(departmentFilter)) + Number(Boolean(positionFilter))
+    const departmentIdByName = new Map(departments.map(d => [d.name, d.id]))
+    const filterPanel = (
+        <FilterPanel
+            canReset={activeFilterCount > 0}
+            onReset={() => {
+                setFocus('all')
+                setDepartmentFilter(undefined)
+                setPositionFilter(undefined)
+            }}
+        >
+            <ChoiceFilter
+                id='emp-show'
+                label='Show'
+                allLabel='All staff'
+                value={focus === 'all' ? 'all' : FOCUS_LABELS[focus]}
+                values={[FOCUS_LABELS.interns, FOCUS_LABELS.disabled]}
+                onChange={value => setFocus(value === FOCUS_LABELS.interns ? 'interns' : value === FOCUS_LABELS.disabled ? 'disabled' : 'all')}
+            />
+            <ChoiceFilter
+                id='emp-department'
+                label='Department'
+                allLabel='All departments'
+                value={(departmentFilter && departmentName.get(departmentFilter)) || 'all'}
+                values={departments.map(d => d.name)}
+                onChange={value => setDepartmentFilter(departmentIdByName.get(value))}
+            />
+            <ChoiceFilter
+                id='emp-position'
+                label='Position'
+                allLabel='All positions'
+                value={positionFilter || 'all'}
+                values={positionOptions}
+                onChange={value => setPositionFilter(value === 'all' ? undefined : value)}
+            />
+        </FilterPanel>
+    )
 
     return (
         <div style={{ padding: isMobile ? '5px 12px 16px' : 24, minHeight: '100vh' }}>
@@ -613,37 +655,15 @@ const EmployeesPage: React.FC = () => {
                         title: 'Active Staff',
                         mobileTitle: 'Staff',
                         value: metrics.active,
-                        subtitle: `${employees.length} on record`,
-                        onClick: () => setFocus('all')
-                    },
-                    {
-                        key: 'interns',
-                        loading: data.loading,
-                        icon: <SolutionOutlined />,
-                        tone: 'warning',
-                        title: 'Interns',
-                        value: metrics.interns,
-                        subtitle: 'Active interns',
-                        onClick: () => toggleFocus('interns'),
-                        wrapperStyle: focusStyle('interns')
-                    },
-                    {
-                        key: 'disabled',
-                        loading: data.loading,
-                        icon: <StopOutlined />,
-                        tone: 'danger',
-                        title: 'Disabled Logins',
-                        value: metrics.disabled,
-                        subtitle: 'Records kept',
-                        onClick: () => toggleFocus('disabled'),
-                        wrapperStyle: focusStyle('disabled')
+                        subtitle: `${metrics.interns} intern${metrics.interns === 1 ? '' : 's'} · ${metrics.disabled} disabled`,
+                        mobileSubtitle: `${metrics.interns} interns`
                     },
                     {
                         key: 'pendingLeave',
                         important: true,
                         loading: data.loading || data.activityLoading,
                         icon: <CalendarOutlined />,
-                        tone: 'info',
+                        tone: 'warning',
                         title: 'Leave Pending',
                         mobileTitle: 'Leave',
                         value: activityValue('pendingLeave'),
@@ -680,43 +700,62 @@ const EmployeesPage: React.FC = () => {
                 skeletonColumns={5}
                 filterBar={
                     <div className='setup-toolbar'>
-                        <div className='setup-toolbar-search'>
+                        <div className='setup-toolbar-search' style={{ display: 'flex', gap: 8 }}>
                             <Input.Search
                                 allowClear
                                 placeholder='Search name, email, position, branch'
                                 aria-label='Search staff'
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
+                                style={{ flex: 1, minWidth: 0 }}
                             />
+                            {filtersInline ? null : isMobile ? (
+                                // A popover is too wide for a phone, so filters open as a bottom sheet there.
+                                <Badge count={activeFilterCount} size='small' offset={[-4, 4]}>
+                                    <Button icon={<FilterOutlined />} onClick={() => setFiltersOpen(true)}>
+                                        Filters
+                                    </Button>
+                                </Badge>
+                            ) : (
+                                <Popover content={filterPanel} trigger='click' placement='bottomRight' title='Filters'>
+                                    <Badge count={activeFilterCount} size='small' offset={[-4, 4]}>
+                                        <Button icon={<FilterOutlined />}>Filters</Button>
+                                    </Badge>
+                                </Popover>
+                            )}
                         </div>
-                        <div className='setup-toolbar-filter'>
-                            <Select<Focus> aria-label='Show' value={focus} onChange={setFocus} options={FOCUS_OPTIONS} style={{ width: '100%' }} />
-                        </div>
-                        <div className='setup-toolbar-filter'>
-                            <Select
-                                allowClear
-                                showSearch
-                                aria-label='Department'
-                                placeholder='Department'
-                                optionFilterProp='label'
-                                value={departmentFilter}
-                                onChange={setDepartmentFilter}
-                                options={departments.map(d => ({ value: d.id, label: d.name }))}
-                                style={{ width: '100%' }}
-                            />
-                        </div>
-                        <div className='setup-toolbar-filter'>
-                            <Select
-                                allowClear
-                                showSearch
-                                aria-label='Position'
-                                placeholder='Position'
-                                value={positionFilter}
-                                onChange={setPositionFilter}
-                                options={positionOptions.map(p => ({ value: p, label: p }))}
-                                style={{ width: '100%' }}
-                            />
-                        </div>
+                        {filtersInline ? (
+                            <>
+                                <div className='setup-toolbar-filter'>
+                                    <Select<Focus> aria-label='Show' value={focus} onChange={setFocus} options={FOCUS_OPTIONS} style={{ width: '100%' }} />
+                                </div>
+                                <div className='setup-toolbar-filter'>
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        aria-label='Department'
+                                        placeholder='Department'
+                                        optionFilterProp='label'
+                                        value={departmentFilter}
+                                        onChange={setDepartmentFilter}
+                                        options={departments.map(d => ({ value: d.id, label: d.name }))}
+                                        style={{ width: '100%' }}
+                                    />
+                                </div>
+                                <div className='setup-toolbar-filter'>
+                                    <Select
+                                        allowClear
+                                        showSearch
+                                        aria-label='Position'
+                                        placeholder='Position'
+                                        value={positionFilter}
+                                        onChange={setPositionFilter}
+                                        options={positionOptions.map(p => ({ value: p, label: p }))}
+                                        style={{ width: '100%' }}
+                                    />
+                                </div>
+                            </>
+                        ) : null}
                         <div className='setup-toolbar-action'>
                             <Space wrap>
                                 {!isMobile && visibleSelected.length > 0 ? (
@@ -826,6 +865,11 @@ const EmployeesPage: React.FC = () => {
             />
             <ChangeEmailModal employee={emailFor} saving={saving} onSubmit={submitEmail} onClose={() => setEmailFor(null)} />
             <TimesheetModal employee={timesheetFor} onClose={() => setTimesheetFor(null)} />
+            {isMobile ? (
+                <Drawer open={filtersOpen} onClose={() => setFiltersOpen(false)} placement='bottom' height='auto' title='Filters'>
+                    {filterPanel}
+                </Drawer>
+            ) : null}
         </div>
     )
 }
