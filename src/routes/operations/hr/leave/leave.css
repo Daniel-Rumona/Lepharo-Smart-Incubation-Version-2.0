@@ -1,0 +1,99 @@
+/* Leave management. Builds on the review workspace (ws-) styles; colours come
+   from the --app-* tokens and metric tones, so light and dark both work. */
+
+.lv-view.ant-segmented {
+    flex: 0 0 auto;
+}
+
+/* Balance for the request's type: used so far, then this request on top. */
+.lv-balance {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+}
+
+.lv-balance-track {
+    display: flex;
+    height: 8px;
+    overflow: hidden;
+    background: var(--app-surface-sunken);
+    border-radius: 999px;
+}
+
+.lv-balance-used {
+    background: var(--app-text-subtle);
+}
+
+.lv-balance-this {
+    background: var(--app-accent);
+}
+
+.lv-balance-this.is-over {
+    background: var(--ant-color-error, #ef4444);
+}
+
+.lv-away {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.lv-away li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--app-text);
+}
+
+/* A person in a table cell: avatar, name and team. */
+.lv-person {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.lv-person-text {
+    min-width: 0;
+}
+
+/* Days used against a cap. */
+.lv-usage {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 96px;
+}
+
+.lv-usage-track {
+    flex: 1 1 auto;
+    height: 6px;
+    overflow: hidden;
+    background: var(--app-surface-sunken);
+    border-radius: 999px;
+}
+
+.lv-usage-track span {
+    display: block;
+    height: 100%;
+    background: var(--app-accent);
+    border-radius: 999px;
+}
+
+.lv-usage.is-high .lv-usage-track span {
+    background: var(--ant-color-warning, #f59e0b);
+}
+
+.lv-usage.is-full .lv-usage-track span {
+    background: var(--ant-color-error, #ef4444);
+}
+
+.lv-usage-figure {
+    flex: 0 0 auto;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--app-text-muted);
+}
