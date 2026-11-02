@@ -22,6 +22,7 @@ export * from "./syncAssignedInterventions";
 export * from "./syncCoordinatorPrograms";
 export * from "./departmentNameCascade";
 export * from "./lineManagers";
+export { linkMySmeAccount } from "./smeIdentity";
 export * from "./ipmReminders";
 export * from "./complianceExpiry";
 export * from "./kpiReminders";

@@ -238,7 +238,7 @@ const ParticipantOnboardingForm: React.FC = () => {
                 { programId, programName, requiredDocKeys: requiredDocs.map(d => d.key) },
                 { email: user?.email || null, name: (user as any)?.name || null }
             )
-            const invited = sendInvite ? await inviteSme(input) : false
+            const invited = sendInvite ? await inviteSme(input, result.participantId) : false
             if (result.failedUploads.length) {
                 message.warning(`${input.companyName} was added, but ${result.failedUploads.join(', ')} didn’t upload. Add them from the SME’s compliance documents.`)
             } else {

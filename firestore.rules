@@ -1139,8 +1139,12 @@ service cloud.firestore {
         (hasProfile() && currentUser().get('participantId', '') == participantId);
       allow read: if isFunderUser();
       // The applicant profile creates the record with the login's email.
-      allow create: if isMyEmail(request.resource.data.email);
-      allow update: if isMyEmail(resource.data.email) && isMyEmail(request.resource.data.email);
+      // `uid` links the record to its login and only the server sets it
+      // (linkMySmeAccount, docs/sme-identity-migration-plan.md).
+      allow create: if isMyEmail(request.resource.data.email) &&
+        !request.resource.data.keys().hasAny(['uid']);
+      allow update: if isMyEmail(resource.data.email) && isMyEmail(request.resource.data.email) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid']);
     }
 
     match /applications/{applicationId} {

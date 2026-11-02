@@ -6,6 +6,7 @@ import * as crypto from "crypto";
 import { admin as adminApp, db } from "./firebase";
 import { withEmailDeliveryLogging } from "./emailDelivery";
 import { isHrManagerProfile } from "./departmentRoles";
+import { linkSmeIdentity } from "./smeIdentity";
 
 const DEFAULT_PASSWORD = "Password@1";
 const ALLOW_ORIGINS = new Set([
@@ -88,6 +89,8 @@ export const createPlatformUser = onRequest(
       /** "training_sme" swaps in the training-portal welcome email. */
       emailTemplate?: string
       trainingName?: string
+      /** An incubatee's participant record, linked to the new login. */
+      participantId?: string
 
       branchId?: string | null
       branchName?: string | null
@@ -353,6 +356,19 @@ export const createPlatformUser = onRequest(
 
     await db.collection("users").doc(authUser.uid).set(userDoc, { merge: true })
 
+    // An SME invited from its participant record is linked to it both ways
+    // (docs/sme-identity-migration-plan.md). A refusal is logged, not fatal:
+    // the invite still goes out and the SME can link on sign-in.
+    let smeLink: string | null = null
+    const smeParticipantId = String(body.participantId || "").trim()
+    if (role === "incubatee" && smeParticipantId) {
+      const decision = await linkSmeIdentity(authUser.uid, smeParticipantId)
+      smeLink = decision.ok ? "linked" : decision.reason
+      if (!decision.ok) {
+        logger.warn("createPlatformUser: sme_link_refused", { uid: authUser.uid, participantId: smeParticipantId, reason: decision.reason })
+      }
+    }
+
     if (role === "operations") {
       const operationsPayload: Record<string, any> = {
         uid: authUser.uid,
@@ -499,6 +515,7 @@ export const createPlatformUser = onRequest(
       branchName,
       assignedPrograms,
       emailSent,
+      smeLink,
     })
   }
 )

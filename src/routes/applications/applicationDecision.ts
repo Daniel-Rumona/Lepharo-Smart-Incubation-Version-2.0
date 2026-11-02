@@ -22,10 +22,12 @@ const decidedBy = () => ({
 const flagFirstLogin = async (applicationId: string, participantId?: string, email?: string | null) => {
     const patch = { firstLoginComplete: false, acceptance: { applicationId, acceptedAt: serverTimestamp() } }
     try {
+        // The applicant's login carries users.participantId once linked
+        // (docs/sme-identity-migration-plan.md); older logins only match by email.
         if (participantId) {
-            const ref = doc(db, 'users', participantId)
-            if ((await getDoc(ref)).exists()) {
-                await updateDoc(ref, patch)
+            const linked = await getDocs(query(collection(db, 'users'), where('participantId', '==', participantId)))
+            if (!linked.empty) {
+                await Promise.all(linked.docs.map(d => updateDoc(d.ref, patch)))
                 return
             }
         }

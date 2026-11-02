@@ -347,10 +347,11 @@ export const createSme = async (input: SmeInput, ctx: ProgramContext, actor: { e
 }
 
 /**
- * Invites the primary contact to the platform. Never throws: an SME is saved
- * whether or not the invite goes out, and the caller reports which happened.
+ * Invites the primary contact to the platform and links their login to the
+ * participant record. Never throws: an SME is saved whether or not the invite
+ * goes out, and the caller reports which happened.
  */
-export const inviteSme = async (input: Pick<SmeInput, 'directors'>): Promise<boolean> => {
+export const inviteSme = async (input: Pick<SmeInput, 'directors'>, participantId: string): Promise<boolean> => {
     const primary = primaryOf(input.directors)
     if (!primary?.email) return false
     try {
@@ -362,6 +363,7 @@ export const inviteSme = async (input: Pick<SmeInput, 'directors'>): Promise<boo
             body: JSON.stringify({
                 email: primary.email.trim().toLowerCase(),
                 role: 'incubatee',
+                participantId,
                 name: primary.name,
                 phone: primary.phone || null,
                 mustRegister: true,

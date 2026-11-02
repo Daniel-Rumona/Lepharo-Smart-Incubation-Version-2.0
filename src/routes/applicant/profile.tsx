@@ -40,6 +40,7 @@ import {
     ArrowLeftOutlined
 } from '@ant-design/icons'
 import { db, auth, storage } from '@/firebase'
+import { linkMySmeAccount } from '@/services/smeIdentity'
 import {
     collection,
     getDocs,
@@ -1388,6 +1389,7 @@ const ApplicantProfileForm: React.FC = () => {
                     updatedAt: serverTimestamp()
                 })
                 setParticipantDocId(newDocRef.id)
+                await linkMySmeAccount(newDocRef.id)
                 message.success('Profile saved successfully')
                 navigate('/applicant')
             }

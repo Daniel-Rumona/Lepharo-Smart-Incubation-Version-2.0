@@ -1,0 +1,18 @@
+{
+  "projectId": "lepharo-smart-inc",
+  "mode": "dry-run",
+  "at": "2026-10-31T12:02:26.138Z",
+  "smeUserCount": 65,
+  "participantCount": 65,
+  "toLink": [],
+  "alreadyLinkedCount": 65,
+  "noParticipant": [],
+  "noEmail": [],
+  "ambiguous": [],
+  "participantLinkedToOtherUser": [],
+  "participantClaimedByMultipleUsers": [],
+  "linkedToMissingParticipant": [],
+  "emailMismatches": [],
+  "applicationsWithoutParticipantId": [],
+  "applicationsWithMissingParticipant": []
+}

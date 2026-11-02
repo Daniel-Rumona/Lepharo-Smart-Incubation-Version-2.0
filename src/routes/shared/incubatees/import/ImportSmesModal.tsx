@@ -268,8 +268,8 @@ export const ImportSmesModal: React.FC<Props> = ({ open, onClose, onImported, pr
         for (const sme of chosen) {
             try {
                 const input = toInput(sme)
-                await createSme(input, { programId, programName: program?.name || null, requiredDocKeys: [] }, actor)
-                if (sendInvites && sme.email) await inviteSme(input)
+                const created = await createSme(input, { programId, programName: program?.name || null, requiredDocKeys: [] }, actor)
+                if (sendInvites && sme.email) await inviteSme(input, created.participantId)
             } catch (err: any) {
                 console.error('Import failed for', sme.companyName, err)
                 failed.push({ name: sme.companyName, reason: err?.message || 'Could not be saved' })
