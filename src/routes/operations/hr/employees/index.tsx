@@ -88,6 +88,16 @@ const EmployeesPage: React.FC = () => {
     const canEditLineManager =
         ['director', 'hr', 'system_admin', 'superadmin'].includes(userRole) ||
         hasRole(String(user?.departmentId || ''), 'hr')
+    // Mirrors adminTools: only directors and admins delete permanently or change HR managers' logins.
+    const isDirector = ['director', 'system_admin', 'superadmin'].includes(userRole)
+    const isHrManager = useCallback(
+        (r: EmployeeRow) => {
+            const role = String(r.role || '').toLowerCase().trim()
+            return role === 'hr' || (role === 'operations' && hasRole(String(r.departmentId || ''), 'hr'))
+        },
+        [hasRole]
+    )
+    const loginLocked = (r: EmployeeRow) => !isDirector && isHrManager(r)
 
     const data = useEmployeesData()
     const { employees, directors, departments, branches } = data
@@ -96,6 +106,7 @@ const EmployeesPage: React.FC = () => {
     const [focus, setFocus] = useState<Focus>('all')
     const [positionFilter, setPositionFilter] = useState<string>()
     const [departmentFilter, setDepartmentFilter] = useState<string>()
+    const [branchFilter, setBranchFilter] = useState<string>()
     const [selectedIds, setSelectedIds] = useState<React.Key[]>([])
 
     const [formOpen, setFormOpen] = useState(false)
@@ -164,10 +175,12 @@ const EmployeesPage: React.FC = () => {
             if (focus === 'disabled' && r.status !== 'Inactive') return false
             if (positionFilter && r.position.toLowerCase() !== positionFilter.toLowerCase()) return false
             if (departmentFilter && r.departmentId !== departmentFilter) return false
+            // Same rule as placement(): only roles that sit at a branch count as being there.
+            if (branchFilter && !(roleNeedsBranch(r.role) && r.branchId === branchFilter)) return false
             if (!needle) return true
             return [r.name, r.email, r.position, placementText(r)].some(v => String(v || '').toLowerCase().includes(needle))
         })
-    }, [employees, search, focus, positionFilter, departmentFilter, placementText])
+    }, [employees, search, focus, positionFilter, departmentFilter, branchFilter, placementText])
 
     // Bulk edits only ever touch rows the filters still show.
     const visibleSelected = useMemo(() => {
@@ -184,8 +197,8 @@ const EmployeesPage: React.FC = () => {
         [employees]
     )
 
-    const setAccountStatus = async (uid: string, active: boolean) => {
-        await httpsCallable(functions, 'setEmployeeAccountStatus')({ uid, active })
+    const setAccountStatus = async (uid: string, active: boolean, reason?: string) => {
+        await httpsCallable(functions, 'setEmployeeAccountStatus')({ uid, active, reason })
     }
 
     const lineManagerPatch = (values: EmployeeFormValues) => {
@@ -241,7 +254,7 @@ const EmployeesPage: React.FC = () => {
         }
 
         await data.savePosition(position)
-        if (!values.active && body.uid) await setAccountStatus(String(body.uid), false)
+        if (!values.active && body.uid) await setAccountStatus(String(body.uid), false, 'Created without login access')
         message.success(`${values.name.trim()} was added and sent a password setup email.`)
         return true
     }
@@ -274,7 +287,7 @@ const EmployeesPage: React.FC = () => {
         const wasActive = employee.status === 'Active'
         if (values.active !== wasActive) {
             try {
-                await setAccountStatus(employee.authUid, values.active)
+                await setAccountStatus(employee.authUid, values.active, values.active ? undefined : values.disableReason)
             } catch (error) {
                 message.warning(`Details saved, but login access was not changed: ${errorMessage(error, 'unknown error')}`)
                 return true
@@ -386,24 +399,41 @@ const EmployeesPage: React.FC = () => {
 
     const toggleAccess = (employee: EmployeeRow) => {
         const enable = employee.status === 'Inactive'
-        const run = () =>
+        const run = (reason?: string) =>
             runAccountAction(
                 employee,
                 async () => {
-                    await setAccountStatus(employee.authUid, enable)
+                    await setAccountStatus(employee.authUid, enable, reason)
                     message.success(enable ? `${employee.name} can sign in again.` : `${employee.name} can no longer sign in. HR records were kept.`)
                     await data.reload()
                 },
                 'Could not change login access.'
             )
         if (enable) return run()
-        Modal.confirm({
+        // The reason is required and goes to the audit log; OK stays disabled until one is typed.
+        let reason = ''
+        const okButtonProps = (valid: boolean) => ({ danger: true, disabled: !valid })
+        const confirm = Modal.confirm({
             title: `Disable ${employee.name}'s login?`,
-            content: 'They will not be able to sign in. Their HR, attendance, leave and performance records are kept, and you can reactivate them later.',
+            content: (
+                <Space direction='vertical' size={8} style={{ width: '100%' }}>
+                    <span>They will not be able to sign in. Their HR, attendance, leave and performance records are kept, and you can reactivate them later.</span>
+                    <Input.TextArea
+                        aria-label='Reason for disabling'
+                        placeholder='Reason for disabling (required)'
+                        autoSize={{ minRows: 2, maxRows: 5 }}
+                        maxLength={500}
+                        onChange={e => {
+                            reason = e.target.value
+                            confirm.update({ okButtonProps: okButtonProps(reason.trim().length >= 3) })
+                        }}
+                    />
+                </Space>
+            ),
             okText: 'Disable login',
-            okButtonProps: { danger: true },
+            okButtonProps: okButtonProps(false),
             className: 'split-confirm',
-            onOk: run
+            onOk: () => run(reason.trim())
         })
     }
 
@@ -495,10 +525,18 @@ const EmployeesPage: React.FC = () => {
         {
             key: 'access',
             icon: r.status === 'Inactive' ? <PlayCircleOutlined /> : <StopOutlined />,
-            label: r.status === 'Inactive' ? 'Reactivate login' : 'Disable login',
-            disabled: isSelf(r),
+            label: loginLocked(r) ? (
+                <Tooltip title='Only a director can change this login'>
+                    <span>{r.status === 'Inactive' ? 'Reactivate login' : 'Disable login'}</span>
+                </Tooltip>
+            ) : r.status === 'Inactive' ? 'Reactivate login' : 'Disable login',
+            disabled: isSelf(r) || loginLocked(r),
             onClick: () => toggleAccess(r)
         },
+        ...(isDirector ? deleteItems(r) : [])
+    ]
+
+    const deleteItems = (r: EmployeeRow): NonNullable<MenuProps['items']> => [
         { type: 'divider' },
         { key: 'delete', danger: true, icon: <DeleteOutlined />, label: 'Delete permanently', disabled: isSelf(r), onClick: () => deletePermanently(r) }
     ]
@@ -602,16 +640,19 @@ const EmployeesPage: React.FC = () => {
 
     const activityValue = (key: 'pendingLeave' | 'onLeaveToday' | 'checkedInToday') => (data.activity ? data.activity[key] : '—')
 
-    // Below xl the three filters don't fit beside search and the actions, so they move behind a Filters button.
-    const filtersInline = Boolean(screens.xl)
-    const activeFilterCount = Number(focus !== 'all') + Number(Boolean(departmentFilter)) + Number(Boolean(positionFilter))
+    // Below xxl the four filters don't fit beside search and the actions, so they move behind a Filters button.
+    const filtersInline = Boolean(screens.xxl)
+    const activeFilterCount =
+        Number(focus !== 'all') + Number(Boolean(departmentFilter)) + Number(Boolean(branchFilter)) + Number(Boolean(positionFilter))
     const departmentIdByName = new Map(departments.map(d => [d.name, d.id]))
+    const branchIdByName = new Map(branches.map(b => [b.name, b.id]))
     const filterPanel = (
         <FilterPanel
             canReset={activeFilterCount > 0}
             onReset={() => {
                 setFocus('all')
                 setDepartmentFilter(undefined)
+                setBranchFilter(undefined)
                 setPositionFilter(undefined)
             }}
         >
@@ -630,6 +671,14 @@ const EmployeesPage: React.FC = () => {
                 value={(departmentFilter && departmentName.get(departmentFilter)) || 'all'}
                 values={departments.map(d => d.name)}
                 onChange={value => setDepartmentFilter(departmentIdByName.get(value))}
+            />
+            <ChoiceFilter
+                id='emp-branch'
+                label='Branch'
+                allLabel='All branches'
+                value={(branchFilter && branchName.get(branchFilter)) || 'all'}
+                values={branches.map(b => b.name)}
+                onChange={value => setBranchFilter(branchIdByName.get(value))}
             />
             <ChoiceFilter
                 id='emp-position'
@@ -746,6 +795,19 @@ const EmployeesPage: React.FC = () => {
                                     <Select
                                         allowClear
                                         showSearch
+                                        aria-label='Branch'
+                                        placeholder='Branch'
+                                        optionFilterProp='label'
+                                        value={branchFilter}
+                                        onChange={setBranchFilter}
+                                        options={branches.map(b => ({ value: b.id, label: b.name }))}
+                                        style={{ width: '100%' }}
+                                    />
+                                </div>
+                                <div className='setup-toolbar-filter'>
+                                    <Select
+                                        allowClear
+                                        showSearch
                                         aria-label='Position'
                                         placeholder='Position'
                                         value={positionFilter}
@@ -849,6 +911,7 @@ const EmployeesPage: React.FC = () => {
                 positions={positionOptions}
                 lineManagerOptions={formManagerOptions}
                 canEditLineManager={canEditLineManager}
+                loginLocked={editing ? loginLocked(editing) || isSelf(editing) : false}
                 onSubmit={submitEmployee}
                 onClose={() => {
                     setFormOpen(false)

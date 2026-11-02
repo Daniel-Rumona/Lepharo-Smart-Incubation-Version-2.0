@@ -52,6 +52,8 @@ export type EmployeeFormValues = {
     startDate?: dayjs.Dayjs | null
     endDate?: dayjs.Dayjs | null
     active: boolean
+    /** Required when an edit turns an active login off; written to the audit log. */
+    disableReason?: string
     /** '' means the automatic default. */
     lineManagerId?: string
 }

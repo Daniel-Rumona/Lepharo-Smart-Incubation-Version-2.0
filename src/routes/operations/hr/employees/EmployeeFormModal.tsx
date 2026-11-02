@@ -22,6 +22,8 @@ type Props = {
     positions: string[]
     lineManagerOptions: { value: string; label: string }[]
     canEditLineManager: boolean
+    /** True when this user may not change the edited person's login (HR editing HR, or themselves). */
+    loginLocked?: boolean
     /** Resolves true when saved, so the modal can close; false keeps the form as typed. */
     onSubmit: (values: EmployeeFormValues) => Promise<boolean>
     onClose: () => void
@@ -36,6 +38,7 @@ export const EmployeeFormModal: React.FC<Props> = ({
     positions,
     lineManagerOptions,
     canEditLineManager,
+    loginLocked = false,
     onSubmit,
     onClose
 }) => {
@@ -43,6 +46,9 @@ export const EmployeeFormModal: React.FC<Props> = ({
     const isEdit = Boolean(employee)
     const workerType = Form.useWatch('workerType', form)
     const pickedRole = Form.useWatch('role', form)
+    const active = Form.useWatch('active', form)
+    // Switching off an active person's login needs a reason for the audit log.
+    const disabling = isEdit && employee?.status !== 'Inactive' && active === false
     const role = employee?.role ?? pickedRole
     const showBranch = roleNeedsBranch(role)
     const showDepartment = roleNeedsDepartment(role)
@@ -218,11 +224,31 @@ export const EmployeeFormModal: React.FC<Props> = ({
                             label='Login access'
                             name='active'
                             valuePropName='checked'
-                            extra={isEdit ? 'Turning this off disables sign-in. HR records are kept.' : undefined}
+                            extra={
+                                isEdit
+                                    ? loginLocked
+                                        ? 'Only a director can change this login.'
+                                        : 'Turning this off disables sign-in. HR records are kept.'
+                                    : undefined
+                            }
                         >
-                            <Switch checkedChildren='Active' unCheckedChildren='Disabled' />
+                            <Switch checkedChildren='Active' unCheckedChildren='Disabled' disabled={loginLocked} />
                         </Form.Item>
                     </Col>
+                    {disabling && (
+                        <Col xs={24}>
+                            <Form.Item
+                                label='Reason for disabling'
+                                name='disableReason'
+                                rules={[
+                                    { required: true, whitespace: true, message: 'Give a reason for disabling this login' },
+                                    { min: 3, message: 'Give a reason for disabling this login' }
+                                ]}
+                            >
+                                <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} maxLength={500} placeholder='Why is this login being disabled?' />
+                            </Form.Item>
+                        </Col>
+                    )}
                 </Row>
             </Form>
         </Modal>

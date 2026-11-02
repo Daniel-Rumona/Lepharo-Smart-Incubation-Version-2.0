@@ -128,14 +128,14 @@ async function assertUserDeletionAllowed(
     const targetRole = String(target.role || '').trim().toLowerCase();
     const sameDepartment =
       Boolean(caller.departmentId) && caller.departmentId === target.departmentId;
-    const canManageAsHr =
-      (await isHrManagerProfile(caller)) && isHrEmployeeTarget(target);
+    // HR can disable logins but not delete permanently; that stays with
+    // directors and admins. Coordinators are still managed by their department.
     const canManageCoordinator =
       targetRole === 'coordinator' &&
       ['operations', 'projectadmin', 'coordinator', 'center coordinator'].includes(callerRole) &&
       (callerRole !== 'operations' || sameDepartment);
 
-    if (!canManageAsHr && !canManageCoordinator) {
+    if (!canManageCoordinator) {
       throw new HttpsError(
         'permission-denied',
         'You are not authorized to permanently remove this employee.',
@@ -326,6 +326,10 @@ export const setEmployeeAccountStatus = onCall(async (req) => {
   if (!uid || typeof active !== 'boolean') {
     throw new HttpsError('invalid-argument', 'Provide a uid and an active status.');
   }
+  const reason = String(req.data?.reason || '').trim().slice(0, 500);
+  if (!active && reason.length < 3) {
+    throw new HttpsError('invalid-argument', 'Give a reason for disabling this login.');
+  }
 
   const callerUid = req.auth?.uid;
   if (!callerUid) {
@@ -348,13 +352,17 @@ export const setEmployeeAccountStatus = onCall(async (req) => {
   const target = targetSnap.data() || {};
   const callerRole = String(caller.role || '').trim().toLowerCase();
   const isAdministrator = ['system_admin', 'superadmin', 'director'].includes(callerRole);
+  // HR may manage ordinary staff logins, but never another HR manager's.
+  // Directors and admins are already outside HR_EMPLOYEE_ROLES.
   const canManageAsHr =
-    (await isHrManagerProfile(caller)) && isHrEmployeeTarget(target);
+    (await isHrManagerProfile(caller)) &&
+    isHrEmployeeTarget(target) &&
+    !(await isHrManagerProfile(target));
 
   if (!isAdministrator && !canManageAsHr) {
     throw new HttpsError(
       'permission-denied',
-      'You are not authorized to change this employee account.',
+      'Only a director can change the login of HR staff, directors or admins.',
     );
   }
 
@@ -367,8 +375,27 @@ export const setEmployeeAccountStatus = onCall(async (req) => {
     accountDisabledBy: active
       ? admin.firestore.FieldValue.delete()
       : callerUid,
+    accountDisabledReason: active
+      ? admin.firestore.FieldValue.delete()
+      : reason,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
+
+  await db.collection('auditLogs').add({
+    type: active ? 'account_enabled' : 'account_disabled',
+    when: admin.firestore.FieldValue.serverTimestamp(),
+    actor: {
+      uid: callerUid,
+      email: req.auth?.token?.email || caller.email || null,
+      role: callerRole,
+    },
+    target: {
+      uid,
+      email: target.email || null,
+      name: target.name || target.displayName || null,
+    },
+    reason: reason || null,
+  });
 
   return { ok: true, uid, active };
 });
