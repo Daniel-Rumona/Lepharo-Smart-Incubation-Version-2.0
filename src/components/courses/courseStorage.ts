@@ -14,6 +14,7 @@ import {
   getDownloadURL,
   uploadBytes,
 } from "firebase/storage";
+import { withOwner } from "@/lib/storageOwner";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, storage, functions } from "@/firebase";
 import type {
@@ -95,7 +96,7 @@ export async function saveCourse(course: SavedCourse): Promise<SavedCourse> {
     // A fixed path per material: saving again (or after a failed save) overwrites
     // the same file instead of uploading another copy under a new name.
     const location = ref(storage, `academyMaterials/${course.owner}/${course.id}/${m.id}`);
-    await uploadString(location, m.url, "data_url");
+    await uploadString(location, m.url, "data_url", withOwner());
     return { ...m, url: await getDownloadURL(location) };
   };
   const items = [];
@@ -206,7 +207,7 @@ export async function uploadSubmission(
     throw new Error("Choose a file smaller than 25 MB.");
   const id = crypto.randomUUID(),
     location = ref(storage, `academySubmissions/${uid}/${enrollmentId}/${id}`);
-  await uploadBytes(location, file);
+  await uploadBytes(location, file, withOwner());
   return {
     id,
     kind: "document",

@@ -88,6 +88,7 @@ import {
 import { db, auth, storage } from '@/firebase'
 import SetupSegmented from '@/components/shared/SetupSegmented'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import dayjs, { Dayjs } from 'dayjs'
 import { Helmet } from 'react-helmet'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -2543,7 +2544,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     .map(async (file: File) => {
                         const path = `assignedInterventions/${progressRecord.id}/progress-updates/${Date.now()}_${file.name}`
                         const fileRef = ref(storage, path)
-                        await uploadBytes(fileRef, file)
+                        await uploadBytes(fileRef, file, withOwner({}, { participantId: progressRecord.isGroupedDisplay ? null : progressRecord.participantId }))
                         return {
                             type: file.type?.startsWith('image/') ? 'image' : 'document',
                             label: file.name,
@@ -2680,7 +2681,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                 const safeFileName = safePathPart(file.name, 'evidence-file')
                 const storagePath = `intervention-evidence/${safeProgram}/${safeParticipant}/${safeAssignment}/${Date.now()}_${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}_${safeFileName}`
                 const fileRef = ref(storage, storagePath)
-                await uploadBytes(fileRef, file)
+                await uploadBytes(fileRef, file, withOwner({}, { participantId: record.participantId }))
                 const link = await getDownloadURL(fileRef)
 
                 return {
@@ -3083,7 +3084,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                     const safeFileName = safePathPart(manualMov.name, 'manual-mov')
                     const storagePath = `mov-documents/${safeProgram}/${safeParticipant}/${safeAssignment}/manual/${Date.now()}_${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}_${safeFileName}`
                     const fileRef = ref(storage, storagePath)
-                    await uploadBytes(fileRef, manualMov)
+                    await uploadBytes(fileRef, manualMov, withOwner({}, { participantId: assignment.participantId }))
 
                     return {
                         assignmentId: assignment.id,

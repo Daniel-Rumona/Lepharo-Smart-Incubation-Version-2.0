@@ -3,6 +3,7 @@ import { Button, Card, Skeleton, Space, Tag, Typography, Upload, message } from 
 import { UploadOutlined } from '@ant-design/icons'
 import { collection, deleteField, doc, getDocs, query, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db, storage } from '@/firebase'
 import { COMPLETION_MAX_FILE_SIZE_BYTES } from '@/services/interventionCompletionService'
 import EvidenceFileRow from '@/components/interventions/EvidenceFileRow'
@@ -75,7 +76,7 @@ export const ManageMovCard: React.FC<{ targets: MovTarget[] }> = ({ targets }) =
         try {
             const path = `mov-documents/${safe(mov.programId || target.programId, 'no-program')}/${safe(mov.participantId || target.participantId, 'unknown-participant')}/${safe(target.id, 'no-assignment')}/manual/${Date.now()}_${crypto.randomUUID()}_${safe(file.name, 'manual-mov')}`
             const fileRef = ref(storage, path)
-            await uploadBytes(fileRef, file)
+            await uploadBytes(fileRef, file, withOwner({}, { participantId: mov.participantId || target.participantId }))
             await updateDoc(doc(db, 'movDocuments', mov.id), {
                 uploadedMovUrl: await getDownloadURL(fileRef),
                 uploadedMovFileName: file.name,

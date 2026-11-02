@@ -16,6 +16,7 @@ import {
 import dayjs from 'dayjs'
 import { collection, doc, getDoc, getDocs, query as fsQuery, where } from 'firebase/firestore'
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db } from '@/firebase'
 import { workflowQueryService } from '@/services/workflowQueryService'
 import {
@@ -257,7 +258,7 @@ const ResolveQueryModal: React.FC<ResolveQueryModalProps> = ({ open, query, acto
     const uploadEvidence = async (file: File): Promise<UploadedPoe> => {
         const safeName = String(file.name || 'evidence').replace(/\s+/g, '_')
         const rf = storageRef(getStorage(), `workflowQueries/${q?.programId || 'no-program'}/${q?.id}/${Date.now()}_${safeName}`)
-        await uploadBytes(rf, file)
+        await uploadBytes(rf, file, withOwner())
         return { name: file.name || 'Evidence', link: await getDownloadURL(rf) }
     }
 

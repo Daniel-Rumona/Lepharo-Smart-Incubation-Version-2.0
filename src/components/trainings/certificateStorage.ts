@@ -1,5 +1,6 @@
 import { collection, doc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { ref, uploadBytes } from "firebase/storage";
+import { withOwner } from "@/lib/storageOwner";
 import { httpsCallable } from "firebase/functions";
 import dayjs from "dayjs";
 import { db, functions, storage } from "@/firebase";
@@ -38,7 +39,7 @@ export async function saveCertificateTemplate(input: { id?: string; name: string
   let info: TemplateInfo | null = null;
   if (input.file) {
     const path = `certificate_templates/${id}/v${(input.previous?.version || 0) + 1}_${Date.now()}.pdf`;
-    await uploadBytes(ref(storage, path), input.file, { contentType: "application/pdf" });
+    await uploadBytes(ref(storage, path), input.file, withOwner({ contentType: "application/pdf" }));
     info = (await templateAction("inspect", path)) as TemplateInfo;
     if (!info.hasRecipientName) throw new Error('This PDF has no "recipientName" field. Add a form field with that exact name where the name should go.');
     if (!info.signatureFields.length) throw new Error('This PDF has no "signature_1" field for the signature.');

@@ -1,5 +1,6 @@
 import { addDoc, collection, doc, Timestamp, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import dayjs from 'dayjs'
 import { db } from '@/firebase'
 import { sendNotification } from '@/utils/sendNotification'
@@ -86,7 +87,7 @@ const decidedBy = (user?: FinanceUser | null) => ({
 export const uploadFinanceFile = async (file: File, pathBase: string) => {
   const safe = file.name.replace(/\s+/g, '_')
   const fileRef = ref(getStorage(), `${pathBase}/${Date.now()}_${safe}`)
-  await uploadBytes(fileRef, file)
+  await uploadBytes(fileRef, file, withOwner())
   return { name: file.name, url: await getDownloadURL(fileRef), path: fileRef.fullPath }
 }
 

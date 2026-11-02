@@ -11,6 +11,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { withOwner } from "@/lib/storageOwner";
 import { auth, db, storage } from "@/firebase";
 import { functionsBaseUrl } from "@/firebaseConfig";
 import type { AttendeeProgress, EligibilityOverride, TrainingCertificationOverride } from "./certification";
@@ -344,7 +345,7 @@ export async function uploadTrainingFile(trainingId: string, kind: string, file:
   const slug = kind.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "document";
   const fileName = `${slug}_${Date.now()}_${file.name}`;
   const fileRef = ref(storage, `training_enrollments/${trainingId}/${fileName}`);
-  await uploadBytes(fileRef, file);
+  await uploadBytes(fileRef, file, withOwner());
   const url = await getDownloadURL(fileRef);
   return { url, name: file.name };
 }

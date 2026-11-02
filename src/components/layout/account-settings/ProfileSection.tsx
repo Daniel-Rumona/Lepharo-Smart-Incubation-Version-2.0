@@ -15,6 +15,7 @@ import {
 } from 'firebase/auth'
 import { doc, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { auth, db, storage } from '@/firebase'
 import { getNameInitials } from '@/utils/get-name-initials'
 import { formatRole } from '@/lib/roleLabels'
@@ -87,7 +88,7 @@ export const ProfileSection: React.FC<SectionProps> = ({ userData, onUpdate }) =
         try {
             setSavingPhoto(true)
             const fileRef = ref(storage, `profile-images/${user.uid}/avatar`)
-            await uploadBytes(fileRef, file, { contentType: file.type })
+            await uploadBytes(fileRef, file, withOwner({ contentType: file.type }))
             const url = await getDownloadURL(fileRef)
 
             // users/{uid}.photoURL is the one place a profile photo lives.

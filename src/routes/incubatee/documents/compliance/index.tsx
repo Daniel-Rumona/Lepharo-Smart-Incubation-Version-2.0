@@ -51,6 +51,7 @@ import { motion } from 'framer-motion'
 import { PreIncubationContractModal } from '@/components/modals/Contracts/PreIncubationContract'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { requestOpenAccountSettings } from '@/lib/accountSettings'
@@ -657,7 +658,7 @@ export const ComplianceDocuments: React.FC = () => {
     const uploadToStorage = async (file: File, path: string) => {
         const storage = getStorage()
         const fileRef = ref(storage, path)
-        await uploadBytes(fileRef, file)
+        await uploadBytes(fileRef, file, withOwner({}, { participantId }))
         return await getDownloadURL(fileRef)
     }
 

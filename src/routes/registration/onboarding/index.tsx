@@ -48,6 +48,7 @@ import {
     type DocumentReference
 } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { httpsCallable } from 'firebase/functions'
 import dayjs, { type Dayjs } from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
@@ -1076,7 +1077,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
             `${DOCUMENT_STORAGE_FOLDER}/${fileName}`
         )
 
-        await uploadBytes(fileRef, file)
+        await uploadBytes(fileRef, file, withOwner({}, { participantId }))
 
         return { url: await getDownloadURL(fileRef), fileName }
     }

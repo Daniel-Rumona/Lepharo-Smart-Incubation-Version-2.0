@@ -75,6 +75,7 @@ import {
   ref as storageRef,
   uploadBytes,
 } from "firebase/storage";
+import { withOwner } from "@/lib/storageOwner";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import {
   DashboardFilterBar,
@@ -1692,7 +1693,7 @@ const FeatureGovernancePage: React.FC = () => {
               editing?.id || "new"
             }/${Date.now()}_${index}_${safeName}`
           );
-          await uploadBytes(destination, rawFile);
+          await uploadBytes(destination, rawFile, withOwner());
           return getDownloadURL(destination);
         })
       );

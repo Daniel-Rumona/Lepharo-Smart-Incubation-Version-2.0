@@ -57,6 +57,7 @@ import {
     uploadBytes,
     getDownloadURL
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import {
     EmailAuthProvider,
     getAuth,
@@ -428,7 +429,7 @@ const WelcomeWizard: React.FC = () => {
         const uid = auth.currentUser.uid
         const path = `signatures/${uid}/${Date.now()}_${filename}`
         const ref = storageRef(storage, path)
-        await uploadBytes(ref, blob)
+        await uploadBytes(ref, blob, withOwner())
         return await getDownloadURL(ref)
     }
 

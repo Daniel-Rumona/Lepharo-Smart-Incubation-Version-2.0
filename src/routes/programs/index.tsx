@@ -92,6 +92,7 @@ import {
 } from '@/components/guide-me'
 import type { UploadProps } from 'antd'
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import {
     DEFAULT_PROGRAM_LIMIT,
     getProgramLimit
@@ -2267,9 +2268,9 @@ const ProgramManager: React.FC = () => {
         const path = `programLogos/${programId}/${Date.now()}_${safeName}`
         const storageRef = ref(storage, path)
 
-        const snap = await uploadBytes(storageRef, file, {
+        const snap = await uploadBytes(storageRef, file, withOwner({
             contentType: file.type || 'image/png'
-        })
+        }))
         const url = await getDownloadURL(snap.ref)
 
         // Optional cleanup of old logo

@@ -30,6 +30,7 @@ import {
     where
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import dayjs from 'dayjs'
 import { db, storage } from '@/firebase'
 import { PreIncubationContractModal } from '@/components/modals/Contracts/PreIncubationContract'
@@ -321,7 +322,7 @@ export default function RomMovWorkspace({ user, department, activeProgramId }: P
                     storage,
                     `intervention-evidence/${cleanIdPart(selected.programId || 'no-program')}/${cleanIdPart(selected.participantId)}/${cleanIdPart(selected.id)}/${Date.now()}_${safeName}`
                 )
-                await uploadBytes(storageRef, raw)
+                await uploadBytes(storageRef, raw, withOwner({}, { participantId: selected.participantId }))
                 uploadedUrls.push(await getDownloadURL(storageRef))
             }
 

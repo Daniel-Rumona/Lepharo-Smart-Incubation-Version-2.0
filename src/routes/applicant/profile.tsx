@@ -54,6 +54,7 @@ import {
     serverTimestamp
 } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { onAuthStateChanged, updateProfile } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
 import { useColorMode } from '@/contexts/ThemeContext'
@@ -1147,7 +1148,7 @@ const ApplicantProfileForm: React.FC = () => {
         try {
             setUploadingAvatar(true)
             const fileRef = ref(storage, `profile-images/${user.uid}/avatar`)
-            await uploadBytes(fileRef, file, { contentType: file.type })
+            await uploadBytes(fileRef, file, withOwner({ contentType: file.type }))
             const url = await getDownloadURL(fileRef)
             setPhotoUrl(url)
 

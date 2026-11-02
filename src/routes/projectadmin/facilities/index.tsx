@@ -54,6 +54,7 @@ import {
     writeBatch
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
@@ -158,7 +159,7 @@ const uploadImages = async (files: UploadFile[], folder: string): Promise<Facili
                 const safeName = file!.name.replace(/[^\w.\-]+/g, '_')
                 const path = `${folder}/${Date.now()}_${safeName}`
                 const storageRef = ref(storage, path)
-                await uploadBytes(storageRef, file!)
+                await uploadBytes(storageRef, file!, withOwner())
                 return { name: file!.name, url: await getDownloadURL(storageRef), path }
             })
     )

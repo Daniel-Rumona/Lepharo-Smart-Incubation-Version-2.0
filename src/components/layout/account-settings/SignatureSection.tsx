@@ -3,6 +3,7 @@ import { Button, Input, message } from 'antd'
 import { EditOutlined, FontSizeOutlined, FormOutlined } from '@ant-design/icons'
 import { doc, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import SignatureCanvas from 'react-signature-canvas'
 import { auth, db, storage } from '@/firebase'
 import {
@@ -147,7 +148,7 @@ export const SignatureSection: React.FC<SectionProps> = ({ userData, onUpdate })
 
             const blob = await (await fetch(dataURL)).blob()
             const fileRef = ref(storage, `signatures/${user.uid}_${Date.now()}.png`)
-            await uploadBytes(fileRef, blob, { contentType: 'image/png' })
+            await uploadBytes(fileRef, blob, withOwner({ contentType: 'image/png' }))
             const signatureURL = await getDownloadURL(fileRef)
 
             await updateDoc(doc(db, 'users', user.uid), {

@@ -67,6 +67,7 @@ import {
     runTransaction
 } from 'firebase/firestore'
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { httpsCallable } from 'firebase/functions'
 import EmailTemplateModal from '@/components/modals/EmailTemplate'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
@@ -2182,7 +2183,7 @@ const ComplianceTrackingPage: React.FC = () => {
 
         const f = fileList[0].originFileObj as File
         const storageRef2 = ref(storage, `compliance-documents/${Date.now()}-${f.name}`)
-        const task = uploadBytesResumable(storageRef2, f)
+        const task = uploadBytesResumable(storageRef2, f, withOwner({}, { participantId: pId, applicationId: app.id }))
 
         const url: string = await new Promise((resolve, reject) => {
             task.on('state_changed', () => { }, reject, async () => resolve(await getDownloadURL(task.snapshot.ref)))

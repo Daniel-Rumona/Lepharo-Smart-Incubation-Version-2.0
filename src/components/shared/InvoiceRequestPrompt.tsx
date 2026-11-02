@@ -4,6 +4,7 @@ import { ClockCircleOutlined, DownOutlined, FileDoneOutlined, InboxOutlined } fr
 import dayjs from 'dayjs'
 import { collection, doc, onSnapshot, query, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { sendNotification } from '@/utils/sendNotification'
@@ -145,7 +146,7 @@ const InvoiceRequestPrompt: React.FC = () => {
             // Same place the MOVs page keeps pack invoices
             const path = `consolidatedMOVs/${current.department || 'department'}/${current.month || 'month'}/${Date.now()}_${safe}`
             const fileRef = ref(getStorage(), path)
-            await uploadBytes(fileRef, file)
+            await uploadBytes(fileRef, file, withOwner())
             const url = await getDownloadURL(fileRef)
 
             await updateDoc(doc(db, 'consolidatedMOVs', current.id), {

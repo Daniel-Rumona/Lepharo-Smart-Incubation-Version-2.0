@@ -776,6 +776,7 @@ import {
     arrayUnion
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { canonicalizeAssignedInterventionPatch, toAssignedInterventionView } from '@/services/assignedInterventionService'
 
@@ -1016,7 +1017,7 @@ const PDSWellnessInterventionPage: React.FC = () => {
                 const path = `assignedInterventions/${edit.id}/proof/${Date.now()}_${raw.name
                     }`
                 const sref = ref(storage, path)
-                await uploadBytes(sref, raw)
+                await uploadBytes(sref, raw, withOwner({}, { participantId: edit.participantId }))
                 const url = await getDownloadURL(sref)
                 uploaded.push({ name: raw.name, url })
             }

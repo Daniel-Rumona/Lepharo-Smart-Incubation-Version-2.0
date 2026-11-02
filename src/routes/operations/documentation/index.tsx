@@ -74,6 +74,7 @@ import {
     uploadBytes,
     getDownloadURL
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 
 // UI
 import { DashboardFilterBar, MotionCard } from '@/components/dashboards/metrics/Header'
@@ -1437,7 +1438,8 @@ const DocumentationHub: React.FC = () => {
                             storage,
                             path
                         ),
-                        fileObj
+                        fileObj,
+                        withOwner()
                     )
 
                 const url =
@@ -1729,7 +1731,8 @@ const DocumentationHub: React.FC = () => {
                             storage,
                             path
                         ),
-                        fileObj
+                        fileObj,
+                        withOwner()
                     )
 
                 const url =

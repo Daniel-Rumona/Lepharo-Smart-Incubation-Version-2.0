@@ -13,6 +13,7 @@ import {
     uploadBytes,
     type FirebaseStorage
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { USE_SENSITIVE_DEPARTMENT_SUMMARY_INSTEAD_OF_POE } from '@/config/evidencePolicy'
 import { resolveAssignmentLifecycle } from './assignmentLifecycleService'
 import { groupDeliveryRef } from './groupInterventionDeliveryService'
@@ -374,7 +375,7 @@ export async function uploadManualMovs(input: {
                 'unknown-participant'
             )}/${safe(assignment.id, 'no-assignment')}/manual/${Date.now()}_${crypto.randomUUID()}_${safe(file.name, 'manual-mov')}`
             const fileRef = ref(input.storage, path)
-            await uploadBytes(fileRef, file)
+            await uploadBytes(fileRef, file, withOwner({}, { participantId: assignment.participantId }))
             return {
                 assignmentId: assignment.id,
                 uploadedMovUrl: await getDownloadURL(fileRef),
@@ -514,7 +515,7 @@ export async function completeIntervention(input: {
                                 'no-assignment'
                             )}/${uploadId}_${index}_${safeFileName}`
                         )
-                        await uploadBytes(fileRef, file)
+                        await uploadBytes(fileRef, file, withOwner({}, { participantId: context.assignments.length === 1 ? context.assignments[0].participantId : null }))
                         return {
                             link: await getDownloadURL(fileRef),
                             label: file.name,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import dayjs from 'dayjs'
 import { addDoc, arrayUnion, collection, deleteField, doc, getDoc, getDocs, query, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db } from '@/firebase'
 import { chunk } from '@/types/mov'
 import { workflowQueryService } from '@/services/workflowQueryService'
@@ -52,7 +53,7 @@ const actorOf = (user: Actor) => ({
 const upload = async (file: File, folder: string) => {
     const path = `${folder}/${Date.now()}_${String(file.name || 'file').replace(/\s+/g, '_')}`
     const fileRef = ref(getStorage(), path)
-    await uploadBytes(fileRef, file)
+    await uploadBytes(fileRef, file, withOwner())
     return { url: await getDownloadURL(fileRef), name: file.name, path }
 }
 

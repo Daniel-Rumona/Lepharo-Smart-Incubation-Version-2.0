@@ -53,6 +53,7 @@ import {
     where
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner, type UploadOwner } from '@/lib/storageOwner'
 
 const { useBreakpoint } = Grid
 
@@ -185,13 +186,13 @@ const formatDate = (value: any) => {
     return date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'
 }
 
-const uploadFiles = async (files: any[], folder: string): Promise<Attachment[]> => {
+const uploadFiles = async (files: any[], folder: string, owner?: UploadOwner): Promise<Attachment[]> => {
     const list = files.map(item => item?.originFileObj || item).filter(Boolean) as File[]
     return Promise.all(list.map(async file => {
         const safeName = file.name.replace(/[^\w.\-]+/g, '_')
         const path = `${folder}/${Date.now()}_${safeName}`
         const storageRef = ref(storage, path)
-        await uploadBytes(storageRef, file)
+        await uploadBytes(storageRef, file, withOwner({}, owner))
         return {
             name: file.name,
             url: await getDownloadURL(storageRef),

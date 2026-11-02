@@ -52,6 +52,7 @@ import {
     ref,
     uploadBytes
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import dayjs, { Dayjs } from 'dayjs'
 
 import { db, storage } from '@/firebase'
@@ -887,7 +888,7 @@ const JobManagementPage: React.FC = () => {
             ].join('/')
 
             const storageRef = ref(storage, storagePath)
-            await uploadBytes(storageRef, file)
+            await uploadBytes(storageRef, file, withOwner({}, { participantId: selectedSME.participantId, applicationId: selectedSME.id }))
             const fileUrl = await getDownloadURL(storageRef)
 
             await addDoc(collection(db, 'hseJobContracts'), {

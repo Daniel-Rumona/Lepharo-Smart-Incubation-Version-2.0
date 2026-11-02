@@ -3,6 +3,7 @@ import { App, Button, Card, Col, Modal, Row, Skeleton, Space, Tag, Typography } 
 import { UploadOutlined } from '@ant-design/icons'
 import { doc, getDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db } from '@/firebase'
 import EvidenceManagerPanel from '@/components/evidence/EvidenceManagerPanel'
 import EvidenceFileRow from '@/components/interventions/EvidenceFileRow'
@@ -90,7 +91,7 @@ export const ManageEvidenceModal: React.FC<{
             for (const file of pending) {
                 const path = `assignedInterventions/${assignedInterventionId}/evidence/${Date.now()}_${String(file.name || 'evidence').replace(/\s+/g, '_')}`
                 const fileRef = ref(getStorage(), path)
-                await uploadBytes(fileRef, file)
+                await uploadBytes(fileRef, file, withOwner({}, { participantId }))
                 uploaded.push({ name: file.name || 'Evidence', link: await getDownloadURL(fileRef) })
             }
             // Replacing one file: take it out first, then add the new ones as usual.

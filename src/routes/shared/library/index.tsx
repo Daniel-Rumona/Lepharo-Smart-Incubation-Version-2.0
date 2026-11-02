@@ -59,6 +59,7 @@ import {
     ref,
     uploadBytes
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useDepartmentRoles } from '@/services/departmentRoles'
@@ -638,9 +639,9 @@ const LibraryPage: React.FC = () => {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
             storagePath = `library/${user.id}/${Date.now()}-${safeName}`
 
-            await uploadBytes(ref(storage, storagePath), file, {
+            await uploadBytes(ref(storage, storagePath), file, withOwner({
                 contentType: file.type || 'application/octet-stream'
-            })
+            }))
 
             await addDoc(collection(db, 'libraryMaterials'), {
                 title: values.title.trim(),

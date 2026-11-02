@@ -15,6 +15,7 @@ import {
     type DocumentReference
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { auth, db, storage } from '@/firebase'
 import { CREATE_USER_URL } from '@/routes/shared/incubatees/participantsData'
 import { normaliseRegistration } from './registration'
@@ -171,7 +172,7 @@ const uploadDocuments = async (docs: ComplianceDocInput[]) => {
         const fileName = `${Date.now()}_${d.file.name}`
         const fileRef = ref(storage, `participant_documents/${fileName}`)
         try {
-            await uploadBytes(fileRef, d.file)
+            await uploadBytes(fileRef, d.file, withOwner())
         } catch (err) {
             console.error(`Upload failed: ${d.title}`, err)
             failed.push(d.title)

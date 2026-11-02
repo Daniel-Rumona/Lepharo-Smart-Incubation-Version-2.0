@@ -1,5 +1,6 @@
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { withOwner } from "@/lib/storageOwner";
 import { httpsCallable } from "firebase/functions";
 import { db, functions, storage } from "@/firebase";
 import type { TrainingAttendee, TrainingDocument, TrainingEnrollment } from "./trainingStorage";
@@ -32,7 +33,7 @@ export async function listCompanyAttendees(enrollmentId: string): Promise<Traini
 export async function uploadAttendeeIdCopy(enrollmentId: string, attendeeKey: string, file: File): Promise<TrainingDocument> {
   const path = `training_attendees/${enrollmentId}/${attendeeKey}/id-copy_${Date.now()}_${file.name}`;
   const fileRef = ref(storage, path);
-  await uploadBytes(fileRef, file);
+  await uploadBytes(fileRef, file, withOwner());
   return { url: await getDownloadURL(fileRef), name: file.name };
 }
 

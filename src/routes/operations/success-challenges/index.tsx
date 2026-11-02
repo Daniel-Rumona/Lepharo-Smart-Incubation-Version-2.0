@@ -72,6 +72,7 @@ import {
     where
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner, type UploadOwner } from '@/lib/storageOwner'
 import EventNatureCards, { natureFromFormat, type EventNature } from './EventNatureCards'
 import ChallengeCheckInModal, { type CheckInValues } from './ChallengeCheckInModal'
 import ChallengeFormModal from './ChallengeFormModal'
@@ -368,7 +369,7 @@ const getInterventionMonthTag = (row: any) => {
     return raw && raw.length <= 20 ? raw : ''
 }
 
-const uploadFiles = async (files: any[], folder: string): Promise<Attachment[]> => {
+const uploadFiles = async (files: any[], folder: string, owner?: UploadOwner): Promise<Attachment[]> => {
     const list = files
         .map(item => item?.originFileObj || item)
         .filter(Boolean) as File[]
@@ -378,7 +379,7 @@ const uploadFiles = async (files: any[], folder: string): Promise<Attachment[]> 
             const safeName = file.name.replace(/[^\w.\-]+/g, '_')
             const path = `${folder}/${Date.now()}_${safeName}`
             const storageRef = ref(storage, path)
-            await uploadBytes(storageRef, file)
+            await uploadBytes(storageRef, file, withOwner({}, owner))
             const url = await getDownloadURL(storageRef)
             return {
                 name: file.name,
