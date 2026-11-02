@@ -77,6 +77,20 @@ const AdminLeaveManagement: React.FC = () => {
         )
     }, [assignParam, data.loading, settings, canManage, employeeById, setSearchParams])
 
+    // ?view=calendar|balances opens that tab; the old /leave-management/calendar link redirects here.
+    const viewParam = searchParams.get('view')
+    useEffect(() => {
+        if (!viewParam) return
+        if (viewParam === 'requests' || viewParam === 'balances' || viewParam === 'calendar') setView(viewParam)
+        setSearchParams(
+            params => {
+                params.delete('view')
+                return params
+            },
+            { replace: true }
+        )
+    }, [viewParam, setSearchParams])
+
     const today = dayjs()
 
     const tiles = useMemo(() => {
