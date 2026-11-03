@@ -155,4 +155,43 @@ function planRequestOwners({ requests, users, authEmails = new Map() }) {
     return { patches, unmatched }
 }
 
-module.exports = { planSmeIdentity, planRequestOwners, normEmail, normRole }
+// Must match normalizeLoginPhone in functions/src/phoneLoginLogic.ts.
+function normalizeLoginPhone(input) {
+    const raw = String(input ?? '').trim()
+    if (!raw) return null
+    let digits = raw.replace(/[^0-9]/g, '')
+    if (raw.startsWith('00') || (digits.startsWith('00') && !raw.startsWith('+'))) digits = digits.replace(/^00/, '')
+    else if (!raw.startsWith('+') && digits.startsWith('0')) digits = `27${digits.slice(1)}`
+    if (digits.startsWith('270')) digits = `27${digits.slice(3)}`
+    if (digits.startsWith('27')) return digits.length === 11 ? digits : null
+    return digits.length >= 10 && digits.length <= 15 && !digits.startsWith('0') ? digits : null
+}
+
+/**
+ * phoneIndex entries for SMEs that confirmed a WhatsApp number (Phase 5: that number signs
+ * them in). A number already indexed, or confirmed by several SME logins, is reported and
+ * left alone; so is a login that already has an index entry.
+ */
+function planPhoneIndex({ users, index = [] }) {
+    const indexed = new Map(index.map((e) => [e.id, str(e.data.uid)]))
+    const indexedUids = new Set(indexed.values())
+    const byNumber = new Map()
+    users.filter((u) => SME_ROLES.has(normRole(u.data.role))).forEach((u) => {
+        const consent = u.data.whatsappConsent || {}
+        const digits = consent.status === 'granted' ? normalizeLoginPhone(consent.number) : null
+        if (digits) pushTo(byNumber, digits, u.uid)
+    })
+    const entries = []
+    const shared = []
+    const taken = []
+    for (const [digits, uids] of byNumber) {
+        if (uids.length > 1) { shared.push({ number: digits, uids }); continue }
+        const uid = uids[0]
+        if (indexed.has(digits)) { if (indexed.get(digits) !== uid) taken.push({ uid }); continue }
+        if (indexedUids.has(uid)) continue
+        entries.push({ id: digits, data: { uid, source: 'whatsappConsent' } })
+    }
+    return { entries, shared, taken }
+}
+
+module.exports = { planSmeIdentity, planRequestOwners, planPhoneIndex, normalizeLoginPhone, normEmail, normRole }

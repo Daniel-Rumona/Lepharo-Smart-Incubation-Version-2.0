@@ -79,10 +79,12 @@ export const DirectorsSection: React.FC = () => {
                                         <Form.Item
                                             name={[field.name, 'email']}
                                             label='Email'
-                                            rules={[
-                                                { type: 'email', message: 'Enter a valid email' },
-                                                { required: isPrimary, message: 'The main contact needs an email' }
-                                            ]}
+                                            rules={[{ type: 'email', message: 'Enter a valid email' }]}
+                                            extra={isPrimary
+                                                // Without one, the invite gives them a login that signs in with
+                                                // their phone number and a WhatsApp code.
+                                                ? 'Optional: without an email they sign in with their phone on WhatsApp.'
+                                                : undefined}
                                         >
                                             <Input type='email' />
                                         </Form.Item>

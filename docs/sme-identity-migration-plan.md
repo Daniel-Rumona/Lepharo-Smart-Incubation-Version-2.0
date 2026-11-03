@@ -127,15 +127,39 @@ fallback, each marked "email fallback until Phase 4", for logins not linked yet 
 - Known risk kept: `linkMySmeAccount` still links by an unverified login email when no id matches
   (same trust the old email rules gave). Consider requiring `email_verified` once SMEs verify.
 
-### Phase 5 — Phone sign-in
-- `requestSmeLoginCode(phone)` / `verifySmeLoginCode(phone, code)`: resolve via `phoneIndex`, send a
-  6-digit code with a Meta-approved WhatsApp template, return `createCustomToken(uid)`.
-  Hashed code, ~5 min expiry, ~5 attempts, per-number and per-IP limits, neutral replies.
-- Phone-only accounts: `admin.auth().createUser({ phoneNumber })` (no email).
-  - Staff "add SME by phone".
-  - SME "register with phone" (code confirmed first).
-- Phone changes go through a server function that verifies the new number.
-- Outbound email: skip SMEs with no email in `sendViaBrevo` callers / recipient resolution.
+### Phase 5 — Phone sign-in — built 2026-11-03, NOT deployed
+Decisions (2026-11-03): codes go on WhatsApp through a Meta **authentication** template; an existing
+SME's sign-in number is the one it confirmed for WhatsApp updates; staff and SMEs can both create
+phone-only accounts.
+- `functions/src/phoneLogin.ts` (rules in `phoneLoginLogic.ts`, tests in `phoneLoginLogic.test.cjs`):
+  - `requestSmeLoginCode({ phone, purpose })` — purpose `login` | `register` | `change`. 6-digit code,
+    salted hash only, 5 min expiry, 5 tries, 1 min between codes, 5 per number and 20 per IP an hour.
+    Same reply whether or not a code was sent.
+  - `verifySmeLoginCode` → custom token for the SME login the number belongs to.
+  - `registerSmeByPhone({ phone, code, name })` → creates a phone-only incubatee login.
+  - `createSmeLoginByPhone({ participantId, phone, name })` — staff (same roles as createPlatformUser),
+    linked to the participant at once. `inviteSme` uses it when the main contact has no email; the
+    director email is now optional on the onboarding form and import.
+  - `changeMyLoginPhone({ phone, code })` — signed-in SME, code sent to the new number.
+  - `onSmeWhatsAppNumber` — keeps `phoneIndex` on the SME's confirmed WhatsApp number (never takes a
+    number another login has; never moves a registered phone sign-in).
+- Collections `phoneIndex`, `smeLoginCodes`, `smeLoginCodeIps` are server-only (`firestore.rules`
+  `phoneLoginCollections()`, excluded from the staff and super-admin catch-all).
+- Router (`smart-incubation/functions/src/whatsappBot.ts`): dispatch type `login_code` sends template
+  `LPH_LOGIN_CODE_TEMPLATE` (default `lph_login_code`, lang `LPH_LOGIN_CODE_TEMPLATE_LANG`) with the
+  code as body variable and copy-code button; the code is never stored in `whatsappOutboundMessages`.
+- App: `PhoneCodeForm` on login ("Sign in with phone (WhatsApp)") and registration ("No email?
+  Register with phone"), desktop and mobile; `src/services/phoneLogin.ts`.
+- Backfill also fills `phoneIndex` from SMEs' confirmed WhatsApp numbers (shared numbers reported,
+  not indexed). Test project: nothing to index yet.
+- Checked on the test project with the functions run locally against a fake router (19 checks):
+  staff add-by-phone + link, code send/limits/wrong/reuse, hash-only storage, neutral replies,
+  phone registration, number change. Screens checked in the browser (desktop + mobile).
+- **To go live:** create and get Meta approval for the `lph_login_code` authentication template;
+  deploy the router; deploy the functions; Phase 4 rules must be live first, because a phone-only SME
+  creates its participant record by `createdByUid` (the current rules only allow it by email).
+- Email still gates some SME in-app notices (Phase 3 note); `sendViaBrevo` callers already skip a
+  missing address.
 
 ## Known exceptions
 

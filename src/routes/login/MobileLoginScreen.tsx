@@ -1,14 +1,20 @@
 import React, { useState } from 'react'
 import { Form, Input } from 'antd'
 import type { FormInstance } from 'antd'
-import { WarningOutlined } from '@ant-design/icons'
+import { WarningOutlined, WhatsAppOutlined } from '@ant-design/icons'
+import type { User } from 'firebase/auth'
 import MobileAuthShell from '@/components/auth/MobileAuthShell'
 import { GoogleMark } from './AuthSheet'
+import PhoneCodeForm from '@/components/auth/PhoneCodeForm'
 
 interface MobileLoginScreenProps {
     form: FormInstance
     onFinish: (values: { email: string; password: string }) => void
     onGoogle: () => void
+    /** Phone + WhatsApp code instead of email (SMEs without an email). */
+    phoneMode: boolean
+    onPhoneMode: (on: boolean) => void
+    onPhoneSignedIn: (user: User) => void | Promise<void>
     onForgotPassword: () => void
     onHowTo: () => void
     onSignUp: () => void
@@ -19,6 +25,9 @@ const MobileLoginScreen: React.FC<MobileLoginScreenProps> = ({
     form,
     onFinish,
     onGoogle,
+    phoneMode,
+    onPhoneMode,
+    onPhoneSignedIn,
     onForgotPassword,
     onHowTo,
     onSignUp,
@@ -51,6 +60,16 @@ const MobileLoginScreen: React.FC<MobileLoginScreenProps> = ({
         >
             {/* No autofocus here, unlike desktop: on a phone it throws the
                 keyboard over the page before the user has seen it. */}
+            {phoneMode ? (
+                <div className='ml-rise' style={{ animationDelay: '100ms' }}>
+                    <PhoneCodeForm
+                        mode='login'
+                        variant='mobile'
+                        onSignedIn={onPhoneSignedIn}
+                        onCancel={() => onPhoneMode(false)}
+                    />
+                </div>
+            ) : (
             <Form
                 form={form}
                 layout='vertical'
@@ -117,7 +136,13 @@ const MobileLoginScreen: React.FC<MobileLoginScreenProps> = ({
                     <GoogleMark />
                     Continue with Google
                 </button>
+
+                <button type='button' className='ml-google' style={{ marginTop: 10 }} onClick={() => onPhoneMode(true)}>
+                    <WhatsAppOutlined />
+                    Sign in with phone (WhatsApp)
+                </button>
             </Form>
+            )}
         </MobileAuthShell>
     )
 }

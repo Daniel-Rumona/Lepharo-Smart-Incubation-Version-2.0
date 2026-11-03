@@ -1593,13 +1593,21 @@ service cloud.firestore {
       allow delete: if performanceCollection in performanceCollections() && isSuperAdmin();
     }
 
+    // SME phone sign-in (functions/src/phoneLogin.ts): the number index, the hashed
+    // one-time codes and their rate limits are Cloud Functions' alone -- nobody,
+    // super-admins included, reads or writes them from a client.
+    function phoneLoginCollections() {
+      return ['phoneIndex', 'smeLoginCodes', 'smeLoginCodeIps'];
+    }
+
     // Everything else is internal staff only. Super-admins can access every
     // collection, including the explicitly restricted collections above,
     // except that nobody may rewrite the application audit trail.
     match /{collectionId}/{document=**} {
-      allow read: if isSuperAdmin() && collectionId != 'featureGovernance';
-      allow write: if isSuperAdmin() && !(collectionId in ['applicationHistory', 'featureGovernance']);
-      allow read, write: if isStaff() &&
+      allow read: if isSuperAdmin() && collectionId != 'featureGovernance' && !(collectionId in phoneLoginCollections());
+      allow write: if isSuperAdmin() && !(collectionId in ['applicationHistory', 'featureGovernance']) &&
+        !(collectionId in phoneLoginCollections());
+      allow read, write: if isStaff() && !(collectionId in phoneLoginCollections()) &&
         !(collectionId in ['formTemplates', 'sentForms', 'users', 'ipmReminderLog', 'proposalReminderLog', 'smeBankingDetails', 'applicationHistory', 'applicationEscalations', 'marketOpportunities', 'opportunityInterests', 'supplyContracts', 'agentProposals', 'auditLogs', 'whatsappAgentProposals', 'whatsappAgentState', 'smeRiskSnapshots', 'interventionImpact', 'dailyBriefs', 'digestItems', 'watches', 'chasers', 'academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'trainingAttendees', 'trainingCompanyProgress', 'trainingCertificates', 'certificateTemplates', 'certificateCounters', 'trainingSettings', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'programs', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures', 'reports', 'reportBlocks', 'reportTemplates', 'reportActivity', 'pageVisits', 'featureGovernance', 'employeePerformanceCompacts', 'employeePerformanceReviews', 'performanceCycles', 'ipmCompetencies', 'performanceCheckIns', 'performanceEnhancementPlans', 'performanceReviews']);
     }
   }

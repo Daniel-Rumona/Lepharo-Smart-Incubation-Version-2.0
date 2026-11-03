@@ -144,7 +144,7 @@ const ParticipantOnboardingForm: React.FC = () => {
     const primary = directors[primaryIndex]
     const checklist = [
         { key: 'company', label: 'Company', done: !!values.companyName?.trim() && isValidZARegistration(values.registrationNumber || '') && !!values.sector },
-        { key: 'directors', label: 'Directors', done: directors.length > 0 && directors.every(d => d?.name?.trim()) && !!primary?.email && !!primary?.phone },
+        { key: 'directors', label: 'Directors', done: directors.length > 0 && directors.every(d => d?.name?.trim()) && !!primary?.phone },
         { key: 'location', label: 'Ownership & location', done: !!values.province },
         { key: 'placement', label: 'Placement', done: !!values.stage }
     ]

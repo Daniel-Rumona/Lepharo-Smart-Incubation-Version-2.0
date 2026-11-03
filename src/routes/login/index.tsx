@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { GoogleOutlined, WarningOutlined } from '@ant-design/icons'
+import { GoogleOutlined, WarningOutlined, WhatsAppOutlined } from '@ant-design/icons'
 import { Button, Form, Input, Grid, message } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -23,6 +23,7 @@ import PickupSheet from './PickupSheet'
 import ResetPasswordSheet from './ResetPasswordSheet'
 import HowToAccessSheet from './HowToAccessSheet'
 import MobileLoginScreen from './MobileLoginScreen'
+import PhoneCodeForm from '@/components/auth/PhoneCodeForm'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { shouldPromptWhatsApp } from '@/services/whatsappConsentPrompt'
@@ -192,6 +193,8 @@ const LoginPageContent: React.FC = () => {
     const [tutorialVisible, setTutorialVisible] = useState(false)
     const [loading, setLoading] = useState(false)
     const [googleLoading, setGoogleLoading] = useState(false)
+    // SMEs without an email sign in with their phone and a WhatsApp code.
+    const [phoneMode, setPhoneMode] = useState(false)
     const [redirecting, setRedirecting] = useState(false)
     const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false)
     const [forgotPasswordEmail, setForgotPasswordEmail] = useState('')
@@ -778,6 +781,16 @@ const LoginPageContent: React.FC = () => {
         }
     }
 
+    // 3) Phone + WhatsApp code (PhoneCodeForm has already signed in).
+    const handlePhoneSignedIn = async (user: any) => {
+        markInteractiveSignIn()
+        try {
+            await routeSignedInUser(user)
+        } finally {
+            clearInteractiveSignInFlag()
+        }
+    }
+
     const isSubmitting = loading || googleLoading || redirecting
 
     return (
@@ -791,6 +804,9 @@ const LoginPageContent: React.FC = () => {
                     form={form}
                     onFinish={handleLogin}
                     onGoogle={handleGoogleLogin}
+                    phoneMode={phoneMode}
+                    onPhoneMode={setPhoneMode}
+                    onPhoneSignedIn={handlePhoneSignedIn}
                     onForgotPassword={openForgotPassword}
                     onHowTo={() => setTutorialVisible(true)}
                     onSignUp={() => navigate('/registration')}
@@ -810,6 +826,14 @@ const LoginPageContent: React.FC = () => {
                         <h1 className='as-title'>Welcome back</h1>
                         <p className='as-sub'>Sign in to continue to Lepharo Smart Incubation.</p>
 
+                        {phoneMode ? (
+                            <PhoneCodeForm
+                                mode='login'
+                                variant='desktop'
+                                onSignedIn={handlePhoneSignedIn}
+                                onCancel={() => setPhoneMode(false)}
+                            />
+                        ) : (
                         <Form
                             layout='vertical'
                             form={form}
@@ -882,7 +906,18 @@ const LoginPageContent: React.FC = () => {
                             >
                                 Continue with Google
                             </Button>
+
+                            <Button
+                                icon={<WhatsAppOutlined />}
+                                size='large'
+                                block
+                                style={{ marginTop: 10 }}
+                                onClick={() => setPhoneMode(true)}
+                            >
+                                Sign in with phone (WhatsApp)
+                            </Button>
                         </Form>
+                        )}
 
                         <p className='as-alt'>
                             Don't have an account?{' '}

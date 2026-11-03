@@ -30,6 +30,14 @@ export * from "./syncCoordinatorPrograms";
 export * from "./departmentNameCascade";
 export * from "./lineManagers";
 export { linkMySmeAccount } from "./smeIdentity";
+export {
+  requestSmeLoginCode,
+  verifySmeLoginCode,
+  registerSmeByPhone,
+  createSmeLoginByPhone,
+  changeMyLoginPhone,
+  onSmeWhatsAppNumber,
+} from "./phoneLogin";
 export * from "./ipmReminders";
 export * from "./complianceExpiry";
 export * from "./kpiReminders";

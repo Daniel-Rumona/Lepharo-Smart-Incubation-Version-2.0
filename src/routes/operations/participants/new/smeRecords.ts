@@ -18,6 +18,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { withOwner } from '@/lib/storageOwner'
 import { auth, db, storage } from '@/firebase'
 import { CREATE_USER_URL } from '@/routes/shared/incubatees/participantsData'
+import { createSmeLoginByPhone } from '@/services/phoneLogin'
 import { normaliseRegistration } from './registration'
 
 dayjs.extend(customParseFormat)
@@ -349,12 +350,22 @@ export const createSme = async (input: SmeInput, ctx: ProgramContext, actor: { e
 
 /**
  * Invites the primary contact to the platform and links their login to the
- * participant record. Never throws: an SME is saved whether or not the invite
- * goes out, and the caller reports which happened.
+ * participant record. A contact with no email gets a login that signs in with
+ * their phone number and a WhatsApp code. Never throws: an SME is saved whether
+ * or not the invite goes out, and the caller reports which happened.
  */
 export const inviteSme = async (input: Pick<SmeInput, 'directors'>, participantId: string): Promise<boolean> => {
     const primary = primaryOf(input.directors)
-    if (!primary?.email) return false
+    if (!primary?.email) {
+        if (!primary?.phone) return false
+        try {
+            await createSmeLoginByPhone(participantId, primary.phone, primary.name || undefined)
+            return true
+        } catch (err) {
+            console.warn('createSmeLoginByPhone failed (SME saved without a login):', err)
+            return false
+        }
+    }
     try {
         const idToken = await auth.currentUser?.getIdToken()
         if (!idToken) return false

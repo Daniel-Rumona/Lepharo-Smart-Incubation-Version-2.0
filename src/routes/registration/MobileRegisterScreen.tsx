@@ -2,13 +2,19 @@ import React from 'react'
 import { Form, Input } from 'antd'
 import type { FormInstance } from 'antd'
 import MobileAuthShell from '@/components/auth/MobileAuthShell'
+import { WhatsAppOutlined } from '@ant-design/icons'
 import { GoogleMark } from '../login/AuthSheet'
+import PhoneCodeForm from '@/components/auth/PhoneCodeForm'
 
 interface MobileRegisterScreenProps {
     form: FormInstance
     busy: boolean
     onFinish: (values: any) => void
     onGoogle: () => void
+    /** Phone + WhatsApp code instead of email (SMEs without an email). */
+    phoneMode: boolean
+    onPhoneMode: (on: boolean) => void
+    onPhoneRegistered: () => void
     onSignIn: () => void
     onBack: () => void
 }
@@ -18,6 +24,9 @@ const MobileRegisterScreen: React.FC<MobileRegisterScreenProps> = ({
     busy,
     onFinish,
     onGoogle,
+    phoneMode,
+    onPhoneMode,
+    onPhoneRegistered,
     onSignIn,
     onBack
 }) => (
@@ -34,6 +43,14 @@ const MobileRegisterScreen: React.FC<MobileRegisterScreenProps> = ({
             </>
         }
     >
+        {phoneMode ? (
+            <PhoneCodeForm
+                mode='register'
+                variant='mobile'
+                onSignedIn={onPhoneRegistered}
+                onCancel={() => onPhoneMode(false)}
+            />
+        ) : (
         <Form
             form={form}
             layout='vertical'
@@ -114,7 +131,13 @@ const MobileRegisterScreen: React.FC<MobileRegisterScreenProps> = ({
                 <GoogleMark />
                 Continue with Google
             </button>
+
+            <button type='button' className='ml-google' style={{ marginTop: 10 }} disabled={busy} onClick={() => onPhoneMode(true)}>
+                <WhatsAppOutlined />
+                No email? Register with phone
+            </button>
         </Form>
+        )}
     </MobileAuthShell>
 )
 

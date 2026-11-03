@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const { planSmeIdentity, planRequestOwners } = require('./sme-identity-plan.cjs')
+const { planSmeIdentity, planRequestOwners, planPhoneIndex } = require('./sme-identity-plan.cjs')
 
 const user = (uid, data = {}) => ({ uid, data: { role: 'incubatee', email: `${uid}@example.com`, ...data } })
 const participant = (id, data = {}) => ({ id, data: { ...data } })
@@ -120,4 +120,25 @@ test('resource requests get the one SME login with their email, and nothing is g
     const { patches, unmatched } = planRequestOwners({ requests, users })
     assert.deepEqual(patches, [{ id: 'r1', patch: { requestedByUid: 'u1' } }])
     assert.equal(unmatched, 3)
+})
+
+test('phone index: each SME confirmed WhatsApp number, unless shared, taken or already indexed', () => {
+    const consent = (number, status = 'granted') => ({ whatsappConsent: { number, status } })
+    const users = [
+        user('u1', consent('082 111 1111')),
+        user('u2', consent('+27 82 222 2222')),
+        user('u3', consent('0823333333')), user('u4', consent('27823333333')),
+        user('u5', consent('0825555555', 'declined')),
+        user('u6', consent('0826666666')),
+        user('u7', consent('0827777777')),
+        user('staff', { role: 'coordinator', ...consent('0828888888') }),
+    ]
+    const index = [{ id: '27826666666', data: { uid: 'someone' } }, { id: '27820000000', data: { uid: 'u7' } }]
+    const { entries, shared, taken } = planPhoneIndex({ users, index })
+    assert.deepEqual(entries, [
+        { id: '27821111111', data: { uid: 'u1', source: 'whatsappConsent' } },
+        { id: '27822222222', data: { uid: 'u2', source: 'whatsappConsent' } },
+    ])
+    assert.deepEqual(shared, [{ number: '27823333333', uids: ['u3', 'u4'] }])
+    assert.deepEqual(taken, [{ uid: 'u6' }])
 })

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { GoogleOutlined } from '@ant-design/icons'
+import { GoogleOutlined, WhatsAppOutlined } from '@ant-design/icons'
 import { Button, Form, Input, Grid, message } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -12,6 +12,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { Helmet } from 'react-helmet'
 import { motion } from 'framer-motion'
 import MobileRegisterScreen from './MobileRegisterScreen'
+import PhoneCodeForm from '@/components/auth/PhoneCodeForm'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { DashboardLoader } from '@/components/layout/DashboardLoader'
 
@@ -57,6 +58,14 @@ const RegisterPageContent: React.FC = () => {
 
     const [loading, setLoading] = useState(false)
     const [googleLoading, setGoogleLoading] = useState(false)
+    // SMEs without an email register with their phone and a WhatsApp code;
+    // the server creates the account (registerSmeByPhone).
+    const [phoneMode, setPhoneMode] = useState(false)
+    const handlePhoneRegistered = () => {
+        message.success('Account created! Redirecting...', 1.2)
+        setRedirecting(true)
+        navigate('/applicant')
+    }
     const [redirecting, setRedirecting] = useState(false)
     const [isLeavingForLogin, setIsLeavingForLogin] = useState(false)
 
@@ -159,6 +168,9 @@ const RegisterPageContent: React.FC = () => {
                     busy={isSubmitting}
                     onFinish={handleRegister}
                     onGoogle={handleGoogleRegister}
+                    phoneMode={phoneMode}
+                    onPhoneMode={setPhoneMode}
+                    onPhoneRegistered={handlePhoneRegistered}
                     onSignIn={() => navigate('/login')}
                     onBack={() => navigate('/')}
                 />
@@ -176,6 +188,14 @@ const RegisterPageContent: React.FC = () => {
                         <h1 className='as-title'>Create your account</h1>
                         <p className='as-sub'>Join the Lepharo incubation programme.</p>
 
+                        {phoneMode ? (
+                            <PhoneCodeForm
+                                mode='register'
+                                variant='desktop'
+                                onSignedIn={handlePhoneRegistered}
+                                onCancel={() => setPhoneMode(false)}
+                            />
+                        ) : (
                         <Form
                             layout='vertical'
                             form={form}
@@ -267,7 +287,18 @@ const RegisterPageContent: React.FC = () => {
                             >
                                 Continue with Google
                             </Button>
+
+                            <Button
+                                icon={<WhatsAppOutlined />}
+                                size='large'
+                                block
+                                style={{ marginTop: 10 }}
+                                onClick={() => setPhoneMode(true)}
+                            >
+                                No email? Register with phone
+                            </Button>
                         </Form>
+                        )}
 
                         <p className='as-alt'>
                             Already have an account?{' '}
