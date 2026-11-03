@@ -693,3 +693,52 @@ html[data-theme="dark"] .ws-sort.ant-select:hover {
         min-width: 0;
     }
 }
+
+/* --- Choice cards ----------------------------------------------------------- */
+/* Four or fewer options as cards side by side (priority, status). */
+.ws-choice-cards {
+    display: grid;
+    gap: 8px;
+}
+
+.ws-choice-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 48px;
+    padding: 8px 6px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--app-text);
+    text-align: center;
+    background: var(--app-surface-sunken);
+    border: 1.5px solid var(--app-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.ws-choice-card:hover {
+    border-color: color-mix(in srgb, var(--app-accent) 45%, var(--app-border));
+}
+
+.ws-choice-card:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.ws-choice-card.is-selected {
+    font-weight: 600;
+    color: var(--app-accent);
+    background: color-mix(in srgb, var(--app-accent) 12%, var(--app-surface));
+    border-color: var(--app-accent);
+}
+
+/* Phones: two per row. */
+@media (max-width: 480px) {
+    .ws-choice-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}

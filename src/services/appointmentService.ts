@@ -465,6 +465,21 @@ export const checkedInEmails = (appointment?: AppointmentRecord | null) =>
 export const checkedOutEmails = (appointment?: AppointmentRecord | null) =>
     emails(appointment, 'checkedOutEmails')
 
+// Participant ids the session summary carries next to the email lists
+// (appointmentSessionService); matched before email (docs/sme-identity-migration-plan.md).
+const participantIdsIn = (
+    appointment: AppointmentRecord | null | undefined,
+    kind: 'checkedInParticipantIds' | 'checkedOutParticipantIds'
+) =>
+    new Set(
+        [
+            ...(((appointment?.attendance?.summary as any)?.[kind] as string[]) || []),
+            ...(((appointment?.attendanceSummary as any)?.[kind] as string[]) || []),
+        ]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    )
+
 export const isPastAppointment = (appointment?: AppointmentRecord | null, now = dayjs()) => {
     if (!appointment) return false
     const end = resolveAppointmentEnd(appointment)
@@ -509,14 +524,20 @@ export const getAttendanceStatus = (
     appointment: AppointmentRecord,
     now = dayjs()
 ): AttendanceStatus => {
+    const participantId = getAppointmentParticipantId(member)
     const email = getAppointmentParticipantEmail(member)
+    // Email fallback until Phase 4 (docs/sme-identity-migration-plan.md).
     const checkedIn =
         Boolean(member.checkedIn) ||
         member.attendance?.status === 'attended' ||
+        Boolean(member.attendance?.checkedInAt) ||
+        (!!participantId && participantIdsIn(appointment, 'checkedInParticipantIds').has(participantId)) ||
         (!!email && checkedInEmails(appointment).includes(email))
     const checkedOut =
         Boolean(member.checkedOut) ||
         member.attendance?.status === 'checked-out' ||
+        Boolean(member.attendance?.checkedOutAt) ||
+        (!!participantId && participantIdsIn(appointment, 'checkedOutParticipantIds').has(participantId)) ||
         (!!email && checkedOutEmails(appointment).includes(email))
     if (checkedOut) return 'checked-out'
     if (checkedIn) return 'checked-in'

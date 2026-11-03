@@ -1,8 +1,8 @@
 /**
- * Which interventions are linked to a change in SME revenue. Pure functions, no
- * imports, so impactLogic.test.cjs runs without Firebase.
+ * Which interventions are linked to a change in an SME measure (revenue, jobs).
+ * Pure functions, no imports, so impactLogic.test.cjs runs without Firebase.
  *
- * For each SME that completed an intervention (SME-confirmed), revenue in the
+ * For each SME that completed an intervention (SME-confirmed), the measure in the
  * months after completion is compared with the months before. The same comparison
  * is made for similar SMEs in the same programme that had not yet received that
  * intervention, over the same calendar months. The difference is the lift: the
@@ -11,12 +11,24 @@
 
 export type MonthKey = string; // YYYY-MM
 
+export type ImpactMetric = "revenue" | "jobs";
+
+/**
+ * How each measure changes: revenue as a percentage (so a R20k and a R2m business
+ * compare fairly), jobs as a head count (a 3-person team adding one is not "+33%").
+ */
+export const IMPACT_METRICS: Record<ImpactMetric, { change: "percent" | "absolute"; unit: "points" | "jobs"; noDifference: number }> = {
+  revenue: { change: "percent", unit: "points", noDifference: 1 },
+  jobs: { change: "absolute", unit: "jobs", noDifference: 0.2 },
+};
+
 export type ImpactSme = {
   id: string;
   programId: string;
   sector: string;
   synthetic: boolean;
-  revenue: Record<MonthKey, number>;
+  /** The measure being analysed, by month. */
+  values: Record<MonthKey, number>;
 };
 
 export type ImpactTreatment = {
@@ -57,8 +69,15 @@ export type ImpactResult = {
   programId: string;
   interventionId: string;
   interventionTitle: string;
+  metric: ImpactMetric;
+  /** What the lift and changes are in: percentage points (revenue) or jobs per SME. */
+  unit: "points" | "jobs";
   status: ImpactStatus;
-  /** Lift in percentage points of revenue change, treated minus comparison. */
+  /**
+   * Lift, treated change minus comparison change. For revenue the changes are
+   * percentages and the lift is in points; for jobs both are jobs per SME. The
+   * *Percent names predate jobs and are kept so stored results stay readable.
+   */
   liftPercent: number | null;
   rangeLowPercent: number | null;
   rangeHighPercent: number | null;
@@ -92,19 +111,24 @@ export function addMonths(month: MonthKey, count: number): MonthKey {
 const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
-/** Average revenue over the months given (offsets from `month`), or null if too few months have data. */
+/** Average of the measure over the months given (offsets from `month`), or null if too few months have data. */
 export function windowAverage(sme: ImpactSme, month: MonthKey, offsets: number[], minMonths: number): number | null {
   const values = offsets
-    .map((offset) => sme.revenue[addMonths(month, offset)])
+    .map((offset) => sme.values[addMonths(month, offset)])
     .filter((value) => typeof value === "number" && Number.isFinite(value));
   return values.length >= minMonths ? mean(values) : null;
 }
 
-/** Percentage change in average revenue across the window, or null without data or a zero baseline. */
-export function windowChange(sme: ImpactSme, month: MonthKey, settings: ImpactSettings): number | null {
+/**
+ * Change in the window average: a percentage for revenue (null on a zero
+ * baseline), a plain difference for jobs. Null without enough months either side.
+ */
+export function windowChange(sme: ImpactSme, month: MonthKey, settings: ImpactSettings, metric: ImpactMetric = "revenue"): number | null {
   const before = windowAverage(sme, month, settings.beforeMonths, settings.minMonthsEachSide);
   const after = windowAverage(sme, month, settings.afterMonths, settings.minMonthsEachSide);
-  if (before === null || after === null || before <= 0) return null;
+  if (before === null || after === null) return null;
+  if (IMPACT_METRICS[metric].change === "absolute") return after - before;
+  if (before <= 0) return null;
   return ((after - before) / before) * 100;
 }
 
@@ -134,7 +158,7 @@ export function resampleRange(values: number[], resamples: number, seed: number)
   return [means[Math.floor(resamples * 0.05)], means[Math.min(resamples - 1, Math.floor(resamples * 0.95))]];
 }
 
-/** Low / middle / high revenue band, split at the terciles of the baselines given. */
+/** Low / middle / high band of the measure, split at the terciles of the baselines given. */
 export function bandOf(value: number, baselines: number[]): number {
   const sorted = [...baselines].sort((a, b) => a - b);
   if (!sorted.length) return 1;
@@ -152,7 +176,8 @@ export function measureIntervention(
   interventionId: string,
   smes: ImpactSme[],
   treatments: ImpactTreatment[],
-  settings: ImpactSettings = DEFAULT_IMPACT_SETTINGS
+  settings: ImpactSettings = DEFAULT_IMPACT_SETTINGS,
+  metric: ImpactMetric = "revenue"
 ): ImpactResult {
   const cohort = smes.filter((sme) => sme.programId === programId);
   const byId = new Map(cohort.map((sme) => [sme.id, sme]));
@@ -174,14 +199,14 @@ export function measureIntervention(
 
   for (const treatment of firstMonth.values()) {
     const sme = byId.get(treatment.participantId);
-    const change = sme ? windowChange(sme, treatment.month, settings) : null;
+    const change = sme ? windowChange(sme, treatment.month, settings, metric) : null;
     if (!sme || change === null) {
       treatedWithoutData += 1;
       continue;
     }
 
     // Comparison SMEs: same programme, not yet given this intervention by the end of
-    // the window, with revenue on both sides of the same calendar months.
+    // the window, with the measure on both sides of the same calendar months.
     const windowEnd = addMonths(treatment.month, lastAfter);
     const candidates = cohort
       .filter((other) => other.id !== sme.id)
@@ -191,7 +216,7 @@ export function measureIntervention(
       })
       .map((other) => ({
         other,
-        change: windowChange(other, treatment.month, settings),
+        change: windowChange(other, treatment.month, settings, metric),
         baseline: windowAverage(other, treatment.month, settings.beforeMonths, settings.minMonthsEachSide),
       }))
       .filter((row): row is { other: ImpactSme; change: number; baseline: number } => row.change !== null && row.baseline !== null);
@@ -260,6 +285,8 @@ export function measureIntervention(
     programId,
     interventionId,
     interventionTitle: title,
+    metric,
+    unit: IMPACT_METRICS[metric].unit,
     status,
     liftPercent: lift === null ? null : round1(lift),
     rangeLowPercent: range ? round1(range[0]) : null,
@@ -294,20 +321,39 @@ const signedPoints = (value: number) => `${value > 0 ? "+" : ""}${value}`;
 /** The one line a funder may read. Only for reportable results; always "linked to", never "caused". */
 export function impactHeadline(result: ImpactResult): string | null {
   if (result.status !== "reportable" || result.liftPercent === null || !result.period) return null;
-  const points = Math.abs(result.liftPercent);
-  const finding = points < 1
-    ? "linked to no clear difference in revenue growth against similar SMEs"
-    : `linked to revenue growth ${points} percentage points ${result.liftPercent > 0 ? "above" : "below"} similar SMEs`;
-  const range = result.rangeLowPercent !== null && result.rangeHighPercent !== null
-    ? `; likely range ${signedPoints(result.rangeLowPercent)} to ${signedPoints(result.rangeHighPercent)} points`
+  const metric = result.metric || "revenue";
+  const size = Math.abs(result.liftPercent);
+  const unit = metric === "jobs" ? "jobs" : "points";
+  // A range that includes zero means no difference can't be ruled out, however large the estimate.
+  const crossesZero = result.rangeLowPercent !== null && result.rangeHighPercent !== null &&
+    result.rangeLowPercent < 0 && result.rangeHighPercent > 0;
+  let finding: string;
+  if (crossesZero || size < IMPACT_METRICS[metric].noDifference) {
+    finding = `linked to no clear difference in ${metric === "jobs" ? "jobs" : "revenue growth"} against similar SMEs`;
+  } else if (metric === "jobs") {
+    finding = `linked to ${size} ${result.liftPercent > 0 ? "more" : "fewer"} job${size === 1 ? "" : "s"} per SME than similar SMEs`;
+  } else {
+    finding = `linked to revenue growth ${size} percentage points ${result.liftPercent > 0 ? "above" : "below"} similar SMEs`;
+  }
+  // A range only means something when the SMEs differed; seeded cohorts can all move alike.
+  const range = result.rangeLowPercent !== null && result.rangeHighPercent !== null && result.rangeLowPercent !== result.rangeHighPercent
+    ? `; likely range ${signedPoints(result.rangeLowPercent)} to ${signedPoints(result.rangeHighPercent)} ${unit}`
     : "";
+  const when = result.period.from === result.period.to
+    ? `in ${monthLabel(result.period.from)}`
+    : `${monthLabel(result.period.from)}–${monthLabel(result.period.to)}`;
   return `${result.interventionTitle}: ${finding} ` +
-    `(${result.treatedCount} SMEs completing it ${monthLabel(result.period.from)}–${monthLabel(result.period.to)}${range}).`;
+    `(${result.treatedCount} SMEs completing it ${when}${range}).`;
 }
 
-/** Every (programme, intervention) pair with at least one completion. */
-export function measureAll(smes: ImpactSme[], treatments: ImpactTreatment[], settings: ImpactSettings = DEFAULT_IMPACT_SETTINGS) {
+/** Every (programme, intervention) pair with at least one completion, for one measure. */
+export function measureAll(
+  smes: ImpactSme[],
+  treatments: ImpactTreatment[],
+  settings: ImpactSettings = DEFAULT_IMPACT_SETTINGS,
+  metric: ImpactMetric = "revenue"
+) {
   const pairs = new Map<string, { programId: string; interventionId: string }>();
   treatments.forEach((row) => pairs.set(`${row.programId}__${row.interventionId}`, { programId: row.programId, interventionId: row.interventionId }));
-  return [...pairs.values()].map((pair) => measureIntervention(pair.programId, pair.interventionId, smes, treatments, settings));
+  return [...pairs.values()].map((pair) => measureIntervention(pair.programId, pair.interventionId, smes, treatments, settings, metric));
 }

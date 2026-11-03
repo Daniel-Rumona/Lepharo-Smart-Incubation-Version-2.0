@@ -1,18 +1,11 @@
 import type { Timestamp } from 'firebase/firestore'
 
-export type InterventionFrequency = 'as-needed' | 'monthly' | 'biweekly' | 'weekly';
 export type InterventionType = 'singular' | 'grouped'
 export type AssigneeRole = 'coordinator' | 'operations'
 export type AssignmentStatus = 'assigned' | 'in-progress' | 'completed' | 'cancelled' | 'needs-reassignment'
 export type AcceptanceStatus = 'pending' | 'accepted' | 'declined'
 export type AssigneeCompletionStatus = 'pending' | 'completed'
 export type ParticipantCompletionStatus = 'pending' | 'confirmed' | 'rejected'
-export const INTERVENTION_FREQUENCIES: {label:string, value: InterventionFrequency}[] = [
-  { label: 'As needed', value: 'as-needed' },
-  { label: 'Once a month', value: 'monthly' },
-  { label: 'Every two weeks', value: 'biweekly' },
-  { label: 'Weekly', value: 'weekly' },
-];
 
 export type Target =
   | { mode: 'hours'; hoursEstimate: number }
@@ -57,7 +50,6 @@ export interface Assignment {
       capturedAt: Timestamp
     }
     type: InterventionType
-    frequency?: InterventionFrequency
     assigneeRole: AssigneeRole
     assigneeId: string
     assigneeName: string

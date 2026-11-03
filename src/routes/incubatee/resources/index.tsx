@@ -116,12 +116,14 @@ const ResourceRequestForm: React.FC = () => {
     }
 
     const fetchRequests = async () => {
-        if (!user?.email) {
+        if (!user?.id) {
             setRequests([])
             return
         }
 
-        const normalizedEmail = String(user.email).trim().toLowerCase()
+        // Requests are the SME's by its login (requestedByUid). Older ones only
+        // carry its name or email: email fallback until Phase 4.
+        const normalizedEmail = String(user.email || '').trim().toLowerCase()
         const legacyIdentities = Array.from(
             new Set(
                 [user.name, user.email, normalizedEmail]
@@ -130,6 +132,12 @@ const ResourceRequestForm: React.FC = () => {
             )
         )
         const snapshots = await Promise.all([
+            getDocs(
+                query(
+                    collection(db, 'resourceRequests'),
+                    where('requestedByUid', '==', user.id)
+                )
+            ),
             ...legacyIdentities.map(identity =>
                 getDocs(
                     query(
@@ -138,12 +146,14 @@ const ResourceRequestForm: React.FC = () => {
                     )
                 )
             ),
-            getDocs(
-                query(
-                    collection(db, 'resourceRequests'),
-                    where('requestedByEmail', '==', normalizedEmail)
-                )
-            )
+            ...(normalizedEmail
+                ? [getDocs(
+                    query(
+                        collection(db, 'resourceRequests'),
+                        where('requestedByEmail', '==', normalizedEmail)
+                    )
+                )]
+                : [])
         ])
 
         const requestsById = new Map<string, any>()
@@ -173,7 +183,7 @@ const ResourceRequestForm: React.FC = () => {
         return () => {
             cancelled = true
         }
-    }, [user?.email, user?.name])
+    }, [user?.id, user?.email, user?.name])
 
     const handleRequest = async (values: any) => {
         if (!selectedResource || !user) return
@@ -204,6 +214,7 @@ const ResourceRequestForm: React.FC = () => {
                 urgency: values.urgency,
                 deliveryMethod: values.deliveryMethod,
                 requestedBy: user.name || user.email,
+                requestedByUid: user.id,
                 requestedByEmail: String(user.email || '').trim().toLowerCase(),
                 participantId: user.participantId || user.participantDocId || null,
                 status: 'pending',

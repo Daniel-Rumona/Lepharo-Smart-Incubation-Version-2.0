@@ -18,9 +18,27 @@ function load(relative, mocks = {}) {
 }
 const {
     complianceEffectiveExpiry,
+    filterComplianceRequirementsForDepartment,
     normalizeComplianceRequirements,
     selectDepartmentRequirements
-} = load('complianceResolver.ts', { '@/firebase': { db: null } })
+} = load('complianceResolver.ts', {
+    '@/firebase': { db: null },
+    // The module builds DEFAULT_PROGRAM_REQUIREMENTS_DOC at load time.
+    'firebase/firestore': { ...require('firebase/firestore'), doc: () => null },
+    './departmentRoles': { departmentHasRole: () => false, loadDepartmentRoles: async () => ({ roles: {}, departments: [] }) }
+})
+
+test('ordinary departments see every programme upload but no agreements', () => {
+    // /programs stores isOnboarding: true on every row, so it must not hide uploads.
+    const programme = normalizeComplianceRequirements([
+        { key: 'TAX_CLEARANCE', title: 'Tax Clearance', isOnboarding: true },
+        { kind: 'agreement', agreementId: 'moa', title: 'MOA', isOnboarding: true }
+    ])
+    const ordinary = filterComplianceRequirementsForDepartment(programme, { canSeeOnboardingRequirements: false })
+    assert.deepEqual(ordinary.map(item => item.kind), ['upload'])
+    const rom = filterComplianceRequirementsForDepartment(programme, { canSeeOnboardingRequirements: true })
+    assert.equal(rom.length, 2)
+})
 
 const ymd = date => [date.getFullYear(), date.getMonth() + 1, date.getDate()].join('-')
 

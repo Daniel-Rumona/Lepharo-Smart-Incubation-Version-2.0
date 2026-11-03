@@ -15,7 +15,7 @@ import {
 } from "antd";
 import HighchartsReact from "highcharts-react-official";
 import Highcharts from "highcharts";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { Helmet } from "react-helmet";
 import dayjs, { Dayjs } from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -26,6 +26,7 @@ import { MotionCard } from "@/components/dashboards/metrics/Header";
 import GrowthScoreCard from "@/components/growth-score/GrowthScoreCard";
 import MilestoneJourney, { MilestoneActivityChart } from "@/components/milestone-journey/MilestoneJourney";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
+import { resolveSmeParticipantId } from "@/services/smeIdentity";
 
 dayjs.extend(customParseFormat);
 
@@ -94,24 +95,18 @@ const IncubateeAnalytics = () => {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const email = user?.email;
-      if (!email) {
-        setRows([]);
-        setHasParticipant(false);
-        return;
-      }
-
-      const participantSnapshot = await getDocs(
-        query(collection(db, "participants"), where("email", "==", email))
-      );
-      if (participantSnapshot.empty) {
+      // The SME's linked participant; email only until it is linked.
+      const participantId = await resolveSmeParticipantId({
+        participantId: user?.participantId,
+        email: user?.email,
+      });
+      if (!participantId) {
         setRows([]);
         setHasParticipant(false);
         return;
       }
 
       setHasParticipant(true);
-      const participantId = participantSnapshot.docs[0].id;
       const historySnapshot = await getDocs(
         collection(db, "monthlyPerformance", participantId, "history")
       );
@@ -132,7 +127,7 @@ const IncubateeAnalytics = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.email]);
+  }, [user?.email, user?.participantId]);
 
   useEffect(() => {
     fetchData();
@@ -308,7 +303,7 @@ const IncubateeAnalytics = () => {
             {view === "Metrics" && (
               <>
                 <Col span={24}>
-                  <GrowthScoreCard email={user?.email} />
+                  <GrowthScoreCard participantId={user?.participantId} email={user?.email} />
                 </Col>
                 <Col xs={24} md={12}>
                   <MotionCard

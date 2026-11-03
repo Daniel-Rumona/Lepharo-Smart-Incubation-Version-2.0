@@ -92,9 +92,10 @@ const clean = (value: unknown) => String(value ?? '').trim()
 const norm = (value: unknown) => clean(value).toLowerCase()
 
 /**
- * SME photos live on users/{uid}, matched by email. Follow-ups store the SME's
- * email; older ones without it fall back to the participant record. Photos are
- * a nice-to-have, so any failure just leaves the initials avatar.
+ * SME photos live on users/{uid}, matched by users.participantId. SMEs not
+ * matched that way fall back to email: the follow-up's stored email, else the
+ * participant record's. Photos are a nice-to-have, so any failure just leaves
+ * the initials avatar.
  */
 const useSmePhotos = (items: FollowUp[]) => {
     const [photos, setPhotos] = useState<Record<string, string>>({})
@@ -107,9 +108,25 @@ const useSmePhotos = (items: FollowUp[]) => {
         let cancelled = false
         const pairs = key ? key.split(',').map((pair) => pair.split('|')) : []
         void (async () => {
+            const next: Record<string, string> = {}
+            const pids = Array.from(new Set(pairs.map(([pid]) => pid).filter(Boolean)))
+            for (let i = 0; i < pids.length; i += 10) {
+                try {
+                    const snap = await getDocs(query(collection(db, 'users'), where('participantId', 'in', pids.slice(i, i + 10))))
+                    snap.docs.forEach((d) => {
+                        const data = d.data() as any
+                        const url = clean(data.photoURL)
+                        if (url && data.participantId) next[data.participantId] = url
+                    })
+                } catch (error) {
+                    console.warn('Could not load SME photos', error)
+                }
+            }
+
+            // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
             const emailByParticipant = new Map<string, string>()
             await Promise.all(pairs.map(async ([pid, email]) => {
-                if (!pid) return
+                if (!pid || next[pid]) return
                 if (email) { emailByParticipant.set(pid, email); return }
                 try {
                     const data = (await getDoc(doc(db, 'participants', pid))).data() as any
@@ -135,7 +152,6 @@ const useSmePhotos = (items: FollowUp[]) => {
                 }
             }
 
-            const next: Record<string, string> = {}
             emailByParticipant.forEach((email, pid) => {
                 const url = urlByEmail.get(email)
                 if (url) next[pid] = url

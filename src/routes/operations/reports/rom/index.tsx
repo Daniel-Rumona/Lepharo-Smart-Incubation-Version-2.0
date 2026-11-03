@@ -41,6 +41,7 @@ import "highcharts/highcharts-more";
 import "highcharts/modules/funnel";
 import {
     collection,
+    documentId,
     getDocs,
     onSnapshot,
     query,
@@ -536,34 +537,45 @@ const ROMSegmentedReportsPage: React.FC = () => {
     );
 
     useEffect(() => {
+        // Participants by the application's participantId; apps without one
+        // are matched by email (email fallback until Phase 4, docs/sme-identity-migration-plan.md).
+        const ids = Array.from(
+            new Set(
+                timeFilteredApplications
+                    .map((app) => String(app.participantId || "").trim())
+                    .filter(Boolean)
+            )
+        );
         const emails = Array.from(
             new Set(
                 timeFilteredApplications
+                    .filter((app) => !app.participantId)
                     .map((app) => normalize(app.email))
                     .filter(Boolean)
             )
         );
 
-        if (!emails.length) {
+        if (!ids.length && !emails.length) {
             setParticipants([]);
             return;
         }
 
-        const batches: string[][] = [];
+        const batches: { field: "id" | "email"; values: string[] }[] = [];
+        for (let i = 0; i < ids.length; i += 10)
+            batches.push({ field: "id", values: ids.slice(i, i + 10) });
         for (let i = 0; i < emails.length; i += 10)
-            batches.push(emails.slice(i, i + 10));
+            batches.push({ field: "email", values: emails.slice(i, i + 10) });
 
         const participantMap = new Map<string, Participant>();
         const unsubs = batches.map((batch) => {
             const participantsQuery = query(
                 collection(db, "participants"),
-                where("email", "in", batch)
+                where(batch.field === "id" ? documentId() : "email", "in", batch.values)
             );
             return onSnapshot(participantsQuery, (snapshot) => {
                 snapshot.docs.forEach((docSnap) => {
                     const data = docSnap.data() as any;
-                    const email = normalize(data.email);
-                    if (email && filterReportRecords([{ id: docSnap.id, ...data }], user?.email).length) participantMap.set(email, { id: docSnap.id, ...data });
+                    if (filterReportRecords([{ id: docSnap.id, ...data }], user?.email).length) participantMap.set(docSnap.id, { id: docSnap.id, ...data });
                 });
                 setParticipants(Array.from(participantMap.values()));
             });
@@ -572,6 +584,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
         return () => unsubs.forEach((unsub) => unsub());
     }, [timeFilteredApplications, user?.email]);
 
+    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
     const participantByEmail = useMemo(() => {
         const map = new Map<string, Participant>();
         participants.forEach((participant) => {

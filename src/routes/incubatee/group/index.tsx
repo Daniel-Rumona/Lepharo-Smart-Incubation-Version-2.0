@@ -28,6 +28,8 @@ import {
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { getSmeParticipant } from '@/services/smeIdentity'
+import { getSmeApplications } from '@/lib/acceptedApplication'
 import {
     buildGroupRequirements,
     evaluateGroupEligibility,
@@ -148,7 +150,7 @@ export default function GroupProgressForm() {
     const [rules, setRules] = useState<any>({})
 
     useEffect(() => {
-        if (!user?.email) {
+        if (!user) {
             setLoading(false)
             return
         }
@@ -156,33 +158,13 @@ export default function GroupProgressForm() {
         ;(async () => {
             setLoading(true)
             try {
-                const participantSnapshot = await getDocs(query(
-                    collection(db, 'participants'),
-                    where('email', '==', user.email),
-                    limit(1)
-                ))
-                const participantRecord = participantSnapshot.empty
-                    ? null
-                    : { id: participantSnapshot.docs[0].id, ...(participantSnapshot.docs[0].data() as any) }
-
-                let applicationSnapshot
-                if (participantRecord?.id) {
-                    applicationSnapshot = await getDocs(query(
-                        collection(db, 'applications'),
-                        where('participantId', '==', participantRecord.id),
-                        limit(10)
-                    ))
-                }
-                if (!applicationSnapshot || applicationSnapshot.empty) {
-                    applicationSnapshot = await getDocs(query(
-                        collection(db, 'applications'),
-                        where('email', '==', user.email),
-                        limit(10)
-                    ))
-                }
-                const accepted = applicationSnapshot.docs.find(snapshot =>
-                    ['accepted', 'active'].includes(String(snapshot.data().applicationStatus || '').toLowerCase())
-                ) || applicationSnapshot.docs[0]
+                // The SME's linked participant; email only until it is linked.
+                const sme = { uid: user.id, participantId: user.participantId, email: user.email }
+                const participantRecord = await getSmeParticipant(sme)
+                const applications = await getSmeApplications({ ...sme, participantId: participantRecord?.id || sme.participantId })
+                const accepted = applications.find(app =>
+                    ['accepted', 'active'].includes(String(app.applicationStatus || '').toLowerCase())
+                ) || applications[0]
                 if (!accepted) {
                     if (!disposed) {
                         setApplication(null)
@@ -190,7 +172,7 @@ export default function GroupProgressForm() {
                     }
                     return
                 }
-                const applicationRecord = { id: accepted.id, ...(accepted.data() as any) }
+                const applicationRecord = accepted
                 const programSnapshot = applicationRecord.programId
                     ? await getDoc(doc(db, 'programs', applicationRecord.programId))
                     : null
@@ -232,7 +214,7 @@ export default function GroupProgressForm() {
             }
         })()
         return () => { disposed = true }
-    }, [user?.email])
+    }, [user?.email, user?.participantId])
 
     const group = useMemo<IncubationGroup>(() =>
         resolveApplicationGroup(application || {}, participant || {}), [application, participant])

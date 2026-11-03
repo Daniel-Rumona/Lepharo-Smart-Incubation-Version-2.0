@@ -18,7 +18,7 @@ export const ASSISTANT_GUIDE_CATALOG: CatalogGuide[] = [
         route: '/applicant',
         pageTitle: 'Programs & Apply',
         guideId: 'apply-walkthrough',
-        title: 'How to apply to a program',
+        title: 'How do I apply to a programme?',
         description:
             'Browse the open programs and submit an application to one.'
     },
@@ -27,7 +27,7 @@ export const ASSISTANT_GUIDE_CATALOG: CatalogGuide[] = [
         route: '/applicant/submit-inquiry',
         pageTitle: 'Submit an Inquiry',
         guideId: 'submit-inquiry-walkthrough',
-        title: 'How to submit an inquiry',
+        title: 'How do I submit an inquiry?',
         description:
             'Choose what you need help with and send an inquiry to our team.'
     },
@@ -36,7 +36,7 @@ export const ASSISTANT_GUIDE_CATALOG: CatalogGuide[] = [
         route: '/applicant/inquiries',
         pageTitle: 'My Inquiries',
         guideId: 'inquiries-walkthrough',
-        title: 'How to track and manage your inquiries',
+        title: 'How do I follow up on my inquiries?',
         description:
             'Find inquiries you have submitted and follow up on them.'
     },
@@ -45,7 +45,7 @@ export const ASSISTANT_GUIDE_CATALOG: CatalogGuide[] = [
         route: '/applicant/tracker',
         pageTitle: 'Application Tracker',
         guideId: 'tracker-walkthrough',
-        title: 'How to check your application status',
+        title: 'Where is my application?',
         description:
             'See where each of your applications stands and what happens next.'
     }

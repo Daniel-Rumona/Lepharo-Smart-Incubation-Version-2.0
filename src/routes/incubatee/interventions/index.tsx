@@ -271,7 +271,7 @@ const InterventionsTrackingView: React.FC = () => {
         let cancelled = false
 
         const loadIdentity = async () => {
-            if (!user?.email) {
+            if (!user) {
                 setParticipantId(null)
                 setRequiredInterventions([])
                 return
@@ -294,7 +294,8 @@ const InterventionsTrackingView: React.FC = () => {
                 }
             }
 
-            if (!participantDoc) {
+            // Email fallback until Phase 4, for logins not linked yet.
+            if (!participantDoc && user.email) {
                 const email = String(user.email).trim().toLowerCase()
                 const exact = await getDocs(query(collection(db, 'participants'), where('email', '==', user.email)))
                 participantDoc = exact.docs[0] || null
@@ -310,10 +311,12 @@ const InterventionsTrackingView: React.FC = () => {
             const resolvedParticipantId = String(participantDoc?.id || '')
             const appSnapshot = resolvedParticipantId
                 ? await getDocs(query(collection(db, 'applications'), where('participantId', '==', resolvedParticipantId)))
-                : await getDocs(query(collection(db, 'applications'), where('email', '==', user.email)))
-            const application = appSnapshot.docs.find(item =>
+                : user.email
+                    ? await getDocs(query(collection(db, 'applications'), where('email', '==', user.email)))
+                    : null
+            const application = appSnapshot?.docs.find(item =>
                 String(item.data()?.applicationStatus || '').toLowerCase() === 'accepted'
-            ) || appSnapshot.docs[0]
+            ) || appSnapshot?.docs[0]
             const appData = application?.data() as any
             const finalParticipantId = resolvedParticipantId || String(appData?.participantId || '').trim()
 
@@ -1397,6 +1400,7 @@ const InterventionsTrackingView: React.FC = () => {
                 renderProgressPage()
             ) : (
                 <>
+                    <div data-guide='sme-interventions-summary'>
                     <MetricsGrid
                         metrics={[
                             {
@@ -1431,8 +1435,9 @@ const InterventionsTrackingView: React.FC = () => {
                             }
                         ] as DashboardMetric[]}
                     />
+                    </div>
 
-                    <div className='iv-toolbar'>
+                    <div className='iv-toolbar' data-guide='sme-interventions-toolbar'>
                         <div className='iv-toolbar-main'>
                             <Segmented
                                 value={view}

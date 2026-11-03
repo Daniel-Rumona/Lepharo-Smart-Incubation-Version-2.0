@@ -2021,9 +2021,35 @@ export const InterventionsAssignments: React.FC = () => {
                 });
 
                 // Single photo source: users/{uid}.photoURL. Participants hold no logo.
+                // Matched by users.participantId first.
+                const photoPids = Array.from(new Set(
+                    fetchedParticipants.map((p: any) => String(p.id || "").trim()).filter(Boolean)
+                ));
+                if (photoPids.length) {
+                    try {
+                        const photoByPid = new Map<string, string>();
+                        for (let i = 0; i < photoPids.length; i += 10) {
+                            const usersSnap = await getDocs(
+                                query(collection(db, "users"), where("participantId", "in", photoPids.slice(i, i + 10)))
+                            );
+                            usersSnap.docs.forEach((d) => {
+                                const u = d.data() as any;
+                                const url = String(u.photoURL || "").trim();
+                                if (url && u.participantId) photoByPid.set(String(u.participantId), url);
+                            });
+                        }
+                        fetchedParticipants.forEach((p: any) => {
+                            const url = photoByPid.get(String(p.id || ""));
+                            if (url) p.imageUrl = url;
+                        });
+                    } catch (error) {
+                        console.warn("Could not load SME avatars from users", error);
+                    }
+                }
+                // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
                 const missingEmails = Array.from(new Set(
                     fetchedParticipants
-                        .filter((p: any) => p.email)
+                        .filter((p: any) => p.email && !p.imageUrl)
                         .map((p: any) => p.email as string)
                 ));
                 if (missingEmails.length) {
@@ -2040,7 +2066,7 @@ export const InterventionsAssignments: React.FC = () => {
                             });
                         }
                         fetchedParticipants.forEach((p: any) => {
-                            if (p.email) p.imageUrl = photoByEmail.get(p.email);
+                            if (p.email && !p.imageUrl) p.imageUrl = photoByEmail.get(p.email);
                         });
                     } catch (error) {
                         console.warn("Could not load SME avatars from users", error);

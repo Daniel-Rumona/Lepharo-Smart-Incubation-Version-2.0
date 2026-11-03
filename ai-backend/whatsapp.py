@@ -9,8 +9,31 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from lph_gateway import GatewayError, LphGateway
 from whatsapp_actions import AVAILABLE_ACTIONS, MUTATING_ACTIONS, READ_ACTIONS
-from whatsapp_menu import greeting_reply, is_greeting, resolve_choice, resolve_choice_id, role_group
-from whatsapp_staff import StaffReasoner, TurnResult, handle_staff_turn, pick_sme_invitation, run_menu_action
+from whatsapp_menu import (
+    PROGRAMME_AWAITING,
+    greeting_reply,
+    hello_line,
+    is_greeting,
+    is_programme_pick,
+    is_programme_switch,
+    programme_picker,
+    resolve_choice,
+    resolve_choice_id,
+    resolve_programme_choice,
+    role_group,
+)
+from whatsapp_uploads import handle_sme_upload_turn
+from whatsapp_coverage import handle_coverage_turn
+from whatsapp_reports import handle_report_turn
+from whatsapp_staff import (
+    StaffReasoner,
+    TurnResult,
+    document_pick,
+    handle_staff_turn,
+    pick_sme_invitation,
+    run_menu_action,
+    send_sme_document,
+)
 
 MAX_TOOL_ROUNDS = 3
 
@@ -109,6 +132,13 @@ class InteractiveMessage(BaseModel):
     sections: Optional[list[InteractiveSection]] = None
 
 
+class DocumentMessage(BaseModel):
+    """A file the router sends as a WhatsApp document, with `reply` as its caption."""
+
+    url: str = Field(min_length=1, max_length=2000)
+    filename: str = Field(min_length=1, max_length=240)
+
+
 class WhatsAppChatResponse(BaseModel):
     ok: bool
     reply: str
@@ -118,6 +148,8 @@ class WhatsAppChatResponse(BaseModel):
     toolCall: Optional[ToolCallSelection] = None
     conversation: WhatsAppConversation = Field(default_factory=WhatsAppConversation)
     interactive: Optional[InteractiveMessage] = None
+    # Routers that don't know this field still send `reply` as plain text.
+    document: Optional[DocumentMessage] = None
     error: Optional[WhatsAppError] = None
 
 
@@ -159,6 +191,22 @@ class AgentDecisionError(RuntimeError):
 
 _CODE_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.I)
 _WS = re.compile(r"\s+")
+# Turning proactive alerts off and on (whatsappAlerts.ts in the gateway). START used to just greet.
+_STOP_ALERTS = re.compile(r"^\s*(?:stop|unsubscribe|opt[\s-]*out|stop\s+alerts)\s*[!.]*\s*$", re.I)
+_START_ALERTS = re.compile(r"^\s*(?:start|subscribe|resume|opt[\s-]*in|start\s+alerts)\s*[!.]*\s*$", re.I)
+
+
+def _alert_consent_reply(granted: bool, gateway: LphGateway, phone: str) -> WhatsAppChatResponse:
+    try:
+        gateway.call("set_alert_consent", phone, granted=granted)
+    except GatewayError as error:
+        print("WhatsApp alert consent change failed:", str(error), flush=True)
+        return _response("I couldn't update that just now. Please try again in a moment.", "alert_consent", 1.0)
+    if granted:
+        reply = "✅ You'll get Lepharo updates on WhatsApp. Reply *STOP* any time to turn them off, or say *menu* to see what I can do."
+    else:
+        reply = "Done - you won't get Lepharo updates on WhatsApp any more. You can still message me any time. Reply *START* to turn them back on."
+    return _response(reply, "alert_consent", 1.0)
 
 
 class GeminiWhatsAppReasoner:
@@ -335,9 +383,11 @@ def _response(
     appointment_id: Optional[str] = None,
     tool_call: Optional[ToolCallSelection] = None,
     interactive: Optional[dict[str, Any]] = None,
+    document: Optional[dict[str, str]] = None,
 ) -> WhatsAppChatResponse:
     return WhatsAppChatResponse(
         interactive=InteractiveMessage.model_validate(interactive) if interactive else None,
+        document=DocumentMessage.model_validate(document) if document else None,
         ok=True,
         reply=re.sub(r"[ 	]+", " ", reply.strip())[:3500],
         intent=intent,
@@ -524,6 +574,7 @@ def _turn_response(turn: TurnResult) -> WhatsAppChatResponse:
         awaiting=turn.awaiting,
         appointment_id=turn.appointment_id,
         interactive=turn.interactive,
+        document=turn.document,
     )
 
 
@@ -533,6 +584,63 @@ def _remember(store: WhatsAppConversationStore, store_key: str, response: WhatsA
     else:
         store.clear(store_key)
     return response
+
+
+# Staff groups whose answers are limited to a programme; the gateway decides which ones each person has.
+_PROGRAMME_GROUPS = {"system_admin", "director", "hod", "coordinator", "employee", "receptionist"}
+
+
+def _programmes(gateway: LphGateway, phone: str) -> Optional[dict[str, Any]]:
+    """The programme listing, or None when it can't be fetched (answers then go unfiltered by choice)."""
+    try:
+        return gateway.call("list_programmes", phone)
+    except GatewayError as error:
+        print("WhatsApp programme lookup failed:", str(error), flush=True)
+        return None
+
+
+def _programme_name(listing: Optional[dict[str, Any]]) -> Optional[str]:
+    current = (listing or {}).get("current") or {}
+    return str(current.get("name")) if current.get("name") else None
+
+
+def _programme_turn(
+    message: str, identity: dict[str, Any], phone: str, awaiting: Optional[str], gateway: LphGateway
+) -> tuple[Optional[TurnResult], Optional[dict[str, Any]]]:
+    """Handle picking or switching programme. Returns (a reply to send, or None to carry on; the listing)."""
+    listing = _programmes(gateway, phone)
+    if listing is None:
+        return None, None
+    options = listing.get("programmes") or []
+
+    if is_programme_switch(message):
+        if len(options) <= 1:
+            only = f"You only work in *{options[0]['name']}*, so there's nothing to switch." if options else (
+                "There are no programmes linked to your profile, so I'm showing everything you can see."
+            )
+            return TurnResult(only, intent="programme"), listing
+        reply, next_awaiting, ui = programme_picker(listing, "Which programme would you like to look at?")
+        return TurnResult(reply, next_awaiting, intent="programme", interactive=ui), listing
+
+    if awaiting == PROGRAMME_AWAITING or is_programme_pick(message):
+        picked = resolve_programme_choice(message, listing)
+        if picked is None:
+            reply, next_awaiting, ui = programme_picker(listing, "I didn't catch which programme. Please pick one:")
+            return TurnResult(reply, next_awaiting, intent="programme", interactive=ui), listing
+        try:
+            chosen = gateway.call("select_programme", phone, programId=picked).get("current") or {}
+        except GatewayError as error:
+            print("WhatsApp programme selection failed:", str(error), flush=True)
+            return TurnResult("I couldn't switch programme just now. Please try again in a moment.", intent="unavailable"), listing
+        reply, next_awaiting, ui = greeting_reply(
+            identity, programme=chosen.get("name"), lead="Got it. What would you like to look at?"
+        )
+        return TurnResult(reply, next_awaiting, intent="programme", interactive=ui), {**listing, "current": chosen, "needsChoice": False}
+
+    if listing.get("needsChoice") and awaiting != "confirm_proposal":
+        reply, next_awaiting, ui = programme_picker(listing, "Before we start, which programme are we looking at today?")
+        return TurnResult(reply, next_awaiting, intent="programme", interactive=ui), listing
+    return None, listing
 
 
 def _handle_identity_turn(
@@ -558,6 +666,9 @@ def _handle_identity_turn(
             lookup_failed = True
             print("WhatsApp identity lookup failed:", str(error), flush=True)
 
+    if identity is not None and gateway is not None and (_STOP_ALERTS.match(message) or _START_ALERTS.match(message)):
+        return _remember(store, store_key, _alert_consent_reply(bool(_START_ALERTS.match(message)), gateway, phone))
+
     if message.strip().lower() == "lph:menu":
         message = "menu"
 
@@ -565,18 +676,48 @@ def _handle_identity_turn(
         if identity is None and lookup_failed:
             reply = "Hey there! 👋 What can I help you with today? You can ask about your Lepharo appointments."
             return _remember(store, store_key, _response(reply, "greeting", 1.0))
-        reply, next_awaiting, ui = greeting_reply(identity)
+        listing = _programmes(gateway, phone) if gateway is not None and role_group(identity) in _PROGRAMME_GROUPS else None
+        if listing and listing.get("needsChoice"):
+            reply, next_awaiting, ui = programme_picker(
+                listing, f"{hello_line(identity)}\n\nWhich programme are we looking at today?"
+            )
+            return _remember(store, store_key, _response(reply, "greeting", 1.0, awaiting=next_awaiting, interactive=ui))
+        reply, next_awaiting, ui = greeting_reply(identity, programme=_programme_name(listing))
         return _remember(store, store_key, _response(reply, "greeting", 1.0, awaiting=next_awaiting, interactive=ui))
 
     if identity is None or gateway is None:
         return None
     group = role_group(identity)
 
+    if identity.get("kind") == "staff" and group in _PROGRAMME_GROUPS:
+        turn, listing = _programme_turn(message, identity, phone, awaiting, gateway)
+        if turn is not None:
+            return _remember(store, store_key, _turn_response(turn))
+        if _programme_name(listing):
+            identity = {**identity, "programme": _programme_name(listing)}
+
+        report_turn = handle_report_turn(message, phone, awaiting, gateway)
+        if report_turn is not None:
+            return _remember(store, store_key, _turn_response(report_turn))
+
+        coverage_turn = handle_coverage_turn(message, phone, awaiting, gateway)
+        if coverage_turn is not None:
+            return _remember(store, store_key, _turn_response(coverage_turn))
+
+        picked = document_pick(message, awaiting)
+        if picked is not None:
+            turn = send_sme_document(identity, phone, gateway, *picked, tapped=message.strip().startswith("lph:doc:"))
+            if turn is not None:
+                return _remember(store, store_key, _turn_response(turn))
+
     choice = resolve_choice_id(message, identity) or resolve_choice(message, identity, awaiting)
     if choice is not None:
         return _remember(store, store_key, _turn_response(run_menu_action(choice, identity, phone, gateway)))
 
     if group == "sme":
+        upload_turn = handle_sme_upload_turn(message, phone, awaiting, gateway)
+        if upload_turn is not None:
+            return _remember(store, store_key, _turn_response(upload_turn))
         if awaiting == "appointment_pick":
             picked = pick_sme_invitation(message, gateway, phone)
             if picked is not None:

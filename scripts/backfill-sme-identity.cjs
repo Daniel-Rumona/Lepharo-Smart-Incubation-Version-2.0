@@ -1,6 +1,8 @@
 // Links every SME login to its participant record (Phase 1 of
 // docs/sme-identity-migration-plan.md): users/{uid}.participantId and
 // participants/{id}.uid. What is linked is decided in sme-identity-plan.cjs.
+// Also stamps requestedByUid on the SME's older resourceRequests (Phase 4 drops
+// the email rule that let the SME see them).
 //
 // Safe to re-run: only missing values are written, never overwritten, and
 // logins that match no participant or several are reported and left alone.
@@ -20,7 +22,7 @@
 const fs = require('fs')
 const path = require('path')
 const admin = require('firebase-admin')
-const { planSmeIdentity } = require('./sme-identity-plan.cjs')
+const { planSmeIdentity, planRequestOwners } = require('./sme-identity-plan.cjs')
 
 const arg = (name) => (process.argv.find((a) => a.startsWith(`--${name}=`)) || '').slice(name.length + 3)
 const APPLY = process.argv.includes('--apply')
@@ -56,25 +58,30 @@ async function loadAuthEmails(auth) {
 }
 
 async function load(db, auth) {
-    const [userSnap, participantSnap, applicationSnap, authEmails] = await Promise.all([
+    const [userSnap, participantSnap, applicationSnap, requestSnap, authEmails] = await Promise.all([
         db.collection('users').select('role', 'email', 'participantId').get(),
         db.collection('participants').select('email', 'uid').get(),
         db.collection('applications').select('participantId').get(),
+        db.collection('resourceRequests').select('requestedByUid', 'requestedByEmail').get(),
         loadAuthEmails(auth),
     ])
     return {
         users: userSnap.docs.map((d) => ({ uid: d.id, data: d.data() })),
         participants: participantSnap.docs.map((d) => ({ id: d.id, data: d.data() })),
         applications: applicationSnap.docs.map((d) => ({ id: d.id, participantId: String(d.get('participantId') || '').trim() })),
+        requests: requestSnap.docs.map((d) => ({ id: d.id, data: d.data() })),
         authEmails,
     }
 }
 
-async function apply(db, toLink) {
-    const writes = toLink.flatMap((l) => [
-        ...(l.userPatch ? [(b) => b.update(db.doc(`users/${l.uid}`), l.userPatch)] : []),
-        ...(l.participantPatch ? [(b) => b.update(db.doc(`participants/${l.participantId}`), l.participantPatch)] : []),
-    ])
+async function apply(db, toLink, requestPatches) {
+    const writes = [
+        ...toLink.flatMap((l) => [
+            ...(l.userPatch ? [(b) => b.update(db.doc(`users/${l.uid}`), l.userPatch)] : []),
+            ...(l.participantPatch ? [(b) => b.update(db.doc(`participants/${l.participantId}`), l.participantPatch)] : []),
+        ]),
+        ...requestPatches.map((r) => (b) => b.update(db.doc(`resourceRequests/${r.id}`), r.patch)),
+    ]
     for (let i = 0; i < writes.length; i += BATCH) {
         const batch = db.batch()
         writes.slice(i, i + BATCH).forEach((w) => w(batch))
@@ -88,6 +95,7 @@ async function main() {
     console.log(`${projectId} (${APPLY ? 'APPLY' : 'dry run'})`)
     const input = await load(db, auth)
     const { smeUserCount, outcomes, emailMismatches } = planSmeIdentity(input)
+    const requestOwners = planRequestOwners(input)
 
     // Applications are not changed in Phase 1; these feed Phase 2/3.
     const participantIds = new Set(input.participants.map((p) => p.id))
@@ -110,6 +118,7 @@ async function main() {
     console.log(`\nAuth email differs from users doc email: ${emailMismatches.length}`)
     console.log(`Applications without participantId: ${appsWithoutParticipant.length}`)
     console.log(`Applications whose participant is missing: ${appsWithMissingParticipant.length}`)
+    console.log(`Resource requests to stamp with requestedByUid: ${requestOwners.patches.length} (no single SME login for: ${requestOwners.unmatched})`)
 
     // Ids only: no names or emails in the repo.
     const report = {
@@ -131,13 +140,15 @@ async function main() {
         emailMismatches,
         applicationsWithoutParticipantId: appsWithoutParticipant,
         applicationsWithMissingParticipant: appsWithMissingParticipant,
+        resourceRequestOwners: requestOwners.patches.map((r) => ({ id: r.id, uid: r.patch.requestedByUid })),
+        resourceRequestsUnmatched: requestOwners.unmatched,
     }
     const reportPath = path.join(__dirname, `sme-identity-backfill-report-${projectId}.json`)
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2))
     console.log(`\nReport: ${path.relative(process.cwd(), reportPath)}`)
 
     if (APPLY) {
-        await apply(db, outcomes.toLink)
+        await apply(db, outcomes.toLink, requestOwners.patches)
         console.log('\nDone')
     } else {
         console.log(`\nDry run -- nothing written. Re-run with --apply --project=${projectId} to write.`)

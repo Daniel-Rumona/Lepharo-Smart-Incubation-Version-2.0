@@ -1,7 +1,6 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./emailShared";
-import { BREVO_EGRESS } from "./config";
 
 const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
 const BREVO_ACCOUNT_URL = "https://api.brevo.com/v3/account";
@@ -111,8 +110,8 @@ async function pingBrevoAccount(): Promise<void> {
   }
 }
 
-export const brevoApiKeepAlive = onSchedule(
-  { ...BREVO_EGRESS, region: "us-central1", schedule: "0 3 * * 1", timeZone: "Africa/Johannesburg" },
+export const brevoApiKeepAlive = scheduledJob("brevoApiKeepAlive",
+  { region: "us-central1", schedule: "0 3 * * 1", timeZone: "Africa/Johannesburg" },
   async () => {
     const ref = db.collection("systemHeartbeats").doc("brevoApiKeepAlive");
     try {

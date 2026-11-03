@@ -8,13 +8,15 @@ import {
     useState
 } from 'react'
 import type { PropsWithChildren } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { DriveStep } from 'driver.js'
 
 import 'driver.js/dist/driver.css'
 import './guideTheme.css'
 
-import type { AppGuide, PageGuideRegistration } from './guideTypes'
+import type { AppGuide, PageGuideRegistration, TourStop } from './guideTypes'
 import { runGuide } from './driverRunner'
+import { waitForGuideTargets } from './showMe'
 import { GuideModal } from './GuideModal'
 
 type GuideContextValue = {
@@ -41,11 +43,25 @@ type GuideContextValue = {
 
     /** Runs a tour that isn't registered by the page, e.g. one the assistant composed. */
     runSteps: (title: string, steps: DriveStep[]) => void
+
+    /**
+     * Runs a tour across several pages: opens each stop's route, waits for it to
+     * load, then walks its steps. Closing it part-way calls onExit with the stop.
+     */
+    runTour: (stops: TourStop[], options?: RunTourOptions) => void
+}
+
+export type RunTourOptions = {
+    fromStop?: number
+    onStop?: (index: number) => void
+    onFinish?: () => void
+    onExit?: (index: number) => void
 }
 
 const GuideContext = createContext<GuideContextValue | null>(null)
 
 export const GuideProvider = ({ children }: PropsWithChildren) => {
+    const navigate = useNavigate()
     const [registration, setRegistration] =
         useState<PageGuideRegistration | null>(null)
 
@@ -125,6 +141,87 @@ export const GuideProvider = ({ children }: PropsWithChildren) => {
         )
     }, [])
 
+    // Bumped on every new tour, so a stop still loading from an older one stands down.
+    const tourRunRef = useRef(0)
+
+    const runTour = useCallback((stops: TourStop[], options: RunTourOptions = {}) => {
+        const run = ++tourRunRef.current
+        setModalOpen(false)
+
+        // fromEnd: arrived with Back from the next page, so open on this page's last step.
+        const play = async (index: number, fromEnd = false): Promise<void> => {
+            const stop = stops[index]
+            if (!stop || run !== tourRunRef.current) return
+            if (window.location.pathname !== stop.route) navigate(stop.route)
+            await waitForGuideTargets(stop.route)
+            if (run !== tourRunRef.current) return
+            options.onStop?.(index)
+
+            const isLastStop = index === stops.length - 1
+            const next = () => {
+                if (isLastStop) options.onFinish?.()
+                else void play(index + 1)
+            }
+
+            // Next on a page's last step moves to the next page, Back on its first step
+            // to the previous one; closing ends the tour. Settled here rather than in
+            // onDestroyed, which Driver.js skips when the step points at nothing.
+            let settled = false
+            const settle = (move: 'next' | 'back' | 'exit') => {
+                if (settled) return
+                settled = true
+                activeDriverRef.current = null
+                if (move === 'next') next()
+                else if (move === 'back') void play(index - 1, true)
+                else options.onExit?.(index)
+            }
+
+            const steps = typeof stop.steps === 'function' ? stop.steps() : stop.steps
+            // Driver.js disables Back on a first step; past the first page it goes back a page.
+            const tourSteps = index > 0 && steps.length
+                ? [
+                    {
+                        ...steps[0],
+                        popover: { ...steps[0].popover, disableButtons: [], prevBtnText: 'Previous page' }
+                    },
+                    ...steps.slice(1)
+                ]
+                : steps
+
+            activeDriverRef.current?.destroy()
+            activeDriverRef.current = runGuide(
+                { id: 'multi-page-tour', title: stop.label, steps: tourSteps },
+                {
+                    startAt: fromEnd ? tourSteps.length - 1 : 0,
+                    config: {
+                        progressText: `${stop.label} · {{current}} of {{total}}`,
+                        doneBtnText: isLastStop ? 'Finish' : 'Next page',
+                        onNextClick: (_element, _step, { driver }) => {
+                            if (!driver.isLastStep()) return driver.moveNext()
+                            driver.destroy()
+                            settle('next')
+                        },
+                        onPrevClick: (_element, _step, { driver }) => {
+                            if (!driver.isFirstStep() || index === 0) return driver.movePrevious()
+                            driver.destroy()
+                            settle('back')
+                        },
+                        onCloseClick: (_element, _step, { driver }) => {
+                            driver.destroy()
+                            settle('exit')
+                        }
+                    },
+                    // Escape and other ways out still end up here.
+                    onDestroyed: () => settle('exit')
+                }
+            )
+            // A stop whose steps are all missing on this screen is skipped.
+            if (!activeDriverRef.current) next()
+        }
+
+        void play(options.fromStop ?? 0)
+    }, [navigate])
+
     const pendingGuideRef =
         useRef<{ pageId: string; guideId: string } | null>(null)
 
@@ -164,10 +261,12 @@ export const GuideProvider = ({ children }: PropsWithChildren) => {
             startGuide,
             stopGuide,
             startGuideOnPage,
-            runSteps
+            runSteps,
+            runTour
         }),
         [
             runSteps,
+            runTour,
             registration,
             guides,
             modalOpen,

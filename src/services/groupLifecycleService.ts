@@ -77,10 +77,10 @@ export type GroupIntervention = {
     smeName?: string
     facilitatorName?: string
     departmentName?: string
-    userStatus?: string
-    consultantStatus?: string
-    userCompletionStatus?: string
-    consultantCompletionStatus?: string
+    participantAcceptanceStatus?: string
+    assigneeAcceptanceStatus?: string
+    participantCompletionStatus?: string
+    assigneeCompletionStatus?: string
     movStatus?: string
     movApproved?: boolean
     departmentConfirmed?: boolean
@@ -480,10 +480,10 @@ const groupByReason = (interventions: GroupIntervention[], reasonFor: (intervent
 const named = (role: string, name?: string) => clean(name) ? `${role} ${clean(name)}` : role
 
 const closureHoldUpReason = (intervention: GroupIntervention) => {
-    const consultantAcceptance = acceptanceState(intervention.consultantStatus)
-    const smeAcceptance = acceptanceState(intervention.userStatus)
-    const consultantCompletion = completionState(intervention.consultantCompletionStatus)
-    const smeCompletion = completionState(intervention.userCompletionStatus)
+    const consultantAcceptance = acceptanceState(intervention.assigneeAcceptanceStatus)
+    const smeAcceptance = acceptanceState(intervention.participantAcceptanceStatus)
+    const consultantCompletion = completionState(intervention.assigneeCompletionStatus)
+    const smeCompletion = completionState(intervention.participantCompletionStatus)
     const status = clean(intervention.status) || 'no assignment status captured'
 
     if (consultantAcceptance === 'declined') return 'facilitator declined'
@@ -523,8 +523,8 @@ export function evaluateGroupEligibility(input: {
         if (!requirements.length) {
             return {
                 current: 'A', target: 'B', eligible: false, progress: 0, met: [],
-                missing: ['The program has no Group A progression requirements configured.'],
-                summary: 'Program requirements must be configured before this SME can move to Group B.'
+                missing: ['No Group A requirements are set up for this programme or as the shared default.'],
+                summary: 'Requirements must be set up, for this programme or as the shared default, before this SME can move to Group B.'
             }
         }
         const met: string[] = []

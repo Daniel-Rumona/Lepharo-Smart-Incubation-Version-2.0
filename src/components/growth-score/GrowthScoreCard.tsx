@@ -5,20 +5,21 @@ import { loadGrowthScore, type GrowthScore } from '@/services/growthScoreService
 
 const { Text, Title } = Typography
 
-export const GrowthScoreCard: React.FC<{ email?: string | null }> = ({ email }) => {
+/** The SME is identified by its participant id; email only until its login is linked. */
+export const GrowthScoreCard: React.FC<{ participantId?: string | null; email?: string | null }> = ({ participantId, email }) => {
     const [score, setScore] = useState<GrowthScore | null>(null)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
         let cancelled = false
-        if (!email) {
+        if (!participantId && !email) {
             setScore(null)
             setLoading(false)
             return
         }
 
         setLoading(true)
-        loadGrowthScore(email)
+        loadGrowthScore({ participantId, email })
             .then(result => {
                 if (!cancelled) setScore(result)
             })
@@ -33,7 +34,7 @@ export const GrowthScoreCard: React.FC<{ email?: string | null }> = ({ email }) 
         return () => {
             cancelled = true
         }
-    }, [email])
+    }, [participantId, email])
 
     return (
         <Card

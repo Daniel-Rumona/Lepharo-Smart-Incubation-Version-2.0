@@ -51,7 +51,7 @@ const PlanReview: React.FC = () => {
     }
 
     // Signed out (an old link or the back button): nothing to load here.
-    if (!identityLoading && !user?.email) return <Navigate to='/login' replace />
+    if (!identityLoading && !user) return <Navigate to='/login' replace />
     if (!stepIds) {
         return (
             <div className='wc pr-loading'>
@@ -75,14 +75,14 @@ const PlanReview: React.FC = () => {
         : `${confirmedNames.slice(0, -1).join(', ')} and ${confirmedNames[confirmedNames.length - 1]}`
 
     const confirmDepartment = async (dept: DevPlanDept) => {
-        if (!waiting.planId || !user?.email) return
+        if (!waiting.planId || !user) return
         try {
             setConfirmingId(dept.id)
             const ok = await confirmDepartmentBySme({
                 planId: waiting.planId,
                 plan: waiting.plan,
                 participantId: waiting.participantId,
-                userEmail: user.email,
+                userEmail: user.email || '',
                 dept,
                 departments: waiting.planDepartments,
                 catalogByDeptId: waiting.catalogByDeptId,

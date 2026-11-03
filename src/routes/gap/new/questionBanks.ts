@@ -77,7 +77,7 @@ export const financialManagement = [
     'Do you have current Management Accounts?',
     'Do you have a Fixed Asset Register?',
     'Do you have legacy accounting problems (prior year unfinished accounting/bookkeeping tasks)?',
-    'Please assist with read-only access of business bank account – Bank statements only'
+    'Can you provide your last 3 months of business bank statements?'
 ]
 export const labourHSE = [
     'UIF Registration (check if company has employees)?',
@@ -116,8 +116,15 @@ export const legalAreas = [
     'Labour Laws',
     'Business Insurance Law',
     'Elementary Services to Fiduciary Services',
-    'Elementary Services to Debt Agreements (e.g., AOD/settlement)'
+    'Elementary Services to Debt Agreements (e.g., AOD/settlement)',
+    'Other (describe in the comment)'
 ]
+
+/** The wellness question whose Yes asks which programmes are in place. */
+export const WELLNESS_PROGRAMMES_QUESTION_INDEX = 2
+
+/** The legal question whose Yes asks which areas they need help with. */
+export const LEGAL_AREAS_QUESTION_INDEX = 5
 export const marketLinkage = [
     'Are you registered with Central Supplier Database (CSD)?',
     'Is the competency of the management team and workforce adequate?',
@@ -142,3 +149,18 @@ export const trainingNeedsYN = [
     'Do you have training needs for the workforce/staff in the business?',
     'Do you have training needs of support staff (Administrators, Finance, HR)?'
 ]
+
+/**
+ * "Which SETA?" is not asked as Yes/No: it is a text follow-up under the levies
+ * question (index 0). It keeps its slot in trainingNeeds.yn, holding the SETA
+ * name, so saved answers stay aligned with this list everywhere they are read.
+ */
+export const SETA_QUESTION_INDEX = 1
+
+/** Training-needs questions whose Yes asks what that level needs, by category. */
+export const TRAINING_NEED_FOLLOW_UPS: Record<number, { key: string; label: string; short: string }> = {
+    4: { key: 'management', label: 'What training does middle and senior management need?', short: 'management' },
+    5: { key: 'supervisors', label: 'What training do supervisors need?', short: 'supervisors’' },
+    6: { key: 'workforce', label: 'What training does the workforce need?', short: 'workforce' },
+    7: { key: 'support', label: 'What training do support staff need?', short: 'support staff' }
+}

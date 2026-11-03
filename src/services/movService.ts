@@ -425,7 +425,8 @@ export const resolveMovAppointmentInterventions = async (
     }
 
     // Resolve the same participant email CoordinatorMOVs uses for historical
-    // group QR/check-in attendance matching.
+    // group QR/check-in attendance matching (email fallback until Phase 4,
+    // docs/sme-identity-migration-plan.md; participantId is matched first below).
     let participantEmail = cleanText(assignment.smmeEmail).toLowerCase()
 
     if (!participantEmail && participantId) {
@@ -563,15 +564,30 @@ export const resolveMovAppointmentInterventions = async (
                 return cleanText(recordedAttendance.outcome).toLowerCase() === 'attended'
             }
 
-            const checkedInEmails = [
-                ...(appointment?.attendanceSummary?.checkedInEmails || []),
-                ...(appointment?.attendance?.summary?.checkedInEmails || [])
-            ].map((email: any) => cleanText(email).toLowerCase())
+            const checkedInParticipantIds = [
+                ...(appointment?.attendanceSummary?.checkedInParticipantIds || []),
+                ...(appointment?.attendance?.summary?.checkedInParticipantIds || [])
+            ].map((id: any) => cleanText(id))
 
             const checkIns = [
                 ...(appointment?.attendance?.checkIns || []),
                 ...(appointment?.attendeeCheckIns || [])
             ]
+
+            if (
+                participantId && (
+                    checkedInParticipantIds.includes(participantId) ||
+                    checkIns.some((entry: any) => cleanText(entry?.participantId) === participantId)
+                )
+            ) {
+                return true
+            }
+
+            // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+            const checkedInEmails = [
+                ...(appointment?.attendanceSummary?.checkedInEmails || []),
+                ...(appointment?.attendance?.summary?.checkedInEmails || [])
+            ].map((email: any) => cleanText(email).toLowerCase())
 
             return Boolean(
                 participantEmail && checkedInEmails.includes(participantEmail) ||

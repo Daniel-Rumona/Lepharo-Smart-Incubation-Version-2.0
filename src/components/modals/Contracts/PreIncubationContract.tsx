@@ -317,6 +317,13 @@ export function PreIncubationContractModal ({
           const participantEmail = String(
             participantDoc?.email || appDoc?.email || appDoc?.companyEmail || ''
           ).trim()
+          // The SME's own login by its uid; email fallback until Phase 4.
+          const participantUid = String(participantDoc?.uid || '').trim()
+          if (!participantSig && participantUid) {
+            const participantUserSnap = await getDoc(doc(db, 'users', participantUid)).catch(() => null)
+            const participantUser = participantUserSnap?.exists() ? participantUserSnap.data() as any : null
+            participantSig = participantUser?.signatureURL || participantUser?.signatureUrl
+          }
           if (!participantSig && participantEmail) {
             const userSnap = await getDocs(query(
               collection(db, 'users'),

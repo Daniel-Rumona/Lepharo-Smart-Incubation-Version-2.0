@@ -49,24 +49,15 @@ service cloud.firestore {
     }
 
     // ---- SME ownership ----
-    // An SME's records are linked to their login only by email: participants
-    // and applications carry `email` (applications also `applicantEmail`) and
-    // nothing stores the auth uid. Firebase Auth emails are lower case; the
-    // exact comparison comes first so equality queries can be proven.
-    function isMyEmail(value) {
-      return request.auth != null && request.auth.token.get('email', '') != '' && (
-        value == request.auth.token.email ||
-        (value is string && value.lower() == request.auth.token.email.lower())
-      );
-    }
+    // An SME is its login (uid) and the participant record linked to it:
+    // users/{uid}.participantId, set only by the server (linkMySmeAccount).
+    // Email is contact data and grants nothing (docs/sme-identity-migration-plan.md).
     function ownsParticipant(pid) {
-      return request.auth != null && pid is string && pid != '' && (
-        (hasProfile() && currentUser().get('participantId', '') == pid) ||
-        isMyEmail(get(/databases/$(database)/documents/participants/$(pid)).data.email)
-      );
+      return request.auth != null && pid is string && pid != '' &&
+        hasProfile() && currentUser().get('participantId', '') == pid;
     }
     function ownsApplicationData(data) {
-      return isMyEmail(data.email) || isMyEmail(data.applicantEmail) || ownsParticipant(data.participantId);
+      return ownsParticipant(data.get('participantId', ''));
     }
     function ownsApplication(appId) {
       return appId is string && appId != '' &&
@@ -188,7 +179,7 @@ service cloud.firestore {
       // External logins see staff profiles (facilitators, HODs), their own doc
       // by email or uid query, and funders the task assignee list.
       allow get: if request.auth != null && resource.data.get('role', '').lower().trim() in staffRoles();
-      allow read: if isMyEmail(resource.data.email) || resource.data.uid == request.auth.uid;
+      allow read: if resource.data.get('uid', '') == request.auth.uid;
       allow read: if isFunderUser();
 
       match /{subcollection}/{rest=**} {
@@ -229,6 +220,12 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if isSuperAdmin() ||
         (request.auth != null && currentUser().role == 'director');
+    }
+
+    // The shared requirement list for programmes without their own; whoever
+    // manages programmes sets it from the Programs page.
+    match /systemSettings/defaultProgramRequirements {
+      allow write: if canManagePrograms();
     }
 
     // Quality Objectives (LEP-QMS 024 F) - directors manage all departments'
@@ -364,10 +361,7 @@ service cloud.firestore {
             currentUser().get('trainingRole', '') != 'employee' && (
             data.get('smeId', '') == request.auth.uid ||
             (currentUser().get('participantId', '') != '' &&
-              data.get('smeId', '') == currentUser().get('participantId', '')) ||
-            (data.get('smeEmail', null) is string && currentUser().get('email', '') is string &&
-              currentUser().get('email', '') != '' &&
-              data.smeEmail.lower() == currentUser().get('email', '').lower())
+              data.get('smeId', '') == currentUser().get('participantId', ''))
           ))
         );
       }
@@ -532,9 +526,8 @@ service cloud.firestore {
           request.resource.data.smeAnswer in ['yes', 'partly', 'no'] &&
           !resource.data.keys().hasAny(['smeAnswer']) &&
           resource.data.smeCheckIn == true &&
-          resource.data.participantEmail != '' &&
           currentUser().role == 'incubatee' &&
-          currentUser().email.lower() == resource.data.participantEmail
+          ownsParticipant(resource.data.get('participantId', ''))
         )
       );
     }
@@ -573,7 +566,7 @@ service cloud.firestore {
         (
           exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
           currentUser().role is string &&
-          currentUser().role.lower().trim() != 'incubatee'
+          !(currentUser().role.lower().trim() in ['incubatee', 'training_sme'])
         ) ||
         exists(/databases/$(database)/documents/consultants/$(request.auth.uid)) ||
         exists(/databases/$(database)/documents/coordinators/$(request.auth.uid)) ||
@@ -1117,13 +1110,33 @@ service cloud.firestore {
         currentUser().role in ['director', 'operations', 'coordinator', 'projectadmin', 'funder'];
       allow write: if false;
     }
+
+    // Daily digest (functions/src/dailyBrief.ts): each person reads only their own brief; the
+    // reminders held back for it are server-only. Both are written by Cloud Functions alone.
+    match /dailyBriefs/{briefId} {
+      allow read: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+    match /digestItems/{itemId} {
+      allow read, write: if false;
+    }
+    // Watches (functions/src/watches.ts): each person reads only their own; manageWatch writes.
+    match /watches/{watchId} {
+      allow read: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+      allow write: if false;
+    }
+    // Chasers (functions/src/chasers.ts): the same, through manageChaser.
+    match /chasers/{chaserId} {
+      allow read: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+      allow write: if false;
+    }
     // Shared reference data external logins read too: catalogues, forms,
     // staff profiles (facilitators/HODs), events, and resource bookings for
     // the availability check. Writes stay with staff via the fallback below.
     match /{collectionId}/{docId} {
       allow read: if request.auth != null && collectionId in [
         'interventions', 'resources', 'resourceTypes', 'resourceAllocations', 'tutorials',
-        'featureGovernance', 'events', 'kpiDefinitions', 'formTemplates', 'departmentForms',
+        'events', 'kpiDefinitions', 'formTemplates', 'departmentForms',
         'sentForms', 'system_settings', 'coordinators', 'consultants', 'operationsStaff',
         'qmsStandards'
       ];
@@ -1134,17 +1147,26 @@ service cloud.firestore {
     // before falling back to an email query, so a get of a missing doc is
     // allowed; it reveals only that nothing is there.
     match /participants/{participantId} {
+      // Before the server links a new record (`uid`), the login that created it
+      // (`createdByUid`) owns it; after, the linked login does.
+      function isMyParticipant(data) {
+        return request.auth != null && (
+          ownsParticipant(participantId) ||
+          data.get('uid', '') == request.auth.uid ||
+          (data.get('uid', '') == '' && data.get('createdByUid', '') == request.auth.uid)
+        );
+      }
       allow get: if request.auth != null && resource == null;
-      allow read: if isMyEmail(resource.data.email) ||
-        (hasProfile() && currentUser().get('participantId', '') == participantId);
+      allow read: if isMyParticipant(resource.data);
       allow read: if isFunderUser();
-      // The applicant profile creates the record with the login's email.
-      // `uid` links the record to its login and only the server sets it
-      // (linkMySmeAccount, docs/sme-identity-migration-plan.md).
-      allow create: if isMyEmail(request.resource.data.email) &&
-        !request.resource.data.keys().hasAny(['uid']);
-      allow update: if isMyEmail(resource.data.email) && isMyEmail(request.resource.data.email) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid']);
+      // The applicant profile creates the SME's one record; `uid` links it to
+      // its login and only the server sets it (linkMySmeAccount).
+      allow create: if request.auth != null &&
+        request.resource.data.get('createdByUid', '') == request.auth.uid &&
+        !request.resource.data.keys().hasAny(['uid']) &&
+        hasProfile() && myRole() == 'incubatee' && currentUser().get('participantId', '') == '';
+      allow update: if isMyParticipant(resource.data) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'createdByUid']);
     }
 
     match /applications/{applicationId} {
@@ -1238,19 +1260,64 @@ service cloud.firestore {
       allow read, write: if hasProfile() && myRole() in ['incubatee', 'participant'];
     }
 
-    // Survey responses are keyed by participant id (older ones by uid or email).
+    // Survey responses are keyed by participant id (very old ones by uid).
+    // Staff create them when sending; the SME only fills in their own answers,
+    // until they submit or the survey's due date passes.
+    function surveyStillOpen(formId) {
+      let due = get(/databases/$(database)/documents/sentForms/$(formId)).data.get('dueDate', null);
+      return due == null || request.time <= due;
+    }
     match /sentForms/{formId}/responses/{responseId} {
-      allow read, create, update: if ownsParticipant(responseId) ||
-        responseId == request.auth.uid || isMyEmail(responseId);
+      allow read: if ownsParticipant(responseId) || responseId == request.auth.uid;
+      allow update: if (ownsParticipant(responseId) || responseId == request.auth.uid) &&
+        resource.data.get('completed', false) != true &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['answers', 'answersDraft', 'completed', 'submittedAt', 'updatedAt']) &&
+        surveyStillOpen(formId);
     }
     match /{path=**}/responses/{responseId} {
       allow read: if ownsParticipant(resource.data.participantId);
     }
 
+    // Survey templates and sent surveys belong to a department (by id). Any
+    // staff member reads them; only that department writes or deletes its
+    // own, and a shared template (no department) is edited by any staff but
+    // deleted only by admins. Kept out of the staff fallback below.
+    function myDepartmentId() {
+      return currentUser().get('departmentId', '');
+    }
+    function ownsSurveyDept(data) {
+      return isSuperAdmin() || (isStaff() && myDepartmentId() != '' && data.get('department', '') == myDepartmentId());
+    }
+    match /formTemplates/{templateId} {
+      allow read: if isStaff();
+      allow create: if isStaff() &&
+        request.resource.data.get('department', '') in [myDepartmentId(), ''];
+      allow update: if isStaff() &&
+        (ownsSurveyDept(resource.data) || resource.data.get('department', '') == '') &&
+        request.resource.data.get('department', '') == resource.data.get('department', '');
+      allow delete: if ownsSurveyDept(resource.data);
+    }
+    match /sentForms/{formId} {
+      allow read: if isStaff();
+      allow create: if ownsSurveyDept(request.resource.data);
+      allow update: if ownsSurveyDept(resource.data) &&
+        request.resource.data.get('department', '') == resource.data.get('department', '');
+      allow delete: if ownsSurveyDept(resource.data);
+
+      // getAfter: sending creates the form and its responses in one batch.
+      match /responses/{responseId} {
+        allow read: if isStaff();
+        allow create: if ownsSurveyDept(getAfter(/databases/$(database)/documents/sentForms/$(formId)).data);
+        allow update: if ownsSurveyDept(get(/databases/$(database)/documents/sentForms/$(formId)).data);
+        allow delete: if ownsSurveyDept(get(/databases/$(database)/documents/sentForms/$(formId)).data);
+      }
+    }
+
     match /resourceRequests/{requestId} {
-      allow read: if isMyEmail(resource.data.requestedByEmail) || isMyEmail(resource.data.requestedBy) ||
-        (hasProfile() && resource.data.requestedBy == currentUser().get('name', ''));
-      allow create: if isMyEmail(request.resource.data.requestedByEmail);
+      // requestedByUid is the SME's login (docs/sme-identity-migration-plan.md).
+      allow read: if request.auth != null && resource.data.get('requestedByUid', '') == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.get('requestedByUid', '') == request.auth.uid;
     }
 
     match /userSessions/{sessionId} {
@@ -1258,14 +1325,143 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
     }
 
+    // Page usage (src/utils/usageTracking.ts): every signed-in user writes their
+    // own visits and can never read them back; only super-admins read (via the
+    // catch-all), on the System Admin usage page.
+    match /pageVisits/{visitId} {
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow update: if request.auth != null && resource.data.uid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['title', 'activeMs', 'totalMs', 'actionCount', 'actions', 'lastSeenAt', 'ended']);
+    }
+
+    // Feature governance (src/config/featureGovernanceAccess.ts holds the same model).
+    // The governance owner sees and edits everything and is the only one who assigns
+    // or shares. Other super-admins see what they logged, were assigned or shared;
+    // they edit what they logged, assignees update delivery, shared people only read.
+    // Published releases stay readable by everyone for What's New.
+    // Excluded from the catch-all below, so these are the only rules that apply.
+    function isGovernanceOwner() {
+      return request.auth != null &&
+        request.auth.token.get('email', '').lower() == 'daniel@quantilytix.co.za';
+    }
+    match /featureGovernance/{featureId} {
+      allow read: if isGovernanceOwner() ||
+        (request.auth != null && request.auth.uid in resource.data.accessIds) ||
+        (request.auth != null && resource.data.status == 'released' &&
+          resource.data.whatsNew.published == true);
+      allow create: if isGovernanceOwner() || (
+        isSuperAdmin() &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.get('assigneeIds', []).size() == 0 &&
+        request.resource.data.get('viewerIds', []).size() == 0 &&
+        request.resource.data.get('accessIds', []) == [request.auth.uid]
+      );
+      allow update: if isGovernanceOwner() || (
+        isSuperAdmin() && resource.data.createdBy == request.auth.uid &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['createdBy', 'assigneeIds', 'viewerIds', 'accessIds'])
+      ) || (
+        isSuperAdmin() && request.auth.uid in resource.data.get('assigneeIds', []) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'progress', 'completedAt', 'dueDate', 'updatedAt'])
+      );
+      allow delete: if isGovernanceOwner() ||
+        (isSuperAdmin() && resource.data.createdBy == request.auth.uid);
+    }
+
     // The invoice prompt runs for every login and only ever matches HODs.
     match /consolidatedMOVs/{movId} {
       allow read: if request.auth != null && resource.data.hodUid == request.auth.uid;
     }
 
-    // Funders work the task board (components/tasks/TaskModule.tsx).
+    // Funders see the Team Workroom read-only (components/tasks/TaskModule.tsx),
+    // and only tasks in their own programmes. Staff reach tasks through the
+    // staff fallback below.
     match /tasks/{taskId} {
-      allow read, write: if isFunderUser();
+      allow read: if funderSeesProgram(resource.data.programId);
+    }
+
+    // SME banking details: admins, and staff in the finance, financial
+    // compliance or ROM departments (by the departmentRoles map, including a
+    // direct sub-department). Mirrors useCanSeeBanking in the app.
+    function financeDepartmentIds() {
+      let roles = get(/databases/$(database)/documents/systemSettings/departmentRoles).data;
+      return [roles.get('inhouseFinance', ''), roles.get('financialCompliance', ''), roles.get('rom', '')]
+        .removeAll(['']);
+    }
+    function inFinanceDepartment() {
+      let dept = currentUser().get('departmentId', '');
+      let ids = financeDepartmentIds();
+      return dept is string && dept != '' && (
+        dept in ids ||
+        get(/databases/$(database)/documents/departments/$(dept)).data.get('parentDepartmentId', '') in ids
+      );
+    }
+    match /smeBankingDetails/{participantId} {
+      allow read, write: if hasProfile() && (
+        myRole() in adminRoles() || (myRole() in staffRoles() && inFinanceDepartment())
+      );
+    }
+
+    // Application audit trail and escalation ledger: written only by Cloud
+    // Functions (applicationLifecycle.ts), so staff can read but never edit.
+    match /applicationHistory/{entryId} {
+      allow read: if isStaff();
+    }
+    match /applicationEscalations/{entryId} {
+      allow read: if isStaff();
+    }
+
+    // Market linkage is run by the Market Linkages department only, for now
+    // (by the departmentRoles map, including a direct sub-department; mirrors
+    // requireMarketLinkages in functions/src/marketLinkage.ts).
+    function inMarketLinkagesDepartment() {
+      let mapped = get(/databases/$(database)/documents/systemSettings/departmentRoles).data.get('marketLinkages', '');
+      let dept = currentUser().get('departmentId', '');
+      return hasProfile() && myRole() in staffRoles() && mapped != '' && dept is string && dept != '' && (
+        dept == mapped ||
+        get(/databases/$(database)/documents/departments/$(dept)).data.get('parentDepartmentId', '') == mapped
+      );
+    }
+    // Opportunities hold every SME's match, so SMEs never read them.
+    match /marketOpportunities/{opportunityId} {
+      allow read, write: if inMarketLinkagesDepartment();
+    }
+    // Invitations (marketLinkage.ts creates them): the department sees all of
+    // them; an SME sees only its own and may only answer it.
+    // Bid stages, mirroring canMove in functions/src/bidPipelineLogic.ts.
+    function bidMoveAllowed(from, to) {
+      return (from == 'invited' && to in ['interested', 'declined', 'withdrawn'])
+        || (from == 'interested' && to in ['shortlisted', 'submitted', 'lost', 'withdrawn'])
+        || (from == 'declined' && to == 'interested')
+        || (from == 'shortlisted' && to in ['submitted', 'lost', 'withdrawn'])
+        || (from == 'submitted' && to in ['awarded', 'lost', 'withdrawn']);
+    }
+    match /opportunityInterests/{interestId} {
+      allow read: if inMarketLinkagesDepartment();
+      allow read: if ownsParticipant(resource.data.participantId);
+      // Market Linkages moves the bid along the pipeline; a lost bid needs a reason.
+      allow update: if inMarketLinkagesDepartment()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'lostReason', 'lostNote', 'contractId', 'stageChangedAt', 'stageChangedBy'])
+        && (request.resource.data.status == resource.data.status
+          || bidMoveAllowed(resource.data.status, request.resource.data.status))
+        && (request.resource.data.status != 'lost'
+          || request.resource.data.get('lostReason', '') in ['price', 'compliance', 'bbbee', 'capacity', 'experience', 'quality', 'late', 'other']);
+      // The SME only answers its invitation, and only before Market Linkages takes it further.
+      allow update: if ownsParticipant(resource.data.participantId)
+        && resource.data.status in ['invited', 'interested', 'declined']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'responseNote', 'respondedAt'])
+        && request.resource.data.status in ['interested', 'declined']
+        && request.resource.data.get('responseNote', '') is string
+        && request.resource.data.get('responseNote', '').size() <= 500;
+    }
+    // Supply contracts won through market linkage: the department manages
+    // them; the SME reads its own.
+    match /supplyContracts/{contractId} {
+      allow read, write: if inMarketLinkagesDepartment();
+      allow read: if ownsParticipant(resource.data.participantId);
     }
 
     // IPM cycles (financial years and their review windows): every staff
@@ -1398,11 +1594,13 @@ service cloud.firestore {
     }
 
     // Everything else is internal staff only. Super-admins can access every
-    // collection, including the explicitly restricted collections above.
+    // collection, including the explicitly restricted collections above,
+    // except that nobody may rewrite the application audit trail.
     match /{collectionId}/{document=**} {
-      allow read, write: if isSuperAdmin();
+      allow read: if isSuperAdmin() && collectionId != 'featureGovernance';
+      allow write: if isSuperAdmin() && !(collectionId in ['applicationHistory', 'featureGovernance']);
       allow read, write: if isStaff() &&
-        !(collectionId in ['users', 'ipmReminderLog', 'agentProposals', 'auditLogs', 'whatsappAgentProposals', 'whatsappAgentState', 'smeRiskSnapshots', 'interventionImpact', 'academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'trainingAttendees', 'trainingCompanyProgress', 'trainingCertificates', 'certificateTemplates', 'certificateCounters', 'trainingSettings', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'programs', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures', 'reports', 'reportBlocks', 'reportTemplates', 'reportActivity', 'employeePerformanceCompacts', 'employeePerformanceReviews', 'performanceCycles', 'ipmCompetencies', 'performanceCheckIns', 'performanceEnhancementPlans', 'performanceReviews']);
+        !(collectionId in ['formTemplates', 'sentForms', 'users', 'ipmReminderLog', 'proposalReminderLog', 'smeBankingDetails', 'applicationHistory', 'applicationEscalations', 'marketOpportunities', 'opportunityInterests', 'supplyContracts', 'agentProposals', 'auditLogs', 'whatsappAgentProposals', 'whatsappAgentState', 'smeRiskSnapshots', 'interventionImpact', 'dailyBriefs', 'digestItems', 'watches', 'chasers', 'academyDrafts', 'academyKeys', 'academyVersions', 'academyCatalog', 'academyEnrollments', 'trainings', 'trainingEnrollments', 'trainingAttendees', 'trainingCompanyProgress', 'trainingCertificates', 'certificateTemplates', 'certificateCounters', 'trainingSettings', 'noticeBoard', 'agreementTemplates', 'projectProposals', 'proposalCounters', 'qualityObjectives', 'leaveRequests', 'appointments', 'appointmentSessions', 'notifications', 'notificationActions', 'chatSessions', 'programs', 'outcomeFollowUps', 'outcomeAssessments', 'interventionClosures', 'reports', 'reportBlocks', 'reportTemplates', 'reportActivity', 'pageVisits', 'featureGovernance', 'employeePerformanceCompacts', 'employeePerformanceReviews', 'performanceCycles', 'ipmCompetencies', 'performanceCheckIns', 'performanceEnhancementPlans', 'performanceReviews']);
     }
   }
 }

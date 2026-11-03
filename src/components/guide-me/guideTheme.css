@@ -72,12 +72,56 @@
     color: rgba(0, 0, 0, 0.88);
 }
 
+/* Close (X): the same neutral circle as modals and drawers (styles/buttons.css),
+   turning red only when you are about to use it. The theme variables cover dark mode. */
 .driver-popover.lph-guide-popover .driver-popover-close-btn {
-    color: rgba(0, 0, 0, 0.45);
+    top: 12px;
+    right: 12px;
+    box-sizing: border-box;
+    width: 30px;
+    height: 30px;
+    min-height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--app-border-strong);
+    border-radius: 999px;
+    color: var(--app-text-muted);
+    background: var(--app-surface);
+    font-size: 18px;
+    line-height: 1;
+    transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease,
+        box-shadow 160ms ease, transform 160ms ease;
 }
 
 .driver-popover.lph-guide-popover .driver-popover-close-btn:hover {
-    color: rgba(0, 0, 0, 0.88);
+    border-color: #ff7875;
+    color: #ff4d4f;
+    background: rgba(255, 77, 79, 0.08);
+    box-shadow: 0 0 0 3px rgba(255, 77, 79, 0.14);
+    transform: scale(1.06);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-close-btn:active {
+    transform: scale(0.96);
+}
+
+.driver-popover.lph-guide-popover .driver-popover-close-btn:focus-visible {
+    outline: 2px solid rgba(255, 77, 79, 0.55);
+    outline-offset: 2px;
+}
+
+/* Room for the larger close button beside the title. */
+.driver-popover.lph-guide-popover .driver-popover-title {
+    padding-right: 40px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .driver-popover.lph-guide-popover .driver-popover-close-btn {
+        transition: none;
+        transform: none !important;
+    }
 }
 
 .driver-popover.lph-guide-popover .driver-popover-arrow-side-left {
@@ -388,14 +432,6 @@ html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-prev-b
     border-color: #69b1ff;
     background: #222832;
     color: #fff;
-}
-
-html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-close-btn {
-    color: rgba(255, 255, 255, 0.48);
-}
-
-html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-close-btn:hover {
-    color: rgba(255, 255, 255, 0.88);
 }
 
 html[data-theme='dark'] .driver-popover.lph-guide-popover .driver-popover-arrow-side-left {

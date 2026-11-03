@@ -51,6 +51,14 @@ test('picks the one participant with the email, case-insensitively', () => {
     assert.equal(pickOwnParticipant({ uid: 'u1', email: 'a@x.com', candidates }), 'p1')
 })
 
+test('picks the unlinked participant the login created, before email', () => {
+    const candidates = [{ id: 'p1', data: { email: 'a@x.com' } }, { id: 'p2', data: { createdByUid: 'u1' } }]
+    assert.equal(pickOwnParticipant({ uid: 'u1', email: 'a@x.com', candidates }), 'p2')
+    // Once linked to another login, having created it no longer counts.
+    const taken = [{ id: 'p2', data: { createdByUid: 'u1', uid: 'u2' } }]
+    assert.equal(pickOwnParticipant({ uid: 'u1', email: '', candidates: taken }), null)
+})
+
 test('picks nothing when several match or there is no email', () => {
     const candidates = [{ id: 'p1', data: { email: 'a@x.com' } }, { id: 'p2', data: { email: 'A@x.com' } }]
     assert.equal(pickOwnParticipant({ uid: 'u1', email: 'a@x.com', candidates }), null)

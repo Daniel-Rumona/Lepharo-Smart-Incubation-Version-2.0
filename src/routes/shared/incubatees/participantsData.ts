@@ -1,4 +1,4 @@
-import { doc, getDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { getDownloadURL, getStorage, ref as storageRef } from 'firebase/storage'
 import Highcharts from 'highcharts'
@@ -84,6 +84,11 @@ export type Participant = {
     idNumber?: string
     nationalId?: string
     registrationNumber?: string
+    incomeTaxNumber?: string
+    vatNumber?: string
+    payeReference?: string
+    csdNumber?: string
+    taxCompliancePin?: string
     blackOwnedPercent?: number
     femaleOwnedPercent?: number
     youthOwnedPercent?: number
@@ -108,17 +113,32 @@ export type MonthlyPerfRow = {
     networking?: number
 }
 
-// Photos are written to users/{uid}. Not every role may read that doc, so a
-// failed lookup just means "no photo" and the UI falls back to initials.
+// Photos are written to users/{uid}. The user is found by the participant's
+// uid, else by users.participantId, else by email. Not every role may
+// read users, so a failed lookup just means "no photo" and the UI falls back
+// to initials.
 export const resolveSmePhoto = async (participant: any, app: any): Promise<string | undefined> => {
     const direct = participant?.photoURL || app?.photoURL
     if (direct) return String(direct)
-    const uid = participant?.uid || app?.uid
-    if (!uid) return undefined
     try {
-        const snap = await getDoc(doc(db, 'users', String(uid)))
-        const data = snap.data() as any
-        return data?.photoURL || undefined
+        const uid = participant?.uid || app?.uid
+        if (uid) {
+            const snap = await getDoc(doc(db, 'users', String(uid)))
+            const photo = (snap.data() as any)?.photoURL
+            if (photo) return photo
+        }
+        const pid = String(app?.participantId || participant?.id || '').trim()
+        if (pid) {
+            const snap = await getDocs(query(collection(db, 'users'), where('participantId', '==', pid)))
+            const photo = snap.docs.map(d => (d.data() as any)?.photoURL).find(Boolean)
+            if (photo) return photo
+        }
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        const email = String(participant?.email || app?.email || '').trim()
+        if (!email) return undefined
+        const emails = Array.from(new Set([email, email.toLowerCase()]))
+        const snap = await getDocs(query(collection(db, 'users'), where('email', 'in', emails)))
+        return snap.docs.map(d => (d.data() as any)?.photoURL).find(Boolean) || undefined
     } catch {
         return undefined
     }
@@ -168,6 +188,11 @@ export type SmeRow = {
     smmeNo?: string
     registrationNumber?: string
     idNumber?: string
+    incomeTaxNumber?: string
+    vatNumber?: string
+    payeReference?: string
+    csdNumber?: string
+    taxCompliancePin?: string
     companyName: string
     photoUrl?: string
     sector?: string
@@ -676,5 +701,10 @@ export const editInitialValues = (row: SmeRow) => ({
     beeLevel: normalizeBeeLevel(row.beeLevel),
     blackOwnedPercent: row.ownership.blackOwnedPercent,
     femaleOwnedPercent: row.ownership.femaleOwnedPercent,
-    youthOwnedPercent: row.ownership.youthOwnedPercent
+    youthOwnedPercent: row.ownership.youthOwnedPercent,
+    incomeTaxNumber: row.incomeTaxNumber ?? '',
+    vatNumber: row.vatNumber ?? '',
+    payeReference: row.payeReference ?? '',
+    csdNumber: row.csdNumber ?? '',
+    taxCompliancePin: row.taxCompliancePin ?? ''
 })

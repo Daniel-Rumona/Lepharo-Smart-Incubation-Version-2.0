@@ -30,6 +30,7 @@ import {
 } from 'firebase/firestore'
 import dayjs from 'dayjs'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { getSmeParticipant, resolveSmeParticipantId } from '@/services/smeIdentity'
 import {
     FileSearchOutlined,
     ClockCircleOutlined,
@@ -64,12 +65,18 @@ const IncubateeInquiriesPage: React.FC = () => {
     const fetchInquiries = async () => {
         if (!user?.id) return
         setLoading(true)
-        const q = query(
-            collection(db, 'inquiries'),
-            where('participantId', '==', user.id)
-        )
-        const snapshot = await getDocs(q)
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        // The SME's own inquiries: those it submitted, and those raised for its
+        // participant record (e.g. by reception).
+        const participantId = await resolveSmeParticipantId({ participantId: user.participantId, email: user.email })
+        const snapshots = await Promise.all([
+            getDocs(query(collection(db, 'inquiries'), where('submittedBy', '==', user.id))),
+            participantId
+                ? getDocs(query(collection(db, 'inquiries'), where('participantId', '==', participantId))).catch(() => null)
+                : Promise.resolve(null)
+        ])
+        const byId = new Map<string, any>()
+        snapshots.forEach(snapshot => snapshot?.docs.forEach(doc => byId.set(doc.id, { id: doc.id, ...doc.data() })))
+        const data = Array.from(byId.values())
         setInquiries(
             data.sort((a, b) => b.createdAt?.toDate() - a.createdAt?.toDate())
         )
@@ -82,15 +89,11 @@ const IncubateeInquiriesPage: React.FC = () => {
 
     const handleSubmit = async (formValues: any) => {
         try {
-            if (!user?.email || !user?.id) throw new Error('Missing user identity')
+            if (!user?.id) throw new Error('Missing user identity')
 
-            const participantSnap = await getDocs(
-                query(collection(db, 'participants'), where('email', '==', user.email))
-            )
-
-            if (participantSnap.empty) throw new Error('Participant not found.')
-
-            const participant = participantSnap.docs[0].data()
+            // The SME's linked participant; email only until it is linked.
+            const participant = await getSmeParticipant({ uid: user.id, participantId: user.participantId, email: user.email })
+            if (!participant) throw new Error('Participant not found.')
 
             const contactInfo = {
                 name: participant.ownerName || user.name || '',
@@ -100,6 +103,7 @@ const IncubateeInquiriesPage: React.FC = () => {
 
             const inquiryDoc = {
                 branchId: participant.branchId || 'unknown',
+                participantId: participant.id,
                 submittedBy: user.id,
                 submittedAt: Timestamp.now(),
                 status: 'New',

@@ -7,8 +7,11 @@ import os
 import hmac
 import json
 import re
+import queue
+import threading
 import urllib.request
 import urllib.error
+import urllib.parse
 import uuid
 import zipfile
 from datetime import date, datetime, time, timezone
@@ -18,7 +21,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from firebase_admin import auth as firebase_auth
 from google import genai
@@ -28,9 +31,13 @@ from schema_registry import FIRESTORE_SCHEMA
 from firestore_tools import (
     db,
     get_participant_by_email,
+    get_participant_by_uid,
     get_assigned_interventions_by_participant,
     get_diagnostic_plan_by_participant,
     get_compliance_by_participant,
+    get_participant_by_id,
+    get_appointments_by_participant,
+    get_participant_metrics,
     get_compliance_document,
     find_required_document,
     update_compliance_document_status,
@@ -38,13 +45,28 @@ from firestore_tools import (
     chat_session_usable_by,
     _parse_date_like,
 )
+from compliance_check import (
+    assess_compliance_document,
+    build_compliance_prompt,
+    claim_daily_check,
+    parse_compliance_reply,
+    review_note,
+)
 from page_registry import get_page_context
 from tools_dispatcher import run_page_tools
+from tool_scope import scope_tools
 from plan_roadmap import (
     RoadmapDraft,
     RoadmapExtractionRequest,
     build_roadmap_draft,
     roadmap_extraction_prompt,
+)
+from opportunity_capture import (
+    MAX_TEXT_CHARS as OPPORTUNITY_MAX_TEXT_CHARS,
+    OpportunityDraft,
+    OpportunityExtractionRequest,
+    build_opportunity_draft,
+    opportunity_extraction_prompt,
 )
 from gap_mapping import (
     GapMappingError,
@@ -59,11 +81,37 @@ from ai_feedback import (
     record_feedback,
 )
 from academy_coach import CoachRequest, CoachResponse, CoachUnavailable, coach_reply
+from twin_ask import TwinAskRequest, TwinAskResponse, TwinAskUnavailable, ask_twin
 from twin_scenario import ProjectionSummaryRequest, ProjectionSummaryResponse, ScenarioIntentRequest, ScenarioIntentResponse, ScenarioUnavailable, interpret_scenario, summarise_projection
 from show_me import ComposeTourRequest, ComposeTourResponse, ShowMeUnavailable, compose_tour, sanitize_show_me
 from agent_proposals import PROPOSAL_MARKER, allowed_proposals_for, proposal_directive, sanitize_proposal
+from reply_style import reply_style_directive
+from chat_steps import UNDERSTANDING, WRITING, StepReporter, stream_events
+from answer_cards import CARDS_MARKER, cards_directive, sanitize_cards
+from watch_draft import WATCH_MARKER, WATCH_ROLES, sanitize_watch, watch_directive
+from chaser_draft import CHASER_MARKER, CHASER_ROLES, chaser_directive, sanitize_chaser
+from attention_list import asks_for_attention, load_attention, visibility_for as attention_visibility
+from sme_lookup import load_sme_names, named_sme_records
+from evidence_check import (
+    EvidenceCheckRequest,
+    EvidenceCheckUnavailable,
+    EvidenceContext,
+    EvidenceFile,
+    MAX_FILES as MAX_EVIDENCE_FILES,
+    run_evidence_check,
+)
+from session_copilot import (
+    DraftCoverageRequest,
+    DraftCoverageResponse,
+    FocusRequest,
+    FocusResponse,
+    SessionCopilotUnavailable,
+    draft_coverage,
+    suggest_focus,
+)
 from lph_gateway import LphGateway
 from whatsapp_staff import GeminiStaffReasoner
+import whatsapp_uploads
 from whatsapp import (
     GeminiWhatsAppReasoner,
     WhatsAppChatRequest,
@@ -77,6 +125,20 @@ from whatsapp import (
 
 app = FastAPI(title="Smart Incubator Agent")
 whatsapp_conversations = WhatsAppConversationStore()
+
+
+def _verify_whatsapp_upload(application_id: str, document_id: str) -> None:
+    try:
+        run_compliance_verification(application_id, document_id, "AI Compliance Check (WhatsApp upload)")
+    except Exception as error:  # the upload is saved either way; staff review it if the check fails
+        print("AI check of a WhatsApp upload failed:", str(error), flush=True)
+
+
+# Documents SMEs send on WhatsApp get the same AI check as uploads on the compliance page,
+# in the background so the reply isn't held up by it.
+whatsapp_uploads.VERIFY_UPLOAD = lambda application_id, document_id: threading.Thread(
+    target=_verify_whatsapp_upload, args=(application_id, document_id), daemon=True
+).start()
 
 JSON_BODY_PATHS = {
     "/chat",
@@ -265,7 +327,7 @@ CHART_MARKER = "<<<CHART_JSON>>>"
 GUIDE_MARKER = "<<<GUIDE_JSON>>>"
 ACTION_MARKER = "<<<ACTION_JSON>>>"
 SHOWME_MARKER = "<<<SHOWME_JSON>>>"
-REPLY_MARKERS = (CHART_MARKER, GUIDE_MARKER, SHOWME_MARKER, ACTION_MARKER, PROPOSAL_MARKER)
+REPLY_MARKERS = (CHART_MARKER, GUIDE_MARKER, SHOWME_MARKER, ACTION_MARKER, PROPOSAL_MARKER, CARDS_MARKER, WATCH_MARKER, CHASER_MARKER)
 
 
 def _split_reply_markers(raw_text: str) -> tuple[str, dict[str, Any]]:
@@ -303,10 +365,10 @@ ADMIN_ROLES = {"system_admin", "director", "operations"}
 PROGRAM_SCOPED_ROLES = {"projectadmin", "receptionist", "funder"}
 
 OWN_DATA_TOOLS = {
-    "get_participant_by_email",
-    "get_applications_by_email",
-    "get_inquiries_by_email",
-    "get_intake_submissions_by_email",
+    "get_participant_by_user",
+    "get_applications_by_user",
+    "get_inquiries_by_user",
+    "get_intake_submissions_by_user",
     "get_applications_by_participant",
     "get_assigned_interventions_by_participant",
     "get_diagnostic_plan_by_participant",
@@ -416,6 +478,7 @@ def _find_user_profile(uid: str, email: str) -> dict[str, Any]:
     if direct.exists:
         return _doc_data(direct)
 
+    # "email" is the email fallback until Phase 4 (docs/sme-identity-migration-plan.md).
     for field, value in (("authUid", uid), ("uid", uid), ("email", email)):
         if not value:
             continue
@@ -596,12 +659,12 @@ def _verified_user(request: Request, requested: UserContext | None) -> UserConte
     profile = _find_user_profile(uid, email)
     role = _normalise_role(profile.get("role") or decoded.get("role"))
 
-    participant = get_participant_by_email(email) if email else None
-    participant_id = str(
-        profile.get("participantId")
-        or (participant or {}).get("id")
-        or ""
-    ).strip() or None
+    participant_id = str(profile.get("participantId") or "").strip() or None
+    if not participant_id and uid:
+        participant_id = (get_participant_by_uid(uid) or {}).get("id") or None
+    if not participant_id and email:
+        # email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        participant_id = (get_participant_by_email(email) or {}).get("id") or None
 
     assignee_doc_id = None
     if role == "coordinator" or role in ADMIN_ROLES:
@@ -645,7 +708,7 @@ def _verified_user(request: Request, requested: UserContext | None) -> UserConte
     )
 
 
-def _allowed_program_ids(uid: str, email: str, role: str) -> list[str]:
+def _allowed_program_ids(uid: str, email: str, role: str, participant_id: str = "") -> list[str]:
     profile = _find_user_profile(uid, email)
     program_ids = (
         _normalise_ids(profile.get("assignedPrograms"))
@@ -676,14 +739,27 @@ def _allowed_program_ids(uid: str, email: str, role: str) -> list[str]:
                 except Exception:
                     continue
 
-    if role in {"incubatee", "applicant"} and email:
+    if role in {"incubatee", "applicant"}:
         try:
+            participant_id = str(participant_id or profile.get("participantId") or "").strip()
             applications = (
-                db.collection("applications")
-                .where("email", "==", email)
-                .limit(50)
-                .stream()
+                list(
+                    db.collection("applications")
+                    .where("participantId", "==", participant_id)
+                    .limit(50)
+                    .stream()
+                )
+                if participant_id
+                else []
             )
+            if not applications and email:
+                # email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+                applications = list(
+                    db.collection("applications")
+                    .where("email", "==", email)
+                    .limit(50)
+                    .stream()
+                )
             for application in applications:
                 data = application.to_dict() or {}
                 if str(data.get("applicationStatus") or "").lower() == "accepted":
@@ -739,7 +815,7 @@ TOOL_TOPIC_RULES: list[tuple[re.Pattern, tuple[str, ...]]] = [
     (re.compile(r"\bcatalog|\bservices? (offered|catalog)\b", re.I), ("catalog", "interventions_catalog")),
     (re.compile(r"\bdepartments?\b|\bhod\b", re.I), ("department",)),
     (re.compile(r"\bprogram(me)?s?\b|\bbranch\b", re.I), ("program",)),
-    (re.compile(r"\bimpact\b|\bworking\b|\bworked\b|\beffective|\blift\b|\bpaying off\b|\bmade a difference\b|\brevenue (growth|change|increase)", re.I), ("impact",)),
+    (re.compile(r"\bimpact\b|\bworking\b|\bworked\b|\beffective|\blift\b|\bpaying off\b|\bmade a difference\b|\brevenue (growth|change|increase)|\bjobs? (created|creation|growth|added)|\bheadcount\b|\bemployment\b", re.I), ("impact",)),
     (re.compile(r"\bbrief me\b|\bcatch me up\b|\bwhat happened\b|\brecap\b|\brecent activity\b|\bwhat'?s new\b|\btoday'?s? activity\b|\bsince (i|we) last\b|\bwhat needs my attention\b", re.I), ("recent_activity",)),
 ]
 
@@ -747,6 +823,39 @@ SELF_SCOPE_PATTERN = re.compile(r"\bmy\b|\bmine\b|\bassigned to me\b|\bi have\b|
 DEPARTMENT_SCOPE_PATTERN = re.compile(r"\bdepartment\b|\bmy team\b", re.I)
 ORG_WIDE_SCOPE_PATTERN = re.compile(r"\ball program|\bacross the organi[sz]ation\b|\borg.?wide\b|\bwhole company\b|\bevery program", re.I)
 SCOPE_SUFFIXES = ("_by_program", "_by_department", "_by_assignee", "_by_participant", "_by_email", "_by_user")
+
+
+def _risk_snapshot(participant_id: str) -> dict[str, Any] | None:
+    snapshot = db.collection("smeRiskSnapshots").document(participant_id).get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    return {key: data.get(key) for key in ("level", "score", "trend", "reasons", "suggestion")}
+
+
+# What the assistant gets for each SME named in a question.
+NAMED_SME_FETCHERS = {
+    "profile": get_participant_by_id,
+    "interventions": lambda participant_id: get_assigned_interventions_by_participant(participant_id, 30),
+    "appointments": lambda participant_id: get_appointments_by_participant(participant_id, 20),
+    "compliance": lambda participant_id: get_compliance_by_participant(participant_id, 40),
+    "metrics": lambda participant_id: get_participant_metrics(participant_id, 12),
+    "risk": _risk_snapshot,
+}
+
+
+def _named_sme_scope(allowed_tools: set[str], selected_programme: str | None, programme_scope: list[str] | None):
+    """Which SMEs a question may name: None for all, a list of programmes, or False for none.
+    The same limits as the SME list tools the person already has."""
+    may_list_all = "get_participants" in allowed_tools
+    may_list_programme = "get_participants_for_program" in allowed_tools
+    if selected_programme and (may_list_all or may_list_programme):
+        return [selected_programme]
+    if may_list_all:
+        return None
+    if may_list_programme and programme_scope:
+        return list(programme_scope)
+    return False
 
 
 def _select_tools(
@@ -1332,6 +1441,26 @@ def twin_scenario_intent(payload: ScenarioIntentRequest, request: Request):
         raise HTTPException(status_code=502, detail="The assistant could not read that change.") from error
 
 
+@app.post("/twin/ask", response_model=TwinAskResponse)
+def twin_ask(payload: TwinAskRequest, request: Request):
+    """Answers a question about the Intervention Twin from the facts the page computed.
+
+    What-if questions come back as a change for the page's own model to run; an answer is accepted only if every
+    number in it was given. Any failure returns 502/503 and the page says it could not answer.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The assistant is not configured.")
+    user = _verified_user(request, None)
+    if _normalise_role(user.role) not in {"operations", "projectadmin", "system_admin"}:
+        raise HTTPException(status_code=403, detail="The Intervention Twin is restricted to managers.")
+    try:
+        return ask_twin(genai.Client(api_key=api_key), os.getenv("GEMINI_MODEL", "gemini-3.6-flash"), payload)
+    except TwinAskUnavailable as error:
+        print("Twin ask failed:", str(error), flush=True)
+        raise HTTPException(status_code=502, detail="The twin couldn't answer that right now.") from error
+
+
 @app.post("/twin/projection-summary", response_model=ProjectionSummaryResponse)
 def twin_projection_summary(payload: ProjectionSummaryRequest, request: Request):
     """Two or three plain sentences comparing an Intervention Twin change with "if nothing changes".
@@ -1369,6 +1498,181 @@ def guide_compose(payload: ComposeTourRequest, request: Request):
     except ShowMeUnavailable as error:
         print("Guide compose failed:", str(error), flush=True)
         raise HTTPException(status_code=502, detail="The assistant could not put that tour together.") from error
+
+
+# Session copilot: who facilitates and oversees sessions. The brief's facts are
+# access-checked by the sessionBrief Cloud Function; these only write words.
+SESSION_COPILOT_ROLES = {"coordinator", "projectadmin", "superadmin"} | ADMIN_ROLES
+
+
+def _session_copilot_client(request: Request):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The assistant is not configured.")
+    user = _verified_user(request, None)
+    if _normalise_role(user.role) not in SESSION_COPILOT_ROLES:
+        raise HTTPException(status_code=403, detail="The session copilot is for staff who run sessions.")
+    return genai.Client(api_key=api_key), os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+
+
+@app.post("/session/focus", response_model=FocusResponse)
+def session_focus(payload: FocusRequest, request: Request):
+    """Two or three "focus today" bullets for a session prep brief, from its facts only."""
+    client, model = _session_copilot_client(request)
+    try:
+        return suggest_focus(client, model, payload)
+    except SessionCopilotUnavailable as error:
+        print("Session focus failed:", str(error), flush=True)
+        raise HTTPException(status_code=502, detail="The assistant could not suggest a focus right now.") from error
+
+
+@app.post("/session/draft-coverage", response_model=DraftCoverageResponse)
+def session_draft_coverage(payload: DraftCoverageRequest, request: Request):
+    """Drafts the coverage form from a facilitator's rough notes. Never saves anything."""
+    client, model = _session_copilot_client(request)
+    try:
+        return draft_coverage(client, model, payload)
+    except SessionCopilotUnavailable as error:
+        print("Coverage draft failed:", str(error), flush=True)
+        raise HTTPException(status_code=502, detail="The assistant could not draft this right now.") from error
+
+
+# Automatic evidence checks: the evidence on an MOV, read before HOD and M&E review.
+EVIDENCE_MANAGER_ROLES = {"system_admin", "superadmin", "director"}
+EVIDENCE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"}
+
+
+def _can_check_mov(user: UserContext, mov: dict[str, Any]) -> bool:
+    role = _normalise_role(user.role)
+    if role in EVIDENCE_MANAGER_ROLES:
+        return True
+    same_department = bool(user.departmentId) and user.departmentId == str(mov.get("departmentId") or "")
+    if role == "operations":
+        return user.isMainDepartment or same_department
+    if role == "projectadmin":
+        return not mov.get("branchId") or user.branchId == mov.get("branchId")
+    if role == "coordinator":
+        facilitator = str(mov.get("facilitatorId") or "")
+        email = str(mov.get("facilitatorEmail") or "").lower()
+        return (
+            (facilitator and facilitator in {user.uid, user.consultantId})
+            or (email and email == (user.email or "").lower())
+            or same_department
+        )
+    return False
+
+
+def _date_text(value: Any) -> str:
+    """YYYY-MM-DD from a Firestore timestamp or an ISO string; "" if neither."""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()[:10]
+    return str(value or "")[:10]
+
+
+def _mov_evidence_links(mov: dict[str, Any], assignment: dict[str, Any]) -> list[tuple[str, str]]:
+    """Every distinct evidence link for an MOV, labelled, signed MOV first. Evidence
+    managed after completion lives on the assignment, so it is read from there too."""
+    links: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add(url: Any, label: Any) -> None:
+        url = str(url or "").strip()
+        if url.startswith("http") and url not in seen:
+            seen.add(url)
+            links.append((str(label or "Evidence").strip()[:160] or "Evidence", url))
+
+    add(mov.get("uploadedMovUrl"), mov.get("uploadedMovFileName") or "Signed MOV")
+    for item in [*(mov.get("poeEvidence") or []), *(mov.get("resources") or []), *(assignment.get("resources") or [])]:
+        if isinstance(item, dict):
+            add(item.get("link") or item.get("url"), item.get("label") or item.get("originalName"))
+    for url in mov.get("poeUrls") or []:
+        add(url, "Evidence file")
+    return links[:MAX_EVIDENCE_FILES]
+
+
+def _evidence_file(label: str, url: str) -> tuple[EvidenceFile, Any]:
+    """The file as the check sees it, and its model attachment (None for text or unreadable)."""
+    fetched = _fetch_document_bytes(url)
+    if not fetched:
+        return EvidenceFile(label=label, kind="unreachable"), None
+    data, mime = fetched
+    name = urllib.parse.unquote(url.split("?")[0]).lower()
+    if mime == "application/pdf" or name.endswith(".pdf"):
+        return EvidenceFile(label=label, kind="pdf"), genai_types.Part.from_bytes(data=data, mime_type="application/pdf")
+    if mime in EVIDENCE_IMAGE_TYPES:
+        return EvidenceFile(label=label, kind="image"), genai_types.Part.from_bytes(data=data, mime_type=mime)
+    text = ""
+    if mime.startswith("text/") or name.endswith((".txt", ".csv", ".md")):
+        text = data.decode("utf-8", errors="ignore")
+    elif mime == DOCX_MIME_TYPE or name.endswith(".docx"):
+        text = _extract_docx_text(data)
+    elif mime == PPTX_MIME_TYPE or name.endswith(".pptx"):
+        text = _extract_pptx_text(data)
+    if text.strip():
+        return EvidenceFile(label=label, kind="text", text=text), None
+    return EvidenceFile(label=label, kind="unsupported"), None
+
+
+@app.post("/evidence/check")
+def check_mov_evidence(payload: EvidenceCheckRequest, request: Request):
+    """Checks the evidence on one MOV and records the result on it as evidenceCheck."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The assistant is not configured.")
+    user = _verified_user(request, None)
+    mov_ref = db.collection("movDocuments").document(payload.movId.strip())
+    snapshot = mov_ref.get()
+    if not snapshot.exists:
+        raise HTTPException(status_code=404, detail="That MOV no longer exists.")
+    mov = snapshot.to_dict() or {}
+    if not _can_check_mov(user, mov):
+        raise HTTPException(status_code=403, detail="Only the facilitator, their department or managers can check this evidence.")
+
+    assignment: dict[str, Any] = {}
+    if mov.get("assignedInterventionId"):
+        found = db.collection("assignedInterventions").document(str(mov["assignedInterventionId"])).get()
+        assignment = found.to_dict() or {} if found.exists else {}
+    definition = assignment.get("definitionSnapshot") or {}
+    deliverable = ((definition.get("outcomeDef") or {}).get("deliverable") or {})
+
+    links = _mov_evidence_links(mov, assignment)
+    prepared = [_evidence_file(label, url) for label, url in links]
+    files = [item for item, _ in prepared]
+    attachments = [part for _, part in prepared if part is not None]
+    notes = str(mov.get("evidenceNotes") or "").strip()
+    if notes:
+        files.append(EvidenceFile(label="Evidence notes", kind="text", text=notes))
+
+    context = EvidenceContext(
+        interventionTitle=str(mov.get("interventionTitle") or ""),
+        deliverableName=str(deliverable.get("name") or definition.get("deliverableName") or ""),
+        deliverableDescription=str(deliverable.get("description") or ""),
+        outcomeType=str((definition.get("outcomeDef") or {}).get("outcomeType") or ""),
+        smeName=str(mov.get("smmeCompanyName") or mov.get("smmeName") or ""),
+        periodStart=_date_text(mov.get("periodStart")),
+        periodEnd=_date_text(mov.get("periodEnd")),
+        facilitatorNotes=str(mov.get("completionNotes") or mov.get("notes") or ""),
+        demo=mov.get("dataOrigin") == "synthetic"
+        or any(isinstance(item, dict) and item.get("dataOrigin") == "synthetic" for item in mov.get("resources") or []),
+    )
+
+    model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    try:
+        result = run_evidence_check(genai.Client(api_key=api_key), model, context, files, attachments)
+    except EvidenceCheckUnavailable as error:
+        print("Evidence check failed:", str(error), flush=True)
+        raise HTTPException(status_code=502, detail="The assistant could not check this evidence right now.") from error
+
+    record = {
+        **result.model_dump(),
+        "checkedAt": datetime.now(timezone.utc),
+        "checkedBy": user.email or user.uid,
+        # Which evidence was checked, so the app can tell when it has changed since.
+        "checkedLinks": [url for _, url in links] + (["notes"] if notes else []),
+        "model": model,
+    }
+    mov_ref.set({"evidenceCheck": record}, merge=True)
+    return {**record, "checkedAt": record["checkedAt"].isoformat()}
 
 
 @app.post("/api/chat", response_model=WhatsAppChatResponse)
@@ -1443,6 +1747,24 @@ def academy_coach(payload: CoachRequest, request: Request):
 
 @app.post("/chat")
 def chat(payload: ChatRequest, request: Request):
+    return _chat_reply(payload, request)
+
+
+@app.post("/chat/stream")
+def chat_stream(payload: ChatRequest, request: Request):
+    """The same reply as /chat, as server-sent events: a "step" event as each stage starts
+    ("Reading appointments"), then one "result" event with the /chat body, or an "error" event
+    with the status and message /chat would have returned."""
+    stream = stream_events(
+        lambda step: _chat_reply(payload, request, step),
+        "The assistant is temporarily unavailable. Please try again shortly.",
+    )
+    return StreamingResponse(stream, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _chat_reply(payload: ChatRequest, request: Request, step: Optional[StepReporter] = None):
+    """The /chat reply. `step` hears each stage as it starts, for /chat/stream."""
+    step = step or StepReporter(lambda _label: None)
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
@@ -1469,7 +1791,7 @@ def chat(payload: ChatRequest, request: Request):
         or ""
     ).strip()
     role = _normalise_role(user.role)
-    assigned_programs = _allowed_program_ids(user.uid or "", user.email or "", role)
+    assigned_programs = _allowed_program_ids(user.uid or "", user.email or "", role, user.participantId or "")
     if role in PROGRAM_SCOPED_ROLES:
         if requested_program == "all":
             requested_program = ""
@@ -1487,10 +1809,9 @@ def chat(payload: ChatRequest, request: Request):
         "frontend": frontend_page_context,
     }
 
-    participant = get_participant_by_email(user.email) if user.email else None
+    # user.participantId is already resolved by id, uid, then the email fallback (_verified_user).
     participant_id = user.participantId
-    if participant and not participant_id:
-        participant_id = participant.get("id") if participant else None
+    participant = get_participant_by_id(participant_id) if participant_id else None
 
     fetched_data: dict[str, Any] = {
         "page": resolved_page_context,
@@ -1500,8 +1821,17 @@ def chat(payload: ChatRequest, request: Request):
     model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     client = genai.Client(api_key=api_key)
     allowed_tools = _authorised_tools(user)
-    if role in PROGRAM_SCOPED_ROLES and not requested_program:
-        allowed_tools -= PROGRAM_DATA_TOOLS
+    # The programme filter decides the scope for every role (tool_scope.py): a selected programme
+    # means that programme's tools; "All" means everything for those who may see it, and each of
+    # their own programmes for those who may not.
+    selected_programme = requested_program if requested_program and requested_program != "all" else None
+    allowed_tools, programme_scope, scope_note = scope_tools(
+        allowed_tools,
+        programme=selected_programme,
+        own_programmes=assigned_programs if role in PROGRAM_SCOPED_ROLES else None,
+        programme_tools=PROGRAM_DATA_TOOLS,
+    )
+    step(UNDERSTANDING)
     selected_tools = _select_tools(
         question,
         allowed_tools,
@@ -1511,7 +1841,7 @@ def chat(payload: ChatRequest, request: Request):
         selected_tools = [
             name
             for name in (
-                "get_participant_by_email",
+                "get_participant_by_user",
                 "get_active_programs",
             )
             if name in allowed_tools
@@ -1520,6 +1850,8 @@ def chat(payload: ChatRequest, request: Request):
     tool_context = {
         **resolved_page_context,
         "tools": selected_tools,
+        # "All my programmes": per-programme tools run once for each, then merge.
+        "programScope": programme_scope,
     }
     needs_exact_summary = payload.chartOnly or bool(
         re.search(
@@ -1538,7 +1870,29 @@ def chat(payload: ChatRequest, request: Request):
         user=user,
         base_data=fetched_data,
         include_summaries=needs_exact_summary,
+        on_tool=step.tool,
     )
+    # SMEs named in the question ("tell me about Zungu Trading"), for people who may see SME lists.
+    named_scope = _named_sme_scope(allowed_tools, selected_programme, programme_scope)
+    if named_scope is not False:
+        try:
+            named = named_sme_records(question, load_sme_names(db), named_scope, NAMED_SME_FETCHERS)
+        except Exception as error:  # noqa: BLE001 - the answer goes on with the other tools
+            print("named SME lookup failed:", type(error).__name__, flush=True)
+            named = []
+        if named:
+            tool_results["named_smes"] = {"ok": True, "data": named, "detailsArePreview": False}
+    # "Which SMEs need me this week?": one ranked list across risk, evidence, deliveries and sessions.
+    attention = None
+    attention_scope = attention_visibility(role, user.uid or "", [selected_programme] if selected_programme else programme_scope)
+    if attention_scope and asks_for_attention(question):
+        step("Ranking the SMEs that need you")
+        try:
+            attention = load_attention(db, attention_scope)
+        except Exception as error:  # noqa: BLE001 - the answer goes on with the other tools
+            print("attention list failed:", type(error).__name__, flush=True)
+        if attention is not None:
+            tool_results["attention_list"] = {"ok": True, "data": attention, "detailsArePreview": False}
     now_sast = datetime.now(SAST)
     _add_appointment_timing(tool_results, now_sast)
     fetched_data["toolResults"] = tool_results
@@ -1657,6 +2011,20 @@ def chat(payload: ChatRequest, request: Request):
       If detailsArePreview is false, the array is already a complete, exact
       aggregate (e.g. get_monthly_participants_serviced_by_program) — treat it
       like a summary, not a preview.
+    - If a tool result has "listIsCutShort": true, its list stops before the end: say so plainly in
+      the answer, e.g. "showing 100 of 342", using detailRecordsReturned and totalRecords, and suggest
+      narrowing the question (a programme, department, centre or date range).
+    - "attention_list" ranks the SMEs that need the person most, from risk, weak MOV evidence,
+      overdue or due-soon interventions and missing sessions, each with "why" and one "nextStep".
+      The app shows the whole list as a card under your reply, so do not repeat it: in two or three
+      sentences say how many need them, who is at the top and why, and the first thing to do. If
+      "total" is 0, say nothing stands out. Add no cards marker for it.
+    - "named_smes" holds the records of each SME the question names (profile, interventions,
+      appointments, compliance, metrics, risk). Answer about those SMEs from it; a company name and
+      the person on its record are the same SME.
+    - A result with "programmes" was gathered across several programmes the person holds. Each record
+      carries its programId; "summaryByProgramme" holds each programme's summary. Add them up for
+      totals, and say which programme a record belongs to when it matters.
     - Participant records include demographic/ownership fields (gender, beeLevel,
       youthOwnedPercent, blackOwnedPercent, femaleOwnedPercent, sector, province).
       Use them directly for demographic or ownership breakdown questions/charts —
@@ -1700,6 +2068,7 @@ def chat(payload: ChatRequest, request: Request):
       text on that line) matching exactly:
       {{"type": "donut" | "spline", "title": string, "subtitle": string | null, "categories": string[], "series": [{{"name": string, "data": number[]}}]}}
     - If no chart is warranted, do not output the marker or any JSON at all — just the plain answer.
+    {reply_style_directive(frontend_page_context)}
     - Never invent, estimate, or round out chart numbers.
     - Use "donut" to break a whole into named categories (e.g. status breakdown, compliance
       outstanding vs complete, interventions by type). categories are the slice labels and there
@@ -1732,6 +2101,11 @@ def chat(payload: ChatRequest, request: Request):
     {show_me_directive}
     {action_directive}
     {proposal_directive(allowed_proposals)}
+    {cards_directive()}
+    {watch_directive() if role in WATCH_ROLES else ''}
+    {chaser_directive() if role in CHASER_ROLES else ''}
+
+    {('- ' + scope_note) if scope_note else ''}
 
     Verified user scope:
     {json.dumps(user.model_dump(), default=str)}
@@ -1752,6 +2126,7 @@ def chat(payload: ChatRequest, request: Request):
     {json.dumps(history, ensure_ascii=False)}
     """
 
+    step(WRITING)
     try:
         response = client.models.generate_content(
             model=model,
@@ -1814,6 +2189,12 @@ def chat(payload: ChatRequest, request: Request):
         None if safe_guide else sanitize_show_me(raw_show_me, frontend_page_context.get("availableRoutes"))
     )
     safe_proposal = sanitize_proposal(raw_proposal, allowed_proposals)
+    # Cards only for records this question's tools actually returned.
+    safe_cards = sanitize_cards(marker_json.get(CARDS_MARKER), tool_results)
+    # A drafted watch is only a suggestion: the person starts it from the card.
+    safe_watch = sanitize_watch(marker_json.get(WATCH_MARKER)) if role in WATCH_ROLES else None
+    # Likewise a drafted chaser: nothing is sent until they press Start chasing.
+    safe_chaser = sanitize_chaser(marker_json.get(CHASER_MARKER)) if role in CHASER_ROLES else None
     if safe_proposal:
         # One way to act per reply: a ready proposal replaces the open-the-form flow.
         safe_action = None
@@ -1826,6 +2207,10 @@ def chat(payload: ChatRequest, request: Request):
         user_text=question,
         assistant_text=safe_answer,
         chart=safe_chart,
+        cards=safe_cards,
+        watch=safe_watch,
+        chaser=safe_chaser,
+        attention=attention if attention and attention.get("items") else None,
     )
 
     return {
@@ -1837,6 +2222,10 @@ def chat(payload: ChatRequest, request: Request):
         "action": safe_action,
         "showMe": safe_show_me,
         "proposal": safe_proposal,
+        "cards": safe_cards,
+        "watch": safe_watch,
+        "chaser": safe_chaser,
+        "attention": attention if attention and attention.get("items") else None,
         "sources": [
             name
             for name, result in tool_results.items()
@@ -1994,36 +2383,16 @@ def _verify_document_with_ai(
     mime_type: str,
     expected_title: str,
 ) -> Optional[dict]:
-    prompt = f"""
-You are verifying a compliance document upload for a business incubation platform.
-
-Expected document type: "{expected_title or 'Unknown — use your best judgement'}"
-
-Look at the attached file and answer:
-1. Is it legible and a genuine, complete document (not blank, not corrupted, not an unrelated photo)?
-2. Does its content plausibly match the expected document type above?
-
-Respond with strict JSON only, no markdown fences, matching exactly:
-{{"legible": true|false, "matchesExpectedType": true|false, "reason": "one short sentence"}}
-"""
+    """The model's verdict and the dates and identifiers it read, or None if it failed."""
     try:
         response = client.models.generate_content(
             model=model,
             contents=[
                 genai_types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                prompt,
+                build_compliance_prompt(expected_title),
             ],
         )
-        raw_text = (response.text or "").strip()
-        cleaned = CODE_FENCE_PATTERN.sub("", raw_text).strip()
-        parsed = json.loads(cleaned)
-        if not isinstance(parsed, dict):
-            return None
-        return {
-            "legible": bool(parsed.get("legible")),
-            "matchesExpectedType": bool(parsed.get("matchesExpectedType")),
-            "reason": str(parsed.get("reason") or "").strip()[:300],
-        }
+        return parse_compliance_reply(response.text or "")
     except Exception as error:
         print(
             "Compliance AI verification failed:",
@@ -2053,9 +2422,23 @@ def verify_compliance_document(payload: ComplianceVerifyRequest, request: Reques
     if not application_id or not document_id:
         raise HTTPException(status_code=400, detail="applicationId and documentId are required.")
 
-    document = get_compliance_document(application_id, document_id)
-    if not document:
+    result = run_compliance_verification(application_id, document_id, f"AI Compliance Check ({user.email or user.uid})")
+    if result is None:
         raise HTTPException(status_code=404, detail="Compliance document not found.")
+    return result
+
+
+def run_compliance_verification(application_id: str, document_id: str, reviewed_by: str) -> Optional[dict]:
+    """
+    Check an uploaded compliance document with AI and store the result as a
+    suggestion (`aiReview`, see compliance_check.py). Staff still verify or
+    invalidate it; only a document whose recorded dates show it expired is
+    marked expired. None if the document doesn't exist.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    document = get_compliance_document(application_id, document_id)
+    if not document or not api_key:
+        return None
 
     requirement = find_required_document(
         document.get("programId"), document.get("departmentId"), document
@@ -2066,39 +2449,58 @@ def verify_compliance_document(payload: ComplianceVerifyRequest, request: Reques
 
     now = datetime.now(timezone.utc)
     expiry = _resolve_compliance_expiry(document, requirement)
+    current_status = str(document.get("status") or "pending").strip().lower()
+    model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
     if expiry and expiry < now:
         final_status = "expired"
-        note = "Document has expired."
+        review = {
+            "recommendation": "expired",
+            "reason": f"Document expired on {expiry.date().isoformat()}.",
+            "confidence": "high",
+            "extracted": {},
+            "identity": "unknown",
+            "expiresOn": expiry.date().isoformat(),
+        }
     else:
+        final_status = current_status
         fetched = _fetch_document_bytes(document.get("url") or "")
         if not fetched:
-            final_status = "pending"
-            note = "Could not fetch or read the uploaded file."
+            review = {
+                "recommendation": "unclear",
+                "reason": "Could not fetch or read the uploaded file.",
+                "confidence": "low",
+                "extracted": {},
+                "identity": "unknown",
+            }
         else:
             file_bytes, mime_type = fetched
-            model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
             client = genai.Client(api_key=api_key)
             verdict = _verify_document_with_ai(client, model, file_bytes, mime_type, expected_title)
-            if verdict is None:
-                final_status = "pending"
-                note = "AI verification could not process this document."
-            elif not verdict["legible"]:
-                final_status = "pending"
-                note = verdict["reason"] or "Document was not legible."
-            elif not verdict["matchesExpectedType"]:
-                final_status = "invalid"
-                note = verdict["reason"] or "Document does not appear to match the required type."
-            else:
-                final_status = "valid"
-                note = verdict["reason"] or "Document verified as legible and matching the required type."
+            participant_id = str(document.get("participantId") or "").strip()
+            participant_snapshot = db.collection("participants").document(participant_id).get() if participant_id else None
+            participant = (participant_snapshot.to_dict() or {}) if participant_snapshot and participant_snapshot.exists else {}
+            review = assess_compliance_document(verdict, document, requirement, participant, now)
+
+    review = {
+        **review,
+        # The file this review is about, so a replaced file is checked again.
+        "url": document.get("url") or "",
+        "model": model,
+        "checkedAt": now.isoformat(),
+        "checkedBy": reviewed_by,
+    }
+    note = review_note(review)
 
     update_compliance_document_status(
         application_id,
         document_id,
         final_status,
         note,
-        reviewed_by=f"AI Compliance Check ({user.email or user.uid})",
+        reviewed_by=reviewed_by,
+        ai_review=review,
+        # Only the expiry worked out from the recorded dates changes the status.
+        write_status=final_status == "expired",
     )
 
     return {
@@ -2106,6 +2508,140 @@ def verify_compliance_document(payload: ComplianceVerifyRequest, request: Reques
         "documentId": document_id,
         "status": final_status,
         "note": note,
+        "aiReview": review,
+    }
+
+
+# -------------------------------------------------------------------------
+# Applicant pre-check
+# -------------------------------------------------------------------------
+# While an SME fills in their application, each required document is read as
+# it is chosen, so a wrong, unreadable or out-of-date file is caught before
+# they submit, and the dates can be filled in for them. Nothing is stored
+# except a per-applicant daily count: the file has not been uploaded yet, and
+# the result is advice. The application form still decides what may be
+# submitted, and staff still verify every document.
+
+class CompliancePrecheckRequest(BaseModel):
+    programId: str
+    requirementKey: str
+    requirementTitle: str = ""
+    participantId: str = ""
+    fileBase64: str
+    fileName: str = ""
+    mimeType: str = ""
+
+
+# The application form takes these, up to 10 MB each.
+PRECHECK_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
+MAX_PRECHECK_FILE_BYTES = 10 * 1024 * 1024
+PRECHECK_DAILY_LIMIT = int(os.getenv("APPLICANT_PRECHECK_DAILY_LIMIT", "30"))
+
+
+def _claim_precheck(uid: str) -> int:
+    """Count one pre-check for this applicant today; the checks left. 429 at the limit."""
+    from firebase_admin import firestore as admin_firestore
+
+    reference = db.collection("aiPrechecks").document(uid)
+    today = datetime.now(SAST).date().isoformat()
+
+    @admin_firestore.transactional
+    def claim(transaction):
+        snapshot = reference.get(transaction=transaction)
+        state, left = claim_daily_check(
+            snapshot.to_dict() if snapshot.exists else None, today, PRECHECK_DAILY_LIMIT
+        )
+        if state is None:
+            return None
+        transaction.set(reference, {**state, "updatedAt": admin_firestore.SERVER_TIMESTAMP})
+        return left
+
+    left = claim(db.transaction())
+    if left is None:
+        raise HTTPException(
+            status_code=429,
+            detail="You have used today's document checks. Your documents will still be checked by our team.",
+        )
+    return left
+
+
+def _applicant_participant(participant_id: str, uid: str, email: str) -> dict:
+    """The caller's own participant record, for the registration number; {} otherwise."""
+    if not participant_id:
+        return {}
+    snapshot = db.collection("participants").document(participant_id).get()
+    if not snapshot.exists:
+        return {}
+    participant = snapshot.to_dict() or {}
+    owners = {str(participant.get(field) or "").strip() for field in ("uid", "userId")}
+    # The email match is the email fallback until Phase 4 (docs/sme-identity-migration-plan.md).
+    owned = uid in owners or (
+        bool(email) and str(participant.get("email") or "").strip().lower() == email
+    )
+    return participant if owned else {}
+
+
+@app.post("/compliance/precheck")
+def precheck_application_document(payload: CompliancePrecheckRequest, request: Request):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Document checks are not available right now.")
+
+    header = request.headers.get("authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication is required.")
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+    except Exception as error:
+        raise HTTPException(status_code=401, detail="Invalid or expired authentication token.") from error
+    uid = str(decoded.get("uid") or "")
+    email = str(decoded.get("email") or "").strip().lower()
+
+    mime_type = (payload.mimeType or "").strip().lower()
+    if mime_type not in PRECHECK_MIME_TYPES:
+        raise HTTPException(status_code=400, detail="Only PDF, PNG or JPG files can be checked.")
+    encoded = (payload.fileBase64 or "").strip()
+    if encoded.startswith("data:"):
+        _, _, encoded = encoded.partition(",")
+    try:
+        file_bytes = base64.b64decode(encoded, validate=False)
+    except (binascii.Error, ValueError) as error:
+        raise HTTPException(status_code=400, detail="The file could not be read.") from error
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="The file is empty.")
+    if len(file_bytes) > MAX_PRECHECK_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="The file is larger than 10 MB.")
+
+    # Only a document the programme actually asks for, with its own rules,
+    # never a title or expiry supplied by the caller.
+    requirement = find_required_document(
+        payload.programId.strip(),
+        None,
+        {"presetId": payload.requirementKey, "title": payload.requirementTitle},
+    )
+    if not requirement:
+        raise HTTPException(status_code=404, detail="This programme does not ask for that document.")
+
+    checks_left = _claim_precheck(uid)
+    model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    expected_title = str(requirement.get("title") or payload.requirementTitle or "")
+    verdict = _verify_document_with_ai(
+        genai.Client(api_key=api_key), model, file_bytes, mime_type, expected_title
+    )
+    participant = _applicant_participant(payload.participantId.strip(), uid, email)
+    review = assess_compliance_document(
+        verdict, {}, requirement, participant, datetime.now(timezone.utc)
+    )
+
+    return {
+        "review": {**review, "model": model},
+        "requirement": {
+            "title": expected_title,
+            "hasExpiry": bool(requirement.get("hasExpiry")),
+            "expiryMonths": requirement.get("expiryMonths"),
+        },
+        "checksLeft": checks_left,
     }
 
 
@@ -3545,6 +4081,44 @@ def extract_plan_roadmap(payload: RoadmapExtractionRequest, request: Request):
             detail="No milestones or activities could be found in this document.",
         )
     return draft
+
+
+# ============= MARKET OPPORTUNITY CAPTURE =============
+# Reads a pasted or uploaded RFQ / tender notice / corporate request and drafts
+# a market opportunity for the Market Linkages office to review before saving
+# (opportunity_capture.py). Matching SMEs runs later on the saved record.
+
+OPPORTUNITY_AUTHOR_ROLES = ADMIN_ROLES | {"projectadmin", "coordinator", "hod", "head of department"}
+
+
+@app.post("/opportunities/extract", response_model=OpportunityDraft)
+def extract_market_opportunity(payload: OpportunityExtractionRequest, request: Request):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="The assistant is not configured.")
+
+    user = _verified_user(request, None)
+    if _normalise_role(user.role) not in OPPORTUNITY_AUTHOR_ROLES:
+        raise HTTPException(status_code=403, detail="You do not have permission to capture opportunities.")
+
+    prompt = opportunity_extraction_prompt(date.today())
+    if payload.fileBase64.strip():
+        document_part, document_text, _ = _read_course_document(
+            payload.fileBase64, payload.fileName, payload.mimeType
+        )
+        contents: Any = (
+            [document_part, prompt]
+            if document_part is not None
+            else prompt + "\n\nDocument:\n" + document_text
+        )
+    else:
+        text = payload.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Paste the opportunity text or upload the document.")
+        contents = prompt + "\n\nDocument:\n" + text[:OPPORTUNITY_MAX_TEXT_CHARS]
+
+    parsed = _gemini_json(api_key, contents, "Opportunity extraction")
+    return build_opportunity_draft(parsed)
 
 
 # ============= KPI AGREEMENT EXTRACTION =============

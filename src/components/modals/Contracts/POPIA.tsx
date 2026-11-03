@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { DownloadOutlined, EditOutlined } from '@ant-design/icons'
 import { Button, Checkbox, message } from 'antd'
 import {
+  type DocumentReference,
   collection,
   doc,
   getDoc,
@@ -37,6 +38,8 @@ type PopiaContractModalProps = {
   }) => void
   readOnly?: boolean
   signedMeta?: any
+  /** Called once the signed PDF, made after signing, has been uploaded. */
+  onPdfReady?: (pdfUrl: string) => void
   /**
    * Show the notice in the page (the welcome wizard) rather than in a modal:
    * the document, then the agreement box and a full-width Confirm & Sign.
@@ -73,6 +76,56 @@ async function fetchParticipantDigitalSignature(participantId: string) {
   )
   if (!snapshot.empty) return (snapshot.docs[0].data() as any)?.digitalSignature || ''
   return ''
+}
+
+/**
+ * Makes the signed PDF from a copy of the signed pages, off-screen, uploads it
+ * and adds its link to the signing records. Runs after the signing is saved, so
+ * a slow phone or connection only delays the PDF, never the signing.
+ */
+async function attachSignedPdf(args: {
+  pagesCopy: HTMLElement
+  owner: string
+  signerName: string
+  signatureURL: string
+  digitalSignature: string
+  appRef: DocumentReference | null
+  uid: string
+}): Promise<string> {
+  const holder = document.createElement('div')
+  Object.assign(holder.style, { position: 'fixed', left: '-100000px', top: '0', width: '900px', background: '#fff' })
+  holder.appendChild(args.pagesCopy)
+  document.body.appendChild(holder)
+  try {
+    const output = await generateAndUploadContractPDF({
+      // Staff have no participant id; their copy is filed under their user id.
+      participantId: args.owner,
+      slug: 'popia-act',
+      title: 'POPIA Notice & Data Processing Consent',
+      contentEl: args.pagesCopy,
+      signerName: args.signerName,
+      signatureUrl: args.signatureURL,
+      digitalSignature: args.digitalSignature
+    })
+    await Promise.all([
+      args.appRef
+        ? updateDoc(args.appRef, {
+          ['signedAgreements.popia-act.pdfUrl']: output.url,
+          ['signedAgreements.popia-act.pdfPath']: output.path
+        })
+        : Promise.resolve(),
+      updateDoc(doc(db, 'users', args.uid), {
+        'popiaConsent.pdfUrl': output.url,
+        'popiaConsent.pdfPath': output.path
+      })
+    ])
+    return output.url
+  } catch (error) {
+    console.warn('The signed POPIA PDF could not be made; the signing itself is saved.', error)
+    return ''
+  } finally {
+    holder.remove()
+  }
 }
 
 const PopiaDocumentHeader = () => (
@@ -124,7 +177,8 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
   onSigned,
   readOnly,
   signedMeta,
-  inline
+  inline,
+  onPdfReady
 }) => {
   const [signing, setSigning] = useState(false)
   // Inline only: the agreement box sits after the document, so reaching it means scrolling past it.
@@ -271,22 +325,9 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
       // The PDF is a snapshot of the page, so let the signature finish drawing first.
       await signaturePlayback.finished()
 
-      let pdfUrl = ''
-      let pdfPath = ''
-      if (contentRef.current) {
-        const output = await generateAndUploadContractPDF({
-          // Staff have no participant id; their copy is filed under their user id.
-          participantId: participantId || `user-${uid}`,
-          slug: 'popia-act',
-          title: 'POPIA Notice & Data Processing Consent',
-          contentEl: contentRef.current,
-          signerName,
-          signatureUrl: signatureURL,
-          digitalSignature
-        })
-        pdfUrl = output.url
-        pdfPath = output.path
-      }
+      // The signed pages, copied now: the window may close (or the wizard move on)
+      // before the PDF is made from them in the background.
+      const pagesCopy = contentRef.current?.cloneNode(true) as HTMLElement | undefined
 
       const meta = {
         acceptedAt: new Date().toISOString(),
@@ -300,26 +341,38 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
           signatureURL
         },
         participantDigitalSignature: digitalSignature || '',
-        pdfUrl,
-        pdfPath
+        pdfUrl: '',
+        pdfPath: ''
       }
 
-      if (appRef) {
-        await updateDoc(appRef, {
-          ['signedAgreements.popia-act']: meta
-        })
-      }
+      // The signing is saved first, so it never waits on making and uploading the PDF.
       // The profile record is what sign-in checks for every user.
-      await updateDoc(doc(db, 'users', uid), { popiaConsent: meta })
+      await Promise.all([
+        appRef ? updateDoc(appRef, { ['signedAgreements.popia-act']: meta }) : Promise.resolve(),
+        updateDoc(doc(db, 'users', uid), { popiaConsent: meta })
+      ])
 
       message.success('POPIA notice signed.')
       onSigned({
         acceptedAt: meta.acceptedAt,
         version: meta.version,
-        textHash: meta.textHash,
-        pdfUrl
+        textHash: meta.textHash
       })
       if (!inline) onClose()
+
+      if (pagesCopy) {
+        void attachSignedPdf({
+          pagesCopy,
+          owner: participantId || `user-${uid}`,
+          signerName,
+          signatureURL,
+          digitalSignature,
+          appRef,
+          uid
+        }).then(pdfUrl => {
+          if (pdfUrl) onPdfReady?.(pdfUrl)
+        })
+      }
     } catch (error) {
       console.error(error)
       setPreviewSigned(false)

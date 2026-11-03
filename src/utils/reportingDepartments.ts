@@ -24,3 +24,19 @@ export async function fetchInterventionsDepartments(): Promise<DeptRow[]> {
     }
   })
 }
+
+// Every department, for resolving an assignment's departmentId to a name.
+// Work is recorded against whichever department delivers it, which is not
+// always one flagged as an interventions department (e.g. Training Academy).
+export async function fetchAllDepartments(): Promise<DeptRow[]> {
+  const snap = await getDocs(collection(db, "departments"))
+  return snap.docs.map(d => {
+    const data = d.data() as any
+    return {
+      id: d.id,
+      name: String(data?.name || "Department").trim(),
+      isMain: !!data?.isMain,
+      interventionsDepartment: !!data?.interventionsDepartment
+    }
+  })
+}

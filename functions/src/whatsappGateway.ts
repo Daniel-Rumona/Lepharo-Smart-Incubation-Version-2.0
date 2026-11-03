@@ -1,8 +1,20 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { admin, db } from "./firebase";
 import { candidatePhoneValues, clean, normalizePhone, timestampToIso } from "./whatsappCommon";
-import { handleStaffAction, resolveStaffByPhone, STAFF_ACTIONS } from "./whatsappStaff";
+import { documentAccess, handleStaffAction, resolveStaffByPhone, STAFF_ACTIONS } from "./whatsappStaff";
 import { recordCheckBackTap } from "./whatsappCheckBack";
+import { appendUpload, attachUpload, stageUpload, uploadOptions } from "./whatsappUploads";
+import { consentUserIds, setAlertConsent } from "./whatsappAlerts";
+import { reportAccess, reportOptions, requestReport } from "./reports/whatsappReports";
+import { coverageCancel, coveragePending, coverageStart, coverageSubmit, coverageUpdate } from "./whatsappCoverage";
+
+const COVERAGE_ACTIONS = {
+  coverage_pending: coveragePending,
+  coverage_start: coverageStart,
+  coverage_update: coverageUpdate,
+  coverage_submit: coverageSubmit,
+  coverage_cancel: coverageCancel,
+};
 
 type GatewayAction =
   | "resolve_identity"
@@ -24,6 +36,21 @@ type GatewayAction =
   | "cancel_proposal"
   | "agent_state_get"
   | "agent_state_set"
+  | "list_programmes"
+  | "select_programme"
+  | "sme_document"
+  | "stage_upload"
+  | "upload_options"
+  | "attach_upload"
+  | "append_upload"
+  | "set_alert_consent"
+  | "coverage_pending"
+  | "coverage_start"
+  | "coverage_update"
+  | "coverage_submit"
+  | "coverage_cancel"
+  | "report_options"
+  | "request_report"
   | "record_outcome_follow_up";
 
 type GatewayRequest = {
@@ -42,9 +69,23 @@ type GatewayRequest = {
   proposalKind?: string;
   params?: Record<string, unknown>;
   history?: Array<{ role?: string; text?: string }>;
+  programId?: string;
   // Outcome check-back button taps
   followUpId?: string;
   answerCode?: string;
+  // SME compliance uploads
+  uploadId?: string;
+  requirementKey?: string;
+  issueDate?: string;
+  mimeType?: string;
+  fileName?: string;
+  caption?: string;
+  dataBase64?: string;
+  // STOP / START alerts
+  granted?: boolean;
+  // Reports
+  reportId?: string;
+  month?: string;
 };
 
 type ParticipantIdentity = {
@@ -99,15 +140,20 @@ async function resolveParticipantByPhone(phoneNumber: string): Promise<Participa
     snapshot.docs.forEach((doc) => exactMatches.set(doc.id, doc));
   }
 
-  let matches = Array.from(exactMatches.values());
+  let matches: FirebaseFirestore.DocumentSnapshot[] = Array.from(exactMatches.values());
 
   if (matches.length !== 1) {
+    // Read only the phone field: full participant documents overflow the function's memory, and
+    // every staff call passes through here first.
     const suffix = digits.slice(-9);
-    const snapshot = await db.collection("participants").limit(1000).get();
-    matches = snapshot.docs.filter((doc) => {
-      const stored = normalizePhone(doc.data()?.phone);
-      return suffix.length >= 8 && stored.length >= 8 && stored.slice(-9) === suffix;
-    });
+    const snapshot = await db.collection("participants").select("phone").limit(1000).get();
+    const ids = snapshot.docs
+      .filter((doc) => {
+        const stored = normalizePhone(doc.data()?.phone);
+        return suffix.length >= 8 && stored.length >= 8 && stored.slice(-9) === suffix;
+      })
+      .map((doc) => doc.id);
+    matches = ids.length === 1 ? [await db.collection("participants").doc(ids[0]).get()] : [];
   }
 
   if (matches.length !== 1) return null;
@@ -214,6 +260,7 @@ export const lphWhatsAppGateway = onRequest(
   {
     region: "us-central1",
     invoker: "public",
+    memory: "512MiB",
     secrets: ["WHATSAPP_GATEWAY_SECRET"],
   },
   async (req, res): Promise<void> => {
@@ -277,8 +324,37 @@ export const lphWhatsAppGateway = onRequest(
               roleGroup: staff.roleGroup,
               departmentId: staff.departmentId,
               branchId: staff.branchId,
+              // Lets the assistant offer "SME documents" only to those who may fetch them.
+              documentAccess: (await documentAccess(staff)).allowed,
+              // And "Reports" only to those with reports to request (reports/registry.ts).
+              reportAccess: reportAccess((await db.collection("users").doc(staff.id).get()).data()),
             },
           });
+          return;
+        }
+        // Reports (reports/whatsappReports.ts): what may be requested, and queueing one.
+        if (action === "report_options" || action === "request_report") {
+          const user = (await db.collection("users").doc(staff.id).get()).data();
+          const result = action === "report_options"
+            ? reportOptions(user)
+            : await requestReport(staff.id, user, phoneNumber, payload);
+          json(res, result.status, result.body);
+          return;
+        }
+        if (action === "set_alert_consent") {
+          const updated = await setAlertConsent(await consentUserIds({ kind: "staff", userId: staff.id }), phoneNumber, payload.granted === true);
+          json(res, 200, { ok: true, matched: true, updated });
+          return;
+        }
+        // A facilitator recording coverage for their own finished sessions (whatsappCoverage.ts).
+        const coverageAction = COVERAGE_ACTIONS[action as keyof typeof COVERAGE_ACTIONS];
+        if (coverageAction) {
+          if (staff.roleGroup === "external" || staff.roleGroup === "unknown") {
+            json(res, 403, { ok: false, error: "not_permitted" });
+            return;
+          }
+          const result = await coverageAction(staff, payload);
+          json(res, result.status, result.body);
           return;
         }
         if (!STAFF_ACTIONS.has(action)) {
@@ -292,6 +368,22 @@ export const lphWhatsAppGateway = onRequest(
 
       if (action === "resolve_identity") {
         json(res, 200, { ok: true, matched: true, identity });
+        return;
+      }
+
+      // STOP / START: whether this SME gets proactive WhatsApp alerts (whatsappAlerts.ts).
+      if (action === "set_alert_consent") {
+        const updated = await setAlertConsent(await consentUserIds({ kind: "sme", participantId: identity.id, email: identity.email }), phoneNumber, payload.granted === true);
+        json(res, 200, { ok: true, matched: true, updated });
+        return;
+      }
+
+      // Compliance documents the SME sends on WhatsApp (whatsappUploads.ts).
+      if (action === "stage_upload" || action === "upload_options" || action === "attach_upload" || action === "append_upload") {
+        const sme = { participantId: identity.id, name: identity.participantName, phoneNumber: identity.phoneNumber };
+        const handler = { stage_upload: stageUpload, upload_options: uploadOptions, attach_upload: attachUpload, append_upload: appendUpload }[action];
+        const result = await handler(sme, payload);
+        json(res, result.status, result.body);
         return;
       }
 

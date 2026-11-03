@@ -107,7 +107,7 @@ const RoadmapFlow: React.FC = () => {
     useEffect(() => {
         let cancelled = false
         const resolveParticipantAndPlan = async () => {
-            if (!user?.email) {
+            if (!user) {
                 setUserEmail(null)
                 setParticipantId(null)
                 setLatestPlanId(null)
@@ -118,7 +118,7 @@ const RoadmapFlow: React.FC = () => {
 
             try {
                 setLoadingOverview(true)
-                setUserEmail(user.email)
+                setUserEmail(user.email || null)
 
                 const pid = await resolveIncubateeParticipantId(user)
                 if (cancelled) return
@@ -291,14 +291,14 @@ const RoadmapFlow: React.FC = () => {
     }
 
     const handleConfirmDeptBySME = async (dept: DeptRow) => {
-        if (!latestPlanId || !userEmail) return
+        if (!latestPlanId || !participantId) return
         try {
             setConfirmingDeptId(dept.id)
             await confirmDepartmentBySme({
                 planId: latestPlanId,
                 plan: planData,
                 participantId,
-                userEmail,
+                userEmail: userEmail || '',
                 dept,
                 departments,
                 catalogByDeptId: deptInterventionsMap,

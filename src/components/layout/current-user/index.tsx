@@ -11,7 +11,8 @@ import { useWindowSize } from 'react-use'
 import { CustomAvatar } from '../../custom-avatar'
 import { AccountSettings } from '../account-settings'
 import { ACCENT_OPTIONS, MODE_OPTIONS } from '../theme-toggle'
-import { useOptionalGuide } from '@/components/guide-me'
+import { useLocation } from 'react-router-dom'
+import { useOptionalGuide, useWelcomeTour, welcomeTourKindFor } from '@/components/guide-me'
 import { onRequestOpenAccountSettings } from '@/lib/accountSettings'
 import { formatRole } from '@/lib/roleLabels'
 import { useColorMode, type ColorModePreference } from '@/contexts/ThemeContext'
@@ -36,6 +37,9 @@ export const CurrentUser = ({ onLogout, placement = 'bottomRight' }: CurrentUser
     const { user, actor, isViewingAs } = useFullIdentity()
     const { preference, setPreference, accent, setAccent, isDark } = useColorMode()
     const guide = useOptionalGuide()
+    // Applicants and accepted SMEs each get the tour for the portal they are in.
+    const location = useLocation()
+    const welcomeTour = useWelcomeTour(welcomeTourKindFor(location.pathname))
     // Tooltips fire on tap on touch screens and steal the tap meant for the panel.
     const { width } = useWindowSize()
     const isMobile = width < 768
@@ -105,6 +109,23 @@ export const CurrentUser = ({ onLogout, placement = 'bottomRight' }: CurrentUser
                         <span className='account-panel-label'>
                             Guide for this page
                             <small>A short walkthrough of this screen</small>
+                        </span>
+                        <RightOutlined className='account-panel-chevron' />
+                    </button>
+                )}
+
+                {welcomeTour.available && !isViewingAs && (
+                    <button
+                        type='button'
+                        className='account-panel-row'
+                        onClick={run(() => welcomeTour.start(0))}
+                    >
+                        <span className='account-panel-icon'>
+                            <CompassOutlined />
+                        </span>
+                        <span className='account-panel-label'>
+                            Take the welcome tour
+                            <small>{welcomeTour.kind === 'applicant' ? 'How applying works' : 'Where everything is'}, in {welcomeTour.stopCount} pages</small>
                         </span>
                         <RightOutlined className='account-panel-chevron' />
                     </button>

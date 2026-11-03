@@ -5,13 +5,17 @@ import type { GroupId, GroupMeta, QA } from './types'
 import {
     financialManagement,
     labourHSE,
+    LEGAL_AREAS_QUESTION_INDEX,
     legal,
     marketLinkage,
     marketingCommunication,
     psychometric,
     qualityManagement,
+    SETA_QUESTION_INDEX,
+    TRAINING_NEED_FOLLOW_UPS,
     trainingNeedsYN,
-    wellness
+    wellness,
+    WELLNESS_PROGRAMMES_QUESTION_INDEX
 } from './questionBanks'
 
 export const asQAArray = (arr?: any[]): QA[] =>
@@ -229,19 +233,52 @@ export const REQUIRED_PATHS_BY_STEP: (string | number)[][][] = [
         ...pathsFor('marketLinkage', marketLinkage.length),
         ...pathsFor('qualityManagement', qualityManagement.length)
     ],
-    [...pathsFor('trainingNeeds.yn', trainingNeedsYN.length)],
+    // "Which SETA?" is an optional text follow-up, not a Yes/No question.
+    pathsFor('trainingNeeds.yn', trainingNeedsYN.length).filter(
+        path => path[2] !== SETA_QUESTION_INDEX
+    ),
     []
 ]
 
-export function isStepComplete(stepIndex: number, values: any): boolean {
+/** How many of a step's required questions still have no Yes/No answer. */
+export function unansweredCount(stepIndex: number, values: any): number {
     const paths = REQUIRED_PATHS_BY_STEP[stepIndex] || []
-    return paths.every(path => {
+    return paths.filter(path => {
         const v = path.reduce(
             (acc: any, key) => (acc == null ? undefined : acc[key as any]),
             values
         )
-        return v === 'Yes' || v === 'No'
+        return v !== 'Yes' && v !== 'No'
+    }).length
+}
+
+/**
+ * Follow-ups a Yes still needs before the SME can move on: the legal areas,
+ * the wellness programmes and what each staff level needs in training are
+ * what staff act on, so a bare Yes is not enough. "Which SETA?" stays
+ * optional (owners often don't know it). Each message reads as the start of
+ * "… to continue".
+ */
+export function missingFollowUps(values: any): { groupId: GroupId; message: string }[] {
+    const isYes = (answers: any, index: number) => answers?.[index]?.answer === 'Yes'
+    const missing: { groupId: GroupId; message: string }[] = []
+
+    if (isYes(values?.wellness?.q, WELLNESS_PROGRAMMES_QUESTION_INDEX) && !values?.wellness?.programmes?.length) {
+        missing.push({ groupId: 'wellness', message: 'Pick at least one wellness programme' })
+    }
+    if (isYes(values?.legal?.q, LEGAL_AREAS_QUESTION_INDEX) && !values?.legal?.areas?.length) {
+        missing.push({ groupId: 'legal', message: 'Pick at least one legal area' })
+    }
+    Object.entries(TRAINING_NEED_FOLLOW_UPS).forEach(([index, need]) => {
+        if (
+            isYes(values?.trainingNeeds?.yn, Number(index)) &&
+            !String(values?.trainingNeeds?.categories?.[need.key] || '').trim()
+        ) {
+            missing.push({ groupId: 'trainingNeeds', message: `Describe the ${need.short} training need` })
+        }
     })
+
+    return missing
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -258,13 +295,38 @@ export type GapPayloadContext = {
     appCryptoSignature: string
 }
 
-export function buildGapAnalysisPayload(values: any, ctx: GapPayloadContext) {
-    const rawBank = values.financialManagement?.bankAccess || {}
-    const bankAccess = (
-        rawBank.username ? { username: rawBank.username } : {}
-    ) as any
-    if (rawBank.password) bankAccess.password = rawBank.password
+/**
+ * Training needs as saved. The follow-ups only count when the question above
+ * them is Yes, so text left behind after switching to No is dropped. The SETA
+ * name also fills the "Which SETA?" slot of yn, so anything reading yn by
+ * position (staff view, export, AI mapping) shows the SETA there. yn is built
+ * dense: that slot is never set by the form, and a hole would shift every
+ * answer after it once stripUndefinedDeep filters it out.
+ */
+function trainingNeedsPayload(training: any) {
+    const answers: any[] = Array.isArray(training?.yn) ? training.yn : []
+    const isYes = (index: number) => answers[index]?.answer === 'Yes'
+    const setaName = isYes(0) ? String(training?.setaName || '').trim() : ''
 
+    const categories: Record<string, string> = {}
+    Object.entries(TRAINING_NEED_FOLLOW_UPS).forEach(([index, need]) => {
+        categories[need.key] = isYes(Number(index))
+            ? String(training?.categories?.[need.key] || '').trim()
+            : ''
+    })
+
+    return {
+        yn: trainingNeedsYN.map((_, index) =>
+            index === SETA_QUESTION_INDEX
+                ? { answer: setaName, comment: '' }
+                : { answer: answers[index]?.answer ?? '', comment: answers[index]?.comment ?? '' }
+        ),
+        setaName,
+        categories
+    }
+}
+
+export function buildGapAnalysisPayload(values: any, ctx: GapPayloadContext) {
     const payload = {
         participantId: ctx.participantId,
         ...(ctx.selectedApplicationId ? { applicationId: ctx.selectedApplicationId } : {}),
@@ -281,32 +343,30 @@ export function buildGapAnalysisPayload(values: any, ctx: GapPayloadContext) {
             marketingCommunication: asQAArray(values.marketingCommunication),
             psychometric: asQAArray(values.psychometric),
             financialManagement: {
-                q: asQAArray(values.financialManagement?.q),
-                ...(Object.keys(bankAccess).length ? { bankAccess } : {})
+                q: asQAArray(values.financialManagement?.q)
             },
             labourHSE: asQAArray(values.labourHSE),
+            // Programmes and legal areas are follow-ups: kept only when the
+            // question they belong to is Yes.
             wellness: {
                 q: asQAArray(values.wellness?.q),
-                programmes: Array.isArray(values.wellness?.programmes)
-                    ? values.wellness.programmes
-                    : []
+                programmes:
+                    values.wellness?.q?.[WELLNESS_PROGRAMMES_QUESTION_INDEX]?.answer === 'Yes' &&
+                    Array.isArray(values.wellness?.programmes)
+                        ? values.wellness.programmes
+                        : []
             },
             legal: {
                 q: asQAArray(values.legal?.q),
-                areas: Array.isArray(values.legal?.areas) ? values.legal.areas : []
+                areas:
+                    values.legal?.q?.[LEGAL_AREAS_QUESTION_INDEX]?.answer === 'Yes' &&
+                    Array.isArray(values.legal?.areas)
+                        ? values.legal.areas
+                        : []
             },
             marketLinkage: asQAArray(values.marketLinkage),
             qualityManagement: asQAArray(values.qualityManagement),
-            trainingNeeds: {
-                yn: asQAArray(values.trainingNeeds?.yn),
-                setaName: values.trainingNeeds?.setaName || '',
-                categories: {
-                    management: values.trainingNeeds?.categories?.management || '',
-                    supervisors: values.trainingNeeds?.categories?.supervisors || '',
-                    workforce: values.trainingNeeds?.categories?.workforce || '',
-                    support: values.trainingNeeds?.categories?.support || ''
-                }
-            }
+            trainingNeeds: trainingNeedsPayload(values.trainingNeeds)
         },
         signatures: {
             smmeNameSurname: ctx.userName || '',

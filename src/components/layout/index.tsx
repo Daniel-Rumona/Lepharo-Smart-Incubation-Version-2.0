@@ -8,6 +8,7 @@ import {
     Tooltip,
     Badge,
     Dropdown,
+    Result,
     theme,
 } from "antd";
 import { useLogout } from "@refinedev/core";
@@ -16,19 +17,22 @@ import {
     doc,
     getDoc,
     getDocs,
+    onSnapshot,
     limit,
     orderBy,
     query,
     where,
 } from "firebase/firestore";
 import { db } from "@/firebase";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { getSmeAcceptedApplication } from "@/lib/acceptedApplication";
 import { CurrentUser } from "@/components/layout/current-user";
 import { NotificationBell } from "@/components/layout/notifications/NotificationBell";
 import { DashboardFilterControl } from "@/components/layout/dashboard-filter";
 import { useColorMode } from "@/contexts/ThemeContext";
 import { useWindowSize } from "react-use";
 import {
+    FundOutlined,
     HomeOutlined,
     MessageOutlined,
     AuditOutlined,
@@ -102,6 +106,9 @@ import {
 } from "@/components/view-as/ViewAsControls";
 import { useChatSession } from "@/routes/chat/ChatSessionContext";
 import { setNavDestinations } from "@/components/guide-me/navDestinations";
+import { isReviewableMov, movStatus } from "@/routes/operations/movs/movData";
+import { filterMovRecords } from "@/utils/reportVisibility";
+import { DATASETS } from "@/routes/data-export/datasets";
 import "./layout.css";
 
 const { Content } = Layout;
@@ -131,6 +138,8 @@ type ProgramDoc = {
     participatingDepartmentIds?: string[];
     /** Trainings are listed beside programmes for Training Academy staff; a training's id is its programId. */
     kind?: "training";
+    /** Trainings only: departments the training setup grants access to (Training.access). */
+    accessDepartmentIds?: string[];
 };
 
 const TRAININGS_CHANGED_EVENT = "training-programs-changed";
@@ -138,7 +147,17 @@ const TRAININGS_CHANGED_EVENT = "training-programs-changed";
 async function fetchTrainingPrograms(): Promise<ProgramDoc[]> {
     const snap = await getDocs(collection(db, "trainings"));
     return snap.docs
-        .map((d) => ({ id: d.id, name: String(d.data().name || d.id), kind: "training" as const, isActive: true }))
+        .map((d) => {
+            const data = d.data();
+            const access = Array.isArray(data.access) ? (data.access as { departmentId?: string }[]) : [];
+            return {
+                id: d.id,
+                name: String(data.name || d.id),
+                kind: "training" as const,
+                isActive: true,
+                accessDepartmentIds: access.map((a) => String(a?.departmentId || "")).filter(Boolean),
+            };
+        })
         .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -162,8 +181,25 @@ type NavigationDestination = {
     attentionCount: number;
 };
 
+// Each role's own area of the app, by first path segment. Pages more than one
+// role uses are shared routes outside these (see App.tsx).
+const ROLE_AREAS: Record<string, UserRole> = {
+    system_admin: "system_admin",
+    projectadmin: "projectadmin",
+    director: "director",
+    funder: "funder",
+    training: "training_sme",
+    incubatee: "incubatee",
+    coordinator: "coordinator",
+    operations: "operations",
+    receptionist: "receptionist",
+};
+
+// Inside a role's area but open to every role: the Academy's learner side.
+const SHARED_IN_ROLE_AREAS = ["/training/courses"];
+
 const PRIMARY_NAV_KEYS: Partial<Record<UserRole, string[]>> = {
-    system_admin: ["dashboard", "user-management", "email", "system"],
+    system_admin: ["dashboard", "user-management", "usage", "email", "system"],
 
     projectadmin: ["dashboard", "sme-incubatees", "kpis-tracker", "interventions", "reports"],
     coordinator: ["dashboard", "allocated-active", "appointments", "coordinator-movs"],
@@ -180,15 +216,18 @@ const INCUBATEE_BOTTOM_NAV_LABELS: Record<string, string> = {
     roadmap: "Dev Plan",
 };
 
+// Every operations topbar has Incubatees right after Home, as a fifth pill on
+// desktop; the mobile bottom bar stays at four, the last one reachable from More.
 const OPERATIONS_PRIMARY_KEYS:Partial<Record<DepartmentRoleKey, string[]>> = {
-    hr: ["dashboard", "employees", "leave-requests", "reports"],
-    monitoring: ["dashboard", "kpis-tracker", "movs", "reports"],
-    inhouseFinance: ["dashboard", "requested", "invoices", "reported"],
-    stakeholder: ["dashboard", "engagement", "reports", "timesheet"],
-    training: ["dashboard", "course-builder", "appointments", "reports"],
+    hr: ["dashboard", "sme-incubatees", "employees", "leave-requests", "reports"],
+    monitoring: ["dashboard", "sme-incubatees", "kpis-tracker", "movs", "reports"],
+    inhouseFinance: ["dashboard", "sme-incubatees", "requested", "invoices", "reported"],
+    stakeholder: ["dashboard", "sme-incubatees", "engagement", "reports", "timesheet"],
+    training: ["dashboard", "sme-incubatees", "course-builder", "appointments", "reports"],
+    marketLinkages: ["dashboard", "sme-incubatees", "market-linkage", "assignments", "appointments"],
 };
 
-const DEFAULT_OPERATIONS_PRIMARY_KEYS = ["dashboard", "assignments", "appointments", "reports"];
+const DEFAULT_OPERATIONS_PRIMARY_KEYS = ["dashboard", "sme-incubatees", "assignments", "appointments", "reports"];
 
 const NAV_DESCRIPTIONS: Record<string, string> = {
     dashboard: "See your priorities, progress, and the work that needs attention.",
@@ -222,8 +261,7 @@ const NAV_DESCRIPTIONS: Record<string, string> = {
     email: "Review platform email activity and communication delivery.",
     "feature-governance": "Control feature availability and rollout across user groups.",
     "data-export-settings": "Set which roles may export sensitive programme data.",
-    "department-roles": "Choose which department plays each role, such as ROM, M&E or HR.",
-    system: "Configure programmes, branches, departments, and system reference data.",
+    system: "Configure programmes, branches, departments and their roles, and system reference data.",
     leave: "Submit leave requests and follow their approval status.",
     "sme-applications": "Review programme applications and move candidates through onboarding.",
     programs: "Create programmes and manage their delivery configuration.",
@@ -246,7 +284,6 @@ const NAV_DESCRIPTIONS: Record<string, string> = {
     "analytics-visualisations": "Explore visual trends across interventions and programme outcomes.",
     feedback: "Review incubatee feedback and identify service improvement themes.",
     "quality-objectives": "Set quality objectives and monitor progress against their measures.",
-    "leave-calendar": "See approved leave across the team and identify coverage gaps.",
     linkages: "Record market opportunities, referrals, and linkage outcomes.",
     "surveys-portal": "Create, distribute, and review programme surveys and responses.",
     impact: "Analyse programme outcomes and the change achieved for participants.",
@@ -266,7 +303,6 @@ const NAV_DESCRIPTIONS: Record<string, string> = {
     participants: "Browse participant profiles and their programme relationships.",
     applications: "Review applicant details, status, and programme placement.",
     groups: "Create participant groups and manage their membership and delivery scope.",
-    forms: "Manage survey forms used to collect programme information.",
     resources: "Manage available resources, bookings, and requests.",
     "collaborative-reports": "Prepare reports collaboratively with assigned contributors and reviewers.",
     "report-sections": "Write the report sections handed to you, and send them for review.",
@@ -303,7 +339,6 @@ const DIRECT_DESTINATION_SECTIONS: Record<string, string> = {
     calendar: "Self Service",
     leave: "Self Service",
     "leave-requests": "Self Service",
-    "leave-calendar": "Self Service",
     timesheet: "Self Service",
     documentation: "Library",
     tutorials: "Library",
@@ -326,6 +361,21 @@ const TRAINING_ONLY_PROGRAM_ROUTES = [
     "/operations/training/certificates",
 ];
 
+// Trainings sit in the picker only on pages that understand a training scope:
+// the training area, appointments (sessions are booked against a training's
+// plan), reports, participants and compliance. Elsewhere it lists programmes only.
+const isTrainingScopeRoute = (pathname: string) => {
+    const path = pathname.replace(/\/+$/, "") || "/";
+    return (
+        path === "/operations/training" ||
+        path.startsWith("/operations/training/") ||
+        path === "/interventions/appointments" ||
+        path === "/participants" ||
+        path === "/compliance" ||
+        /(^|\/)reports(\/|$)/.test(path)
+    );
+};
+
 const compactSectionLabel = (label: string) => MORE_SECTION_LABELS[label] || label;
 
 export const CustomLayout: React.FC = () => {
@@ -339,7 +389,20 @@ export const CustomLayout: React.FC = () => {
     const {
         unreadCount: assistantUnreadCount,
         isTyping: assistantWorking,
+        steps: assistantSteps,
+        messages: assistantMessages,
     } = useChatSession();
+    // What the assistant button says while it works, and once an answer is waiting.
+    const assistantCurrentStep = assistantSteps[assistantSteps.length - 1];
+    const assistantReadyPreview = useMemo(() => {
+        const last = [...assistantMessages].reverse().find((message) => message.sender === "assistant");
+        const plain = String(last?.content || "")
+            .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+            .replace(/[*_#>`[\]]/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        return plain.length > 80 ? `${plain.slice(0, 80).trimEnd()}…` : plain;
+    }, [assistantMessages]);
     const { mutate: logout } = useLogout();
     const navigate = useNavigate();
 
@@ -377,6 +440,9 @@ export const CustomLayout: React.FC = () => {
     // Whether this operations user has any assignedInterventions of their
     // own (null until checked). Drives showing/hiding "My Assignments".
     const [hasOwnAssignments, setHasOwnAssignments] = useState<boolean | null>(null);
+    // Whether this user's department may export at least one dataset
+    // (dataExportSettings/{departmentId}); null until known. Drives "Data Export".
+    const [hasExportAccess, setHasExportAccess] = useState<boolean | null>(null);
 
     const location = useLocation();
 
@@ -401,6 +467,8 @@ export const CustomLayout: React.FC = () => {
     // are known, so a remembered choice that depends on them (e.g. a training,
     // visible to Training Academy staff only) isn't replaced while they load.
     const [profileLoaded, setProfileLoaded] = useState(false);
+    // Incubatee users only: null until checked, or when the check failed.
+    const [hasAcceptedApplication, setHasAcceptedApplication] = useState<boolean | null>(null);
 
     // Programs + active selection
     const [programs, setPrograms] = useState<ProgramDoc[]>([]);
@@ -498,12 +566,23 @@ export const CustomLayout: React.FC = () => {
         (route) => location.pathname.startsWith(route)
     );
 
-    // Programs and trainings the user can see/pick from
+    // The Training Academy's home (/operations) is the training dashboard, so it scopes to a training too.
+    const showsTrainings =
+        role === "training_sme" ||
+        isTrainingScopeRoute(location.pathname) ||
+        (isTrainingAcademy && (location.pathname.replace(/\/+$/, "") || "/") === "/operations");
+
+    // Programs and trainings the user can see/pick from. A training is for
+    // Training Academy staff and the departments its setup grants access to.
     const visiblePrograms = useMemo(() => {
         let activePrograms = programs.filter(
             (p) =>
                 p.isActive !== false &&
-                (p.kind !== "training" || isTrainingAcademy || role === "training_sme")
+                (p.kind !== "training" ||
+                    role === "training_sme" ||
+                    (showsTrainings &&
+                        (isTrainingAcademy ||
+                            (!!departmentId && !!p.accessDepartmentIds?.includes(departmentId)))))
         );
 
         // Training management pages should only work in a Training scope.
@@ -540,6 +619,8 @@ export const CustomLayout: React.FC = () => {
         isTrainingAcademy,
         role,
         isTrainingOnlyProgramRoute,
+        showsTrainings,
+        departmentId,
     ]);
 
     const firstVisibleProgramId = useMemo(() => {
@@ -640,28 +721,6 @@ export const CustomLayout: React.FC = () => {
                 return null;
             };
 
-            const norm = (v: any) =>
-                String(v ?? "")
-                    .toLowerCase()
-                    .trim();
-
-            async function getAcceptedIncubateeProgramId(
-                email?: string
-            ): Promise<string | null> {
-                if (!email) return null;
-
-                const snap = await getDocs(
-                    query(collection(db, "applications"), where("email", "==", email))
-                );
-
-                const accepted = snap.docs
-                    .map((d) => ({ id: d.id, ...(d.data() as any) }))
-                    .find((a) => norm(a.applicationStatus) === "accepted");
-
-                const pid = accepted?.programId;
-                return pid ? String(pid) : null;
-            }
-
             // --- DEFAULT ASSIGNMENTS (staff roles) ---
             let arr: string[] = Array.isArray(data.assignedPrograms)
                 ? (data.assignedPrograms.map(toId).filter(Boolean) as string[])
@@ -690,11 +749,17 @@ export const CustomLayout: React.FC = () => {
             }
 
             // --- INCUBATEE LOCK (accepted application → programId) ---
+            // Same check login routes on, so an applicant who opens a
+            // workspace URL is sent back to the applicant portal.
             if (cleanRole === "incubatee") {
                 try {
-                    const email = String(user?.email || data.email || "").trim();
-                    const lockedPid = await getAcceptedIncubateeProgramId(email);
-                    arr = lockedPid ? [lockedPid] : [];
+                    const accepted = await getSmeAcceptedApplication({
+                        uid: user?.uid,
+                        participantId: data.participantId || user?.participantId,
+                        email: String(user?.email || data.email || "").trim(),
+                    });
+                    setHasAcceptedApplication(!!accepted);
+                    arr = accepted?.programId ? [String(accepted.programId)] : [];
                 } catch (e) {
                     console.warn("Failed to resolve incubatee accepted program lock", e);
                     arr = [];
@@ -705,7 +770,7 @@ export const CustomLayout: React.FC = () => {
         };
 
         run().finally(() => setProfileLoaded(true));
-    }, [user?.id, user?.email]);
+    }, [user?.id, user?.email, user?.participantId]);
 
     // ─────────────────────────────────────────────────────
     // 2) Load programs
@@ -920,10 +985,22 @@ export const CustomLayout: React.FC = () => {
                 icon: <UserOutlined />,
             },
             {
+                key: "usage",
+                to: "/system_admin/usage",
+                label: "Usage",
+                icon: <LineChartOutlined />,
+            },
+            {
                 key: "email",
                 to: "/system_admin/email",
                 label: "Emails",
                 icon: <MailOutlined />,
+            },
+            {
+                key: "storage",
+                to: "/system_admin/storage",
+                label: "Storage",
+                icon: <FolderOpenOutlined />,
             },
             {
                 key: "feature-governance",
@@ -936,12 +1013,6 @@ export const CustomLayout: React.FC = () => {
                 to: "/system_admin/data-export-settings",
                 label: "Export Permissions",
                 icon: <SafetyCertificateOutlined />,
-            },
-            {
-                key: "department-roles",
-                to: "/system_admin/department-roles",
-                label: "Department Roles",
-                icon: <ApartmentOutlined />,
             },
             {
                 key: "system",
@@ -997,7 +1068,7 @@ export const CustomLayout: React.FC = () => {
             },
             {
                 key: "documentation",
-                to: "/operations/documentation",
+                to: "/documentation",
                 label: "Documents Hub",
                 icon: <FileSearchOutlined />,
             },
@@ -1067,7 +1138,7 @@ export const CustomLayout: React.FC = () => {
                     {
                         key: "inquiries-db",
                         label: "All",
-                        to: "/receptionist/inquiries",
+                        to: "/inquiries",
                         icon: <DatabaseOutlined />,
                     },
 
@@ -1092,8 +1163,8 @@ export const CustomLayout: React.FC = () => {
                     },
                     {
                         key: "department-workroom",
-                        to: "/operations/tasks",
-                        label: "Tasks",
+                        to: "/tasks",
+                        label: "Team Workroom",
                         icon: <ClockCircleOutlined />,
                     },
                 ],
@@ -1130,14 +1201,20 @@ export const CustomLayout: React.FC = () => {
                 icon: <ReadOutlined />,
             },
             {
+                key: "impact-analytics",
+                to: "/impact",
+                label: "Impact Analytics",
+                icon: <FundOutlined />,
+            },
+            {
                 key: "collaborative-reports",
-                to: "/operations/reports/collaborative",
+                to: "/reports/collaborative",
                 label: "Collaborative reports",
                 icon: <FileTextOutlined />,
             },
             {
                 key: "success-challenges",
-                to: "/projectadmin/success-challenges",
+                to: "/success-challenges",
                 label: "Success & Challenges",
                 icon: <TrophyOutlined />,
             },
@@ -1153,7 +1230,7 @@ export const CustomLayout: React.FC = () => {
             // SECTION: SYSTEM
             {
                 key: "documentation",
-                to: "/operations/documentation",
+                to: "/documentation",
                 label: "Documents Hub",
                 icon: <FolderOpenOutlined />,
             },
@@ -1188,19 +1265,19 @@ export const CustomLayout: React.FC = () => {
             // SECTION: STRATEGY & PLANNING
             {
                 key: "diagnostic",
-                to: "/operations/plan",
+                to: "/plan",
                 label: "Developmental Plan",
                 icon: <AuditOutlined />,
                 children: [
                     {
                         key: "gap",
-                        to: "/operations/gap",
+                        to: "/gap",
                         label: "GAP Analytics",
                         icon: <DotChartOutlined />,
                     },
                     {
                         key: "plan",
-                        to: "/operations/plan",
+                        to: "/plan",
                         label: "Plan Builder",
                         icon: <BlockOutlined />,
                     },
@@ -1215,7 +1292,7 @@ export const CustomLayout: React.FC = () => {
                 children: [
                     {
                         key: "allocated-active",
-                        to: "/coordinator/allocated",
+                        to: "/allocated",
                         label: "My Interventions",
                         icon: <LineChartOutlined />,
                     },
@@ -1233,7 +1310,7 @@ export const CustomLayout: React.FC = () => {
                     },
                     {
                         key: "check-backs",
-                        to: "/coordinator/check-backs",
+                        to: "/check-backs",
                         label: "Check-backs",
                         icon: <CheckSquareOutlined />,
                     },
@@ -1241,7 +1318,7 @@ export const CustomLayout: React.FC = () => {
             },
             {
                 key: "finance",
-                to: "/operations/finance",
+                to: "/finance",
                 label: "Finance",
                 icon: <MoneyCollectOutlined />,
             },
@@ -1281,7 +1358,7 @@ export const CustomLayout: React.FC = () => {
                     },
                     {
                         key: "risk",
-                        to: "/operations/participants/risk",
+                        to: "/participants/risk",
                         label: "Risk Register",
                         icon: <WarningOutlined />,
                     },
@@ -1369,7 +1446,7 @@ export const CustomLayout: React.FC = () => {
             },
             {
                 key: "report-sections",
-                to: "/operations/reports/collaborative/contributions",
+                to: "/reports/collaborative/contributions",
                 label: "Report sections",
                 icon: <FileTextOutlined />,
             },
@@ -1414,6 +1491,12 @@ export const CustomLayout: React.FC = () => {
                 to: "/director/reports",
                 label: "Analytics",
                 icon: <BarChartOutlined />,
+            },
+            {
+                key: "impact-analytics",
+                to: "/impact",
+                label: "Impact Analytics",
+                icon: <FundOutlined />,
             },
             {
                 key: "kpis",
@@ -1519,6 +1602,12 @@ export const CustomLayout: React.FC = () => {
                         icon: <BarChartOutlined />,
                     },
                     {
+                        key: "opportunities-tracker",
+                        label: "Opportunities",
+                        to: "/incubatee/opportunities",
+                        icon: <ShopOutlined />,
+                    },
+                    {
                         key: "inquiries-tracker",
                         label: "Feedback",
                         to: "/incubatee/feedback",
@@ -1616,7 +1705,7 @@ export const CustomLayout: React.FC = () => {
                 children: [
                     {
                         key: "success-challenges",
-                        to: "/operations/success-challenges",
+                        to: "/success-challenges",
                         label: "Success & Challenges",
                         icon: <TrophyOutlined />,
                     },
@@ -1628,7 +1717,7 @@ export const CustomLayout: React.FC = () => {
                     },
                     {
                         key: "documentation",
-                        to: "/operations/documentation",
+                        to: "/documentation",
                         label: "Documents Hub",
                         icon: <FileTextOutlined />,
                     },
@@ -1642,9 +1731,15 @@ export const CustomLayout: React.FC = () => {
             },
             {
                 key: "sme-incubatees",
-                to: "/projectadmin/smes",
+                to: "/participants",
                 label: "Incubatees",
                 icon: <AreaChartOutlined />,
+            },
+            {
+                key: "market-linkage",
+                to: "/market-linkage",
+                label: "Market Linkage",
+                icon: <ShopOutlined />,
             },
             {
                 key: "timesheet",
@@ -1701,29 +1796,11 @@ export const CustomLayout: React.FC = () => {
                 icon: <FileProtectOutlined />,
             },
             {
-                key: "leave",
-                label: "Leave Monitoring",
-                icon: <BarChartOutlined />,
-                children: [
-                    {
-                        key: "leave-requests",
-                        to: "/operations/hr/leave",
-                        label: "Leave",
-                        icon: <QuestionCircleOutlined />,
-                    },
-                    {
-                        key: "leave-calendar",
-                        to: "/operations/hr/leave/calendar",
-                        label: "Calendar",
-                        icon: <CalendarOutlined />,
-                    },
-                ],
-            },
-            {
-                key: "linkages",
-                to: "/coordinator/interventions/linkages",
-                label: "Linkages Portal",
-                icon: <LinkOutlined />,
+                // The Leave page has its own Calendar tab, so this is one link.
+                key: "leave-requests",
+                to: "/leave-management",
+                label: "Leave",
+                icon: <CalendarOutlined />,
             },
             {
                 key: "surveys-portal",
@@ -1777,19 +1854,19 @@ export const CustomLayout: React.FC = () => {
             },
             {
                 key: "diagnostic",
-                to: "/operations/plan",
+                to: "/plan",
                 label: "Developmental Plan",
                 icon: <AuditOutlined />,
                 children: [
                     {
                         key: "gap",
-                        to: "/operations/gap",
+                        to: "/gap",
                         label: "GAP Analytics",
                         icon: <DotChartOutlined />,
                     },
                     {
                         key: "plan",
-                        to: "/operations/plan",
+                        to: "/plan",
                         label: "Plan Builder",
                         icon: <BlockOutlined />,
                     },
@@ -1797,7 +1874,7 @@ export const CustomLayout: React.FC = () => {
             },
             {
                 key: "finance",
-                to: "/operations/finance",
+                to: "/finance",
                 label: "Finance",
                 icon: <MoneyCollectOutlined />,
             },
@@ -1815,7 +1892,7 @@ export const CustomLayout: React.FC = () => {
             },
             {
                 key: "department-workroom",
-                to: "/operations/tasks",
+                to: "/tasks",
                 label: "Team Workroom",
                 icon: <LaptopOutlined />,
             },
@@ -1840,13 +1917,13 @@ export const CustomLayout: React.FC = () => {
                     {
                         key: "hod-active",
                         label: "My Assignments",
-                        to: "/coordinator/allocated",
+                        to: "/allocated",
                         icon: <BlockOutlined />,
                     },
                     {
                         key: "check-backs",
                         label: "Check-backs",
-                        to: "/coordinator/check-backs",
+                        to: "/check-backs",
                         icon: <CheckSquareOutlined />,
                     },
                     {
@@ -1866,6 +1943,12 @@ export const CustomLayout: React.FC = () => {
                         label: "Setup",
                         to: "/operations/interventions",
                         icon: <GroupOutlined />,
+                    },
+                    {
+                        key: "impact-analytics",
+                        label: "Impact Analytics",
+                        to: "/impact",
+                        icon: <FundOutlined />,
                     },
                 ],
             },
@@ -1938,9 +2021,15 @@ export const CustomLayout: React.FC = () => {
                     },
                     {
                         key: "hr-leave",
-                        to: "/operations/hr/leave",
+                        to: "/leave-management",
                         label: "Leave",
                         icon: <BulbOutlined />,
+                    },
+                    {
+                        key: "department-workroom",
+                        to: "/tasks",
+                        label: "Team Workroom",
+                        icon: <LaptopOutlined />,
                     },
                 ],
             },
@@ -1998,6 +2087,12 @@ export const CustomLayout: React.FC = () => {
                         label: "Compliance",
                         icon: <CheckSquareOutlined />,
                     },
+                    {
+                        key: "risk",
+                        to: "/participants/risk",
+                        label: "Risk",
+                        icon: <WarningOutlined />,
+                    },
                 ],
             },
             // Monitoring & Compliance
@@ -2016,15 +2111,9 @@ export const CustomLayout: React.FC = () => {
                         key: "risk",
                         label: "Risk Register",
                         icon: <WarningOutlined />,
-                        to: "/operations/participants/risk",
+                        to: "/participants/risk",
                     },
                 ],
-            },
-            {
-                key: "forms",
-                to: "/operations/surveys",
-                label: "Surveys Portal",
-                icon: <LinkOutlined />,
             },
             {
                 key: "applications",
@@ -2057,7 +2146,7 @@ export const CustomLayout: React.FC = () => {
                     },
                     {
                         key: "collaborative-reports",
-                        to: "/operations/reports/collaborative",
+                        to: "/reports/collaborative",
                         label: "Collaborative",
                         icon: <ReadOutlined />,
                     },
@@ -2103,7 +2192,7 @@ export const CustomLayout: React.FC = () => {
             },
             {
                 key: "inquiries",
-                to: "/receptionist/inquiries",
+                to: "/inquiries",
                 label: "All Inquiries",
                 icon: <FileTextOutlined />,
             },
@@ -2182,6 +2271,32 @@ export const CustomLayout: React.FC = () => {
 
         return Array.from(ids);
     };
+
+    // Directors and system admins export everything (routes/data-export), so only
+    // other roles depend on their department's list. Listened to, so a change on
+    // the Data Export Permissions page shows up in the menu straight away. Old
+    // dataset keys still in a saved list do not count as access.
+    useEffect(() => {
+        if (!role || role === "system_admin" || role === "director") {
+            setHasExportAccess(null);
+            return;
+        }
+        if (!departmentId) {
+            setHasExportAccess(false);
+            return;
+        }
+        return onSnapshot(
+            doc(db, "dataExportSettings", departmentId),
+            (snap) => {
+                const allowed = snap.exists() ? snap.data().allowedDatasets : [];
+                setHasExportAccess(
+                    Array.isArray(allowed) && allowed.some((key) => DATASETS.some((d) => d.key === key))
+                );
+            },
+            // A failed read leaves the entry alone; the page itself says what is allowed.
+            () => setHasExportAccess(null)
+        );
+    }, [role, departmentId]);
 
     // Same identities the My Assignments page matches on (assigneeId for the
     // uid / profile doc ids, assigneeEmail), but only asking "is there at
@@ -2309,21 +2424,22 @@ export const CustomLayout: React.FC = () => {
                                     )
                                 )
                             );
-                            let awaitingHod = 0;
-                            opsSnap.docs.forEach((d) => {
-                                const data = d.data() as any;
-                                if (
-                                    programScope &&
-                                    String(data.programId || "") !== programScope
-                                )
-                                    return;
-                                const relevant =
-                                    data.smmeAccepted === true ||
-                                    data.status === "approved" ||
-                                    data.status === "queried";
-                                if (relevant && data.approvedByHod !== true) awaitingHod += 1;
-                            });
-                            nextCounts["/operations/movs"] = awaitingHod;
+                            // MOVs waiting for this head of department to approve: the MOV
+                            // page's own "To review" rule, so the badge matches its list.
+                            // Queried ones are back with the facilitator and don't count.
+                            const reviewable = filterMovRecords(
+                                opsSnap.docs
+                                    .map((d) => d.data() as any)
+                                    .filter((data) =>
+                                        !programScope ||
+                                        String(data.programId || "") === programScope
+                                    )
+                                    .filter(isReviewableMov),
+                                (user as any)?.email
+                            );
+                            nextCounts["/operations/movs"] = reviewable.filter(
+                                (data) => movStatus(data) === "review"
+                            ).length;
                         }
                     }
                 }
@@ -2347,7 +2463,7 @@ export const CustomLayout: React.FC = () => {
                         if (data.source === "SME" && !data.acknowledgedAt)
                             newSmeInquiries += 1;
                     });
-                    nextCounts["/receptionist/inquiries"] = newSmeInquiries;
+                    nextCounts["/inquiries"] = newSmeInquiries;
                 }
 
                 if (!cancelled) setMenuFocusCounts(nextCounts);
@@ -2412,6 +2528,7 @@ export const CustomLayout: React.FC = () => {
         "movs",
         "interventions-req",
         "interventions-manager",
+        "impact-analytics",
         "assignments",
     ];
 
@@ -2450,7 +2567,7 @@ export const CustomLayout: React.FC = () => {
                 "employees",
                 "system",
                 "employee-performance",
-                "leave",
+                "leave-requests",
                 "reports",
             ],
         },
@@ -2462,7 +2579,6 @@ export const CustomLayout: React.FC = () => {
                 "timesheet",
                 "documentation",
                 "surveys-portal",
-                "department-workroom",
                 "personnel",
                 "inquiries",
                 "kpis",
@@ -2472,11 +2588,12 @@ export const CustomLayout: React.FC = () => {
                 "monitoring-interventions",
             ],
             children: {
-                personnel: ["personnel", "users", "activity", "hr-leave"],
+                personnel: ["personnel", "activity", "hr-leave", "department-workroom"],
                 "monitoring-participants": [
                     "monitoring-participants",
                     "groups",
                     "compliance",
+                    "risk",
                 ],
                 "monitoring-interventions": ["movs", "digital-twin"],
             },
@@ -2495,7 +2612,7 @@ export const CustomLayout: React.FC = () => {
         },
 
         marketLinkages: {
-            topLevel: [...SHARED_OPERATIONS_TOP, "coordinators", "linkages"],
+            topLevel: [...SHARED_OPERATIONS_TOP, "coordinators", "market-linkage"],
         },
 
         stakeholder: {
@@ -2609,9 +2726,11 @@ export const CustomLayout: React.FC = () => {
             const departmentAccess =
                 (departmentRole && OPERATIONS_ACCESS[departmentRole]) ||
                 { topLevel: SHARED_OPERATIONS_TOP };
+            // Every department runs its own surveys, so the portal is on
+            // every operations menu (SurveysAccess.tsx guards the route).
             return {
                 ...departmentAccess,
-                topLevel: uniq(["proposals", "kpis", ...departmentAccess.topLevel]),
+                topLevel: uniq(["proposals", "kpis", "surveys-portal", ...departmentAccess.topLevel]),
             };
         }
 
@@ -2723,6 +2842,18 @@ export const CustomLayout: React.FC = () => {
             );
         }
 
+        // "Data Export" only for departments allowed at least one dataset;
+        // hidden once that is confirmed, like My Assignments above.
+        if (hasExportAccess === false) {
+            const dropExport = (items: NavigationItem[]): NavigationItem[] =>
+                items
+                    .filter((item: any) => item.key !== "data-export")
+                    .map((item: any) =>
+                        Array.isArray(item.children) ? { ...item, children: dropExport(item.children) } : item
+                    );
+            baseMenus = dropExport(baseMenus);
+        }
+
         if (role === "projectadmin" && isMainCenterCoordinator) {
             const alreadyHasSystem = baseMenus.some((m) => m.key === "system");
 
@@ -2761,6 +2892,7 @@ export const CustomLayout: React.FC = () => {
         departmentRole,
         isMainCenterCoordinator,
         hasOwnAssignments,
+        hasExportAccess,
         isTrainingEmployee,
     ]);
 
@@ -2852,15 +2984,16 @@ export const CustomLayout: React.FC = () => {
             });
         }
 
-        return selected.slice(0, role === "projectadmin" ? 5 : 4);
+        return selected.slice(0, role === "projectadmin" || role === "operations" ? 5 : 4);
     }, [role, departmentRole, flatNavigation]);
 
     const visiblePrimaryDestinations = useMemo(() => {
         // On mobile the nav lives in its own bottom bar, so it is not competing
         // with the topbar actions for width and can show the full set.
-        // Project admins get a fifth topbar pill (Analytics); the mobile
-        // bottom bar stays at four, with Analytics reachable from More.
-        const desktopLimit = role === "projectadmin" ? 5 : 4;
+        // Project admins (Analytics) and operations (Incubatees) get a fifth
+        // topbar pill; the mobile bottom bar stays at four, with the fifth
+        // reachable from More.
+        const desktopLimit = role === "projectadmin" || role === "operations" ? 5 : 4;
         const limit = isMobile ? 4 : isCompactHeader ? 3 : desktopLimit;
         return primaryDestinations.slice(0, limit);
     }, [primaryDestinations, isMobile, isCompactHeader, role]);
@@ -2911,15 +3044,25 @@ export const CustomLayout: React.FC = () => {
       Routes that read the reporting period directly rather than through a
       department dashboard.
     */
-    const ROUTES_WITH_PERIOD_FILTER = ["/projectadmin", "/operations", "/projectadmin/reports"];
+    const ROUTES_WITH_PERIOD_FILTER = ["/projectadmin", "/operations", "/projectadmin/reports", "/system_admin", "/system_admin/usage", "/system_admin/email"];
 
     /*
       Extend one of these lists as each page is migrated. A page that consumes
       the period without exposing this control would be filtered by a window its
       user can neither see nor change.
     */
+    /*
+      /operations/reports shows a different page per department; only the
+      M&E (monitoring) reports read the reporting period.
+    */
+    const isMonitoringReports =
+        role === "operations" &&
+        departmentRole === "monitoring" &&
+        location.pathname.replace(/\/+$/, "") === "/operations/reports";
+
     const showDashboardFilter =
         ROUTES_WITH_PERIOD_FILTER.includes(location.pathname) ||
+        isMonitoringReports ||
         (role === "operations" &&
             location.pathname === "/operations" &&
             !!departmentRole &&
@@ -3128,7 +3271,42 @@ export const CustomLayout: React.FC = () => {
         setActiveProgramId(value as ActiveProgramId);
     };
 
-    const layoutReady = !!role && programsLoaded;
+    // An applicant is an incubatee user not yet accepted. The workspace is for
+    // accepted SMEs, so a typed or bookmarked workspace URL goes back to the
+    // applicant portal, as login would have sent them. Staff viewing as an SME
+    // stay, so they keep the controls to stop viewing.
+    if (role === "incubatee" && !isViewingAs && hasAcceptedApplication === false) {
+        return <Navigate to="/applicant" replace />;
+    }
+
+    // Another role's area is shown only where this role's own menu points into
+    // it (e.g. a coordinator's MOVs under /coordinator is theirs alone, but an
+    // operations menu entry can open a /coordinator page). The full menu is
+    // used, not the department-filtered one, so nobody loses a page they use.
+    // Admins and staff viewing as someone skip this; training SMEs have their
+    // own redirect above.
+    const isOutsideWorkspace = (() => {
+        if (!role || role === "system_admin" || role === "admin" || role === "training_sme" || isViewingAs) {
+            return false;
+        }
+        const path = location.pathname.replace(/\/+$/, "") || "/";
+        const owner = ROLE_AREAS[path.split("/")[1] || ""];
+        if (!owner || owner === role) return false;
+        const isUnder = (base: string) => path === base || path.startsWith(`${base}/`);
+        if (SHARED_IN_ROLE_AREAS.some(isUnder)) return false;
+        const menuRoutes: string[] = [];
+        const collect = (items: NavigationItem[]) =>
+            items.forEach((item) => {
+                if (item.to) menuRoutes.push(item.to);
+                if (item.children) collect(item.children);
+            });
+        collect(allMenus[role] || []);
+        return !menuRoutes.some(isUnder);
+    })();
+
+    // Incubatees also wait for the acceptance check, so an applicant never
+    // sees the workspace flash before the redirect.
+    const layoutReady = !!role && programsLoaded && (role !== "incubatee" || profileLoaded);
     if (!layoutReady) {
         // The overlay paints its own theme-aware full-screen ground; a wrapper
         // here used to hard-code white and flash on dark mode.
@@ -3315,7 +3493,13 @@ export const CustomLayout: React.FC = () => {
                                 items: (groupMembers || []).map((item) => ({
                                     key: item.route,
                                     icon: item.icon,
-                                    label: item.label,
+                                    // The group badge is a total; show which item it comes from.
+                                    label: item.attentionCount ? (
+                                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                            {item.label}
+                                            <Badge count={item.attentionCount} size="small" overflowCount={99} />
+                                        </span>
+                                    ) : item.label,
                                 })),
                                 onClick: ({ key }) => {
                                     setPendingSegment(destination.route);
@@ -3346,7 +3530,13 @@ export const CustomLayout: React.FC = () => {
     };
 
     const renderAssistantAction = () => (
-        <Tooltip title={assistantWorking ? "Data Assistant is working" : "Data Assistant"}>
+        <Tooltip
+            title={assistantWorking
+                ? (assistantCurrentStep ? `${assistantCurrentStep}…` : "Data Assistant is working")
+                : assistantUnreadCount > 0 && assistantReadyPreview
+                    ? <span><strong>Your answer is ready</strong><br />{assistantReadyPreview}</span>
+                    : "Data Assistant"}
+        >
             <Badge
                 count={assistantUnreadCount}
                 dot={assistantWorking && assistantUnreadCount === 0}
@@ -3356,7 +3546,11 @@ export const CustomLayout: React.FC = () => {
                 <Button
                     type="text"
                     shape="circle"
-                    className={`workspace-assistant-button ${location.pathname === "/chat" ? "workspace-assistant-button-active" : ""}`}
+                    className={[
+                        "workspace-assistant-button",
+                        location.pathname === "/chat" ? "workspace-assistant-button-active" : "",
+                        assistantWorking ? "is-working" : assistantUnreadCount > 0 ? "is-ready" : "",
+                    ].filter(Boolean).join(" ")}
                     icon={<OpenAIOutlined />}
                     onClick={() => {
                         setPendingSegment("chat");
@@ -3454,7 +3648,7 @@ export const CustomLayout: React.FC = () => {
                         // bottom of its own screen instead).
                         paddingBottom: isMobile
                             && !isImmersiveChatMobile
-                            && !/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname)
+                            && !/^\/operations\/(training\/courses|surveys)\/builder(?:\/|$)/.test(location.pathname)
                             ? "calc(84px + env(safe-area-inset-bottom))"
                             : 0,
                         overflow:
@@ -3485,13 +3679,30 @@ export const CustomLayout: React.FC = () => {
                         }}
                     >
                         <Suspense fallback={<RouteFallback />}>
-                            <Outlet />
+                            {isOutsideWorkspace ? (
+                                <Result
+                                    status="403"
+                                    title="This page isn't part of your workspace"
+                                    subTitle="It belongs to another role's area of the platform. If someone sent you this link, ask them for a page you can open."
+                                    extra={
+                                        <Button
+                                            type="primary"
+                                            onClick={() => navigate(primaryDestinations[0]?.route || `/${role}`)}
+                                        >
+                                            Go to my dashboard
+                                        </Button>
+                                    }
+                                />
+                            ) : (
+                                <Outlet />
+                            )}
                         </Suspense>
                     </div>
                 </Content>
 
                 {/* ---- Mobile bottom navigation ---- */}
-                {isMobile && !isImmersiveChatMobile && !/^\/operations\/training\/courses\/builder(?:\/|$)/.test(location.pathname) && (
+                {/* Builders have their own bottom bar, so the app's nav steps aside. */}
+                {isMobile && !isImmersiveChatMobile && !/^\/operations\/(training\/courses|surveys)\/builder(?:\/|$)/.test(location.pathname) && (
                     <nav
                         className={`workspace-bottom-nav ${role === "incubatee" ? "workspace-bottom-nav-labelled" : ""}`}
                         aria-label="Primary navigation"

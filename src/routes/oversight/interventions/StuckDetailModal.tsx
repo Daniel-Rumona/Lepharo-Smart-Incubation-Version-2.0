@@ -97,8 +97,15 @@ function usePhotos(item: StuckItem | null): Photos {
                 const data = snap.exists() ? snap.data() : undefined
                 const direct = photoOf(data)
                 if (direct) return direct
+                // The SME's login: participants.uid, else users.participantId.
+                const uid = String(data?.uid || '').trim()
+                const linked = uid
+                    ? photoOf((await getDoc(doc(db, 'users', uid))).data())
+                    : photoOf((await getDocs(query(collection(db, 'users'), where('participantId', '==', participantId), limit(1)))).docs[0]?.data())
+                if (linked) return linked
                 email = email || String(data?.email || data?.contactEmail || '').trim()
             }
+            // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
             return email ? photoByEmail(email) : undefined
         }
         const loadFacilitator = async () => {

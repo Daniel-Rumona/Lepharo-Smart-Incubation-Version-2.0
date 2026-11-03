@@ -1,5 +1,7 @@
 import { admin, db } from "./firebase";
 import { candidatePhoneValues, clean, normalizePhone } from "./whatsappCommon";
+import { isDepartmentInRole } from "./departmentRoles";
+import { participantComplianceRecords, requirementStates } from "./complianceExpiry";
 
 /**
  * Staff side of the Lepharo WhatsApp gateway. The ai-backend decides what a staff
@@ -20,6 +22,8 @@ export type StaffIdentity = {
   phoneNumber: string;
   departmentId: string | null;
   branchId: string | null;
+  /** users.assignedPrograms (or the older assignedProgramId): a coordinator's programmes. */
+  assignedProgramIds?: string[];
   /** Where the request came from; recorded as createdVia. Defaults to WhatsApp. */
   channel?: "whatsapp" | "web";
 };
@@ -66,7 +70,7 @@ const fail = (status: number, error: string, extra: Record<string, unknown> = {}
   body: { ok: false, error, ...extra },
 });
 
-const sastParts = (date: Date) => {
+export const sastParts = (date: Date) => {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: TIME_ZONE,
     year: "numeric",
@@ -116,25 +120,33 @@ export async function resolveStaffByPhone(phoneNumber: string): Promise<StaffIde
     }
   }
 
-  let rows = Array.from(matches.values());
+  let rows: FirebaseFirestore.DocumentSnapshot[] = Array.from(matches.values());
   if (rows.length !== 1) {
+    // Read only the phone fields; whole user documents overflow the function's memory.
     const suffix = digits.slice(-9);
-    const snapshot = await db.collection("users").limit(2000).get();
-    rows = snapshot.docs.filter((doc) => {
-      const data = doc.data() || {};
-      return [data.phone, data.phoneNumber].some((stored) => {
-        const normalized = normalizePhone(stored);
-        return suffix.length >= 8 && normalized.length >= 8 && normalized.slice(-9) === suffix;
-      });
-    });
+    const snapshot = await db.collection("users").select("phone", "phoneNumber").limit(2000).get();
+    const ids = snapshot.docs
+      .filter((doc) => {
+        const data = doc.data() || {};
+        return [data.phone, data.phoneNumber].some((stored) => {
+          const normalized = normalizePhone(stored);
+          return suffix.length >= 8 && normalized.length >= 8 && normalized.slice(-9) === suffix;
+        });
+      })
+      .map((doc) => doc.id);
+    rows = ids.length === 1 ? [await db.collection("users").doc(ids[0]).get()] : [];
   }
   if (rows.length !== 1) return null;
 
-  const data = rows[0].data() || {};
+  return staffIdentityFromUser(rows[0].id, rows[0].data() || {}, phoneNumber);
+}
+
+/** A staff member as the WhatsApp assistant sees them, from their users document. */
+export function staffIdentityFromUser(id: string, data: FirebaseFirestore.DocumentData, phoneNumber = ""): StaffIdentity {
   const role = clean(data.role);
   return {
     kind: "staff",
-    id: rows[0].id,
+    id,
     uid: clean(data.uid) || null,
     name: clean(data.name) || clean(data.displayName) || clean(data.email) || "there",
     role,
@@ -143,11 +155,130 @@ export async function resolveStaffByPhone(phoneNumber: string): Promise<StaffIde
     phoneNumber: clean(data.phone || data.phoneNumber) || phoneNumber,
     departmentId: clean(data.departmentId) || null,
     branchId: clean(data.assignedBranch || data.branchId) || null,
+    assignedProgramIds: idList(Array.isArray(data.assignedPrograms) ? data.assignedPrograms : [data.assignedProgramId]),
   };
 }
 
-const ownerIds = (identity: StaffIdentity) => Array.from(new Set([identity.id, identity.uid || ""].filter(Boolean)));
+// Program references are stored as ids, numbers or { id } objects.
+const idList = (values: unknown[]) =>
+  values.map((value: any) => clean(typeof value === "object" && value ? value.id : value)).filter(Boolean);
+
+export const ownerIds = (identity: StaffIdentity) => Array.from(new Set([identity.id, identity.uid || ""].filter(Boolean)));
 const isOwnedBy = (identity: StaffIdentity, assigneeId: unknown) => ownerIds(identity).includes(clean(assigneeId));
+
+/* --------------------------------------------------------------- programmes */
+
+// The programmes a staff member works in, mirroring the web app's programme switcher
+// (src/components/layout/index.tsx): coordinators get their assigned programmes, project
+// admins and receptionists their branch's, operations the programmes their department takes
+// part in (or that list no departments), everyone else every active programme.
+// Trainings are not offered on WhatsApp.
+type ProgrammeOption = { id: string; name: string };
+
+const ALL_PROGRAMMES = "all";
+const ALL_PROGRAMMES_LABEL = "All programmes";
+const canSeeAllProgrammes = (identity: StaffIdentity) => ["system_admin", "director", "hod"].includes(identity.roleGroup);
+
+const programBranchId = (data: any) =>
+  clean(data.normalizedAssignedBranchId) || clean(data.branchId) ||
+  clean(typeof data.assignedBranch === "object" && data.assignedBranch ? data.assignedBranch.id : data.assignedBranch);
+
+async function programmesFor(identity: StaffIdentity): Promise<ProgrammeOption[]> {
+  const key = roleKey(identity.role);
+  let docs = (await db.collection("programs").get()).docs
+    .filter((doc) => doc.data().isActive !== false && clean(doc.data().kind) !== "training");
+  if (key === "projectadmin" || key === "receptionist") {
+    docs = identity.branchId ? docs.filter((doc) => programBranchId(doc.data()) === identity.branchId) : [];
+  } else if (key === "coordinator") {
+    docs = docs.filter((doc) => (identity.assignedProgramIds || []).includes(doc.id));
+  } else if (identity.roleGroup === "hod" && identity.departmentId) {
+    docs = docs.filter((doc) => {
+      const ids = doc.data().participatingDepartmentIds;
+      return !Array.isArray(ids) || ids.length === 0 || ids.includes(identity.departmentId);
+    });
+  }
+  return docs
+    .map((doc) => ({ id: doc.id, name: clean(doc.data().name) || clean(doc.data().title) || "Programme" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+type ProgrammeContext = {
+  options: ProgrammeOption[];
+  allowAll: boolean;
+  /** The programme being looked at; null with allowAll means all of them. */
+  selected: ProgrammeOption | null;
+  /** Ask which programme before answering: there is a choice and none was made today. */
+  needsChoice: boolean;
+};
+
+async function programmeContext(identity: StaffIdentity): Promise<ProgrammeContext> {
+  const [options, state] = await Promise.all([
+    programmesFor(identity),
+    db.collection("whatsappAgentState").doc(identity.id).get(),
+  ]);
+  const allowAll = canSeeAllProgrammes(identity);
+  if (options.length <= 1) return { options, allowAll, selected: options[0] || null, needsChoice: false };
+
+  const data = state.data() || {};
+  const stored = clean(data.programId);
+  const selected = options.find((option) => option.id === stored) || null;
+  const valid = !!selected || (stored === ALL_PROGRAMMES && allowAll);
+  return { options, allowAll, selected, needsChoice: !valid || clean(data.programChosenOn) !== todaySast() };
+}
+
+type ProgrammeFilter = { ids: Set<string> | null; label: string | null };
+
+/** Programme ids a read is limited to (null: no limit) and the name to show with the result. */
+async function programmeFilter(identity: StaffIdentity): Promise<ProgrammeFilter> {
+  const { options, allowAll, selected } = await programmeContext(identity);
+  if (selected) return { ids: new Set([selected.id]), label: selected.name };
+  // No programmes configured for this person: keep the reads as they were rather than empty them.
+  if (!options.length) return { ids: null, label: null };
+  if (allowAll) return { ids: null, label: ALL_PROGRAMMES_LABEL };
+  return { ids: new Set(options.map((option) => option.id)), label: null };
+}
+
+const inProgramme = (filter: ProgrammeFilter, programId: unknown) => !filter.ids || filter.ids.has(clean(programId));
+
+/** SMEs with an accepted application to one of the programmes. */
+async function acceptedParticipantIds(programIds: Set<string>): Promise<Set<string>> {
+  const ids = Array.from(programIds);
+  const found = new Set<string>();
+  for (let i = 0; i < ids.length; i += 30) {
+    const snapshot = await db.collection("applications")
+      .where("programId", "in", ids.slice(i, i + 30))
+      .select("participantId", "applicationStatus")
+      .get();
+    snapshot.docs
+      .filter((doc) => clean(doc.data().applicationStatus).toLowerCase() === "accepted")
+      .forEach((doc) => found.add(clean(doc.data().participantId)));
+  }
+  found.delete("");
+  return found;
+}
+
+async function listProgrammes(identity: StaffIdentity): Promise<GatewayResult> {
+  if (identity.roleGroup === "external" || identity.roleGroup === "unknown") return fail(403, "not_permitted");
+  const { options, allowAll, selected, needsChoice } = await programmeContext(identity);
+  const current = selected || (allowAll && options.length > 1 && !needsChoice ? { id: ALL_PROGRAMMES, name: ALL_PROGRAMMES_LABEL } : null);
+  return ok({ programmes: options, allowAll: allowAll && options.length > 1, current, needsChoice });
+}
+
+async function selectProgramme(identity: StaffIdentity, payload: any): Promise<GatewayResult> {
+  if (identity.roleGroup === "external" || identity.roleGroup === "unknown") return fail(403, "not_permitted");
+  const programId = clean(payload.programId);
+  const { options, allowAll } = await programmeContext(identity);
+  const chosen = programId === ALL_PROGRAMMES && allowAll
+    ? { id: ALL_PROGRAMMES, name: ALL_PROGRAMMES_LABEL }
+    : options.find((option) => option.id === programId);
+  if (!chosen) return fail(400, "programme_not_available");
+  await db.collection("whatsappAgentState").doc(identity.id).set({
+    programId: chosen.id,
+    programChosenOn: todaySast(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return ok({ current: chosen });
+}
 
 /* -------------------------------------------------------------------- reads */
 
@@ -160,25 +291,102 @@ const tally = (values: string[]) => {
   return counts;
 };
 
+// Who a staff member's interventions and sessions cover. A head of department sees their
+// department; the overview and the appointment list share this so their numbers agree.
+type Scope = "organisation" | "department" | "mine";
+
+const scopeOf = (identity: StaffIdentity): Scope => {
+  if (["system_admin", "director", "receptionist"].includes(identity.roleGroup)) return "organisation";
+  if (identity.roleGroup === "hod" && identity.departmentId) return "department";
+  return "mine";
+};
+
+// Sessions that started up to an hour ago still count, so one in progress is not dropped.
+const UPCOMING_GRACE_MS = 60 * 60 * 1000;
+
+async function upcomingSessionDocs(identity: StaffIdentity, scope: Scope, programme: ProgrammeFilter) {
+  const from = Date.now() - UPCOMING_GRACE_MS;
+  let docs: FirebaseFirestore.QueryDocumentSnapshot[];
+  if (scope === "organisation") {
+    docs = (await db.collection("appointmentSessions")
+      .where("startAt", ">=", admin.firestore.Timestamp.fromMillis(from))
+      .orderBy("startAt")
+      .limit(200)
+      .get()).docs;
+  } else if (scope === "department") {
+    docs = (await db.collection("appointmentSessions").where("departmentId", "==", identity.departmentId).limit(500).get()).docs;
+  } else {
+    const found = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+    for (const id of ownerIds(identity)) {
+      const snapshot = await db.collection("appointmentSessions").where("assigneeId", "==", id).limit(300).get();
+      snapshot.docs.forEach((doc) => found.set(doc.id, doc));
+    }
+    docs = Array.from(found.values());
+  }
+  return docs
+    .filter((doc) => {
+      const data = doc.data();
+      const start = data.startAt?.toMillis?.() ?? 0;
+      return !["cancelled", "completed"].includes(clean(data.status).toLowerCase()) && start >= from &&
+        inProgramme(programme, data.programId);
+    })
+    .sort((a, b) => (a.data().startAt?.toMillis?.() ?? 0) - (b.data().startAt?.toMillis?.() ?? 0));
+}
+
+/**
+ * Today's sessions for the morning summary: the same scope as the assistant's appointment list
+ * (department, organisation or own), across every programme the person works in rather than
+ * the one picked on WhatsApp.
+ */
+export async function sessionsTodayFor(identity: StaffIdentity) {
+  const options = await programmesFor(identity);
+  const programme: ProgrammeFilter = canSeeAllProgrammes(identity) || !options.length
+    ? { ids: null, label: null }
+    : { ids: new Set(options.map((option) => option.id)), label: null };
+  const today = todaySast();
+  return (await upcomingSessionDocs(identity, scopeOf(identity), programme))
+    .filter((doc) => sastParts(doc.data().startAt.toDate()).date === today)
+    .map((doc) => sessionSummary(doc.id, doc.data()));
+}
+
+async function departmentName(identity: StaffIdentity) {
+  if (!identity.departmentId) return null;
+  const snapshot = await db.collection("departments").doc(identity.departmentId).get();
+  return clean(snapshot.data()?.name) || null;
+}
+
 async function staffOverview(identity: StaffIdentity): Promise<GatewayResult> {
   if (!["system_admin", "director", "hod"].includes(identity.roleGroup)) return fail(403, "not_permitted");
 
-  const [participants, assignments, upcoming] = await Promise.all([
-    db.collection("participants").count().get(),
-    db.collection("assignedInterventions").select("assignmentStatus").get(),
-    db.collection("appointmentSessions")
-      .where("startAt", ">=", admin.firestore.Timestamp.now())
-      .count()
-      .get(),
+  const scope = scopeOf(identity);
+  const programme = await programmeFilter(identity);
+  const assignmentsQuery = scope === "organisation"
+    ? db.collection("assignedInterventions")
+    : scope === "department"
+      ? db.collection("assignedInterventions").where("departmentId", "==", identity.departmentId)
+      : db.collection("assignedInterventions").where("assigneeId", "in", ownerIds(identity));
+  const organisationSmes = () => programme.ids
+    ? acceptedParticipantIds(programme.ids).then((ids) => ids.size)
+    : db.collection("participants").count().get().then((snap) => snap.data().count);
+  const [assignmentSnapshot, upcoming, participantCount, department] = await Promise.all([
+    assignmentsQuery.select("assignmentStatus", "participantId", "programId").get(),
+    upcomingSessionDocs(identity, scope, programme),
+    scope === "organisation" ? organisationSmes() : null,
+    scope === "organisation" ? null : departmentName(identity),
   ]);
+  const assignments = assignmentSnapshot.docs.filter((doc) => inProgramme(programme, doc.data().programId));
 
   const body: Record<string, unknown> = {
-    participants: participants.data().count,
+    scope,
+    departmentName: department,
+    programme: programme.label,
+    // Outside the organisation view, count the SMEs these interventions are for.
+    participants: participantCount ?? new Set(assignments.map((doc) => clean(doc.data().participantId)).filter(Boolean)).size,
     assignments: {
-      total: assignments.size,
-      byStatus: tally(assignments.docs.map((doc) => clean(doc.data().assignmentStatus).toLowerCase())),
+      total: assignments.length,
+      byStatus: tally(assignments.map((doc) => clean(doc.data().assignmentStatus).toLowerCase())),
     },
-    upcomingSessions: upcoming.data().count,
+    upcomingSessions: upcoming.length,
   };
 
   if (identity.roleGroup !== "hod") {
@@ -254,38 +462,14 @@ const sessionSummary = (id: string, data: any) => {
 async function myAppointments(identity: StaffIdentity): Promise<GatewayResult> {
   if (identity.roleGroup === "external" || identity.roleGroup === "unknown") return fail(403, "not_permitted");
 
-  const now = Date.now();
-  let docs: FirebaseFirestore.QueryDocumentSnapshot[];
-  const orgWide = ["system_admin", "director", "receptionist"].includes(identity.roleGroup);
-  if (orgWide) {
-    const snapshot = await db.collection("appointmentSessions")
-      .where("startAt", ">=", admin.firestore.Timestamp.fromMillis(now - 60 * 60 * 1000))
-      .orderBy("startAt")
-      .limit(60)
-      .get();
-    docs = snapshot.docs;
-  } else {
-    const found = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-    for (const id of ownerIds(identity)) {
-      const snapshot = await db.collection("appointmentSessions").where("assigneeId", "==", id).limit(300).get();
-      snapshot.docs.forEach((doc) => found.set(doc.id, doc));
-    }
-    docs = Array.from(found.values());
-  }
-
-  const sessions = docs
-    .filter((doc) => {
-      const data = doc.data();
-      const status = clean(data.status).toLowerCase();
-      const start = data.startAt?.toMillis?.() ?? 0;
-      return !["cancelled", "completed"].includes(status) && start >= now - 60 * 60 * 1000;
-    })
-    .sort((a, b) => (a.data().startAt?.toMillis?.() ?? 0) - (b.data().startAt?.toMillis?.() ?? 0))
+  const scope = scopeOf(identity);
+  const programme = await programmeFilter(identity);
+  const sessions = (await upcomingSessionDocs(identity, scope, programme))
     .filter((doc) => identity.roleGroup !== "receptionist" || sastParts(doc.data().startAt.toDate()).date === todaySast())
     .slice(0, 8)
     .map((doc) => sessionSummary(doc.id, doc.data()));
 
-  return ok({ appointments: sessions, scope: orgWide ? "organisation" : "mine" });
+  return ok({ appointments: sessions, scope, programme: programme.label });
 }
 
 const participantLabel = (data: any) =>
@@ -300,12 +484,236 @@ async function searchParticipants(identity: StaffIdentity, query: string): Promi
   const needle = shortText(query, 80).toLowerCase();
   if (needle.length < 2) return fail(400, "query_required");
 
-  const snapshot = await db.collection("participants").limit(2000).get();
-  const matches = snapshot.docs
+  const programme = await programmeFilter(identity);
+  const enrolled = programme.ids ? await acceptedParticipantIds(programme.ids) : null;
+  return ok({ participants: await findParticipants(needle, enrolled), programme: programme.label });
+}
+
+/** SMEs whose name contains every word of the needle, limited to the enrolled ids when given. */
+async function findParticipants(needle: string, enrolled: Set<string> | null) {
+  const snapshot = await db.collection("participants")
+    .select("beneficiaryName", "participantName", "businessName", "companyName", "name")
+    .limit(2000)
+    .get();
+  return snapshot.docs
+    .filter((doc) => !enrolled || enrolled.has(doc.id))
     .map((doc) => ({ id: doc.id, name: participantLabel(doc.data()) }))
     .filter((row) => row.name && needle.split(" ").every((token) => row.name.toLowerCase().includes(token)))
     .slice(0, 6);
-  return ok({ participants: matches });
+}
+
+/* ---------------------------------------------------------------- documents */
+
+// An SME's documents staff can have sent to them on WhatsApp: the compliance documents on their
+// application (complianceDocuments[], each with a type and a storage url) and the signed POPIA
+// notice (signedAgreements["popia-act"].pdfUrl, made by src/utils/generateContractPdf.ts).
+// Documents are told apart by their type name: the stored keys vary between programmes.
+type SmeDocument = {
+  key: string;
+  label: string;
+  url: string;
+  fileName: string;
+  issued: string | null;
+  expires: string | null;
+  /** Review state of an upload: pending, valid, invalid, queried, expired, ... */
+  status: string | null;
+};
+
+const POPIA_KEY = "popia";
+const docKey = (label: unknown) => clean(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const isBankDocument = (key: string) => key.includes("bank");
+// Words staff use for a document, mapped to part of its key.
+const DOCUMENT_ALIASES: Record<string, string> = {
+  id: "id-copy",
+  "id-document": "id-copy",
+  identity: "id-copy",
+  bee: "b-bbee",
+  bbbee: "b-bbee",
+  "b-bbee": "b-bbee",
+  tax: "sars",
+  tcs: "sars",
+  "tax-clearance": "sars",
+  address: "proof-of-address",
+  "proof-of-residence": "proof-of-address",
+  registration: "cipc",
+  "company-registration": "cipc",
+  agreement: "memorandum-of-agreement",
+  moa: "memorandum-of-agreement",
+  contract: "pre-incubation-contract",
+  gap: "gap-analysis",
+  bank: "bank",
+  "bank-letter": "bank",
+  privacy: POPIA_KEY,
+  "popia-act": POPIA_KEY,
+};
+
+/**
+ * Who may have SME documents sent to them, and whether that includes the Bank Confirmation Letter.
+ * System admins and directors oversee everything; operations and coordinators only in the ROM and
+ * M&E departments (or their sub-departments). Banking follows the banking-details rule: admins
+ * and ROM, not M&E or directors.
+ */
+export async function documentAccess(identity: StaffIdentity): Promise<{ allowed: boolean; banking: boolean }> {
+  if (identity.roleGroup === "system_admin") return { allowed: true, banking: true };
+  if (identity.roleGroup === "director") return { allowed: true, banking: false };
+  if (!["hod", "coordinator"].includes(identity.roleGroup) || !identity.departmentId) return { allowed: false, banking: false };
+  const [rom, monitoring] = await Promise.all([
+    isDepartmentInRole(identity.departmentId, "rom"),
+    isDepartmentInRole(identity.departmentId, "monitoring"),
+  ]);
+  return { allowed: rom || monitoring, banking: rom };
+}
+
+const millis = (value: any) => value?.toMillis?.() ?? (Date.parse(clean(value)) || 0);
+const dateOnly = (value: any) => {
+  if (value?.toDate) return sastParts(value.toDate()).date;
+  const text = clean(value);
+  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : null;
+};
+
+/**
+ * The SME's documents: the newest upload for each of their programme's required documents, read
+ * where the compliance pages read them (subcollection and embedded arrays), the signed POPIA
+ * notice, and the required documents still missing.
+ */
+async function smeDocumentsOf(participantId: string) {
+  const [records, applications] = await Promise.all([
+    participantComplianceRecords(participantId),
+    db.collection("applications").where("participantId", "==", participantId).get(),
+  ]);
+  const applicationId = records.application?.id || null;
+  const documents: Array<SmeDocument & { applicationId: string | null }> = [];
+
+  // POPIA is signed once, on whichever application the SME signed it.
+  const popia = applications.docs
+    .map((doc) => ({ id: doc.id, agreement: doc.data().signedAgreements?.["popia-act"] }))
+    .filter((row) => clean(row.agreement?.pdfUrl))
+    .sort((a, b) => millis(b.agreement.acceptedAt) - millis(a.agreement.acceptedAt))[0];
+  if (popia) {
+    documents.push({
+      key: POPIA_KEY, label: "POPIA notice", url: clean(popia.agreement.pdfUrl), fileName: "popia.pdf",
+      issued: dateOnly(popia.agreement.acceptedAt), expires: null, status: null, applicationId: popia.id,
+    });
+  }
+
+  const missing: string[] = [];
+  if (records.requirements.length) {
+    for (const state of requirementStates(records.documents, records.requirements)) {
+      if (!state.document) {
+        missing.push(state.title);
+        continue;
+      }
+      documents.push({
+        key: docKey(state.title), label: state.title, url: clean(state.document.url), fileName: clean(state.document.fileName),
+        issued: dateOnly(state.document.issueDate), expires: state.expires ? sastParts(state.expires).date : null,
+        status: state.status, applicationId,
+      });
+    }
+  } else {
+    // The programme lists no requirements: offer every upload, the newest of each type.
+    const newest = new Map<string, SmeDocument & { applicationId: string | null }>();
+    const uploaded = [...records.documents].sort((a, b) =>
+      millis(b.updatedAt || b.createdAt || b.uploadedAt) - millis(a.updatedAt || a.createdAt || a.uploadedAt));
+    for (const item of uploaded) {
+      const label = clean(item?.type || item?.documentName || item?.title);
+      const key = docKey(label);
+      if (!key || newest.has(key) || !clean(item?.url)) continue;
+      newest.set(key, {
+        key, label, url: clean(item.url), fileName: clean(item.fileName),
+        issued: dateOnly(item.issueDate), expires: dateOnly(item.expiryDate), status: clean(item.status).toLowerCase() || null, applicationId,
+      });
+    }
+    documents.push(...newest.values());
+  }
+  return { documents, missing };
+}
+
+/** Documents matching what was asked for: an exact key, an alias, or words of the type name. */
+function matchDocuments<T extends { key: string; label: string }>(documents: T[], wanted: string): T[] {
+  const key = docKey(wanted);
+  const exact = documents.filter((doc) => doc.key === key);
+  if (exact.length) return exact;
+  const alias = DOCUMENT_ALIASES[key];
+  if (alias) return documents.filter((doc) => doc.key.includes(alias));
+  const words = key.split("-").filter((word) => word.length > 1);
+  return words.length ? documents.filter((doc) => words.every((word) => doc.key.includes(word))) : [];
+}
+
+const fileSafe = (value: string) => value.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+const extensionOf = (fileName: string) => (/\.([a-z0-9]{2,5})$/i.exec(fileName)?.[1] || "pdf").toLowerCase();
+
+async function smeDocument(identity: StaffIdentity, payload: any): Promise<GatewayResult> {
+  const access = await documentAccess(identity);
+  if (!access.allowed) return fail(403, "not_permitted");
+
+  // Only SMEs enrolled in a programme this person is looking at.
+  const programme = await programmeFilter(identity);
+  const enrolled = programme.ids ? await acceptedParticipantIds(programme.ids) : null;
+  let participantId = clean(payload.participantId);
+  if (participantId && enrolled && !enrolled.has(participantId)) {
+    return ok({ found: false, reason: "not_in_programme", programme: programme.label });
+  }
+  if (!participantId) {
+    const needle = shortText(payload.query, 80).toLowerCase();
+    if (needle.length < 2) return fail(400, "query_required");
+    const matches = await findParticipants(needle, enrolled);
+    if (matches.length !== 1) return ok({ found: false, reason: matches.length ? "several_matches" : "no_match", matches });
+    participantId = matches[0].id;
+  }
+
+  const participant = await db.collection("participants").doc(participantId).get();
+  if (!participant.exists) return ok({ found: false, reason: "no_match", matches: [] });
+  const name = participantLabel(participant.data()) || "SME";
+  const all = await smeDocumentsOf(participantId);
+  const visible = all.documents.filter((doc) => access.banking || !isBankDocument(doc.key));
+  const today = todaySast();
+  const listing = {
+    found: true,
+    participantId,
+    participantName: name,
+    documents: visible.map((doc) => ({
+      key: doc.key, label: doc.label, issued: doc.issued, expires: doc.expires, expired: !!doc.expires && doc.expires < today,
+      status: doc.status,
+    })),
+    missing: all.missing.filter((label) => access.banking || !isBankDocument(docKey(label))),
+  };
+
+  const wanted = shortText(payload.document || payload.documentType, 80);
+  if (!wanted || ["list", "all", "documents", "everything"].includes(wanted.toLowerCase())) return ok(listing);
+  const wantsBank = isBankDocument(docKey(wanted)) || DOCUMENT_ALIASES[docKey(wanted)] === "bank";
+  if (wantsBank && !access.banking) return ok({ ...listing, reason: "bank_letter_not_permitted" });
+  const matches = matchDocuments(visible, wanted);
+  if (matches.length !== 1) {
+    return ok({ ...listing, reason: matches.length ? "several_documents" : "document_not_uploaded", asked: wanted });
+  }
+
+  const doc = matches[0];
+  await db.collection("whatsappDocumentRequests").add({
+    requestedBy: identity.id,
+    requestedByName: identity.name,
+    requestedByRole: identity.role,
+    participantId,
+    participantName: name,
+    applicationId: (all.documents.find((item) => item.key === doc.key) as any)?.applicationId || null,
+    documentType: doc.label,
+    channel: identity.channel || "whatsapp",
+    requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return ok({
+    found: true,
+    participantId,
+    participantName: name,
+    document: {
+      url: doc.url,
+      filename: `${fileSafe(name)} - ${fileSafe(doc.label)}.${extensionOf(doc.fileName)}`,
+      label: doc.label,
+      signedOn: doc.key === POPIA_KEY ? doc.issued : null,
+      issued: doc.key === POPIA_KEY ? null : doc.issued,
+      expires: doc.expires,
+      expired: !!doc.expires && doc.expires < today,
+      status: doc.status,
+    },
+  });
 }
 
 const INACTIVE_ASSIGNMENT = ["cancelled", "completed", "declined"];
@@ -315,6 +723,7 @@ async function searchAssignments(identity: StaffIdentity, payload: any): Promise
   const participantId = clean(payload.participantId);
   const needle = shortText(payload.query, 80).toLowerCase();
   if (!participantId && needle.length < 2) return fail(400, "query_required");
+  const programme = await programmeFilter(identity);
 
   let docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   if (participantId) {
@@ -332,6 +741,7 @@ async function searchAssignments(identity: StaffIdentity, payload: any): Promise
     .map((doc) => ({ id: doc.id, ...(doc.data() as any) }))
     .filter((row) => !INACTIVE_ASSIGNMENT.includes(clean(row.assignmentStatus).toLowerCase()))
     .filter((row) => isOwnedBy(identity, row.assigneeId))
+    .filter((row) => inProgramme(programme, row.programId))
     .filter((row) => !needle || clean(row.participantName).toLowerCase().includes(needle))
     .slice(0, 8)
     .map((row) => ({
@@ -723,10 +1133,11 @@ async function stateSet(identity: StaffIdentity, payload: any): Promise<GatewayR
       text: shortText(turn?.text, 700),
     }))
     .filter((turn: any) => turn.text);
+  // Merge, so the chosen programme survives the conversation history being rewritten.
   await db.collection("whatsappAgentState").doc(identity.id).set({
     history,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  }, { merge: true });
   return ok({ saved: true });
 }
 
@@ -743,6 +1154,9 @@ export const STAFF_ACTIONS = new Set([
   "cancel_proposal",
   "agent_state_get",
   "agent_state_set",
+  "list_programmes",
+  "select_programme",
+  "sme_document",
 ]);
 
 export async function handleStaffAction(action: string, identity: StaffIdentity, payload: any): Promise<GatewayResult> {
@@ -757,6 +1171,9 @@ export async function handleStaffAction(action: string, identity: StaffIdentity,
     case "cancel_proposal": return cancelProposal(identity);
     case "agent_state_get": return stateGet(identity);
     case "agent_state_set": return stateSet(identity, payload);
+    case "list_programmes": return listProgrammes(identity);
+    case "select_programme": return selectProgramme(identity, payload);
+    case "sme_document": return smeDocument(identity, payload);
     default: return fail(400, "unsupported_action");
   }
 }

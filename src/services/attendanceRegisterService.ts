@@ -213,8 +213,40 @@ async function enrichAppointmentsWithSmeSignatures(
 ): Promise<Appt[]> {
   if (!appointments.length) return appointments
 
+  // Signatures live on the SME's users doc, found by users.participantId.
+  const signaturesByLinkedParticipant = new Map<string, SmeSignature>()
+  const participantIds = uniqueCompact(appointments.map((appt) => safeText(appt.participantId)))
+
+  for (const chunk of chunkArray(participantIds, 10)) {
+    if (!chunk.length) continue
+
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'users'), where('participantId', 'in', chunk)),
+      )
+
+      snap.docs.forEach((userDoc) => {
+        const data = userDoc.data() as UserSignatureRecord
+        const pid = safeText(data.participantId)
+        if (!pid) return
+
+        signaturesByLinkedParticipant.set(pid, {
+          participantId: pid,
+          participantEmail: normalizeEmail(data.email),
+          participantName: safeText(data.name),
+          signatureUrl: safeText(data.signatureURL || data.signatureUrl),
+        })
+      })
+    } catch (err) {
+      console.warn('Failed to fetch SME signatures by participantId:', err)
+    }
+  }
+
+  // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
   const emails = uniqueCompact(
-    appointments.map((appt) => normalizeEmail(appt.participantEmail)),
+    appointments
+      .filter((appt) => !signaturesByLinkedParticipant.has(safeText(appt.participantId)))
+      .map((appt) => normalizeEmail(appt.participantEmail)),
   )
 
   const signaturesByEmail = new Map<string, SmeSignature>()
@@ -253,7 +285,12 @@ async function enrichAppointmentsWithSmeSignatures(
       const participantId = safeText(appt.participantId)
       const email = normalizeEmail(appt.participantEmail)
 
-      if (!participantId || email || fallbackSignaturesByParticipantId.has(participantId)) {
+      if (
+        !participantId ||
+        email ||
+        signaturesByLinkedParticipant.has(participantId) ||
+        fallbackSignaturesByParticipantId.has(participantId)
+      ) {
         return
       }
 
@@ -277,6 +314,7 @@ async function enrichAppointmentsWithSmeSignatures(
   return appointments.map((appt) => {
     const email = normalizeEmail(appt.participantEmail)
     const signature =
+      signaturesByLinkedParticipant.get(safeText(appt.participantId)) ||
       (email ? signaturesByEmail.get(email) : null) ||
       fallbackSignaturesByParticipantId.get(safeText(appt.participantId)) ||
       null

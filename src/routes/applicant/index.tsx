@@ -17,8 +17,12 @@ import {
     CalendarOutlined,
     InfoCircleOutlined,
     FieldTimeOutlined,
-    EnvironmentOutlined
+    EnvironmentOutlined,
+    CheckCircleOutlined,
+    ArrowRightOutlined
 } from '@ant-design/icons'
+import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { getSmeParticipant } from '@/services/smeIdentity'
 import { useNavigate } from 'react-router-dom'
 import { db } from '@/firebase'
 import { collection, getDocs, query, where } from 'firebase/firestore'
@@ -29,6 +33,7 @@ import { DashboardHeaderCard, MotionCard } from '@/components/dashboards/metrics
 import {
     guideTarget,
     usePageGuides,
+    WelcomeTourOffer,
     type PageGuideRegistration
 } from '@/components/guide-me'
 import { PageSkeleton } from '@/components/shared/PageSkeleton'
@@ -149,6 +154,7 @@ function formatProgramDuration(start: dayjs.Dayjs | null, end: dayjs.Dayjs | nul
 }
 
 const ApplicantLandingPage = () => {
+    const { user: identity } = useFullIdentity()
     const [allPrograms, setAllPrograms] = useState<any[]>([])
     const [programModalVisible, setProgramModalVisible] = useState(false)
     const [activeProgram, setActiveProgram] = useState<any>(null)
@@ -237,30 +243,56 @@ const ApplicantLandingPage = () => {
         fetchPrograms()
     }, [])
 
+    // The SME's latest application per programme, so a programme they have
+    // already applied to shows that instead of Apply. Looked up by
+    // participantId, never email.
+    const participantId = String(identity?.participantId || '')
+    const [appliedByProgram, setAppliedByProgram] = useState<Record<string, { status?: AppStatus }>>({})
+    useEffect(() => {
+        if (!participantId) return
+        let cancelled = false
+        getDocs(query(collection(db, 'applications'), where('participantId', '==', participantId)))
+            .then(snapshot => {
+                const latest: Record<string, { status?: AppStatus; createdAt: number }> = {}
+                snapshot.docs.forEach(applicationDoc => {
+                    const data = applicationDoc.data() as any
+                    const programId = String(data.programId || '')
+                    if (!programId) return
+                    const createdAt = data.createdAt?.toMillis?.() ?? 0
+                    if (!latest[programId] || createdAt >= latest[programId].createdAt) {
+                        latest[programId] = { status: data.status, createdAt }
+                    }
+                })
+                if (!cancelled) setAppliedByProgram(latest)
+            })
+            .catch(error => console.error('Failed to load your applications:', error))
+        return () => {
+            cancelled = true
+        }
+    }, [participantId])
+
     const openProgramModal = async (program: any) => {
         try {
             const user = auth.currentUser
-            if (!user?.email) {
+            if (!user) {
                 message.error('You must be logged in to apply.')
                 return
             }
 
-            // Find participant by current user email
-            const qPart = query(
-                collection(db, 'participants'),
-                where('email', '==', user.email)
-            )
-            const snapshot = await getDocs(qPart)
+            // The SME's linked participant; email only until it is linked.
+            const participant = await getSmeParticipant({
+                uid: user.uid,
+                participantId: identity?.participantId,
+                email: user.email
+            })
 
-            if (snapshot.empty) {
+            if (!participant) {
                 message.warning('Please complete your profile before applying.')
                 navigate('/applicant/profile')
                 return
             }
 
-            const participantDoc = snapshot.docs[0]
-            const participant = participantDoc.data()
-            const participantId = participantDoc.id
+            const participantId = participant.id
 
             if (!participant.setup) {
                 message.warning('Please finish your profile setup before registering.')
@@ -365,6 +397,13 @@ const ApplicantLandingPage = () => {
         const durationLabel = formatProgramDuration(start, end)
         const hubLabel = program.assignedBranch?.name || program.hub
 
+        // Already applied: Apply is replaced by a disabled "Already applied"
+        // and a way to track it. An application sent back for changes can
+        // still be resubmitted, the same rule openProgramModal applies.
+        const applied = appliedByProgram[program.id]
+        const canResubmit = Boolean(applied?.status && RESUBMIT_ALLOWED.includes(applied.status))
+        const alreadyApplied = Boolean(applied) && !canResubmit
+
         return (
             <Col xs={24} sm={12} md={8} lg={6} key={program.id}>
                 <MotionCard
@@ -374,15 +413,32 @@ const ApplicantLandingPage = () => {
                             data-guide={idx === 0 ? 'apply-btn-first' : undefined}
                             style={{ display: 'block', padding: '0 12px' }}
                         >
-                            <Button
-                                type='primary'
-                                block
-                                shape='round'
-                                icon={<FileTextOutlined />}
-                                onClick={() => openProgramModal(program)}
-                            >
-                                Apply
-                            </Button>
+                            {alreadyApplied ? (
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <Button shape='round' disabled icon={<CheckCircleOutlined />} style={{ flex: 1, minWidth: 0 }}>
+                                        Already applied
+                                    </Button>
+                                    <Button
+                                        type='primary'
+                                        shape='round'
+                                        icon={<ArrowRightOutlined />}
+                                        iconPosition='end'
+                                        onClick={() => navigate('/applicant/tracker')}
+                                    >
+                                        Track
+                                    </Button>
+                                </div>
+                            ) : (
+                                <Button
+                                    type='primary'
+                                    block
+                                    shape='round'
+                                    icon={<FileTextOutlined />}
+                                    onClick={() => openProgramModal(program)}
+                                >
+                                    {canResubmit ? 'Resubmit' : 'Apply'}
+                                </Button>
+                            )}
                         </span>
                     ]}
                 >
@@ -454,10 +510,13 @@ const ApplicantLandingPage = () => {
                     padding: '10px 24px',
                 }}
             >
+                <div style={{ marginBottom: 16 }}>
+                    <WelcomeTourOffer kind='applicant' />
+                </div>
                 {loading ? (
                     <PageSkeleton variant='cards' />
                 ) : allPrograms.length > 0 ? (
-                    <Row gutter={[16, 16]}>
+                    <Row gutter={[16, 16]} data-guide='applicant-programmes'>
                         {allPrograms.map((p, idx) => renderProgramCard(p, idx))}
                     </Row>
                 ) : (

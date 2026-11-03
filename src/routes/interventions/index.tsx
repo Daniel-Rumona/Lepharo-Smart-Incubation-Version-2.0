@@ -367,6 +367,7 @@ const InterventionDatabaseView = () => {
                     if (directParticipantId) {
                         pid = directParticipantId
                     } else if (appEmail && idByEmail[appEmail]) {
+                        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
                         pid = idByEmail[appEmail]
                     }
 

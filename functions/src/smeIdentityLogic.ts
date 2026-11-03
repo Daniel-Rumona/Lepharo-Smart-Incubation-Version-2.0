@@ -57,8 +57,18 @@ export function decideSmeLink(input: {
 }
 
 /**
- * Which participant belongs to a login that is not linked yet: one already carrying
- * its uid, else the one participant with its email. Several matches pick nothing.
+ * Whether a participant is this login's by id: it carries the login's uid, or the login
+ * created it (createdByUid) and it is not linked to anyone yet.
+ */
+export const participantIsLogins = (uid: string, data: Record<string, any>) => {
+  const linkedUid = clean(data.uid);
+  return linkedUid ? linkedUid === uid : clean(data.createdByUid) === uid;
+};
+
+/**
+ * Which participant belongs to a login that is not linked yet: one that is the login's
+ * by id (participantIsLogins), else the one participant with its email. Several matches
+ * pick nothing.
  */
 export function pickOwnParticipant(input: {
   uid: string;
@@ -66,7 +76,7 @@ export function pickOwnParticipant(input: {
   candidates: { id: string; data: Record<string, any> }[];
 }): string | null {
   const unique = Array.from(new Map(input.candidates.map((c) => [c.id, c])).values());
-  const byUid = unique.filter((c) => clean(c.data.uid) === input.uid);
+  const byUid = unique.filter((c) => participantIsLogins(input.uid, c.data));
   if (byUid.length) return byUid.length === 1 ? byUid[0].id : null;
 
   const email = normEmail(input.email);

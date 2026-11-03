@@ -1,10 +1,17 @@
 import type { CSSProperties } from 'react'
 import { Timestamp } from 'firebase/firestore'
 import dayjs from 'dayjs'
-import { computeRiskScore as sharedComputeRiskScore } from '../../../../../../functions/src/smeRiskLogic'
+import {
+    computeRiskScore as sharedComputeRiskScore,
+    deriveRiskInputs,
+    RISK_LEVEL_RANK,
+    smeJoinedAt,
+    type RiskScoreInputs as SharedRiskScoreInputs
+} from '../../../../../../functions/src/smeRiskLogic'
 
 import type {
     AnyDoc,
+    RiskDriverKey,
     BounceStatus,
     CommunicationAttempt,
     DepartmentAction,
@@ -33,21 +40,27 @@ export const DOC_REQUIRED_KEYS = [
     'moa'
 ]
 
-// Centralized color tokens so risk-level colors live in one place instead of being
-// scattered across tag/row-style helpers as a mix of AntD tokens and raw hex.
+// The one risk-level palette for the register: tags, chart, cards, row edges. A fixed
+// status scale (critical, serious, warning, good), the same in light and dark themes.
+// Checked for colour-blind separation (adjacent ΔE >= 13.9) and normal-vision separation
+// (>= 15.7). Levels always show with their name, so colour never carries them alone;
+// text stays in text colours.
 export const RISK_LEVEL_COLORS: Record<RiskLevel, string> = {
-    Critical: '#820014',
-    High: '#cf1322',
-    Medium: 'gold',
-    Low: 'green'
+    Critical: '#d03b3b',
+    High: '#ec835a',
+    Medium: '#f5c400',
+    Low: '#0ca30c'
 }
 
-export const RISK_ROW_BACKGROUND: Record<RiskLevel, string> = {
-    Critical: '#ffccc7',
-    High: '#fff1f0',
-    Medium: '#fffbe6',
-    Low: '#f6ffed'
+/** A soft tint of each level, for card and tag backgrounds on either theme. */
+export const RISK_LEVEL_TINTS: Record<RiskLevel, string> = {
+    Critical: '#d03b3b29',
+    High: '#ec835a29',
+    Medium: '#f5c40029',
+    Low: '#0ca30c29'
 }
+
+export const RISK_ROW_BACKGROUND: Record<RiskLevel, string> = RISK_LEVEL_TINTS
 
 export const INACTIVITY_TAG_COLORS: Record<InactivityBucket, string> = {
     'Never Serviced': 'red',
@@ -597,9 +610,14 @@ export function getSystemAccessInfo(application?: AnyDoc, participant?: AnyDoc, 
         )
     )
 
+    // A linked SME (participants.uid) is matched on its login uid; sessions
+    // carrying a uid are never matched by email.
+    const linkedUid = normalizeText(firstNonEmpty(participant?.uid, application?.uid))
     const matchedSessions = sessions.filter(session => {
-        const sessionEmail = getEmail(session)
         const sessionUid = normalizeText(firstNonEmpty(session?.uid, session?.userId))
+        if (linkedUid && sessionUid) return sessionUid === linkedUid
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        const sessionEmail = getEmail(session)
         return (!!email && sessionEmail === email) || (!!uid && sessionUid === uid)
     })
 
@@ -708,6 +726,53 @@ export function buildServiceProgressRows(dep: DepartmentSummary): ServiceProgres
     return [...expectedRows, ...extraActionRows]
 }
 
+export type RiskMovement = {
+    /** escalated: moved up into High or Critical; new: no earlier score to compare with. */
+    kind: 'new' | 'escalated' | 'up' | 'down' | 'same'
+    previousScore: number | null
+    previousLevel: RiskLevel | null
+    delta: number
+}
+
+/**
+ * The score now against a week ago, from the nightly snapshot's daily history: the last
+ * entry at least 7 days old, else the oldest before today. A change of 5 or more counts.
+ */
+export function riskMovement(row: SMERow, today = dayjs()): RiskMovement {
+    const weekAgo = today.subtract(7, 'day').format('YYYY-MM-DD')
+    const todayKey = today.format('YYYY-MM-DD')
+    const history = [...row.scoreHistory].sort((a, b) => a.date.localeCompare(b.date))
+    const previous =
+        history.filter(entry => entry.date <= weekAgo).pop() ??
+        history.find(entry => entry.date < todayKey)
+    if (!previous) return { kind: 'new', previousScore: null, previousLevel: null, delta: 0 }
+
+    const delta = row.riskScore - previous.score
+    const escalated =
+        RISK_LEVEL_RANK[row.riskLevel] >= RISK_LEVEL_RANK.High &&
+        RISK_LEVEL_RANK[row.riskLevel] > RISK_LEVEL_RANK[previous.level]
+    const kind = escalated ? 'escalated' : delta >= 5 ? 'up' : delta <= -5 ? 'down' : 'same'
+    return { kind, previousScore: previous.score, previousLevel: previous.level, delta }
+}
+
+/** Whether a driver adds to this row's score; inactivity only once the SME is overdue (45+ points). */
+export function rowHasDriver(row: SMERow, key: RiskDriverKey): boolean {
+    return row.riskBreakdown.some(
+        item => item.key === key && item.delta > 0 && (key !== 'inactivity' || item.delta >= 45)
+    )
+}
+
+/** Past its expected service date: one cycle of its recurring support, or 30 days without any. */
+export function isOverdueForService(row: SMERow): boolean {
+    return (row.daysSinceLastService ?? 0) >= (row.expectedServiceIntervalDays ?? 30)
+}
+
+/** "21 days since last service (expected every 7 days)", or just the days without a schedule. */
+export function serviceGapText(row: SMERow): string {
+    const days = `${row.daysSinceLastService} days since last service`
+    return row.expectedServiceIntervalDays ? `${days} (expected every ${row.expectedServiceIntervalDays} days)` : days
+}
+
 export function matchesServiceRecency(row: SMERow, filter: ServiceRecencyFilter): boolean {
     if (filter === 'all') return true
     if (filter === 'never_serviced') return row.totalTouches === 0 || row.daysSinceLastService === null
@@ -766,21 +831,7 @@ export function getRiskDriversForRow(row: SMERow): Array<{
     label: string
     points: number
 }> {
-    const result = computeRiskScore({
-        daysSinceLastService: row.daysSinceLastService,
-        hasNeverReceivedService:
-            row.fullyConfirmedDepartmentsCount > 0 &&
-            row.totalTouches === 0,
-        docsMissing: row.docsMissing,
-        docsQueried: row.docsQueried,
-        docsRejected: row.docsRejected,
-        missingDepartmentsCount: row.missingDepartmentsCount,
-        smePendingAcceptanceCount: row.smePendingAcceptanceCount,
-        smePendingConfirmationCount: row.smePendingConfirmationCount,
-        declinedTouches: row.declinedTouches
-    })
-
-    return result.breakdown
+    return row.riskBreakdown
         .filter(item => item.delta > 0)
         .map((item, index) => ({
             key: `risk-driver-${index}-${normalizeLower(item.label)
@@ -789,6 +840,55 @@ export function getRiskDriversForRow(row: SMERow): Array<{
             label: item.label,
             points: item.delta
         }))
+}
+
+// Signals this page doesn't load live; the nightly snapshot has them.
+const SNAPSHOT_ONLY_INPUTS = [
+    'missedAppointments',
+    'declinedAppointments',
+    'revenueDropPercent',
+    'overdueFollowUps',
+    'openQueries',
+    'emailBounced',
+    'expiredComplianceDocs',
+    'docsMissing',
+    'docsQueried',
+    'docsRejected'
+] as const
+
+/** The SME's score inputs: live assignments and plan, plus the snapshot's other signals. */
+export function scoreInputsFor(args: {
+    assignments: AnyDoc[]
+    diagnosticPlan?: AnyDoc
+    departmentsById: Record<string, AnyDoc>
+    closedInterventionIds: Set<string>
+    docs: { missing: number; queried: number; rejected: number }
+    snapshot?: AnyDoc
+    joinedAt: number | null
+    now: number
+}): SharedRiskScoreInputs {
+    const stored = args.snapshot?.inputs || null
+    const live = deriveRiskInputs({
+        assignments: args.assignments,
+        appointments: [],
+        monthlyRevenue: [],
+        followUps: [],
+        openQueries: 0,
+        emailBounced: false,
+        compliance: { ...args.docs, expired: 0 },
+        coverage: {
+            plan: args.diagnosticPlan || null,
+            departmentsById: args.departmentsById,
+            closedInterventionIds: args.closedInterventionIds
+        },
+        knownServiceAt: typeof stored?.lastServiceAt === 'number' ? stored.lastServiceAt : null,
+        joinedAt: args.joinedAt
+    }, args.now)
+    if (!stored) return live
+    const fromSnapshot = Object.fromEntries(
+        SNAPSHOT_ONLY_INPUTS.filter(key => stored[key] !== undefined).map(key => [key, stored[key]])
+    )
+    return { ...live, ...fromSnapshot }
 }
 
 export function buildRow(args: {
@@ -800,6 +900,8 @@ export function buildRow(args: {
     closedInterventionIds?: Set<string>
     sessions: AnyDoc[]
     departmentsById: Record<string, AnyDoc>
+    /** smeRiskSnapshots/{participantId}, written by the nightly early-warning job. */
+    snapshot?: AnyDoc
     scopedDepartment?: {
         departmentId?: string
         departmentName?: string
@@ -935,39 +1037,38 @@ export function buildRow(args: {
         item => !item.deptConfirmed || !item.smmeConfirmed || item.servicedCount === 0
     )
     const fullyConfirmedDepartments = expectedDepartments.filter(item => item.deptConfirmed && item.smmeConfirmed)
+    // The department's side: plan not confirmed, or confirmed both ways with nothing assigned.
+    // Shown separately; it isn't the SME's risk (smeRiskLogic departmentCoverage).
+    const staffDelayDepartments = expectedDepartments
+        .filter(item => !item.deptConfirmed || (item.smmeConfirmed && item.servicedCount === 0))
+        .map(item => item.departmentName)
 
-    const allActions = expectedDepartments.flatMap(item => item.actions)
     const completedTouches = expectedDepartments.reduce((sum, item) => sum + item.completedCount, 0)
     const pendingTouches = expectedDepartments.reduce((sum, item) => sum + item.pendingCount, 0)
     const declinedTouches = expectedDepartments.reduce((sum, item) => sum + item.declinedCount, 0)
     const totalTouches = expectedDepartments.reduce((sum, item) => sum + item.servicedCount, 0)
     const totalExpectedInterventions = expectedDepartments.reduce((sum, item) => sum + item.expectedInterventionIds.length, 0)
 
-    const lastInterventionDate =
-        allActions
-            .map(action => action.date)
-            .filter(Boolean)
-            .sort((a, b) => (b!.getTime() - a!.getTime()))[0] ?? null
-
-    const daysSinceLastService =
-        lastInterventionDate ? today.diff(dayjs(lastInterventionDate), 'day') : null
-
-    const inactivityBucket = getInactivityBucket(daysSinceLastService)
-
-    const hasExpectedServices = fullyConfirmedDepartments.length > 0
-    const hasNeverReceivedService = hasExpectedServices && totalTouches === 0
-
-    const { score: riskScore, level: riskLevel, breakdown: riskBreakdown } = computeRiskScore({
-        daysSinceLastService,
-        hasNeverReceivedService,
-        docsMissing: docs.missing,
-        docsQueried: docs.queried,
-        docsRejected: docs.rejected,
-        missingDepartmentsCount: missingDepartments.length,
-        smePendingAcceptanceCount,
-        smePendingConfirmationCount,
-        declinedTouches
+    // The score is the SME's overall one, from the same derivation as the nightly
+    // early-warning job (smeRiskLogic deriveRiskInputs), across every department,
+    // even in a department-scoped view. Live data covers assignments and the plan;
+    // what this page doesn't load comes from the SME's nightly snapshot.
+    const riskInputs = scoreInputsFor({
+        assignments,
+        diagnosticPlan,
+        departmentsById,
+        closedInterventionIds,
+        docs,
+        snapshot: args.snapshot,
+        joinedAt: smeJoinedAt(application, participant),
+        now: today.valueOf()
     })
+    const { score: riskScore, level: riskLevel, breakdown: riskBreakdown } = computeRiskScore(riskInputs)
+
+    // Service dates follow the score: completed work and attended sessions only.
+    const lastInterventionDate = riskInputs.lastServiceAt ? new Date(riskInputs.lastServiceAt) : null
+    const daysSinceLastService = riskInputs.daysSinceLastService
+    const inactivityBucket = getInactivityBucket(daysSinceLastService)
 
     const notes: string[] = []
     const noServiceReasons: string[] = []
@@ -1044,6 +1145,7 @@ export function buildRow(args: {
         expectedDepartmentsCount: expectedDepartments.length,
         servicedDepartmentsCount: servicedDepartments.length,
         missingDepartmentsCount: missingDepartments.length,
+        staffDelayDepartments,
         deptConfirmedCount: expectedDepartments.filter(dep => dep.deptConfirmed).length,
         smmeConfirmedCount: expectedDepartments.filter(dep => dep.smmeConfirmed).length,
         fullyConfirmedDepartmentsCount: fullyConfirmedDepartments.length,
@@ -1059,11 +1161,17 @@ export function buildRow(args: {
 
         lastInterventionDate,
         daysSinceLastService,
+        expectedServiceIntervalDays: riskInputs.expectedServiceIntervalDays ?? null,
         inactivityBucket,
 
         riskScore,
         riskLevel,
         riskBreakdown,
+        riskInputs,
+        snapshotComputedAt: toDate(args.snapshot?.computedAt),
+        scoreHistory: Array.isArray(args.snapshot?.history)
+            ? args.snapshot!.history.filter((entry: AnyDoc) => typeof entry?.score === 'number' && entry?.date)
+            : [],
         notes,
         noServiceReasons: uniqueStrings(noServiceReasons),
         hasAccessedSystem: accessInfo.hasAccessedSystem,

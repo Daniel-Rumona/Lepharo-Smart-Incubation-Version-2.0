@@ -270,6 +270,34 @@ html[data-theme="dark"] .workspace-icon-button {
     background: var(--app-accent-wash) !important;
 }
 
+/* Presence: a soft turning ring while it works, a gentle pulse while an answer waits. */
+.workspace-assistant-button.is-working::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0 60%, var(--app-accent) 85%, transparent 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+    animation: assistantTurn 1.1s linear infinite;
+    pointer-events: none;
+}
+
+.workspace-assistant-button.is-ready {
+    animation: assistantReady 2.4s ease-out infinite;
+}
+
+@keyframes assistantTurn { to { transform: rotate(360deg); } }
+@keyframes assistantReady {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--app-accent) 45%, transparent); }
+    70%, 100% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--app-accent) 0%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .workspace-assistant-button.is-working::after,
+    .workspace-assistant-button.is-ready { animation: none; }
+}
+
 .workspace-assistant-button:hover,
 .workspace-assistant-button:focus-visible,
 .workspace-assistant-button-active {
@@ -866,6 +894,19 @@ Shared by the staff workspace and the applicant portal. */
     /* Keep floating launchers clear of the bottom bar. */
     .workspace-shell .ant-float-btn {
         bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+    }
+
+    /* The help button shares the bottom bar's row instead: centred on the 54px bar
+       (10px up, so its middle is 37px up), with the bar nudged left by half the
+       button and its gap so the two never touch on narrow phones. */
+    .workspace-shell .ant-float-btn.help-assistant-fab {
+        right: 16px !important;
+        bottom: calc(17px + env(safe-area-inset-bottom)) !important;
+    }
+
+    .workspace-shell:has(.help-assistant-fab) .workspace-bottom-nav {
+        left: calc(50% - 28px);
+        max-width: calc(100vw - 32px - 56px);
     }
 }
 

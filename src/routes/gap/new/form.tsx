@@ -16,6 +16,7 @@ import {
     where
 } from 'firebase/firestore'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { getSmeParticipant } from '@/services/smeIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 
 import { STEP_META, TOTAL_STEPS } from './questionBanks'
@@ -23,7 +24,8 @@ import type { FlowDirection, GroupId } from './types'
 import {
     buildGapAnalysisPayload,
     groupMetaById,
-    isStepComplete,
+    missingFollowUps,
+    unansweredCount,
     useLeaveConfirmGuard
 } from './gapHelpers'
 import GapStepHeader from './components/GapStepHeader'
@@ -80,22 +82,18 @@ const GAPAnalysisForm: React.FC = () => {
     // track value changes to mark as dirty
     const onValuesChange = useCallback(() => setDirty(true), [])
 
-    // Load participant by email
+    // Load the SME's linked participant; email only until it is linked.
     useEffect(() => {
         const load = async () => {
             try {
-                if (!email) return
-                const snap = await getDocs(
-                    query(collection(db, 'participants'), where('email', '==', email))
-                )
-                if (snap.empty) {
+                if (!user) return
+                const data = await getSmeParticipant({ uid: user.uid, participantId: user.participantId, email })
+                if (!data) {
                     message.error('Participant record not found for your account.')
                     setLoading(false)
                     return
                 }
-                const d = snap.docs[0]
-                setParticipantId(d.id)
-                const data = d.data()
+                setParticipantId(data.id)
 
                 form.setFieldsValue({
                     company: {
@@ -117,13 +115,13 @@ const GAPAnalysisForm: React.FC = () => {
             }
         }
         load()
-    }, [email, form])
+    }, [user, email, form])
 
     // Fetch cryptographic signature from applications
     useEffect(() => {
         const loadAppSig = async () => {
             try {
-                if (!email) return
+                if (!participantId && !email) return
                 const q1 = participantId
                     ? query(
                         collection(db, 'applications'),
@@ -164,10 +162,20 @@ const GAPAnalysisForm: React.FC = () => {
     // every step's data regardless of what's mounted.
     const watchedValues = Form.useWatch([], form)
 
-    const canContinueStep = useMemo(
+    // Unanswered questions per step, and follow-ups a Yes still needs: both
+    // gate Continue and tell the SME why it is off.
+    const { unansweredByStep, missingFollowUpsByStep } = useMemo(
         () => {
             const values = form.getFieldsValue(true)
-            return STEP_META.map((_, index) => isStepComplete(index, values))
+            const missing = missingFollowUps(values)
+            return {
+                unansweredByStep: STEP_META.map((_, index) => unansweredCount(index, values)),
+                missingFollowUpsByStep: STEP_META.map((_, index) =>
+                    missing
+                        .filter(item => groupMetaById(item.groupId).step === index)
+                        .map(item => item.message)
+                )
+            }
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [watchedValues, form]
@@ -383,6 +391,24 @@ const GAPAnalysisForm: React.FC = () => {
     const showBack = step > 0 || isEditingThisStep
     const isFinalStep = step === REVIEW_STEP
     const stepDisabled = submitting
+    const unansweredHere = unansweredByStep[step] || 0
+    const unansweredBeforeReview = unansweredByStep
+        .slice(0, REVIEW_STEP)
+        .reduce((sum, count) => sum + count, 0)
+    const missingHere = missingFollowUpsByStep[step] || []
+    const missingBeforeReview = missingFollowUpsByStep.slice(0, REVIEW_STEP).flat()
+    // Unanswered questions first; once all are answered, the first follow-up a Yes still needs.
+    const continueHint = isFinalStep
+        ? unansweredBeforeReview
+            ? `Answer ${unansweredBeforeReview} more question${unansweredBeforeReview === 1 ? '' : 's'} before you submit`
+            : missingBeforeReview.length
+                ? `${missingBeforeReview[0]} before you submit`
+                : undefined
+        : unansweredHere
+            ? `Answer ${unansweredHere} more question${unansweredHere === 1 ? '' : 's'} to continue`
+            : missingHere.length
+                ? `${missingHere[0]} to continue`
+                : undefined
 
     const renderStepContent = () => {
         switch (step) {
@@ -442,7 +468,8 @@ const GAPAnalysisForm: React.FC = () => {
                 background: token.colorBgLayout,
                 display: 'flex',
                 justifyContent: 'center',
-                padding: '20px 16px'
+                // On phones the step's action bar sits flush with the bottom edge.
+                padding: isMobile ? '12px 16px 0' : '20px 16px'
             }}
         >
             {signingCeremony.element}
@@ -500,9 +527,11 @@ const GAPAnalysisForm: React.FC = () => {
                             }
                             continueDisabled={
                                 !isFinalStep
-                                    ? !canContinueStep[step]
-                                    : submitting || !canContinueStep.slice(0, REVIEW_STEP).every(Boolean)
+                                    ? unansweredHere > 0 || missingHere.length > 0
+                                    : submitting || unansweredBeforeReview > 0 || missingBeforeReview.length > 0
                             }
+                            continueHint={continueHint}
+                            isMobile={isMobile}
                             continueLoading={isFinalStep ? submitting : false}
                             isFinalStep={isFinalStep}
                             isEditing={isEditingThisStep}

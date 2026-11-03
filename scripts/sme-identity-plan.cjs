@@ -133,4 +133,26 @@ function planSmeIdentity({ users, participants, authEmails = new Map() }) {
     return { smeUserCount: smeUsers.length, outcomes, emailMismatches }
 }
 
-module.exports = { planSmeIdentity, normEmail, normRole }
+/**
+ * resourceRequests the SME made before they carried its login (Phase 4 drops the
+ * email rule): requestedByUid for each request without one whose requestedByEmail
+ * belongs to exactly one SME login. Others are counted, not guessed.
+ */
+function planRequestOwners({ requests, users, authEmails = new Map() }) {
+    const loginsByEmail = new Map()
+    users.filter((u) => SME_ROLES.has(normRole(u.data.role))).forEach((u) => {
+        const email = normEmail(authEmails.get(u.uid)) || normEmail(u.data.email)
+        pushTo(loginsByEmail, email, u.uid)
+    })
+    const patches = []
+    let unmatched = 0
+    requests.forEach((r) => {
+        if (str(r.data.requestedByUid)) return
+        const logins = loginsByEmail.get(normEmail(r.data.requestedByEmail)) || []
+        if (logins.length === 1) patches.push({ id: r.id, patch: { requestedByUid: logins[0] } })
+        else unmatched += 1
+    })
+    return { patches, unmatched }
+}
+
+module.exports = { planSmeIdentity, planRequestOwners, normEmail, normRole }

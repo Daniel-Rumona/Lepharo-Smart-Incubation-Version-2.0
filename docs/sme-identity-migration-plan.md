@@ -75,24 +75,57 @@ rules before anything trusts `uid`.
   and a filtered deploy wants to delete it. Deploy interactively and answer **No** to the deletion
   prompt. Until then, invited SMEs are linked by the sign-in repair instead.
 
-### Phase 3 — Readers use participantId
-- One client resolver, e.g. `useSmeParticipant()`, reading `user.participantId` from the identity
-  context, replacing `getParticipantByEmail`, `getAcceptedAppByEmail`, `getAppsByEmailAnyField`,
-  `resolveIncubateeParticipantId`, `hasSignedPopia`, `loadGrowthScore`, milestone scope.
-- Then: login routing, layout gating, WelcomeWizard, ~20 incubatee pages, applicant pages, calendar,
-  AppointmentCheckIn, surveys, gap form (see inventory B).
-- Staff joins: photos/signatures by uid, attendance by participantId, participant joins by
-  participantId (inventory C).
-- Functions: `uidForParticipant` drops the email step; `complianceExpiryInApp`, `outcomeFollowUps`,
-  `whatsappCheckBack`, `whatsappAlerts`, `marketLinkage`, `deleteUserCascade` (inventory D).
-- ai-backend: participant from `profile.participantId`; programme scope and tools by participantId
-  (inventory E).
+### Phase 3 — Readers use participantId — built 2026-11-03
+Every reader now finds the SME by `participantId` / `uid` first. Email lookups remain only as a
+fallback, each marked "email fallback until Phase 4", for logins not linked yet and old records.
+- **Client resolver**: `src/services/smeIdentity.ts` — `resolveSmeParticipantId`, `getSmeParticipant`
+  (`users.participantId`, else email). `src/lib/acceptedApplication.ts` — `getSmeApplications`,
+  `getSmeAcceptedApplication` (by participantId, plus the email query until Phase 4).
+- **SME side**: login routing, workspace gate (`layout/index.tsx`), WelcomeWizard, POPIA check,
+  dev-plan resolver + SmeWaiting/roadmap/plan-review/opportunities, growth score, milestone journey,
+  incubatee dashboard/analytics/appointments/feedback/gap-analysis/group/inquiries/interventions/moa/
+  resources, applicant profile/portal/tracker, onboarding, shared calendar, AppointmentCheckIn,
+  gap form, pre-incubation contract signature. Pages no longer bail out when the login has no email.
+  - Inquiries now store `participantId` and list by `submittedBy` + `participantId` (they used to
+    query `participantId == uid` and never matched).
+  - Resource requests store `requestedByUid`; `firestore.rules` lets the SME read/create by it.
+- **Staff side**: photos and signatures by `users.participantId` / `participants.uid`; ROM and
+  reports join participants by id; attendance carries `checkedInParticipantIds` /
+  `checkedOutParticipantIds` / `attendanceSessionGroupParticipantIds` next to the email lists and
+  matches on them first (`appointmentService.getAttendanceStatus` too).
+- **Functions**: `uidForParticipant` checks `users.participantId` first; compliance-expiry in-app,
+  outcome follow-ups, WhatsApp check-back/alerts/STOP, supplier passport resolve by participantId.
+  `deleteUserCascade` no longer needs an email, never sweeps by a blank one, and for an SME deletes
+  its participant, applications and assigned interventions by participantId (only if no other login
+  claims that participant) — the same records the email sweep removed before.
+- **ai-backend**: `get_participant_by_user`, `get_applications_by_user`, `get_inquiries_by_user`,
+  `get_intake_submissions_by_user` replace the `*_by_email` tools (email as their fallback);
+  `_verified_user` and programme scope use `profile.participantId`.
+- **Still email-gated (Phase 5)**: some in-app notices are only sent once an SME email is found
+  (application decision, MOA flag, intervention reminders, compliance expiry with no email).
+- **Not touched**: external finance joins (stay email).
+- Test project: rules deployed 2026-11-03. Functions and ai-backend not deployed yet.
 
-### Phase 4 — Rules
-- `ownsParticipant(pid)` = `users.participantId == pid` only; drop the `isMyEmail` fallback.
-- Applications, invitations (`isInvitationPerson`), `outcomeFollowUps`, `resourceRequests`,
-  `responses`, `participants` read/create/update move to participantId/uid.
-- Deploy only after phases 1–3 are live and the backfill report is clean.
+### Phase 4 — Rules — built 2026-11-03, NOT deployed
+- `firestore.rules`: `isMyEmail` is gone. `ownsParticipant(pid)` = `users.participantId == pid`;
+  applications by `participantId` only; users docs readable by `uid` only; invitations by `smeId`;
+  outcome follow-up answers by `participantId`; resource requests by `requestedByUid`.
+- Participants: readable/editable by the linked login (`users.participantId` or `uid`), or — before
+  linking — by the login that created it (`createdByUid`). An SME without a participant may create
+  exactly its own (`createdByUid` = itself, no `uid`); `uid` and `createdByUid` are immutable.
+  `applicant/profile.tsx` writes `createdByUid`; `linkMySmeAccount` accepts it as ownership.
+- Backfill now also stamps `requestedByUid` on older resource requests (`planRequestOwners`).
+  Test project: applied (7 stamped); re-run plans nothing; 65/65 SMEs linked.
+- Rules checked with the Firebase Rules test API (23 cases, all pass): own records allowed, email
+  alone grants nothing, new applicant creates/edits only its own record, SME with no email works.
+  Run: `RULES_TOKEN="$(gcloud auth print-access-token)" node <scratch>/api-probe.cjs <repo>`.
+- **Deploy order (each project):** Phase 3 app (Vercel) + functions + ai-backend live → backfill
+  dry run clean (fix every "left alone" entry) → `--apply` → `linkMySmeAccount` with createdByUid →
+  then these rules. Deploying the rules first breaks the current Vercel build for SMEs.
+- The email fallbacks left in code by Phase 3 become dead once these rules are live (their queries
+  are denied and caught); remove them afterwards.
+- Known risk kept: `linkMySmeAccount` still links by an unverified login email when no id matches
+  (same trust the old email rules gave). Consider requiring `email_verified` once SMEs verify.
 
 ### Phase 5 — Phone sign-in
 - `requestSmeLoginCode(phone)` / `verifySmeLoginCode(phone, code)`: resolve via `phoneIndex`, send a

@@ -1,26 +1,29 @@
-from typing import Any, Callable
+from typing import Any, Callable, Optional
+
+from tool_scope import merge_programme_results
 
 from firestore_tools import (
+    count_collection,
     summarize_collection,
     summarize_records,
-    get_participant_by_email,
+    get_participant_by_user,
     get_participant_by_id,
     get_participants,
     get_participants_for_program,
     get_participant_metrics,
 
     get_applications,
-    get_applications_by_email,
+    get_applications_by_user,
     get_applications_by_participant,
     get_applications_by_program,
     get_accepted_applications_by_program,
 
     get_active_programs,
     get_programs,
-    get_inquiries_by_email,
+    get_inquiries_by_user,
     get_inquiries_by_branch,
     get_inquiries,
-    get_intake_submissions_by_email,
+    get_intake_submissions_by_user,
     get_intake_submissions,
 
     get_assigned_interventions,
@@ -82,15 +85,12 @@ from firestore_tools import (
 SUMMARY_TOOL_SPECS: dict[str, tuple[str, list[tuple[str, str, Any]]]] = {
     "get_participants": ("participants", []),
     "get_applications": ("applications", []),
-    "get_applications_by_email": ("applications", [("email", "==", 0)]),
     "get_applications_by_participant": ("applications", [("participantId", "==", 0)]),
     "get_applications_by_program": ("applications", [("programId", "==", 0)]),
     "get_programs": ("programs", []),
     "get_active_programs": ("programs", [("status", "==", ("literal", "active"))]),
-    "get_inquiries_by_email": ("inquiries", [("email", "==", 0)]),
     "get_inquiries_by_branch": ("inquiries", [("branchId", "==", 0)]),
     "get_inquiries": ("inquiries", []),
-    "get_intake_submissions_by_email": ("smeIntakeSubmissions", [("email", "==", 0)]),
     "get_intake_submissions": ("smeIntakeSubmissions", []),
     "get_assigned_interventions": ("assignedInterventions", []),
     "get_assigned_interventions_by_participant": (
@@ -149,24 +149,24 @@ SUMMARY_TOOL_SPECS: dict[str, tuple[str, list[tuple[str, str, Any]]]] = {
 
 
 TOOL_MAP: dict[str, Callable[..., Any]] = {
-    "get_participant_by_email": get_participant_by_email,
+    "get_participant_by_user": get_participant_by_user,
     "get_participant_by_id": get_participant_by_id,
     "get_participants": get_participants,
     "get_participants_for_program": get_participants_for_program,
     "get_participant_metrics": get_participant_metrics,
 
     "get_applications": get_applications,
-    "get_applications_by_email": get_applications_by_email,
+    "get_applications_by_user": get_applications_by_user,
     "get_applications_by_participant": get_applications_by_participant,
     "get_applications_by_program": get_applications_by_program,
     "get_accepted_applications_by_program": get_accepted_applications_by_program,
 
     "get_active_programs": get_active_programs,
     "get_programs": get_programs,
-    "get_inquiries_by_email": get_inquiries_by_email,
+    "get_inquiries_by_user": get_inquiries_by_user,
     "get_inquiries_by_branch": get_inquiries_by_branch,
     "get_inquiries": get_inquiries,
-    "get_intake_submissions_by_email": get_intake_submissions_by_email,
+    "get_intake_submissions_by_user": get_intake_submissions_by_user,
     "get_intake_submissions": get_intake_submissions,
 
     "get_assigned_interventions": get_assigned_interventions,
@@ -304,6 +304,10 @@ MULTI_FIELD_SUMMARY_TOOLS = {
     "get_compliance_by_program",
     "get_accepted_applications_by_program",
     "get_participants_for_program",
+    # The signed-in SME's own records: id fields first, email fallback (firestore_tools.py).
+    "get_applications_by_user",
+    "get_inquiries_by_user",
+    "get_intake_submissions_by_user",
 }
 
 # These tools already stream the full filtered collection and return a small,
@@ -324,6 +328,30 @@ def _resolve_branch_id(user: Any) -> str | None:
     return _get_attr(user, "branchId")
 
 
+# Lists stop at this many records (the tools' default limit); a full list may be longer.
+LIST_PREVIEW_LIMIT = 100
+
+
+def _spec_filters(filter_specs, args) -> list[tuple[str, str, Any]]:
+    filters = []
+    for field, operator, source in filter_specs:
+        value = source[1] if isinstance(source, tuple) and source[0] == "literal" else args[source]
+        filters.append((field, operator, value))
+    return filters
+
+
+def _mark_cut_short(result: dict[str, Any], tool_name: str, data: list, args: tuple) -> None:
+    """When a list reached its limit, count the whole query so the answer can say "N of M"."""
+    spec = SUMMARY_TOOL_SPECS.get(tool_name)
+    if tool_name in COMPLETE_AGGREGATE_TOOLS or not spec or len(data) < LIST_PREVIEW_LIMIT:
+        return
+    collection_name, filter_specs = spec
+    total = count_collection(collection_name, _spec_filters(filter_specs, args))
+    if isinstance(total, int) and total > len(data):
+        result["listIsCutShort"] = True
+        result["totalRecords"] = total
+
+
 def _safe_run(tool_name: str, *args, include_summary: bool = False):
     fn = TOOL_MAP.get(tool_name)
 
@@ -342,6 +370,7 @@ def _safe_run(tool_name: str, *args, include_summary: bool = False):
         if isinstance(data, list):
             result["detailRecordsReturned"] = len(data)
             result["detailsArePreview"] = tool_name not in COMPLETE_AGGREGATE_TOOLS
+            _mark_cut_short(result, tool_name, data, args)
         if include_summary and tool_name in MULTI_FIELD_SUMMARY_TOOLS and isinstance(data, list):
             result["summary"] = summarize_records(data)
             result["detailsArePreview"] = True
@@ -349,15 +378,7 @@ def _safe_run(tool_name: str, *args, include_summary: bool = False):
             summary_spec = SUMMARY_TOOL_SPECS.get(tool_name)
             if include_summary and summary_spec:
                 collection_name, filter_specs = summary_spec
-                filters = []
-                for field, operator, source in filter_specs:
-                    value = (
-                        source[1]
-                        if isinstance(source, tuple) and source[0] == "literal"
-                        else args[source]
-                    )
-                    filters.append((field, operator, value))
-                result["summary"] = summarize_collection(collection_name, filters)
+                result["summary"] = summarize_collection(collection_name, _spec_filters(filter_specs, args))
                 result["detailsArePreview"] = True
         return result
     except Exception as exc:
@@ -373,9 +394,11 @@ def run_page_tools(
     user: Any,
     base_data: dict[str, Any],
     include_summaries: bool = False,
+    on_tool: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
     """
     Runs the tools listed in page_registry.py using safe inferred arguments.
+    on_tool hears each tool's name as it starts (the chat's live steps).
 
     It does not let Gemini run arbitrary Firestore queries.
     It only executes registered tools from TOOL_MAP.
@@ -394,23 +417,28 @@ def run_page_tools(
     user_id = _resolve_user_id(user)
 
     for tool_name in tools:
-        # Email-based applicant tools
+        if on_tool:
+            on_tool(tool_name)
+        # The signed-in SME's own records: participantId/uid first; the email is
+        # passed only as the email fallback until Phase 4 (docs/sme-identity-migration-plan.md).
         if tool_name in {
-            "get_participant_by_email",
-            "get_applications_by_email",
-            "get_inquiries_by_email",
-            "get_intake_submissions_by_email",
+            "get_participant_by_user",
+            "get_applications_by_user",
+            "get_inquiries_by_user",
+            "get_intake_submissions_by_user",
         }:
-            if not email:
+            if not (participant_id or user_id or email):
                 results[tool_name] = {
                     "ok": False,
-                    "error": "Missing user.email",
+                    "error": "Missing participantId and user id",
                 }
                 continue
 
             results[tool_name] = _safe_run(
                 tool_name,
-                email,
+                participant_id or "",
+                user_id or "",
+                email or "",
                 include_summary=include_summaries,
             )
             continue
@@ -458,6 +486,14 @@ def run_page_tools(
             "get_timesheets_by_program",
         }:
             if not program_id:
+                # "All my programmes" (tool_scope.py): once per programme the person holds, merged.
+                programme_scope = page_context.get("programScope") or []
+                if programme_scope:
+                    results[tool_name] = merge_programme_results({
+                        scoped_id: _safe_run(tool_name, scoped_id, include_summary=include_summaries)
+                        for scoped_id in programme_scope
+                    })
+                    continue
                 results[tool_name] = {
                     "ok": False,
                     "error": "Missing active programId. User may be viewing all programs.",

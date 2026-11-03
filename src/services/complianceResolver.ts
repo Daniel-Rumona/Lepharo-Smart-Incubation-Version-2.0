@@ -5,6 +5,7 @@ import {
     getDocs
 } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { departmentHasRole, loadDepartmentRoles } from './departmentRoles'
 
 export type ComplianceRequirementKind = 'upload' | 'agreement'
 
@@ -22,12 +23,9 @@ export type ComplianceRequirement = {
     departmentId?: string
 
     /**
-     * When true, the requirement is only visible to departments whose
-     * department document has `isOnboarding === true` or
-     * `isMonitoring === true`.
-     *
-     * Agreements are always treated as onboarding-only even when older data
-     * does not contain this field.
+     * Stored by /programs on every requirement, so it no longer decides who
+     * sees what: only agreements are limited to ROM and M&E (see
+     * isOnboardingComplianceRequirement).
      */
     isOnboarding?: boolean
 }
@@ -359,6 +357,19 @@ export const complianceDocumentKey = (
     }:${id}`
 }
 
+/**
+ * Loose title comparison for uploads saved with only a title (older SME
+ * uploads store "B-BBEE Certificate/Affidavit" where the requirement key is
+ * BEE_CERT). Used as a fallback after the key, by every compliance view.
+ */
+export const complianceTitleKey = (value: unknown) =>
+    String(value ?? '')
+        .toLowerCase()
+        .replace(/\(signed\)/g, '')
+        .replace(/\b(docs|documents)\b/g, 'document')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+
 export const normalizeComplianceRequirements = (
     rows: any[] = [],
     templates: AgreementTemplate[] = []
@@ -453,22 +464,48 @@ export const selectDepartmentRequirements = (
  * programmes only have the requiredDocs subcollection, which /programs still
  * mirrors, so fall back to it when the array is empty.
  */
+/**
+ * The shared requirement list for programmes that have none of their own, in
+ * the same shape as programs/{id}.programRequirements. Set from the Programs
+ * page ("Use as default requirements").
+ */
+export const DEFAULT_PROGRAM_REQUIREMENTS_DOC = doc(db, 'systemSettings', 'defaultProgramRequirements')
+
+export type RequirementsSource = 'programme' | 'default' | 'none'
+
+export const loadDefaultProgramRequirements = async (): Promise<any[]> => {
+    try {
+        const snapshot = await getDoc(DEFAULT_PROGRAM_REQUIREMENTS_DOC)
+        const rows = snapshot.exists() ? (snapshot.data() as any).requirements : null
+        return Array.isArray(rows) ? rows : []
+    } catch (error) {
+        console.error('Unable to load the default programme requirements', error)
+        return []
+    }
+}
+
+/** The programme's own list (or its legacy requiredDocs), else the shared default. */
 const loadProgramRequirementRows = async (
     programId: string,
     program: any
-): Promise<any[]> => {
+): Promise<{ rows: any[]; source: RequirementsSource }> => {
     if (
         Array.isArray(program?.programRequirements) &&
         program.programRequirements.length
     ) {
-        return program.programRequirements
+        return { rows: program.programRequirements, source: 'programme' }
     }
 
     const legacy = await getDocs(
         collection(db, 'programs', programId, 'requiredDocs')
     )
 
-    return legacy.docs.map(item => {
+    if (legacy.empty) {
+        const rows = await loadDefaultProgramRequirements()
+        return { rows, source: rows.length ? 'default' : 'none' }
+    }
+
+    return { source: 'programme', rows: legacy.docs.map(item => {
         const row = item.data() as any
         const isAgreement = row.type === 'agreement'
         return {
@@ -485,32 +522,21 @@ const loadProgramRequirementRows = async (
                 ? { isOnboarding: row.isOnboarding }
                 : {})
         }
-    })
+    }) }
 }
 
+// ROM owns the agreements and M&E sees everything; both come from the
+// department roles (sub-departments inherit), never department flags.
 const getDepartmentComplianceScope = async (
     departmentId: string
 ): Promise<DepartmentComplianceScope> => {
-    const departmentSnapshot = await getDoc(
-        doc(db, 'departments', departmentId)
-    )
-
-    if (!departmentSnapshot.exists()) {
-        return {
-            id: departmentId,
-            isOnboarding: false,
-            isMonitoring: false,
-            canSeeOnboardingRequirements: false
-        }
-    }
-
-    const department = departmentSnapshot.data() as any
+    const { roles, departments } = await loadDepartmentRoles()
 
     const isOnboarding =
-        department?.isOnboarding === true
+        departmentHasRole(departmentId, 'rom', roles, departments)
 
     const isMonitoring =
-        department?.isMonitoring === true
+        departmentHasRole(departmentId, 'monitoring', roles, departments)
 
     return {
         id: departmentId,
@@ -521,12 +547,13 @@ const getDepartmentComplianceScope = async (
     }
 }
 
+// Only agreements are held back from ordinary departments. The isOnboarding
+// flag is not used: /programs sets it on every programme requirement.
 export const isOnboardingComplianceRequirement = (
     requirement: ComplianceRequirement
 ) =>
     requirement.kind === 'agreement' ||
-    requirement.type === 'agreement' ||
-    requirement.isOnboarding === true
+    requirement.type === 'agreement'
 
 export const filterComplianceRequirementsForDepartment = (
     requirements: ComplianceRequirement[],
@@ -596,7 +623,8 @@ export async function resolveComplianceRequirements(
         return {
             requirements: [],
             agreements: [],
-            departmentScope: null
+            departmentScope: null,
+            source: 'none' as RequirementsSource
         }
     }
 
@@ -608,7 +636,8 @@ export async function resolveComplianceRequirements(
         return {
             requirements: [],
             agreements: [],
-            departmentScope: null
+            departmentScope: null,
+            source: 'none' as RequirementsSource
         }
     }
 
@@ -618,12 +647,15 @@ export async function resolveComplianceRequirements(
     const agreements =
         await listAgreementTemplates()
 
+    const { rows, source } =
+        await loadProgramRequirementRows(
+            programId,
+            program
+        )
+
     const programRequirements =
         normalizeComplianceRequirements(
-            await loadProgramRequirementRows(
-                programId,
-                program
-            ),
+            rows,
             agreements
         )
 
@@ -682,13 +714,15 @@ export async function resolveComplianceRequirements(
                     ? agreements
                     : [],
 
-            departmentScope
+            departmentScope,
+            source
         }
     }
 
     return {
         requirements: programRequirements,
         agreements,
-        departmentScope: null
+        departmentScope: null,
+        source
     }
 }

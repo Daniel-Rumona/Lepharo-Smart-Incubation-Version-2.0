@@ -1,6 +1,6 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as crypto from "crypto";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { suppressRecordNotifications } from "./syntheticData";
 import {
   APP_BASE_URL,
@@ -9,7 +9,6 @@ import {
 } from "./emailShared";
 import { logBrevoSend, sendViaBrevo } from "./brevoClient";
 import { createComplianceExpiryInAppNotifications } from "./complianceExpiryInApp";
-import { BREVO_EGRESS } from "./config";
 import { departmentIdsForRole } from "./departmentRoles";
 
 const EXPIRING_SOON_DAYS = 30;
@@ -152,7 +151,7 @@ type DueDocument = {
   source: any;
 };
 
-type UploadRequirement = {
+export type UploadRequirement = {
   key: string;
   title: string;
   expiryMonths: number;
@@ -246,6 +245,24 @@ function findDueDocuments(documents: any[], now: Date, requirements: UploadRequi
  * "send compliance reminder" action.
  */
 export async function outstandingComplianceForParticipant(participantId: string, now = new Date()) {
+  const records = await participantComplianceRecords(participantId);
+  if (!records.application) return { participant: records.participant, application: null, programId: null, programName: "", items: [] as string[] };
+  const { items } = assessComplianceDocuments(records.documents, records.requirements, now);
+  return {
+    participant: records.participant,
+    application: { id: records.application.id, ...records.application.data },
+    programId: records.programId,
+    programName: records.programName,
+    items,
+  };
+}
+
+/**
+ * One SME's accepted application, its programme's upload requirements (with the legacy
+ * requiredDocs fallback) and every upload, read where the compliance pages read them: the
+ * participant's or application's embedded array, and the application's subcollection.
+ */
+export async function participantComplianceRecords(participantId: string) {
   const [participantSnapshot, applicationsSnapshot] = await Promise.all([
     db.collection("participants").doc(participantId).get(),
     db.collection("applications").where("participantId", "==", participantId).get(),
@@ -253,7 +270,9 @@ export async function outstandingComplianceForParticipant(participantId: string,
   const participant = participantSnapshot.exists ? participantSnapshot.data() as any : {};
   const application = applicationsSnapshot.docs
     .find(item => lower(item.data().applicationStatus) === "accepted");
-  if (!application) return { participant, application: null, programId: null, programName: "", items: [] as string[] };
+  if (!application) {
+    return { participant, application: null, programId: null, programName: "", requirements: [] as UploadRequirement[], documents: [] as any[] };
+  }
 
   const data = application.data() as any;
   const programId = clean(data.programId);
@@ -284,8 +303,54 @@ export async function outstandingComplianceForParticipant(participantId: string,
     ...subcollection.docs.map(item => ({ id: item.id, ...item.data(), _subcollection: true })),
   ];
 
-  const { items } = assessComplianceDocuments(documents, requirements, now);
-  return { participant, application: { id: application.id, ...data }, programId, programName: clean(program?.name || program?.title), items };
+  return {
+    participant,
+    application: { id: application.id, ref: application.ref, data },
+    programId,
+    programName: clean(program?.name || program?.title),
+    requirements,
+    documents,
+  };
+}
+
+/** The newest upload for a requirement, matched on its key or its title; on a tie the subcollection copy wins. */
+function latestDocumentFor(documents: any[], requirement: UploadRequirement) {
+  return documents
+    .filter(item => !item?.agreementId && (
+      documentKey(item) === requirement.key ||
+      (requirement.title && normalizeKey(item?.type || item?.documentName || item?.title) === normalizeKey(requirement.title))
+    ))
+    .sort((a, b) =>
+      documentTime(b) - documentTime(a) ||
+      (b._subcollection ? 1 : 0) - (a._subcollection ? 1 : 0)
+    )[0] || null;
+}
+
+export type RequirementState = {
+  key: string;
+  title: string;
+  expiryMonths: number;
+  /** missing, pending, valid, invalid, queried, rejected, expired or expiring-soon. */
+  status: string;
+  expires: Date | null;
+  document: any | null;
+};
+
+/** Each upload requirement with its newest upload and where it stands, for the WhatsApp assistant. */
+export function requirementStates(documents: any[], requirements: UploadRequirement[], now = new Date()): RequirementState[] {
+  return requirements.map(requirement => {
+    const latest = latestDocumentFor(documents, requirement);
+    const base = { key: requirement.key, title: requirement.title || requirement.key, expiryMonths: requirement.expiryMonths };
+    if (!latest || lower(latest.status) === "missing" || !clean(latest.url)) {
+      return { ...base, status: "missing", expires: null, document: null };
+    }
+    const expires = effectiveExpiry(latest, requirement);
+    const days = expires ? Math.ceil((startOfDay(expires).getTime() - startOfDay(now).getTime()) / DAY_MS) : null;
+    let status = lower(latest.status) || "pending";
+    if (days !== null && days < 0) status = "expired";
+    else if (status === "valid" && days !== null && days <= EXPIRING_SOON_DAYS) status = "expiring-soon";
+    return { ...base, status, expires, document: latest };
+  });
 }
 
 /** Counts and reminder lines for one SME's documents against its programme's requirements. */
@@ -428,9 +493,8 @@ function buildReminderContent(application: any, due: DueDocument[]) {
   };
 }
 
-export const complianceExpiryReminderCron = onSchedule(
+export const complianceExpiryReminderCron = scheduledJob("complianceExpiryReminderCron",
   {
-    ...BREVO_EGRESS,
     region: "us-central1",
     schedule: "0 7 * * *",
     timeZone: "Africa/Johannesburg",

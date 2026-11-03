@@ -18,7 +18,7 @@ const MONTHS = Array.from({ length: 18 }, (_, i) => L.addMonths('2025-06', i))
 const series = ({ base = 100, growth = 0, jump = 0, jumpAt = null }) => Object.fromEntries(
     MONTHS.map((month, i) => [month, base * (1 + growth * i) * (jumpAt && month >= jumpAt ? 1 + jump : 1)])
 )
-const sme = (id, opts = {}) => ({ id, programId: 'p1', sector: opts.sector || 'retail', synthetic: !!opts.synthetic, revenue: series(opts) })
+const sme = (id, opts = {}) => ({ id, programId: 'p1', sector: opts.sector || 'retail', synthetic: !!opts.synthetic, values: series(opts) })
 const treat = (participantId, month, extra = {}) => ({
     participantId, programId: 'p1', interventionId: 'iv1', interventionTitle: 'Cash Flow Planning', month, outcome: null, ...extra
 })
@@ -105,4 +105,50 @@ test('measureAll covers each programme and intervention once', () => {
     const smes = [sme('a'), { ...sme('b'), programId: 'p2' }]
     const treatments = [treat('a', '2025-12'), { ...treat('b', '2025-12'), programId: 'p2' }, treat('a', '2026-03')]
     assert.equal(L.measureAll(smes, treatments).length, 2)
+})
+
+// Head count: a flat team of `base` that hires `hires` people from `hireAt` on.
+const team = (id, { base = 4, hires = 0, hireAt = null } = {}) => ({
+    id, programId: "p1", sector: "retail", synthetic: false,
+    values: Object.fromEntries(MONTHS.map(month => [month, base + (hireAt && month >= hireAt ? hires : 0)]))
+})
+
+test("jobs are measured as jobs per SME, not a percentage", () => {
+    const treated = Array.from({ length: 10 }, (_, i) => team(`t${i}`, { base: 3 + (i % 3), hires: 2, hireAt: "2026-01" }))
+    const controls = Array.from({ length: 10 }, (_, i) => team(`c${i}`, { base: 3 + (i % 3) }))
+    const result = L.measureIntervention("p1", "iv1", [...treated, ...controls], treated.map(s => treat(s.id, "2025-12")), undefined, "jobs")
+    assert.equal(result.metric, "jobs")
+    assert.equal(result.unit, "jobs")
+    assert.equal(result.status, "reportable")
+    assert.equal(result.liftPercent, 2)
+    assert.ok(result.headline.startsWith("Cash Flow Planning: linked to 2 more jobs per SME than similar SMEs"), result.headline)
+    // Every SME hired the same two people, so there is no spread to quote, and all completed in one month.
+    assert.ok(result.headline.includes("completing it in Dec 2025)"), result.headline)
+    assert.ok(!result.headline.includes("likely range"), result.headline)
+})
+
+test("jobs can be measured from a zero baseline", () => {
+    const treated = Array.from({ length: 5 }, (_, i) => team(`t${i}`, { base: 0, hires: 1, hireAt: "2026-01" }))
+    const controls = Array.from({ length: 5 }, (_, i) => team(`c${i}`, { base: 0 }))
+    const result = L.measureIntervention("p1", "iv1", [...treated, ...controls], treated.map(s => treat(s.id, "2025-12")), undefined, "jobs")
+    assert.equal(result.treatedCount, 5)
+    assert.equal(result.liftPercent, 1)
+})
+
+test("revenue results say which measure they are", () => {
+    const result = L.measureIntervention("p1", "iv1", [sme("a")], [treat("a", "2025-12")])
+    assert.equal(result.metric, "revenue")
+    assert.equal(result.unit, "points")
+})
+
+test("a range that crosses zero is reported as no clear difference", () => {
+    const result = {
+        programId: "p1", interventionId: "iv1", interventionTitle: "Business Record Keeping", metric: "jobs", unit: "jobs",
+        status: "reportable", liftPercent: 0.4, rangeLowPercent: -0.1, rangeHighPercent: 0.8,
+        treatedCount: 10, comparisonCount: 14, period: { from: "2025-12", to: "2026-04" }
+    }
+    const line = L.impactHeadline(result)
+    assert.ok(line.startsWith("Business Record Keeping: linked to no clear difference in jobs against similar SMEs"), line)
+    assert.ok(line.includes("likely range -0.1 to +0.8 jobs"), line)
+    assert.ok(L.impactHeadline({ ...result, rangeLowPercent: 0.1 }).includes("0.4 more jobs per SME"))
 })

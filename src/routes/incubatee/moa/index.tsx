@@ -24,6 +24,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { getSmeApplications } from '@/lib/acceptedApplication'
 import dayjs from 'dayjs'
 import {
     MoaVars,
@@ -102,17 +103,15 @@ export default function MOAForm() {
 
     // Build MoaVars from: participant → application (+ overrides from state), program dates
     const loadVars = useCallback(async (): Promise<MoaVars> => {
-        // ── 1) Resolve application (by state.appId, else by user.email)
+        // ── 1) Resolve application (by state.appId, else the SME's own applications)
         let appDocId = state?.appId as string | null
         let appData: any = null
 
         if (!appDocId) {
-            if (!user?.email)
-                throw new Error('Missing user email to resolve application.')
-            const appsSnap = await getDocs(
-                query(collection(db, 'applications'), where('email', '==', user.email))
-            )
-            const apps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+            if (!user)
+                throw new Error('Missing user to resolve application.')
+            // The SME's linked participant; email only until it is linked.
+            const apps = await getSmeApplications({ uid: user.id, participantId: user.participantId, email: user.email })
             appData = apps.find(
                 a => (a.applicationStatus || '').toLowerCase() === 'accepted'
             )
@@ -129,11 +128,11 @@ export default function MOAForm() {
 
         // ── 2) Resolve participant
         let participantId: string | null =
-            state?.participantId ?? appData?.participantId ?? null
+            state?.participantId ?? appData?.participantId ?? user?.participantId ?? null
         let participant: any = null
 
         if (!participantId) {
-            // Fallback by email
+            // Email fallback until Phase 4, for logins not linked yet.
             const emailToFind = state?.email ?? appData?.email ?? user?.email
             if (emailToFind) {
                 const ps = await getDocs(

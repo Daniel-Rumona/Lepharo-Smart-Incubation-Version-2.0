@@ -70,8 +70,13 @@ import {
     BookOutlined,
     FileDoneOutlined,
     UploadOutlined,
-    DeleteOutlined
+    DeleteOutlined,
+    BulbOutlined
 } from '@ant-design/icons'
+import SessionBriefPanel from '@/components/appointments/SessionBriefPanel'
+import CoverageNotesCopilot from '@/components/appointments/CoverageNotesCopilot'
+import type { CoverageDraft } from '@/services/sessionCopilotService'
+import { checkMovEvidenceInBackground } from '@/services/evidenceCheckService'
 import {
     collection,
     query as fsQuery,
@@ -263,6 +268,9 @@ type SessionCoverageEntry = {
     notHeldReasonCategory?: 'rescheduled' | 'no-show' | 'cancelled' | 'other'
     reasonNotHeld?: string
     notes?: string
+    /** Follow-ups agreed at the session, one per line; shown in the next prep brief. */
+    actions?: string[]
+    nextFocus?: string
     photos?: string[]
     interventionProgress?: number
     completionRequired?: boolean
@@ -270,6 +278,8 @@ type SessionCoverageEntry = {
     completionGroupKey?: string
     attendanceByParticipant?: Array<{
         participantId: string
+        /** Training invitations: the person, since an SME sends several. */
+        attendeeId?: string | null
         participantName: string
         participantEmail?: string
         outcome: IndividualSmeAttendanceOutcome
@@ -307,6 +317,9 @@ type AttendanceSummary = {
     lastCheckOutAt?: Timestamp
     checkedInEmails?: string[]
     checkedOutEmails?: string[]
+    /** Member keys (participantId, or participantId|attendeeId); matched before the email lists. */
+    checkedInMemberKeys?: string[]
+    checkedOutMemberKeys?: string[]
 }
 
 type Appt = {
@@ -362,6 +375,7 @@ type Appt = {
     foodSelections?: FoodSelection[]
 
     attendanceSessionGroupEmails?: string[]
+    attendanceSessionGroupParticipantIds?: string[]
     attendanceSessionGroupNames?: string[]
 }
 
@@ -494,16 +508,49 @@ const getAttendanceEntryForEmail = (
     return matches[0] || null
 }
 
+/**
+ * The email that identifies a member's attendance. A Training Academy SME sends
+ * several people, each on their own invitation (attendeeId) with their own
+ * email. The page's email directory is keyed by participantId, which for them
+ * is the SME, so it would give every person the company's email and one
+ * check-in would mark them all. Their own invitation's email is the only one.
+ */
+const memberEmailOf = (member: Appt, participantEmails: Record<string, string>) =>
+    String(
+        (member as any)?.attendeeId
+            ? member.participantEmail || ''
+            : participantEmails[member.participantId] || member.participantEmail || ''
+    ).trim()
+
+/**
+ * One member of a group session. Usually an SME (participantId); a Training
+ * Academy SME sends several people, each on their own invitation, so theirs
+ * is the SME plus the person (attendeeId).
+ */
+const memberKeyOf = (member: Appt) => {
+    const participantId = String(member.participantId || member.id || '').trim()
+    const attendeeId = String((member as any)?.attendeeId || '').trim()
+    return attendeeId ? `${participantId}|${attendeeId}` : participantId
+}
+
+/** Recorded attendance per member: by SME and person for training invitations, by SME otherwise. */
+type RecordedMemberAttendance = { participantId: string; attendeeId?: string | null; participantName: string; outcome: IndividualSmeAttendanceOutcome }
+const findRecordedAttendance = <T extends RecordedMemberAttendance>(records: T[] | undefined, member: Appt): T | undefined => {
+    const participantId = String(member.participantId || '')
+    const attendeeId = String((member as any)?.attendeeId || '')
+    const list = (records || []).filter(item => String(item.participantId || '') === participantId)
+    if (!attendeeId) return list.find(item => !item.attendeeId)
+    // Records saved before people were told apart carry no attendeeId; their name still does.
+    return list.find(item => String(item.attendeeId || '') === attendeeId) ||
+        list.find(item => !item.attendeeId && item.participantName === member.participantName)
+}
+
 const getAttendanceTimingForMember = (
     appointment: Appt | null,
     member: Appt,
     participantEmails: Record<string, string>
 ) => {
-    const email = String(
-        participantEmails[member.participantId] ||
-        member.participantEmail ||
-        ''
-    )
+    const email = String(memberEmailOf(member, participantEmails))
         .trim()
         .toLowerCase()
 
@@ -1382,7 +1429,7 @@ const Appointments: React.FC = () => {
     const [editModalOpen, setEditModalOpen] = useState(false)
     const [detailModalOpen, setDetailModalOpen] = useState(false)
     const [selectedAppt, setSelectedAppt] = useState<Appt | null>(null)
-    const [detailModalTab, setDetailModalTab] = useState<'overview' | 'members' | 'coverage' | 'food'>('overview')
+    const [detailModalTab, setDetailModalTab] = useState<'overview' | 'members' | 'coverage' | 'food' | 'brief'>('overview')
 
 
     const openAppointmentDetails = (appointment: Appt) => {
@@ -1666,6 +1713,8 @@ const Appointments: React.FC = () => {
 
     const currentRole = String((user as any)?.role || '').toLowerCase()
     const isOperationsView = currentRole === 'operations'
+    // The session prep brief is for the staff who run and oversee sessions.
+    const canSeeSessionBrief = ['coordinator', 'operations', 'director', 'projectadmin', 'system_admin', 'superadmin'].includes(currentRole.replace(/\s+/g, '_'))
 
     const lastAddAppointmentDisabledLogRef = useRef('')
 
@@ -1879,8 +1928,11 @@ const Appointments: React.FC = () => {
             // Emails already known on the page (no read per SME; they're only shown here).
             const resolvedGroupEmails: string[] = Array.from(new Set<string>(
                 validGroupMembers
-                    .map((m: Appt) => String(m.participantEmail || participantEmails[m.participantId] || '').trim().toLowerCase())
+                    .map((m: Appt) => String(memberEmailOf(m, participantEmails) || '').trim().toLowerCase())
                     .filter(Boolean)
+            ))
+            const resolvedGroupParticipantIds: string[] = Array.from(new Set<string>(
+                validGroupMembers.map((m: Appt) => String(m.participantId || '').trim()).filter(Boolean)
             ))
 
             const token = generateQrToken()
@@ -1902,6 +1954,7 @@ const Appointments: React.FC = () => {
                     closedAt: null
                 },
                 attendanceSessionGroupEmails: resolvedGroupEmails,
+                attendanceSessionGroupParticipantIds: resolvedGroupParticipantIds,
                 attendanceSessionGroupNames: validGroupMembers
                     .map((m: Appt) => m.participantName)
                     .filter(Boolean),
@@ -1932,6 +1985,7 @@ const Appointments: React.FC = () => {
                 status: 'in_progress',
                 attendanceSession: patch.attendanceSession,
                 attendanceSessionGroupEmails: patch.attendanceSessionGroupEmails,
+                attendanceSessionGroupParticipantIds: patch.attendanceSessionGroupParticipantIds,
                 attendanceSessionGroupNames: patch.attendanceSessionGroupNames
             }
 
@@ -2015,12 +2069,7 @@ const Appointments: React.FC = () => {
 
         // A Training Academy SME can send several people, each with their own
         // invitation and email; the SME-wide lookup would give them all one.
-        let targetEmail = String(
-            ((targetMember as any).attendeeId ? targetMember.participantEmail : '') ||
-            participantEmails[targetMember.participantId] ||
-            targetMember.participantEmail ||
-            ''
-        )
+        let targetEmail = String(memberEmailOf(targetMember, participantEmails))
             .trim()
             .toLowerCase()
 
@@ -2213,9 +2262,7 @@ const Appointments: React.FC = () => {
                 return
             }
 
-            const email = String(
-                participantEmails[member.participantId] || member.participantEmail || ''
-            ).trim()
+            const email = String(memberEmailOf(member, participantEmails)).trim()
 
             if (!email) {
                 missingEmailCount += 1
@@ -2339,17 +2386,19 @@ const Appointments: React.FC = () => {
             return true
         }
 
+        const memberKey = memberKeyOf(member)
+        if (memberKey && ((groupAppt as any)?.attendanceSummary?.checkedInMemberKeys || []).includes(memberKey)) {
+            return true
+        }
+
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
         const checkedInEmails = new Set(
             (((groupAppt as any)?.attendanceSummary?.checkedInEmails as string[]) || [])
                 .map(email => String(email || '').trim().toLowerCase())
                 .filter(Boolean)
         )
 
-        const memberEmail = String(
-            participantEmails[member.participantId] ||
-            member.participantEmail ||
-            ''
-        )
+        const memberEmail = String(memberEmailOf(member, participantEmails))
             .trim()
             .toLowerCase()
 
@@ -2391,13 +2440,15 @@ const Appointments: React.FC = () => {
     ) => {
         if ((member as any)?.attendance?.checkedOutAt) return true
 
+        const memberKey = memberKeyOf(member)
+        if (memberKey && ((groupAppt as any)?.attendanceSummary?.checkedOutMemberKeys || []).includes(memberKey)) {
+            return true
+        }
+
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
         const checkedOutEmails = new Set(getCheckedOutEmails(groupAppt))
 
-        const memberEmail = String(
-            participantEmails[member.participantId] ||
-            member.participantEmail ||
-            ''
-        )
+        const memberEmail = String(memberEmailOf(member, participantEmails))
             .trim()
             .toLowerCase()
 
@@ -2556,9 +2607,7 @@ const Appointments: React.FC = () => {
     }
 
     const getMemberAttendanceOutcome = (appt: Appt, member: Appt): SmeAttendanceOutcome => {
-        const recorded = appt.sessionCoverage?.latest?.attendanceByParticipant?.find(item =>
-            String(item.participantId || '') === String(member.participantId || '')
-        )?.outcome
+        const recorded = findRecordedAttendance(appt.sessionCoverage?.latest?.attendanceByParticipant, member)?.outcome
         if (recorded) return recorded
         if ((appt as any)?._displayType === 'group') {
             return isGroupMemberCheckedIn(appt, member, participantEmails) ? 'attended' : 'unverified'
@@ -3205,6 +3254,26 @@ const Appointments: React.FC = () => {
         )
     }
 
+    // "Draft from my notes" fills the form; the facilitator still checks and saves it.
+    const applyCoverageDraft = (draft: CoverageDraft) => {
+        if (!coverageRecord) return
+        const patch: Record<string, unknown> = {}
+        if (draft.held && getCoverageAttendanceMode(coverageRecord) === 'manual') patch.held = draft.held
+        if (draft.held === 'no') {
+            if (draft.notHeldReason) patch.notHeldReasonCategory = draft.notHeldReason
+            if (draft.reasonNotHeld) patch.reasonNotHeld = draft.reasonNotHeld
+        }
+        if (draft.smeAttendance) patch.smeAttendance = draft.smeAttendance
+        if (draft.summary) {
+            patch.notes = draft.summary
+            patch.usePlannedCoverage = false
+        }
+        if (isTrainingAcademyCoverage && draft.topics.length) patch.coveredPoints = draft.topics
+        if (draft.actions.length) patch.actionsText = draft.actions.join('\n')
+        if (draft.nextFocus) patch.nextFocus = draft.nextFocus
+        coverageForm.setFieldsValue(patch)
+    }
+
     const openCoverage = (appt: Appt) => {
         setCoverageRecord(appt)
         setCoverageAttendancePage(1)
@@ -3219,11 +3288,8 @@ const Appointments: React.FC = () => {
         const groupMembers = Array.isArray((appt as any)?._groupMembers)
             ? ((appt as any)._groupMembers as Appt[])
             : []
-        const savedAttendanceByParticipant = new Map(
-            (latest?.attendanceByParticipant || []).map(item => [item.participantId, item.outcome])
-        )
         const participantAttendance = groupMembers.reduce<Record<string, IndividualSmeAttendanceOutcome>>((result, member) => {
-            const savedOutcome = savedAttendanceByParticipant.get(member.participantId)
+            const savedOutcome = findRecordedAttendance(latest?.attendanceByParticipant, member)?.outcome
             if (savedOutcome && savedOutcome !== 'unverified') {
                 result[member.id] = savedOutcome
             } else if (isGroupMemberCheckedIn(appt, member, participantEmails)) {
@@ -3253,6 +3319,8 @@ const Appointments: React.FC = () => {
             notHeldReasonCategory: latest?.notHeldReasonCategory || undefined,
             reasonNotHeld: latest?.reasonNotHeld || '',
             notes: latest?.notes || latest?.coveredPoints?.join('; ') || '',
+            actionsText: (latest?.actions || []).join('\n'),
+            nextFocus: latest?.nextFocus || '',
             usePlannedCoverage: false
         })
 
@@ -3399,8 +3467,9 @@ const Appointments: React.FC = () => {
         const attendanceByParticipant = isGroupCoverage
             ? coverageAppointmentRows.map(member => ({
                 participantId: String(member.participantId || ''),
+                attendeeId: (member as any).attendeeId || null,
                 participantName: member.participantName || '',
-                participantEmail: String(participantEmails[member.participantId] || member.participantEmail || '').trim().toLowerCase(),
+                participantEmail: String(memberEmailOf(member, participantEmails)).trim().toLowerCase(),
                 outcome: participantAttendanceValues[member.id]
             }))
             : []
@@ -3428,6 +3497,12 @@ const Appointments: React.FC = () => {
         // Preserve formal Training Academy module/unit-standard wording.
         // Other departments continue to complete only the summary field.
         const coveredPoints = isTrainingAcademyCoverage ? submittedTopics : notes ? [notes] : []
+        const actions = String(values.actionsText || '')
+            .split('\n')
+            .map(line => line.replace(/^[\s\-•*]+/, '').trim())
+            .filter(Boolean)
+            .slice(0, 10)
+        const nextFocus = String(values.nextFocus || '').trim()
         if (!held) {
             message.warning('Please indicate if the session was held.')
             return
@@ -3585,6 +3660,8 @@ const Appointments: React.FC = () => {
                     : { notHeldReasonCategory: notHeldReasonCategory as SessionCoverageEntry['notHeldReasonCategory'] }),
                 reasonNotHeld: heldBool ? '' : reasonNotHeld,
                 notes: heldBool ? notes : '',
+                ...(heldBool && actions.length ? { actions } : {}),
+                ...(heldBool && nextFocus ? { nextFocus } : {}),
                 ...(isGroupCoverage ? { attendanceByParticipant } : {}),
                 createdAt: Timestamp.now(),
                 createdByEmail: user.email,
@@ -3641,6 +3718,8 @@ const Appointments: React.FC = () => {
                 coverage: {
                     held: heldBool,
                     outcomeSummary: heldBool ? notes : null,
+                    actions: heldBool ? actions : [],
+                    nextFocus: heldBool ? nextFocus || null : null,
                     coveredPoints: heldBool ? coveredPoints : [],
                     photos,
                     reasonNotHeld: heldBool ? null : reasonNotHeld || null,
@@ -3981,6 +4060,8 @@ const Appointments: React.FC = () => {
                 manualMovs,
                 poeOptional: true
             })
+            // Check the new MOVs' evidence in the background, before anyone reviews them.
+            checkMovEvidenceInBackground(result.movs.map(row => row.movDocumentId))
             message.success(COMPLETION_SUCCESS_MESSAGE)
             setAssignedInterventions(previous => previous.map(row => result.assignmentIds.includes(row.id)
                 ? { ...row, computedProgress: 100, assigneeCompletionStatus: 'completed' } : row))
@@ -4219,15 +4300,25 @@ const Appointments: React.FC = () => {
                     setParticipantPhones(phones)
                 }
 
-                // Photos live on users/{uid} only; match them to SMEs by email.
+                // Photos live on users/{uid} only; match them to SMEs by users.participantId.
                 try {
+                    const photos: Record<string, string> = {}
+                    for (let i = 0; i < ids.length; i += 10) {
+                        const snap = await getDocs(fsQuery(collection(db, 'users'), where('participantId', 'in', ids.slice(i, i + 10))))
+                        snap.docs.forEach(d => {
+                            const u = d.data() as any
+                            const url = String(u.photoURL || '').trim()
+                            if (url && u.participantId) photos[u.participantId] = url
+                        })
+                    }
+                    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
                     const byEmail = new Map<string, string[]>()
                     Object.entries(emails).forEach(([pid, email]) => {
+                        if (photos[pid]) return
                         const key = email.toLowerCase()
                         byEmail.set(key, [...(byEmail.get(key) || []), pid])
                     })
                     const keys = Array.from(byEmail.keys())
-                    const photos: Record<string, string> = {}
                     for (let i = 0; i < keys.length; i += 10) {
                         const snap = await getDocs(fsQuery(collection(db, 'users'), where('email', 'in', keys.slice(i, i + 10))))
                         snap.docs.forEach(d => {
@@ -5344,12 +5435,13 @@ const Appointments: React.FC = () => {
 
             const memberBySmeId = new Map<string, Appt>()
                 ; ((row._groupMembers || []) as Appt[]).forEach(member => {
-                    const key = String(member.participantId || member.id || '').trim()
+                    const key = memberKeyOf(member)
                     if (!key) return
                     const existing = memberBySmeId.get(key)
-                    // One SME may only have one invitation in one session. Where
-                    // old data has duplicate documents, retain the record with a
-                    // meaningful SME response rather than counting the SME twice.
+                    // One member (an SME, or one of a training SME's people) has one
+                    // invitation per session. Where old data has duplicate documents,
+                    // retain the record with a meaningful response rather than
+                    // counting the member twice.
                     const existingIsConfirmed = String(existing?.userConfirmation || '').toLowerCase() === 'confirmed'
                     const memberIsConfirmed = String(member.userConfirmation || '').toLowerCase() === 'confirmed'
                     if (!existing || (!existingIsConfirmed && memberIsConfirmed)) {
@@ -5367,11 +5459,21 @@ const Appointments: React.FC = () => {
                 .filter((m: Appt) =>
                     ['attended', 'checked-in', 'checked-out'].includes(String((m as any)?.attendance?.status || ''))
                 )
-                .map((m: Appt) => m.participantEmail || m.participantId)
+                .map((m: Appt) => m.participantEmail || memberKeyOf(m))
                 .filter(Boolean)
             const checkedOut = members
                 .filter((m: Appt) => Boolean((m as any)?.attendance?.checkedOutAt))
-                .map((m: Appt) => m.participantEmail || m.participantId)
+                .map((m: Appt) => m.participantEmail || memberKeyOf(m))
+                .filter(Boolean)
+            const checkedInMemberKeys = members
+                .filter((m: Appt) =>
+                    ['attended', 'checked-in', 'checked-out'].includes(String((m as any)?.attendance?.status || ''))
+                )
+                .map(memberKeyOf)
+                .filter(Boolean)
+            const checkedOutMemberKeys = members
+                .filter((m: Appt) => Boolean((m as any)?.attendance?.checkedOutAt))
+                .map(memberKeyOf)
                 .filter(Boolean)
 
             const sessionOwner =
@@ -5407,20 +5509,25 @@ const Appointments: React.FC = () => {
                 ...row,
                 id: sessionOwner.id,
                 status: aggregateStatus,
-                participantName: `${new Set(members.map((m: Appt) => m.participantId).filter(Boolean)).size || members.length} Participants`,
+                participantName: `${new Set(members.map(memberKeyOf).filter(Boolean)).size || members.length} Participants`,
                 _groupMembers: members,
                 attendanceSummary: {
                     count: new Set(checkedIn).size,
                     checkedOutCount: new Set(checkedOut).size,
                     currentlyPresentCount: Math.max(new Set(checkedIn).size - new Set(checkedOut).size, 0),
                     checkedInEmails: Array.from(new Set(checkedIn)),
-                    checkedOutEmails: Array.from(new Set(checkedOut))
+                    checkedOutEmails: Array.from(new Set(checkedOut)),
+                    checkedInMemberKeys: Array.from(new Set(checkedInMemberKeys)),
+                    checkedOutMemberKeys: Array.from(new Set(checkedOutMemberKeys))
                 },
                 _groupEmails: allEmails,
                 _groupParticipantNames: members.map((m: Appt) => m.participantName),
                 attendanceSession: sessionOwner.attendanceSession,
                 attendanceSessionGroupEmails:
                     sessionOwner.attendanceSessionGroupEmails || Array.from(new Set(allEmails)),
+                attendanceSessionGroupParticipantIds:
+                    sessionOwner.attendanceSessionGroupParticipantIds ||
+                    Array.from(new Set(members.map((m: Appt) => String(m.participantId || '').trim()).filter(Boolean))),
                 attendanceSessionGroupNames:
                     sessionOwner.attendanceSessionGroupNames ||
                     members.map((m: Appt) => m.participantName)
@@ -5518,6 +5625,7 @@ const Appointments: React.FC = () => {
                                         icon: <TeamOutlined />
                                     },
                                     { label: 'Coverage', value: 'coverage' as const, icon: <FileDoneOutlined /> },
+                                    ...(canSeeSessionBrief ? [{ label: 'Brief', value: 'brief' as const, icon: <BulbOutlined /> }] : []),
                                     ...(hasConfiguredFoodMenu(selectedAppt)
                                         ? [{ label: 'Food Menu', value: 'food' as const, icon: <BookOutlined /> }]
                                         : [])
@@ -5711,8 +5819,8 @@ const Appointments: React.FC = () => {
                                         </span>
                                         <div style={{ minWidth: 0 }}>
                                             <h3>{selectedAppt.participantName || '-'}</h3>
-                                            {!isGroupRow && (participantEmails[selectedAppt.participantId] || selectedAppt.participantEmail) ? (
-                                                <small>{participantEmails[selectedAppt.participantId] || selectedAppt.participantEmail}</small>
+                                            {!isGroupRow && (memberEmailOf(selectedAppt, participantEmails)) ? (
+                                                <small>{memberEmailOf(selectedAppt, participantEmails)}</small>
                                             ) : null}
                                         </div>
                                         <Tag bordered color={st.color} icon={st.icon} style={{ borderRadius: 999, marginInlineEnd: 0 }}>{st.label}</Tag>
@@ -5912,7 +6020,7 @@ const Appointments: React.FC = () => {
                                 const timing = qr ? getAttendanceTimingForMember(selectedAppt, selectedAppt, participantEmails) : null
                                 const checkedIn = Boolean((selectedAppt as any)?.attendance?.checkedInAt) || Number(selectedAppt.attendanceSummary?.count || 0) > 0
                                 const checkedOut = Boolean((selectedAppt as any)?.attendance?.checkedOutAt) || Boolean(getCheckedOutEmails(selectedAppt).length)
-                                const email = selectedAppt.participantEmail || participantEmails[selectedAppt.participantId] || ''
+                                const email = memberEmailOf(selectedAppt, participantEmails) || ''
                                 return (
                                     <div className='apt-detail is-accepted'>
                                         <div className='apt-detail-head'>
@@ -5960,7 +6068,7 @@ const Appointments: React.FC = () => {
                                                 block
                                                 shape='round'
                                                 icon={<LogoutOutlined />}
-                                                loading={checkoutLoading === `${selectedAppt.id}-${String(selectedAppt.participantEmail || participantEmails[selectedAppt.participantId] || '').trim().toLowerCase()}`}
+                                                loading={checkoutLoading === `${selectedAppt.id}-${String(memberEmailOf(selectedAppt, participantEmails) || '').trim().toLowerCase()}`}
                                                 onClick={() => checkOutParticipant(selectedAppt)}
                                             >
                                                 Check Out
@@ -6038,7 +6146,7 @@ const Appointments: React.FC = () => {
                                                     <Space direction="vertical" size={0}>
                                                         <Text strong>{m.participantName || '-'}</Text>
                                                         <Text type="secondary" style={{ fontSize: 12 }}>
-                                                            {participantEmails[m.participantId] || m.participantEmail || 'No email on file'}
+                                                            {memberEmailOf(m, participantEmails) || 'No email on file'}
                                                         </Text>
                                                     </Space>
                                                 )
@@ -6145,11 +6253,7 @@ const Appointments: React.FC = () => {
                                                     const checkedIn = isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
                                                     const checkedOut = isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
 
-                                                    const targetEmail = String(
-                                                        participantEmails[m.participantId] ||
-                                                        m.participantEmail ||
-                                                        ''
-                                                    )
+                                                    const targetEmail = String(memberEmailOf(m, participantEmails))
                                                         .trim()
                                                         .toLowerCase()
 
@@ -6180,8 +6284,8 @@ const Appointments: React.FC = () => {
                                                 const timing = qr ? getAttendanceTimingForMember(selectedAppt, m, participantEmails) : null
                                                 const checkedIn = qr && isGroupMemberCheckedIn(selectedAppt, m, participantEmails)
                                                 const checkedOut = qr && isGroupMemberCheckedOut(selectedAppt, m, participantEmails)
-                                                const email = participantEmails[m.participantId] || m.participantEmail || 'No email on file'
-                                                const targetEmail = String(participantEmails[m.participantId] || m.participantEmail || '').trim().toLowerCase()
+                                                const email = memberEmailOf(m, participantEmails) || 'No email on file'
+                                                const targetEmail = String(memberEmailOf(m, participantEmails)).trim().toLowerCase()
                                                 return (
                                                     <div
                                                         style={{
@@ -6423,6 +6527,10 @@ const Appointments: React.FC = () => {
                             </>
                         ) : null}
 
+                        {detailModalTab === 'brief' && canSeeSessionBrief ? (
+                            <SessionBriefPanel appointmentId={selectedAppt.id} />
+                        ) : null}
+
                         {detailModalTab === 'coverage' && (() => {
                             const latest = (selectedAppt as any)?.sessionCoverage?.latest as SessionCoverageEntry | undefined
                             const done = isApptDone(selectedAppt)
@@ -6524,6 +6632,16 @@ const Appointments: React.FC = () => {
 
     const isPhone = !screens.md
     const [agendaView, setAgendaView] = useState<AgendaView>('action')
+    // On phones the status strip scrolls sideways (movs.css); keep the chosen tab in view.
+    useEffect(() => {
+        if (!isPhone) return
+        const strip = document.querySelector<HTMLElement>('[data-guide="appointment-metrics"]')
+        // By position: the selected class is briefly absent while the highlight slides.
+        const index = AGENDA_SEGMENTS.findIndex(segment => segment.value === agendaView)
+        const item = strip?.querySelectorAll<HTMLElement>('.ant-segmented-item')[index]
+        if (!strip || !item) return
+        strip.scrollTo({ left: item.offsetLeft - (strip.clientWidth - item.offsetWidth) / 2, behavior: 'smooth' })
+    }, [agendaView, isPhone])
     const [agendaSearch, setAgendaSearch] = useState('')
     const [agendaPage, setAgendaPage] = useState(1)
 
@@ -8372,7 +8490,8 @@ const Appointments: React.FC = () => {
                                         <div>
                                             <Text strong>Attendance by SME</Text>
                                             <Table
-                                                rowKey='participantId'
+                                                // A training SME's people share its participantId.
+                                                rowKey={(item: any) => (item.attendeeId ? `${item.participantId}|${item.attendeeId}` : item.participantId)}
                                                 size='small'
                                                 style={{ marginTop: 6 }}
                                                 dataSource={latest.attendanceByParticipant}
@@ -8458,6 +8577,21 @@ const Appointments: React.FC = () => {
                                         </Descriptions>
                                     )}
 
+                                    {latest.held && (latest.actions?.length || latest.nextFocus) ? (
+                                        <Descriptions size='small' column={1} bordered>
+                                            {latest.actions?.length ? (
+                                                <Descriptions.Item label='Agreed actions'>
+                                                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                                        {latest.actions.map(action => <li key={action}>{action}</li>)}
+                                                    </ul>
+                                                </Descriptions.Item>
+                                            ) : null}
+                                            {latest.nextFocus ? (
+                                                <Descriptions.Item label='Next session focus'>{latest.nextFocus}</Descriptions.Item>
+                                            ) : null}
+                                        </Descriptions>
+                                    ) : null}
+
                                     <CoveragePhotoGallery row={coverageRecord} />
 
                                     <Text type='secondary'>Session progress is calculated automatically from recorded SME attendance.</Text>
@@ -8467,6 +8601,19 @@ const Appointments: React.FC = () => {
                     </div>
                 ) : (
                     <Form data-guide="coverage-form" layout='vertical' form={coverageForm} onFinish={saveCoverage}>
+                        <CoverageNotesCopilot
+                            sessionTitle={String(coverageRecord?.sessionTitle || coverageRecord?.interventionTitle || '')}
+                            interventionTitle={String(coverageRecord?.interventionTitle || '')}
+                            plannedCoverage={normalizePointList(
+                                coverageRecord?.plannedCoverage || coverageRecord?.sessionCoverage?.plannedCoverage || []
+                            )}
+                            formalTopics={Boolean(isTrainingAcademyCoverage)}
+                            attendanceLocked={
+                                (coverageRecord as any)?._displayType === 'group' ||
+                                getCoverageAttendanceMode(coverageRecord) === 'qr'
+                            }
+                            onDraft={applyCoverageDraft}
+                        />
                         {getCoverageAttendanceMode(coverageRecord) === 'manual' ? (
                             <Form.Item
                                 name='held'
@@ -8583,7 +8730,7 @@ const Appointments: React.FC = () => {
                                                                 <Space direction='vertical' size={0}>
                                                                     <Text strong>{member.participantName || 'Unnamed SME'}</Text>
                                                                     <Text type='secondary' style={{ fontSize: 12 }}>
-                                                                        {participantEmails[member.participantId] || member.participantEmail || 'No email on file'}
+                                                                        {memberEmailOf(member, participantEmails) || 'No email on file'}
                                                                     </Text>
                                                                 </Space>
                                                             )
@@ -8746,6 +8893,19 @@ const Appointments: React.FC = () => {
                                                             }}
                                                         </Form.Item>
 
+                                                        <Form.Item
+                                                            name='actionsText'
+                                                            label='Agreed actions (optional)'
+                                                            extra="One per line: who does what, by when. They show in the next session's brief."
+                                                        >
+                                                            <Input.TextArea
+                                                                autoSize={{ minRows: 2, maxRows: 6 }}
+                                                                placeholder={'Thandi to send 3 months of bank statements by Friday'}
+                                                            />
+                                                        </Form.Item>
+                                                        <Form.Item name='nextFocus' label='Next session focus (optional)'>
+                                                            <Input placeholder='e.g. Build a three-month cash flow forecast' maxLength={300} />
+                                                        </Form.Item>
                                                     </>
                                                 )
                                             }}

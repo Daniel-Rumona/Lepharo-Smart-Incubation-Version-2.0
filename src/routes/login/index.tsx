@@ -11,12 +11,9 @@ import {
 import { httpsCallable } from 'firebase/functions'
 import { motion } from 'framer-motion'
 import {
-    collection,
     doc,
     getDoc,
-    getDocs,
-    query,
-    where, addDoc, serverTimestamp
+    addDoc, serverTimestamp
 } from 'firebase/firestore'
 import { auth, db, functions } from '@/firebase'
 import { Helmet } from 'react-helmet'
@@ -31,6 +28,12 @@ import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { shouldPromptWhatsApp } from '@/services/whatsappConsentPrompt'
 import { needsWelcomeSetup } from '@/services/welcomeSteps'
 import { hasSignedPopia } from '@/services/popiaConsent'
+import {
+    getEffectiveAppStatus,
+    getSmeAcceptedApplication,
+    getSmeApplications
+} from '@/lib/acceptedApplication'
+import { getSmeParticipant } from '@/services/smeIdentity'
 
 const { useBreakpoint } = Grid
 
@@ -172,63 +175,7 @@ const isInvalidCredentialError = (error: any) =>
         'auth/user-not-found'
     ].includes(String(error?.code || '').toLowerCase())
 
-const getEffectiveAppStatus = (app: any) => {
-    // primary
-    const s1 = norm(app?.applicationStatus)
 
-    // fallback: decision.status (common patterns)
-    const s2 = norm(app?.decision?.status)
-
-    return s1 || s2
-}
-
-async function getAppsByEmailAnyField(email?: string) {
-    const e = normEmail(email)
-    if (!e) return []
-
-    // 1) Try exact matches on both fields (fast path)
-    const [byEmail, byApplicantEmail] = await Promise.all([
-        getDocs(query(collection(db, 'applications'), where('email', '==', e))),
-        getDocs(query(collection(db, 'applications'), where('applicantEmail', '==', e)))
-    ])
-
-    const mapDocs = (snap: any) => snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as any))
-    let apps = [...mapDocs(byEmail), ...mapDocs(byApplicantEmail)]
-
-    // 2) If still none, fallback: scan and match normalized (handles hidden spaces/casing in stored data)
-    // Only staff may scan applications; a new applicant's scan is denied and
-    // simply finds nothing.
-    if (apps.length === 0) {
-        const allSnap = await getDocs(collection(db, 'applications')).catch(() => null)
-        const all = (allSnap?.docs || []).map(d => ({ id: d.id, ...d.data() } as any))
-        apps = all.filter(a => {
-            const aEmail = normEmail(a.email)
-            const aApplicantEmail = normEmail(a.applicantEmail)
-            return aEmail === e || aApplicantEmail === e
-        })
-    }
-
-    // de-dupe by id
-    const seen = new Set<string>()
-    return apps.filter(a => (seen.has(a.id) ? false : (seen.add(a.id), true)))
-}
-
-async function getAcceptedAppByEmail(email?: string) {
-    const apps = await getAppsByEmailAnyField(email)
-    return apps.find(a => getEffectiveAppStatus(a) === 'accepted') || null
-}
-
-
-async function getParticipantByEmail(email?: string) {
-    const e = normEmail(email)
-    if (!e) return null
-
-    const ps = await getDocs(
-        query(collection(db, 'participants'), where('email', '==', e))
-    )
-    const doc0 = ps.docs[0]
-    return doc0 ? { id: doc0.id, ...(doc0.data() as any) } : null
-}
 
 const LoginPageContent: React.FC = () => {
     const [form] = Form.useForm()
@@ -396,7 +343,9 @@ const LoginPageContent: React.FC = () => {
      * below, so both land people in exactly the same place.
      */
     const routeSignedInUser = async (user: any) => {
-        const { error, message: errMsg, role, setupNeeded, whatsappPromptNeeded, mustChangePassword } = await checkUser(user as any)
+        const { error, message: errMsg, role, setupNeeded, whatsappPromptNeeded, mustChangePassword, participantId } = await checkUser(user as any)
+        // The SME is found by its linked participant; email only until it is linked.
+        const sme = { uid: user.uid, email: user.email, participantId }
 
         const actor = {
             uid: user.uid,
@@ -432,13 +381,13 @@ const LoginPageContent: React.FC = () => {
         }
 
         if (role === 'incubatee') {
-            const accepted = await getAcceptedAppByEmail(user.email || undefined)
+            const accepted = await getSmeAcceptedApplication(sme)
 
             if (accepted) {
                 const gapDone = norm(accepted.gapAnalysisStatus) === 'completed'
 
                 if (!gapDone) {
-                    const participant = await getParticipantByEmail(user.email || undefined)
+                    const participant = await getSmeParticipant(sme)
 
                     if (safeRedirect && safeRedirect.startsWith('/meeting-checkin')) {
                         navigate(safeRedirect, { replace: true })
@@ -462,7 +411,7 @@ const LoginPageContent: React.FC = () => {
                 const routeToMoa = await shouldRouteToMoa(accepted)
 
                 if (routeToMoa) {
-                    const participant = await getParticipantByEmail(user.email || undefined)
+                    const participant = await getSmeParticipant(sme)
 
                     setRedirecting(true)
 
@@ -487,7 +436,7 @@ const LoginPageContent: React.FC = () => {
                 return
             }
 
-            const apps = await getAppsByEmailAnyField(user.email || undefined)
+            const apps = await getSmeApplications(sme)
 
             if (apps.length === 0) {
                 navigateAfterLogin('/applicant')
@@ -527,7 +476,8 @@ const LoginPageContent: React.FC = () => {
                 firstLoginDone: false,
                 setupNeeded: false,
                 mustChangePassword: false,
-                whatsappPromptNeeded: false
+                whatsappPromptNeeded: false,
+                participantId: null
             }
         }
 
@@ -556,7 +506,8 @@ const LoginPageContent: React.FC = () => {
             setupNeeded,
             mustChangePassword,
             // Existing SMEs who were never asked are asked once, on this page only.
-            whatsappPromptNeeded: shouldPromptWhatsApp(data)
+            whatsappPromptNeeded: shouldPromptWhatsApp(data),
+            participantId: (data.participantId as string) || null
         }
     }
 
@@ -659,7 +610,9 @@ const LoginPageContent: React.FC = () => {
             const result = await signInWithPopup(auth, new GoogleAuthProvider())
             const user = result.user
 
-            const { error, message: errMsg, role, setupNeeded, whatsappPromptNeeded, mustChangePassword } = await checkUser(user as any)
+            const { error, message: errMsg, role, setupNeeded, whatsappPromptNeeded, mustChangePassword, participantId } = await checkUser(user as any)
+        // The SME is found by its linked participant; email only until it is linked.
+        const sme = { uid: user.uid, email: user.email, participantId }
 
             const actor = {
                 uid: user.uid,
@@ -693,13 +646,13 @@ const LoginPageContent: React.FC = () => {
             }
 
             if (role === 'incubatee') {
-                const accepted = await getAcceptedAppByEmail(user.email || undefined)
+                const accepted = await getSmeAcceptedApplication(sme)
 
                 if (accepted) {
                     const gapDone = norm(accepted.gapAnalysisStatus) === 'completed'
 
                     if (!gapDone) {
-                        const participant = await getParticipantByEmail(user.email || undefined)
+                        const participant = await getSmeParticipant(sme)
 
                         if (safeRedirect && safeRedirect.startsWith('/meeting-checkin')) {
                             navigate(safeRedirect, { replace: true })
@@ -723,7 +676,7 @@ const LoginPageContent: React.FC = () => {
                     const routeToMoa = await shouldRouteToMoa(accepted)
 
                     if (routeToMoa) {
-                        const participant = await getParticipantByEmail(user.email || undefined)
+                        const participant = await getSmeParticipant(sme)
 
                         setRedirecting(true)
 
@@ -748,7 +701,7 @@ const LoginPageContent: React.FC = () => {
                     return
                 }
 
-                const apps = await getAppsByEmailAnyField(user.email || undefined)
+                const apps = await getSmeApplications(sme)
 
                 if (apps.length === 0) {
 

@@ -293,7 +293,7 @@ const buildStoryPrefill = (sme: SmeOption, participant: any, completedRows: any[
 const requestAiDraft = async (title: string, content: unknown, instruction: string) => {
     const currentUser = getAuth().currentUser
     if (!currentUser) throw new Error('Please sign in again to use AI drafting.')
-    const baseUrl = String(import.meta.env.VITE_AI_BACKEND_URL || 'https://yoursdvniel-lepharo-smart-incubation.hf.space').replace(/\/$/, '')
+    const baseUrl = String(import.meta.env.VITE_AI_BACKEND_URL || 'https://yoursdvniel-lepharo-smart-inc.hf.space').replace(/\/$/, '')
     const response = await fetch(`${baseUrl}/report-writing`, {
         method: 'POST',
         headers: {
@@ -644,6 +644,7 @@ const SuccessChallengesPage: React.FC = () => {
                 const selected = smes.find(item => item.participantId === selectedParticipantId)
                 const participantDoc = await getDoc(doc(db, 'participants', selectedParticipantId))
                 let participant = participantDoc.exists() ? participantDoc.data() : {}
+                // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
                 if (!participantDoc.exists() && selected?.email) {
                     const participantByEmail = await getDocs(
                         query(collection(db, 'participants'), where('email', '==', selected.email))
@@ -819,7 +820,7 @@ const SuccessChallengesPage: React.FC = () => {
                 updatedAt: Timestamp.now()
             })
 
-            const attachments = await uploadFiles(values.images || [], `success-stories/${docRef.id}/images`)
+            const attachments = await uploadFiles(values.images || [], `success-stories/${docRef.id}/images`, { participantId: selectedSme?.participantId })
             const coverImageUrl = attachments[0]?.url || ''
             if (attachments.length) {
                 await updateDoc(doc(db, 'successStories', docRef.id), {

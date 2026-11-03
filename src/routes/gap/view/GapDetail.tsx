@@ -76,7 +76,16 @@ const downloadFile = (url: string, filename = 'gap-analysis.pdf') => {
     document.body.removeChild(a)
 }
 
-async function fetchSignatureUrlForEmail(email?: string) {
+/** The SME's signature on its login: users.participantId first, then email. */
+async function fetchSmmeSignatureUrl(participantId?: string, email?: string) {
+    if (participantId) {
+        const byId = await getDocs(
+            query(collection(db, 'users'), where('participantId', '==', participantId), limit(1))
+        )
+        const url = !byId.empty ? ((byId.docs[0].data() as any)?.signatureURL || '') : ''
+        if (url) return url
+    }
+    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
     if (!email) return ''
     const snap = await getDocs(
         query(collection(db, 'users'), where('email', '==', email), limit(1))
@@ -266,7 +275,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
                     setGap(manualRecord)
                     const email =
                         manualRecord?.company?.email || manualRecord?.signatures?.smmeEmail || ''
-                    const url = await fetchSignatureUrlForEmail(email)
+                    const url = await fetchSmmeSignatureUrl(manualRecord?.participantId, email)
                     if (!cancelled) setSmmeSignatureUrl(url)
                     return
                 }
@@ -317,7 +326,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
 
                     if (cancelled) return
                     setGap(record)
-                    const url = await fetchSignatureUrlForEmail(record.company.email)
+                    const url = await fetchSmmeSignatureUrl(record.participantId, record.company.email)
                     if (!cancelled) setSmmeSignatureUrl(url)
                     return
                 }
@@ -336,7 +345,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
                 setGap(record)
 
                 const email = record?.company?.email || record?.signatures?.smmeEmail || ''
-                const url = await fetchSignatureUrlForEmail(email)
+                const url = await fetchSmmeSignatureUrl(record?.participantId, email)
                 if (!cancelled) setSmmeSignatureUrl(url)
             } catch (e) {
                 console.error('GapDetail load failed', e)
@@ -691,7 +700,7 @@ const GapDetail: React.FC<GapDetailProps> = ({
                                 icon={<PartitionOutlined />}
                                 onClick={() =>
                                     navigate(
-                                        `/operations/diagnostic-plan?participantId=${encodeURIComponent(participantId)}`
+                                        `/plan/build?participantId=${encodeURIComponent(participantId)}`
                                     )
                                 }
                             >

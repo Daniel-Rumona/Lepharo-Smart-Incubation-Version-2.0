@@ -1,16 +1,16 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { admin, db } from "./firebase";
 import { isSyntheticData } from "./syntheticData";
-import { ImpactSme, ImpactTreatment, measureAll } from "./impactLogic";
+import { ImpactMetric, ImpactSme, ImpactTreatment, measureAll } from "./impactLogic";
 
 /**
- * Monthly "which interventions are working" job. Reads revenue (QuantNow sync in
- * participantMonthlyMetrics, falling back to the SME's own monthlyPerformance
- * history), SME-confirmed completions and their check-back outcomes, and writes one
- * interventionImpact/{programId}__{interventionId} document per pair with the
- * measured lift (impactLogic.ts). Demo (seeded) data is included and marked
+ * Monthly "which interventions are working" job. Reads revenue and jobs (QuantNow
+ * sync in participantMonthlyMetrics, falling back to the SME's own
+ * monthlyPerformance history), SME-confirmed completions and their check-back
+ * outcomes, and writes one interventionImpact/{programId}__{interventionId}__{metric}
+ * document per pair and measure with the measured lift (impactLogic.ts). Demo (seeded) data is included and marked
  * `demo: true`, so the method can be proven on the test project and the same code
  * reports real results once real revenue arrives.
  */
@@ -29,6 +29,13 @@ const monthOfDate = (value: any): string => {
 };
 
 const SME_CONFIRMED = ["confirmed", "done", "completed"];
+const METRICS: ImpactMetric[] = ["revenue", "jobs"];
+
+/** Permanent plus temporary staff, or NaN when neither was reported. */
+const jobsOf = (permanent: unknown, temporary: unknown) => {
+  const known = [permanent, temporary].filter((value) => value !== undefined && value !== null && value !== "");
+  return known.length ? known.reduce<number>((sum, value) => sum + Number(value), 0) : NaN;
+};
 const OUTCOMES = ["achieved", "partial", "not_yet"];
 
 export async function runInterventionImpact() {
@@ -42,28 +49,31 @@ export async function runInterventionImpact() {
 
   const participants = new Map(participantsSnapshot.docs.map((doc) => [doc.id, doc.data() as any]));
 
-  const revenue = new Map<string, Record<string, number>>();
-  const put = (participantId: string, month: string, value: number, overwrite: boolean) => {
+  const series: Record<ImpactMetric, Map<string, Record<string, number>>> = { revenue: new Map(), jobs: new Map() };
+  const put = (metric: ImpactMetric, participantId: string, month: string, value: number, overwrite: boolean) => {
     if (!participantId || !isMonth(month) || !Number.isFinite(value)) return;
-    const series = revenue.get(participantId) || {};
-    if (overwrite || series[month] === undefined) series[month] = value;
-    revenue.set(participantId, series);
+    const values = series[metric].get(participantId) || {};
+    if (overwrite || values[month] === undefined) values[month] = value;
+    series[metric].set(participantId, values);
   };
   // QuantNow is the system of record; the SME's own report only fills gaps.
   metricsSnapshot.docs.forEach((doc) => {
     const row = doc.data() as any;
     const month = isMonth(clean(row.sourceMonth)) ? clean(row.sourceMonth) : monthOfDate(row.createdAt);
-    put(clean(row.participantId), month, Number(row.monthlyRevenue), true);
+    const participantId = clean(row.participantId);
+    if (row.monthlyRevenue !== undefined && row.monthlyRevenue !== null) put("revenue", participantId, month, Number(row.monthlyRevenue), true);
+    put("jobs", participantId, month, jobsOf(row.headcountPermanent, row.headcountTemporary), true);
   });
   historySnapshot.docs.forEach((doc) => {
     const parent = doc.ref.parent.parent;
     if (!parent || parent.parent.id !== "monthlyPerformance") return;
     const row = doc.data() as any;
     const month = isMonth(clean(row.month)) ? clean(row.month) : monthOfDate(row.createdAt);
-    if (row.revenue !== undefined && row.revenue !== null) put(parent.id, month, Number(row.revenue), false);
+    if (row.revenue !== undefined && row.revenue !== null) put("revenue", parent.id, month, Number(row.revenue), false);
+    put("jobs", parent.id, month, jobsOf(row.headPermanent, row.headTemporary), false);
   });
 
-  const smes: ImpactSme[] = [];
+  const smes: Omit<ImpactSme, "values">[] = [];
   const programOf = new Map<string, string>();
   for (const doc of applicationsSnapshot.docs) {
     const application = doc.data() as any;
@@ -77,7 +87,6 @@ export async function runInterventionImpact() {
       programId,
       sector: lower(participant.sector || participant.industry),
       synthetic: isSyntheticData(participant, participantId) || isSyntheticData(application, doc.id),
-      revenue: revenue.get(participantId) || {},
     });
   }
 
@@ -101,12 +110,18 @@ export async function runInterventionImpact() {
     });
   }
 
-  const results = measureAll(smes, treatments);
+  const results = METRICS.flatMap((metric) => measureAll(
+    smes.map((sme) => ({ ...sme, values: series[metric].get(sme.id) || {} })),
+    treatments,
+    undefined,
+    metric
+  ));
   const runId = new Date().toISOString();
-  const keep = new Set(results.map((result) => `${result.programId}__${result.interventionId}`));
+  const docId = (result: (typeof results)[number]) => `${result.programId}__${result.interventionId}__${result.metric}`;
+  const keep = new Set(results.map(docId));
 
   const writes = results.map((result) => ({
-    ref: db.collection(RESULTS).doc(`${result.programId}__${result.interventionId}`),
+    ref: db.collection(RESULTS).doc(docId(result)),
     data: { ...result, runId, computedAt: admin.firestore.FieldValue.serverTimestamp() },
   }));
   const stale = (await db.collection(RESULTS).get()).docs.filter((doc) => !keep.has(doc.id));
@@ -125,7 +140,8 @@ export async function runInterventionImpact() {
     pairs: results.length,
     reportable: results.filter((result) => result.status === "reportable").length,
     early: results.filter((result) => result.status === "early").length,
-    smesWithRevenue: smes.filter((sme) => Object.keys(sme.revenue).length > 0).length,
+    smesWithRevenue: smes.filter((sme) => Object.keys(series.revenue.get(sme.id) || {}).length > 0).length,
+    smesWithJobs: smes.filter((sme) => Object.keys(series.jobs.get(sme.id) || {}).length > 0).length,
     completions: treatments.length,
     runId,
   };
@@ -137,7 +153,7 @@ export async function runInterventionImpact() {
   return summary;
 }
 
-export const interventionImpactCron = onSchedule(
+export const interventionImpactCron = scheduledJob("interventionImpact",
   {
     region: "us-central1",
     schedule: "30 5 1 * *",

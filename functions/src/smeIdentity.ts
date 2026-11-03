@@ -1,7 +1,7 @@
 import * as logger from "firebase-functions/logger";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { db } from "./firebase";
-import { decideSmeLink, normEmail, pickOwnParticipant, type LinkDecision } from "./smeIdentityLogic";
+import { decideSmeLink, normEmail, participantIsLogins, pickOwnParticipant, type LinkDecision } from "./smeIdentityLogic";
 
 // Links an SME login to its participant record, both ways
 // (docs/sme-identity-migration-plan.md, Phase 2). users.participantId is a
@@ -34,9 +34,12 @@ export async function linkSmeIdentity(uid: string, participantId: string): Promi
   });
 }
 
-/** Participants that could belong to a login: carrying its uid, or its email as stored or lower-cased. */
+/** Participants that could belong to a login: carrying its uid, created by it, or with its email as stored or lower-cased. */
 async function candidateParticipants(uid: string, email: string) {
-  const queries = [db.collection("participants").where("uid", "==", uid).limit(5).get()];
+  const queries = [
+    db.collection("participants").where("uid", "==", uid).limit(5).get(),
+    db.collection("participants").where("createdByUid", "==", uid).limit(5).get(),
+  ];
   const emails = Array.from(new Set([email, normEmail(email)].filter(Boolean)));
   emails.forEach((value) => queries.push(db.collection("participants").where("email", "==", value).limit(5).get()));
   const snaps = await Promise.all(queries);
@@ -45,7 +48,8 @@ async function candidateParticipants(uid: string, email: string) {
 
 /**
  * The signed-in SME links its own login. With a participantId (just after saving its
- * profile) that participant must already be the caller's: carrying its uid or its email.
+ * profile) that participant must already be the caller's: carrying its uid, created by it
+ * and not linked yet, or with its email.
  * Without one, the caller's participant is found the same way and linked only if exactly
  * one matches. Answers { participantId } when linked, else { participantId: null, reason }.
  */
@@ -68,7 +72,8 @@ export const linkMySmeAccount = onCall({ timeoutSeconds: 30 }, async (request) =
   if (askedId) {
     const asked = candidates.find((c) => c.id === askedId) ||
       await db.collection("participants").doc(askedId).get().then((snap) => snap.exists ? { id: snap.id, data: snap.data() || {} } : null);
-    const owns = !!asked && (clean(asked.data.uid) === uid || (!!email && normEmail(asked.data.email) === normEmail(email)));
+    const owns = !!asked && (participantIsLogins(uid, asked.data) ||
+      (!clean(asked.data.uid) && !!email && normEmail(asked.data.email) === normEmail(email)));
     if (!owns) throw new HttpsError("permission-denied", "That SME record is not yours.");
     participantId = askedId;
   } else {

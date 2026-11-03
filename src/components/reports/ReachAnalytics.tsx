@@ -209,6 +209,7 @@ const getReachSmeKey = (item: ReachItem): string => {
         ['smme-no', row.smmeNo || row.snapshot?.smmeNo],
         ['profile', participant?.id],
         ['id-number', participant?.idNumber],
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
         [
             'email',
             participant?.email ||

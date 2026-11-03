@@ -42,9 +42,6 @@ import { useNavigate } from 'react-router-dom'
 import { db, auth } from '@/firebase'
 import {
     collection,
-    getDocs,
-    query,
-    where,
     doc,
     getDoc,
     setDoc,
@@ -86,6 +83,8 @@ import {
     type WelcomeStepKey
 } from '@/services/welcomeSteps'
 import { hasSignedPopia } from '@/services/popiaConsent'
+import { getSmeParticipant, resolveSmeParticipantId } from '@/services/smeIdentity'
+import { getSmeApplications } from '@/lib/acceptedApplication'
 import { functionsBaseUrl } from '@/firebaseConfig'
 import { captureSignatureStrokes, rememberProfileSignature } from '@/utils/signatureReplay'
 
@@ -237,18 +236,14 @@ const WelcomeWizard: React.FC = () => {
             // role
             let r = roleKey(user?.role || user?.roleName)
             if (!r || r === 'unknown') {
-                const us = await getDocs(
-                    query(collection(db, 'users'), where('email', '==', u.email))
-                )
-                if (!us.empty) r = roleKey(us.docs[0].data().role)
+                const own = await getDoc(doc(db, 'users', u.uid))
+                if (own.exists()) r = roleKey(own.data().role)
             }
             setUserRole(r || 'unknown')
 
-            // participant by email (for POPIA)
-            const ps = await getDocs(
-                query(collection(db, 'participants'), where('email', '==', u.email))
-            )
-            if (!ps.empty) setParticipantId(ps.docs[0].id)
+            // the SME's participant (for POPIA)
+            const pid = await resolveSmeParticipantId({ uid: u.uid, participantId: user?.participantId, email: u.email })
+            if (pid) setParticipantId(pid)
 
             // profile (signature/consent and prefill director fields)
             const uref = doc(db, 'users', u.uid)
@@ -299,7 +294,7 @@ const WelcomeWizard: React.FC = () => {
             setLoading(false)
         })
         return () => off()
-    }, [user?.role, user?.roleName, user?.email, directorForm])
+    }, [user?.role, user?.roleName, user?.email, user?.participantId, directorForm])
 
     // Steps list (POPIA for incubatees; Director Profile for directors)
     const steps = useMemo(() => {
@@ -717,16 +712,14 @@ const WelcomeWizard: React.FC = () => {
         const uref = await getDoc(doc(db, 'users', userId))
         const r = roleKey((uref.data() as any)?.role)
         const email = auth.currentUser?.email || ''
+        // The SME is found by its linked participant; email only until it is linked.
+        const sme = { uid: userId, participantId: (uref.data() as any)?.participantId, email }
 
         // Helper to normalize statuses
         const norm = (v?: string) => (v || '').trim().toLowerCase()
 
         if (r === 'incubatee') {
-            // find applications by email
-            const appsSnap = await getDocs(
-                query(collection(db, 'applications'), where('email', '==', email))
-            )
-            const apps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+            const apps = await getSmeApplications(sme)
 
             // no app → go to SME registration
             if (apps.length === 0) return navigate('/applicant')
@@ -744,13 +737,7 @@ const WelcomeWizard: React.FC = () => {
                 const gapDone = norm(accepted.gapAnalysisStatus) === 'completed'
                 if (!gapDone) {
                     // fetch participant (for prefill)
-                    const participantsSnap = await getDocs(
-                        query(collection(db, 'participants'), where('email', '==', email))
-                    )
-                    const participantDoc = participantsSnap.docs[0]
-                    const participant = participantDoc
-                        ? { id: participantDoc.id, ...(participantDoc.data() as any) }
-                        : null
+                    const participant = await getSmeParticipant(sme)
 
                     return navigate('/incubatee/gap-analysis', {
                         state: {
@@ -1186,6 +1173,11 @@ const WelcomeWizard: React.FC = () => {
                             message='POPIA notice signed'
                             description='Thank you. A signed copy is kept with your account.'
                         />
+                        {!popiaPdfUrl && (
+                            <Paragraph type='secondary' style={{ margin: '12px 0 0' }}>
+                                Your signed copy is being prepared; you can carry on meanwhile.
+                            </Paragraph>
+                        )}
                         {popiaPdfUrl && (
                             <Button
                                 size='large'
@@ -1211,10 +1203,9 @@ const WelcomeWizard: React.FC = () => {
                             open
                             participantId={participantId || ''}
                             onClose={() => undefined}
-                            onSigned={meta => {
-                                setPopiaPdfUrl(meta.pdfUrl || '')
-                                setPopiaSigned(true)
-                            }}
+                            onSigned={() => setPopiaSigned(true)}
+                            // The signed copy is made after signing, so its link arrives a little later.
+                            onPdfReady={setPopiaPdfUrl}
                         />
                     </>
                 )}

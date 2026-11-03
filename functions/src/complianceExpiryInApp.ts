@@ -47,7 +47,7 @@ export async function createComplianceExpiryInAppNotifications(params: {
     }));
   }
 
-  const smeUid = smeEmail ? resolveSmeUid(smeEmail, recipientDirectory) : null;
+  const smeUid = resolveSmeUid(participantId, smeEmail, recipientDirectory);
   if (smeUid) {
     writes.push(db.collection("notifications").add({
       type: "compliance_expiry",
@@ -66,14 +66,25 @@ export async function createComplianceExpiryInAppNotifications(params: {
 }
 
 /**
- * Many SMEs are tracked purely via applications/participants with no linked
- * login (no uid/userId field on those docs) -- the only way to connect one to
- * a system account is by matching their email against users where role ==
- * 'incubatee' (the role set at account creation, src/routes/registration/index.tsx).
+ * The SME's login: the incubatee user whose users.participantId is this
+ * participant (docs/sme-identity-migration-plan.md). Unlinked SMEs are matched
+ * by email against users where role == 'incubatee' instead.
  * No match -> they simply don't get a personal in-app notification (they
  * still get the existing email, unchanged).
  */
-function resolveSmeUid(smeEmail: string, directory: RecipientDirectory): string | null {
+function resolveSmeUid(participantId: string | null, smeEmail: string | null, directory: RecipientDirectory): string | null {
+  const id = String(participantId || "").trim();
+  if (id) {
+    const linked = directory.users.find((snapshot) => {
+      const data = snapshot.data() as any;
+      return String(data.role || "").toLowerCase() === "incubatee" &&
+        String(data.participantId || "").trim() === id;
+    });
+    if (linked) return linked.id;
+  }
+
+  // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+  if (!smeEmail) return null;
   const lowerEmail = smeEmail.trim().toLowerCase();
   const match = directory.users.find((snapshot) => {
     const data = snapshot.data() as any;

@@ -12,11 +12,32 @@ export type RiskLevel = "Low" | "Medium" | "High" | "Critical";
 
 export type RiskScoreInputs = {
   daysSinceLastService: number | null;
+  /**
+   * Days between services the SME's recurring support expects (see expectedServiceIntervalDays).
+   * Inactivity is then counted in missed cycles; without it a 30-day cycle is assumed, which is
+   * the register's original 30/90/180-day rule.
+   */
+  expectedServiceIntervalDays?: number | null;
+  /** When the SME was last serviced (ms), kept so the register can combine it with live data. Not scored. */
+  lastServiceAt?: number | null;
+  /** Days since the SME joined the programme (smeJoinedAt). A new SME not yet serviced isn't scored as neglected. */
+  daysSinceJoined?: number | null;
   hasNeverReceivedService: boolean;
   docsMissing: number;
   docsQueried: number;
   docsRejected: number;
+  /**
+   * Departments whose plan is waiting on the SME's confirmation. Delays on the department's
+   * side (not confirmed, nothing assigned) are not the SME's risk: see staffDelayDepartments.
+   */
   missingDepartmentsCount: number;
+  /** Departments that haven't confirmed the plan or assigned anything. Shown, not scored. */
+  staffDelayDepartments?: number;
+  /**
+   * Nothing has been assigned or delivered yet and departments haven't confirmed or assigned:
+   * the SME is waiting on staff, so it isn't scored as never serviced.
+   */
+  waitingOnStaff?: boolean;
   smePendingAcceptanceCount: number;
   smePendingConfirmationCount: number;
   declinedTouches: number;
@@ -64,6 +85,14 @@ export const RISK_SCORE_WEIGHTS = {
   inactive3Months: 65,
   inactive1Month: 45,
   recentlyServiced: 15,
+  // A new SME gets this long for its first service before "never serviced" counts against it.
+  newSmeGraceDays: 30,
+  newSmeNotYetServiced: 15,
+  waitingOnStaff: 15,
+  // Inactivity bands in missed cycles: 1, 3 and 6 cycles of 30 days are 30, 90 and 180 days.
+  defaultCycleDays: 30,
+  inactiveLongCycles: 3,
+  inactiveSevereCycles: 6,
   missingDocPerItem: 4,
   missingDocCap: 12,
   queriedDocPerItem: 3,
@@ -113,25 +142,50 @@ export const RISK_LEVEL_RANK: Record<RiskLevel, number> = { Low: 0, Medium: 1, H
 
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
+const expectedCycleDays = (input: RiskScoreInputs): number | null =>
+  input.expectedServiceIntervalDays && input.expectedServiceIntervalDays > 0 ? input.expectedServiceIntervalDays : null;
+
+/** Whole cycles gone by without service: against the SME's own schedule when it has one, else 30-day cycles. */
+const cyclesWithoutService = (input: RiskScoreInputs): number =>
+  Math.floor((input.daysSinceLastService ?? 0) / (expectedCycleDays(input) ?? W.defaultCycleDays));
+
+const inactivityLabel = (input: RiskScoreInputs, fixedLabel: string): string => {
+  const cycle = expectedCycleDays(input);
+  if (!cycle) return fixedLabel;
+  return `No service for ${plural(cyclesWithoutService(input), "scheduled cycle")} (expected every ${plural(cycle, "day")})`;
+};
+
 export function computeRiskScore(input: RiskScoreInputs): RiskScoreResult {
   const breakdown: RiskBreakdownItem[] = [];
   let score: number;
 
-  if (input.hasNeverReceivedService) {
+  const joined = input.daysSinceJoined ?? null;
+  const notYetServiced = input.hasNeverReceivedService || input.daysSinceLastService === null;
+  if (notYetServiced && joined !== null && joined >= 0 && joined < W.newSmeGraceDays) {
+    score = W.newSmeNotYetServiced;
+    breakdown.push({ label: `New SME: joined ${plural(joined, "day")} ago, first service not yet due`, delta: score, key: "inactivity" });
+  } else if (notYetServiced && input.waitingOnStaff) {
+    score = W.waitingOnStaff;
+    breakdown.push({
+      label: `No support assigned yet: waiting on ${plural(input.staffDelayDepartments || 0, "department")}`,
+      delta: score,
+      key: "inactivity",
+    });
+  } else if (input.hasNeverReceivedService) {
     score = W.neverReceivedService;
     breakdown.push({ label: "Never received an expected service", delta: score, key: "inactivity" });
   } else if (input.daysSinceLastService === null) {
     score = W.unknownLastService;
     breakdown.push({ label: "Last service date unknown", delta: score, key: "inactivity" });
-  } else if (input.daysSinceLastService >= 180) {
+  } else if (cyclesWithoutService(input) >= W.inactiveSevereCycles) {
     score = W.inactive6Months;
-    breakdown.push({ label: "No service in 6+ months", delta: score, key: "inactivity" });
-  } else if (input.daysSinceLastService >= 90) {
+    breakdown.push({ label: inactivityLabel(input, "No service in 6+ months"), delta: score, key: "inactivity" });
+  } else if (cyclesWithoutService(input) >= W.inactiveLongCycles) {
     score = W.inactive3Months;
-    breakdown.push({ label: "No service in 3+ months", delta: score, key: "inactivity" });
-  } else if (input.daysSinceLastService >= 30) {
+    breakdown.push({ label: inactivityLabel(input, "No service in 3+ months"), delta: score, key: "inactivity" });
+  } else if (cyclesWithoutService(input) >= 1) {
     score = W.inactive1Month;
-    breakdown.push({ label: "No service in 1+ month", delta: score, key: "inactivity" });
+    breakdown.push({ label: inactivityLabel(input, "No service in 1+ month"), delta: score, key: "inactivity" });
   } else {
     score = W.recentlyServiced;
     breakdown.push({ label: "Recently serviced", delta: score, key: "inactivity" });
@@ -148,7 +202,7 @@ export function computeRiskScore(input: RiskScoreInputs): RiskScoreResult {
   add(Math.min(input.docsRejected * W.rejectedDocPerItem, W.rejectedDocCap), `${input.docsRejected} rejected document(s)`, "documents");
   add(
     Math.min(input.missingDepartmentsCount * W.missingDeptPerItem, W.missingDeptCap),
-    `${input.missingDepartmentsCount} department(s) needing follow-up`,
+    `${plural(input.missingDepartmentsCount, "department plan")} awaiting SME confirmation`,
     "departments"
   );
 
@@ -233,7 +287,7 @@ const SUGGESTIONS: Record<RiskDriverKey, Omit<RiskSuggestion, "driver">> = {
   inactivity: { departmentRole: null, text: "Book a check-in session and agree the next intervention." },
   documents: { departmentRole: "financialCompliance", text: "Send a compliance reminder and offer help with the outstanding documents." },
   expired: { departmentRole: "financialCompliance", text: "Send a compliance reminder for the expired documents." },
-  departments: { departmentRole: null, text: "Ask the departments still to confirm the development plan to do so." },
+  departments: { departmentRole: null, text: "Ask the SME to confirm the development plan with the departments waiting on it." },
   unresponsive: { departmentRole: null, text: "Call the SME about the interventions waiting on their response." },
   declines: { departmentRole: null, text: "Meet the SME to understand why support keeps being declined." },
   appointments: { departmentRole: null, text: "Call the SME about missed sessions and rebook at a time that suits them." },
@@ -281,7 +335,84 @@ export type RiskRecords = {
   openQueries: number;
   emailBounced: boolean;
   compliance: { missing: number; queried: number; rejected: number; expired: number };
+  /** The SME's diagnostic plan, for department coverage. Without it no department is counted. */
+  coverage?: DepartmentCoverageRecords;
+  /** A service time known from elsewhere (ms), e.g. an attended session in the nightly snapshot. */
+  knownServiceAt?: number | null;
+  /** When the SME joined the programme (ms), from smeJoinedAt. */
+  joinedAt?: number | null;
 };
+
+/** When an SME joined: accepted, else joined, else created, on the application, then the participant. */
+export function smeJoinedAt(application?: any, participant?: any): number | null {
+  for (const value of [
+    application?.acceptedAt, application?.dateAccepted, application?.joinedAt, application?.createdAt,
+    participant?.acceptedAt, participant?.joinedAt, participant?.createdAt,
+  ]) {
+    if (value === undefined || value === null || value === "") continue;
+    return asTime(value);
+  }
+  return null;
+}
+
+export type DepartmentCoverageRecords = {
+  /** diagnosticPlans/{id}: its interventions[] and the department and SME confirmation maps. */
+  plan: any | null;
+  /** departments by id; only departments marked interventionsDepartment count. */
+  departmentsById: Record<string, any>;
+  /** Interventions an HOD has closed for this SME (interventionClosures). */
+  closedInterventionIds?: Set<string>;
+};
+
+const isConfirmed = (value: any) => value === true || (!!value && typeof value === "object" && value.confirmed === true);
+const firstPresent = (...values: any[]) => values.find((value) => value !== undefined && value !== null && value !== "");
+
+/**
+ * Departments the SME's diagnostic plan expects support from, and how many still need
+ * follow-up: not confirmed by the department, not confirmed by the SME, or nothing assigned.
+ * Split by who has to act: awaitingSme (the department confirmed, the SME hasn't) is the
+ * SME's risk; staffDelays (the department hasn't confirmed or assigned) is not.
+ * Mirrors the register's department rows, across all departments.
+ */
+export function departmentCoverage(records: DepartmentCoverageRecords, assignments: any[]) {
+  const plan = records.plan || {};
+  const closed = new Set<string>([
+    ...(records.closedInterventionIds ?? []),
+    ...assignments.filter((row) => row?.supportClosedAt).map((row) => String(row.interventionId ?? "").trim()),
+  ]);
+  const departmentOf = (row: any) => String(row?.departmentId ?? "").trim() || "unknown";
+
+  const expected = new Set<string>();
+  for (const intervention of Array.isArray(plan.interventions) ? plan.interventions : []) {
+    if (records.departmentsById[departmentOf(intervention)]?.interventionsDepartment !== true) continue;
+    if (closed.has(String(intervention?.id ?? "").trim())) continue;
+    expected.add(departmentOf(intervention));
+  }
+
+  const serviced = new Map<string, number>();
+  for (const row of assignments) {
+    if (row?.supportClosedAt || !expected.has(departmentOf(row))) continue;
+    serviced.set(departmentOf(row), (serviced.get(departmentOf(row)) || 0) + 1);
+  }
+
+  let missing = 0;
+  let fullyConfirmed = 0;
+  let awaitingSme = 0;
+  let staffDelays = 0;
+  for (const departmentId of expected) {
+    const byDepartment = isConfirmed(plan.confirmedByDeptId?.[departmentId]);
+    const bySme = isConfirmed(firstPresent(
+      plan.smmeConfirmedByDeptId?.[departmentId],
+      plan.incubateeDepartmentConfirmationsByDeptId?.[departmentId]
+    ));
+    if (byDepartment && bySme) fullyConfirmed++;
+    if (!byDepartment || !bySme || !serviced.get(departmentId)) missing++;
+    // Who has to act: the SME once the department has confirmed; otherwise the department.
+    if (byDepartment && !bySme) awaitingSme++;
+    else if (!byDepartment || !serviced.get(departmentId)) staffDelays++;
+  }
+  return { expected: expected.size, missing, fullyConfirmed, awaitingSme, staffDelays };
+}
 
 const DAY = 24 * 60 * 60 * 1000;
 const norm = (value: unknown) => String(value ?? "").trim().toLowerCase();
@@ -306,12 +437,46 @@ const smeAcceptance = (row: any) => {
   return "pending";
 };
 
+const UNIT_DAYS: Record<string, number> = { day: 1, week: 7, month: 30, quarter: 91, year: 365 };
+// Only support assigned this recently sets an expectation; older cycles have usually ended.
+const EXPECTATION_WINDOW_DAYS = 180;
+
 /**
- * Works out the score inputs for one SME from its raw records. Mirrors the register's
- * reading of assignments: service dates come from completed work and attended
- * sessions; "waiting on the SME" is an unanswered assignment or an unconfirmed
- * completion. The register's department follow-up count needs the diagnostic plan
- * walk and is left at zero here.
+ * Days between services the SME's recurring support expects: the shortest interval among its
+ * recent recurring assignments. Null when it has none, e.g. only ad-hoc or once-off support.
+ * Reads the stored schedule shape (scheduleMode + recurrence {every, unit}) as
+ * src/lib/recurrence.ts writes it. An assignment's `strict` isn't used: a missing value has
+ * always been stored as false, so on assignments it doesn't say whether a cycle may be skipped.
+ */
+export function expectedServiceIntervalDays(
+  assignments: any[],
+  now: number,
+  closedInterventionIds?: Set<string>
+): number | null {
+  let shortest: number | null = null;
+  for (const row of assignments) {
+    if (!row || isClosedAssignment(row) || row.supportClosedAt) continue;
+    if (closedInterventionIds?.has(String(row.interventionId ?? "").trim())) continue;
+    const mode = norm(row.scheduleMode).replace(/_/g, "-");
+    if (mode === "once-off" || mode === "ad-hoc") continue;
+    const recurrence = row.recurrence;
+    if (!recurrence || typeof recurrence !== "object") continue;
+    const unitDays = UNIT_DAYS[norm(recurrence.unit).replace(/s$/, "")];
+    const every = Number(recurrence.every ?? recurrence.interval ?? 1);
+    if (!unitDays || !(every > 0)) continue;
+    const assignedAt = asTime(row.assignedAt) ?? asTime(row.createdAt);
+    if (assignedAt !== null && assignedAt < now - EXPECTATION_WINDOW_DAYS * DAY) continue;
+    const days = every * unitDays;
+    if (shortest === null || days < shortest) shortest = days;
+  }
+  return shortest;
+}
+
+/**
+ * Works out the score inputs for one SME from its raw records. The one derivation both
+ * the nightly job and the SME Risk Register use: service dates come from completed work
+ * and attended sessions; "waiting on the SME" is an unanswered assignment or an
+ * unconfirmed completion; department follow-up comes from `coverage` when it's given.
  */
 export function deriveRiskInputs(records: RiskRecords, now: number): RiskScoreInputs {
   const active = records.assignments.filter((row) => !isClosedAssignment(row));
@@ -328,7 +493,9 @@ export function deriveRiskInputs(records: RiskRecords, now: number): RiskScoreIn
     const time = asTime(appointment.attendance?.checkedInAt) ?? asTime(appointment.completedAt);
     if (time && time <= now) serviceTimes.push(time);
   }
+  if (records.knownServiceAt && records.knownServiceAt <= now) serviceTimes.push(records.knownServiceAt);
   const lastService = serviceTimes.length ? Math.max(...serviceTimes) : null;
+  const coverage = records.coverage ? departmentCoverage(records.coverage, records.assignments) : null;
 
   const pendingAcceptance = active.filter(
     (row) => smeAcceptance(row) === "pending" && norm(row.assigneeAcceptanceStatus) !== "declined"
@@ -361,11 +528,18 @@ export function deriveRiskInputs(records: RiskRecords, now: number): RiskScoreIn
 
   return {
     daysSinceLastService: lastService === null ? null : Math.floor((now - lastService) / DAY),
+    expectedServiceIntervalDays: expectedServiceIntervalDays(records.assignments, now, records.coverage?.closedInterventionIds),
+    // Never serviced: support is assigned but nothing delivered yet. A plan with nothing
+    // assigned is the departments' delay (waitingOnStaff), not the SME's.
     hasNeverReceivedService: lastService === null && records.assignments.length > 0,
+    waitingOnStaff: lastService === null && records.assignments.length === 0 && (coverage?.staffDelays ?? 0) > 0,
+    lastServiceAt: lastService,
+    daysSinceJoined: records.joinedAt ? Math.floor((now - records.joinedAt) / DAY) : null,
     docsMissing: records.compliance.missing,
     docsQueried: records.compliance.queried,
     docsRejected: records.compliance.rejected,
-    missingDepartmentsCount: 0,
+    missingDepartmentsCount: coverage?.awaitingSme ?? 0,
+    staffDelayDepartments: coverage?.staffDelays ?? 0,
     smePendingAcceptanceCount: pendingAcceptance,
     smePendingConfirmationCount: pendingConfirmation,
     declinedTouches: declined,

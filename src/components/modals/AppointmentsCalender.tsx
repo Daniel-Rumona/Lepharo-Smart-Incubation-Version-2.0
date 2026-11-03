@@ -1443,12 +1443,10 @@ const matchesAppointmentPerson = (
         ).trim()
     )
 
-    const emailMatch = email
+    const staffEmailMatch = email
         ? [
-            lower(appointment.participantEmail),
             lower(appointment.coordinatorEmail),
-            lower(appointment.createdByEmail),
-            ...memberEmails
+            lower(appointment.createdByEmail)
         ].includes(email)
         : false
 
@@ -1456,6 +1454,16 @@ const matchesAppointmentPerson = (
         ? String(appointment.participantId || '').trim() === participant ||
         memberIds.includes(participant)
         : false
+
+    // SME email: email fallback until Phase 4 (docs/sme-identity-migration-plan.md),
+    // only when no participantId was given or the record carries none.
+    const recordHasParticipantIds =
+        !!String(appointment.participantId || '').trim() || memberIds.some(Boolean)
+    const smeEmailMatch = email && (!participant || !recordHasParticipantIds)
+        ? [lower(appointment.participantEmail), ...memberEmails].includes(email)
+        : false
+
+    const emailMatch = staffEmailMatch || smeEmailMatch
 
     const coordinatorMatch = coordinator
         ? [appointment.coordinatorId, appointment.assigneeId]

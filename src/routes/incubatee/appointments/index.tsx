@@ -198,11 +198,6 @@ const UserAppointments: React.FC = () => {
             }
 
             const email = String(user?.email || '').trim()
-            if (!email) {
-                setParticipantId(null)
-                setLoading(false)
-                return
-            }
 
             try {
                 const candidateIds = Array.from(
@@ -228,7 +223,8 @@ const UserAppointments: React.FC = () => {
                     }
                 }
 
-                if (!participantDoc) {
+                // Email fallback until Phase 4, for logins not linked yet.
+                if (!participantDoc && email) {
                     const exact = await getDocs(
                         query(collection(db, 'participants'), where('email', '==', email))
                     )
@@ -236,7 +232,7 @@ const UserAppointments: React.FC = () => {
                 }
 
                 // Only staff may scan participants; for an SME this finds nothing.
-                if (!participantDoc) {
+                if (!participantDoc && email) {
                     const normalizedEmail = email.toLowerCase()
                     const allParticipants = await getDocs(collection(db, 'participants')).catch(() => null)
                     participantDoc =
@@ -877,9 +873,12 @@ const UserAppointments: React.FC = () => {
                 <title>My Appointments | Smart Incubation</title>
             </Helmet>
 
-            <MetricsGrid metrics={metrics} />
+            <div data-guide="sme-appointments-summary">
+                <MetricsGrid metrics={metrics} />
+            </div>
 
             <MotionCard
+                data-guide="sme-appointments-list"
                 className="appointments-table-card"
                 filterBar={filterBar}
             >

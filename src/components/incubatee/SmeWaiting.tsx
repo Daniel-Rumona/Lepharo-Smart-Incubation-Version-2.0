@@ -196,7 +196,7 @@ const useWaitingSources = (enabled: boolean): SmeWaiting => {
     useEffect(() => {
         setParticipantId(null)
         setResolved(false)
-        if (!enabled || !user?.email) return
+        if (!enabled || !user) return
         let cancelled = false
         resolveIncubateeParticipantId(user)
             .then(pid => {

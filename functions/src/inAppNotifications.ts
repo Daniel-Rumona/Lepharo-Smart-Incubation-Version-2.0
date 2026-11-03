@@ -44,9 +44,9 @@ export async function notifyInApp(input: InAppNotification): Promise<void> {
 }
 
 /**
- * Login uid of an SME behind a participant record. There is no single link
- * field, so try the ones the app uses, in order: participants.uid/userId,
- * users.participantId, then the participant's email against users.
+ * Login uid of an SME behind a participant record (docs/sme-identity-migration-plan.md):
+ * users.participantId first (server-owned), then participants.uid/userId, and only
+ * then the email against users.
  */
 export async function uidForParticipant(
   participantId?: string | null,
@@ -57,19 +57,20 @@ export async function uidForParticipant(
 
   try {
     if (id) {
+      const linked = await db.collection("users").where("participantId", "==", id).limit(1).get();
+      if (!linked.empty) return linked.docs[0].id;
+
       const snap = await db.collection("participants").doc(id).get();
       const data = (snap.data() || {}) as any;
       const direct = String(data.uid || data.userId || "").trim();
       if (direct) return direct;
       if (!email) email = String(data.email || "").trim().toLowerCase();
-
-      const linked = await db.collection("users").where("participantId", "==", id).limit(1).get();
-      if (!linked.empty) return linked.docs[0].id;
     }
   } catch (error) {
     logger.warn("uidForParticipant.failed", { participantId: id, error: String(error) });
   }
 
+  // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
   if (!email) return null;
   const [uid] = await uidsForEmails([email]);
   return uid || null;

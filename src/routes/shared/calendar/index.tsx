@@ -522,7 +522,7 @@ const MyCalendarPage: React.FC = () => {
             String((user as any)?.applicationId || '').trim()
         ].filter(Boolean)
 
-        if (!isIncubatee || !myEmail) {
+        if (!isIncubatee) {
             setParticipantIdentityIds(Array.from(new Set(baseIds)))
             return
         }
@@ -530,15 +530,21 @@ const MyCalendarPage: React.FC = () => {
         let cancelled = false
         const run = async () => {
             try {
+                // The SME's applications by its linked participant; the email
+                // queries are a fallback until Phase 4 (docs/sme-identity-migration-plan.md).
+                const linkedParticipantId = String((user as any)?.participantId || '').trim()
                 const emailCandidates = Array.from(
                     new Set([String(user?.email || '').trim(), myEmail].filter(Boolean))
                 )
-                const snapshots = await Promise.all(
-                    emailCandidates.flatMap(email => [
+                const snapshots = await Promise.all([
+                    ...(linkedParticipantId
+                        ? [getDocs(query(collection(db, 'applications'), where('participantId', '==', linkedParticipantId)))]
+                        : []),
+                    ...emailCandidates.flatMap(email => [
                         getDocs(query(collection(db, 'participants'), where('email', '==', email))),
                         getDocs(query(collection(db, 'applications'), where('email', '==', email)))
                     ])
-                )
+                ])
                 const resolvedIds = [...baseIds]
                 snapshots.forEach(snapshot => {
                     snapshot.docs.forEach(item => {
@@ -798,7 +804,7 @@ const MyCalendarPage: React.FC = () => {
                             allow =
                                 participantMatch ||
                                 participantIdsOnEvent.some((id: string) => participantIds.has(id)) ||
-                                participantEmailsOnEvent.includes(myEmail)
+                                (!!myEmail && participantEmailsOnEvent.includes(myEmail))
                         }
 
                         if (!allow) return

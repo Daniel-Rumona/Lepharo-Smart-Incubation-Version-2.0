@@ -3,7 +3,11 @@ import { Button, Card, Empty, List, Space, Tag, Typography, message } from 'antd
 import { ReloadOutlined, RiseOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import {
+    IMPACT_METRIC_LABEL,
+    formatLift,
     formatPoints,
+    formatRange,
+    metricOf,
     impactForProgramme,
     refreshImpact,
     type InterventionImpact
@@ -100,8 +104,9 @@ export default function WhatsWorkingCard({ programId, canRefresh = false, includ
                                                 color={(row.liftPercent ?? 0) > 0 ? 'green' : (row.liftPercent ?? 0) < 0 ? 'red' : 'default'}
                                                 style={{ borderRadius: 999 }}
                                             >
-                                                {formatPoints(row.liftPercent)} pts
+                                                    {formatLift(row, row.liftPercent)}
                                             </Tag>
+                                            <Tag style={{ borderRadius: 999 }}>{IMPACT_METRIC_LABEL[metricOf(row)].name}</Tag>
                                             {row.status === 'early' ? <Tag color='gold' style={{ borderRadius: 999 }}>Early signal</Tag> : null}
                                             {row.demo ? <Tag color='purple' style={{ borderRadius: 999 }}>Demo data</Tag> : null}
                                         </Space>
@@ -109,15 +114,15 @@ export default function WhatsWorkingCard({ programId, canRefresh = false, includ
                                     description={
                                         row.headline ||
                                         `${row.treatedCount} SMEs against ${row.comparisonCount} similar SMEs; likely range ` +
-                                        `${formatPoints(row.rangeLowPercent)} to ${formatPoints(row.rangeHighPercent)} points.`
+                                        `${formatRange(row.rangeLowPercent, row.rangeHighPercent)} ${metricOf(row) === 'jobs' ? 'jobs per SME' : 'points'}.`
                                     }
                                 />
                             </List.Item>
                         )}
                     />
                     <Text type='secondary' style={{ fontSize: 12 }}>
-                        Points are the difference in revenue growth against similar SMEs in the same programme that hadn't had the
-                        intervention yet. They show a link, not proof of cause.
+                        Revenue results are the difference in growth, in points; jobs results are extra jobs per SME. Both compare
+                        with similar SMEs in the same programme that hadn't had the intervention yet, and show a link, not proof of cause.
                         {anyDemo ? ' Results marked demo come from seeded test SMEs and must not be reported.' : ''}
                     </Text>
                 </>

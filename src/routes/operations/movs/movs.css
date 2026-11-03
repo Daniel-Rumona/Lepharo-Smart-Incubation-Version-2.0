@@ -11,6 +11,36 @@
     flex-basis: 100%;
 }
 
+/* Phones: five or six tabs with counts can't share the width without cutting
+   their words off, so the strip scrolls sideways and each tab keeps its own
+   width. The scrollbar stays hidden; the cut-off last tab shows there's more. */
+@media (max-width: 767px) {
+    .mv-status-strip.ant-segmented {
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .mv-status-strip.ant-segmented::-webkit-scrollbar {
+        display: none;
+    }
+
+    .mv-status-strip.ant-segmented .ant-segmented-group {
+        width: max-content;
+        min-width: 100%;
+    }
+
+    .mv-status-strip.ant-segmented.ant-segmented-block .ant-segmented-item {
+        flex: 1 0 auto;
+        min-width: auto;
+    }
+
+    .mv-status-strip.ant-segmented .ant-segmented-item-label {
+        overflow: visible;
+        text-overflow: clip;
+    }
+}
+
 .mv-seg {
     display: inline-flex;
     align-items: center;

@@ -118,7 +118,7 @@ const titleCase = (v: unknown) => {
 }
 
 const normaliseStatus = (v: unknown): ApplicationStatus => {
-    const s = String(v || '').toLowerCase()
+    const s = String(v || '').trim().toLowerCase()
     return s === 'accepted' || s === 'rejected' ? s : 'pending'
 }
 
@@ -215,6 +215,54 @@ export const normalizeApplication = (snap: DocumentSnapshot): Application => {
     }
 }
 
+/**
+ * Days a pending application has waited for a decision: since it was reopened,
+ * or else since it was submitted. Thresholds match the server's escalation job
+ * (functions/src/applicationLifecycleLogic.ts).
+ */
+export const STALLED_REMINDER_DAYS = 7
+export const STALLED_ESCALATED_DAYS = 14
+
+export const pendingDays = (app: Application): number | null => {
+    if (app.applicationStatus !== 'pending') return null
+    const reopened = app.decision?.status === 'pending' && (app.decision as any)?.reopenedFrom
+        ? toDayjs(app.decision?.decidedAt)
+        : null
+    const since = reopened || app.submittedAt
+    return since ? dayjs().startOf('day').diff(since.startOf('day'), 'day') : null
+}
+
+export type HistoryEntry = {
+    id: string
+    fromStatus: ApplicationStatus | null
+    toStatus: ApplicationStatus
+    decidedByEmail: string | null
+    reason: string | null
+    reopenedFrom: string | null
+    source: 'decision' | 'system'
+    at: Dayjs | null
+}
+
+/** The application's status changes, oldest first (sorted here, so no composite index is needed). */
+export const loadApplicationHistory = async (applicationId: string): Promise<HistoryEntry[]> => {
+    const snap = await getDocs(query(collection(db, 'applicationHistory'), where('applicationId', '==', applicationId)))
+    return snap.docs
+        .map(d => {
+            const data = d.data() as any
+            return {
+                id: d.id,
+                fromStatus: data.fromStatus ?? null,
+                toStatus: normaliseStatus(data.toStatus),
+                decidedByEmail: data.decidedByEmail || null,
+                reason: data.reason || null,
+                reopenedFrom: data.reopenedFrom || null,
+                source: data.source === 'decision' ? 'decision' : 'system',
+                at: toDayjs(data.at)
+            } as HistoryEntry
+        })
+        .sort((a, b) => (a.at?.valueOf() ?? 0) - (b.at?.valueOf() ?? 0))
+}
+
 export const displayName = (app: { beneficiaryName?: string; companyName?: string }) =>
     app.beneficiaryName || app.companyName || 'Unnamed applicant'
 
@@ -284,6 +332,60 @@ export const extractProfileQA = (app: Application, labels: ProgramQuestionMap = 
     return []
 }
 
+/* --- Applicant photos --------------------------------------------------- */
+
+export type ApplicantPhotoRef = string | { email?: string; participantId?: string }
+
+/**
+ * Profile photos live on users/{uid}.photoURL. Applicants with a participantId
+ * are matched on users.participantId and keyed by that id (and by emailKey, so
+ * existing callers keep working); plain emails or unmatched applicants fall
+ * back to users.email. A failed batch just leaves those applicants on their initials.
+ */
+export const loadApplicantPhotos = async (refs: ApplicantPhotoRef[]) => {
+    const items = refs.map(r => (typeof r === 'string' ? { email: r } : r))
+    const photos = new Map<string, string>()
+    const inBatches = async (field: 'participantId' | 'email', values: string[], onHit: (data: any) => void) => {
+        const batches: string[][] = []
+        for (let i = 0; i < values.length; i += 30) batches.push(values.slice(i, i + 30))
+        await Promise.all(
+            batches.map(async batch => {
+                try {
+                    const snap = await getDocs(query(collection(db, 'users'), where(field, 'in', batch)))
+                    snap.docs.forEach(d => onHit(d.data()))
+                } catch (e) {
+                    console.error('[applications] applicant photos failed:', e)
+                }
+            })
+        )
+    }
+    const hasPhoto = (url: unknown): url is string => typeof url === 'string' && !!url.trim()
+
+    const pids = Array.from(new Set(items.map(i => String(i.participantId || '').trim()).filter(Boolean)))
+    const emailByPid = new Map(items.filter(i => i.participantId).map(i => [String(i.participantId).trim(), emailKey(i.email)]))
+    await inBatches('participantId', pids, data => {
+        if (!hasPhoto(data.photoURL)) return
+        photos.set(data.participantId, data.photoURL)
+        const key = emailByPid.get(data.participantId)
+        if (key) photos.set(key, data.photoURL)
+    })
+
+    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+    const variants = Array.from(
+        new Set(
+            items
+                .filter(i => !(i.participantId && photos.has(String(i.participantId).trim())))
+                .flatMap(i => [String(i.email || '').trim(), emailKey(i.email)])
+                .filter(Boolean)
+        )
+    )
+    await inBatches('email', variants, data => {
+        const key = emailKey(data.email)
+        if (hasPhoto(data.photoURL) && !photos.has(key)) photos.set(key, data.photoURL)
+    })
+    return photos
+}
+
 /* --- Linked participant ------------------------------------------------- */
 
 export type ParticipantDetails = {
@@ -305,6 +407,7 @@ export const loadParticipant = async (app: Pick<Application, 'participantId' | '
         const snap = await getDoc(doc(db, 'participants', id))
         if (snap.exists()) return snap.data() as Record<string, any>
     }
+    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
     const email = String(app.email || '').trim()
     if (!email) return null
     const emails = Array.from(new Set([email, email.toLowerCase()]))

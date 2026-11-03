@@ -18,3 +18,12 @@ export type PageGuideRegistration = {
   pageTitle?: string
   guides: AppGuide[]
 }
+
+/** One page of a multi-page tour. */
+export type TourStop = {
+  route: string
+  /** Shown in the progress line, e.g. "Interventions · 1 of 3". */
+  label: string
+  /** A function is called once the page has loaded, so steps can match what is on it. */
+  steps: DriveStep[] | (() => DriveStep[])
+}

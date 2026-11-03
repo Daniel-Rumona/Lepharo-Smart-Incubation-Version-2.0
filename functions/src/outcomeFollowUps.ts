@@ -1,7 +1,7 @@
+import { scheduledJob } from "./cronHeartbeat";
 import * as logger from "firebase-functions/logger";
 import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { suppressRecordNotifications, syntheticMetadata } from "./syntheticData";
-import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./emailShared";
 import { participant as resolveParticipant } from "./workflowEmailFunctions";
 import { sendCheckBackWhatsApp } from "./whatsappCheckBack";
@@ -60,7 +60,15 @@ async function resolveAssignee(assignment: any): Promise<{ email: string; name: 
   return { email: email.includes("@") ? email : "", name: name || "Facilitator" };
 }
 
-async function findIncubateeUid(email: string | null): Promise<string | null> {
+/** The SME's login: users.participantId first (docs/sme-identity-migration-plan.md). */
+async function findIncubateeUid(participantId: string | null, email: string | null): Promise<string | null> {
+  const id = clean(participantId);
+  if (id) {
+    const linked = await db.collection("users").where("participantId", "==", id).limit(5).get();
+    const sme = linked.docs.find((doc) => lower((doc.data() as any).role) === "incubatee");
+    if (sme) return sme.id;
+  }
+  // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
   if (!email) return null;
   const snap = await db.collection("users").where("email", "==", lower(email)).limit(5).get();
   const match = snap.docs.find((doc) => lower((doc.data() as any).role) === "incubatee");
@@ -133,7 +141,7 @@ const smeActions = () => [
 ];
 
 /** 2. Daily reminders. */
-export const outcomeFollowUpReminderCron = onSchedule(
+export const outcomeFollowUpReminderCron = scheduledJob("outcomeFollowUpReminderCron",
   {
     region: REGION,
     schedule: "30 7 * * *",
@@ -176,7 +184,7 @@ export const outcomeFollowUpReminderCron = onSchedule(
         programId: f.programId || null,
         actionTarget: { collection: "outcomeFollowUps", docId: snap.id },
         actions: facilitatorActions(),
-        link: "/coordinator/check-backs",
+        link: "/check-backs",
         reminderNumber: sent,
         createdAt: new Date(),
         readBy: {},
@@ -190,7 +198,7 @@ export const outcomeFollowUpReminderCron = onSchedule(
       };
 
       if (f.smeCheckIn === true && f.smeNotified !== true && !f.smeAnswer) {
-        const smeUid = await findIncubateeUid(f.participantEmail);
+        const smeUid = await findIncubateeUid(f.participantId, f.participantEmail);
         const smeRef = await db.collection("notifications").add({
           type: "outcome_follow_up_sme",
           message: `A quick question about ${clean(f.interventionTitle)}: are you still using what you put in place?`,
@@ -225,7 +233,7 @@ export const outcomeFollowUpReminderCron = onSchedule(
             recipientIds: hodUids,
             participantId: clean(f.participantId),
             programId: f.programId || null,
-            link: "/coordinator/check-backs",
+            link: "/check-backs",
             createdAt: new Date(),
             readBy: {},
           });

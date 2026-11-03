@@ -40,7 +40,7 @@ import {
     ArrowLeftOutlined
 } from '@ant-design/icons'
 import { db, auth, storage } from '@/firebase'
-import { linkMySmeAccount } from '@/services/smeIdentity'
+import { getSmeParticipant, linkMySmeAccount } from '@/services/smeIdentity'
 import {
     collection,
     getDocs,
@@ -1009,12 +1009,12 @@ const ApplicantProfileForm: React.FC = () => {
                 const fallbackEmail = user.email || ''
                 const fallbackName = userSnap.exists() ? userSnap.data()?.name || '' : ''
 
-                // Fetch participant doc
-                const q = query(
-                    collection(db, 'participants'),
-                    where('email', '==', fallbackEmail)
-                )
-                const snapshot = await getDocs(q)
+                // The SME's linked participant; email only until it is linked.
+                const participantRecord = await getSmeParticipant({
+                    uid: user.uid,
+                    participantId: userSnap.exists() ? userSnap.data()?.participantId : null,
+                    email: fallbackEmail
+                })
 
                 const userData: any = userSnap.exists() ? userSnap.data() : {}
                 setPhotoUrl(userData.photoURL || user.photoURL || null)
@@ -1024,10 +1024,9 @@ const ApplicantProfileForm: React.FC = () => {
                     participantName: fallbackName
                 }
 
-                if (!snapshot.empty) {
-                    const docRef = snapshot.docs[0]
-                    const data: any = docRef.data()
-                    setParticipantDocId(docRef.id)
+                if (participantRecord) {
+                    const data: any = participantRecord
+                    setParticipantDocId(participantRecord.id)
 
                     const flatFields: Record<string, any> = {}
 
@@ -1382,6 +1381,9 @@ const ApplicantProfileForm: React.FC = () => {
                 const newDocRef = doc(collection(db, 'participants'))
                 await setDoc(newDocRef, {
                     ...dataToSave,
+                    // The login that made it owns it until the server links the two
+                    // (firestore.rules, docs/sme-identity-migration-plan.md).
+                    createdByUid: user.uid,
                     setup: true,
                     createdAt: serverTimestamp(),
                     createdAtISO: new Date().toISOString(),
@@ -1575,7 +1577,14 @@ const ApplicantProfileForm: React.FC = () => {
                                 card — the identity header would just eat space
                                 that the form fields need. */}
                             {(!isMobile || showingMenu) && (
-                                <Col xs={24} lg={7} xl={6}>
+                                <Col
+                                    xs={24}
+                                    lg={7}
+                                    xl={6}
+                                    data-guide='applicant-profile-progress'
+                                    // Read by the welcome tour, which words its steps by how far along the profile is.
+                                    data-profile-progress={progress}
+                                >
                                     <IdentityPanel
                                         isMobile={isMobile}
                                         isInitialSetup={isInitialSetup}
@@ -1592,7 +1601,7 @@ const ApplicantProfileForm: React.FC = () => {
                                 </Col>
                             )}
 
-                            <Col xs={24} lg={17} xl={18}>
+                            <Col xs={24} lg={17} xl={18} data-guide='applicant-profile-sections'>
                                 <Card
                                     bordered
                                     style={{

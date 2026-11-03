@@ -16,11 +16,16 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import {
     askAssistant,
     composeTour,
+    normaliseCards,
     type AgentProposalDraft,
+    type AnswerCardRef,
     type AssistantAction,
     type ChartSpec,
     type ShowMeRequest
 } from '@/services/aiAssistantService'
+import { normaliseWatchDraft, type WatchDraft } from '@/services/watchService'
+import { normaliseChaserDraft, type ChaserDraft } from '@/services/chaserService'
+import { normaliseAttention, type Attention } from '@/components/assistant/AttentionList'
 import type { CatalogGuide } from '@/components/guide-me/guideCatalog'
 import { useOptionalGuide } from '@/components/guide-me/GuideContext'
 import { getNavDestinations } from '@/components/guide-me/navDestinations'
@@ -31,6 +36,8 @@ export type ChatMessage = {
     sender: 'user' | 'assistant'
     content: string
     chart?: ChartSpec | null
+    /** SMEs or interventions the reply is about, shown as cards. Saved with the message. */
+    cards?: AnswerCardRef[]
     /** An interactive flow this reply proposes. Transient — never saved to history. */
     action?: AssistantAction | null
     /** A curated walkthrough this reply offers. Transient. */
@@ -39,6 +46,12 @@ export type ChatMessage = {
     showMe?: ShowMeRequest | null
     /** A change this reply drafted for the user to confirm. Transient. */
     proposal?: AgentProposalDraft | null
+    /** A watch this reply drafted for the user to start. Saved, so its card survives a reload. */
+    watch?: WatchDraft | null
+    /** A chaser this reply drafted for the user to start. Saved, like a watch. */
+    chaser?: ChaserDraft | null
+    /** The ranked "needs you" list under this reply. Saved, so it survives a reload. */
+    attention?: Attention | null
     timestamp: string
 }
 
@@ -52,12 +65,15 @@ export type ChatSessionSummary = {
 type ChatState = {
     messages: ChatMessage[]
     isTyping: boolean
+    /** What the assistant has done so far for the question in progress ("Reading MOVs"). */
+    steps: string[]
     error: string | null
 }
 
 type ChatAction =
     | { type: 'ADD_MESSAGE'; payload: ChatMessage }
     | { type: 'SET_TYPING'; payload: boolean }
+    | { type: 'ADD_STEP'; payload: string }
     | { type: 'SET_ERROR'; payload: string | null }
     | { type: 'LOAD_MESSAGES'; payload: ChatMessage[] }
     | { type: 'RESET' }
@@ -95,6 +111,7 @@ const MAX_MESSAGES = 100
 const initialState: ChatState = {
     messages: [],
     isTyping: false,
+    steps: [],
     error: null
 }
 
@@ -111,11 +128,14 @@ const chatReducer = (state: ChatState, action: ChatAction): ChatState => {
             }
         }
         case 'SET_TYPING':
-            return { ...state, isTyping: action.payload }
+            // A new question starts a fresh trail of steps.
+            return { ...state, isTyping: action.payload, steps: action.payload ? [] : state.steps }
+        case 'ADD_STEP':
+            return state.steps.includes(action.payload) ? state : { ...state, steps: [...state.steps, action.payload] }
         case 'SET_ERROR':
             return { ...state, error: action.payload, isTyping: false }
         case 'LOAD_MESSAGES':
-            return { messages: action.payload, isTyping: false, error: null }
+            return { messages: action.payload, isTyping: false, steps: [], error: null }
         case 'RESET':
             return initialState
         default:
@@ -180,6 +200,10 @@ const fetchSessionMessages = async (sessionId: string, uid: string): Promise<Cha
             sender: data.sender === 'assistant' ? 'assistant' as const : 'user' as const,
             content: String(data.content || ''),
             chart: data.chart || null,
+            cards: normaliseCards(data.cards),
+            watch: normaliseWatchDraft(data.watch),
+            chaser: normaliseChaserDraft(data.chaser),
+            attention: normaliseAttention(data.attention),
             timestamp: createdAt ? timestamp(createdAt) : ''
         }))
 }
@@ -330,7 +354,11 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
                 role: item.sender === 'assistant' ? ('assistant' as const) : ('user' as const),
                 content: item.content
             })),
-            signal: controller.signal
+            signal: controller.signal,
+            onStep: label => {
+                // A cancelled question's late steps must not land on the next one.
+                if (abortControllerRef.current === controller) dispatch({ type: 'ADD_STEP', payload: label })
+            }
         })
 
         if (result.sessionId) {
@@ -366,7 +394,7 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
         dispatch({ type: 'SET_TYPING', payload: true })
 
         void runAssistant(content, previousMessages, requestRoute)
-            .then(({ answer, chart, action, guide, showMe, proposal }) => {
+            .then(({ answer, chart, cards, watch, chaser, attention, action, guide, showMe, proposal }) => {
                 dispatch({
                     type: 'ADD_MESSAGE',
                     payload: {
@@ -374,6 +402,10 @@ export const ChatSessionProvider: React.FC<React.PropsWithChildren> = ({ childre
                         sender: 'assistant',
                         content: answer,
                         chart,
+                        cards,
+                        watch,
+                        chaser,
+                        attention,
                         action,
                         guide,
                         showMe,

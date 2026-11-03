@@ -10,3 +10,4 @@ export { ContactList, ContactRow, contactActions, type ContactAction } from './C
 export { OwnershipCards, type OwnershipItem } from './OwnershipCards'
 export { ChoiceFilter, FilterPanel, MAX_INLINE_CHOICES } from './ChoiceFilter'
 export { SortSelect, type SortOption } from './SortSelect'
+export { ChoiceCards, type ChoiceCardOption } from './ChoiceCards'

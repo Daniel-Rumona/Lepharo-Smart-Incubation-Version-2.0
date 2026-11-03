@@ -292,6 +292,7 @@ const IncubateesOverview: React.FC = () => {
                                 if (pSnap.exists())
                                     p = { id: pSnap.id, ...(pSnap.data() as any) }
                             }
+                            // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
                             if (!p && a.email) {
                                 const pQ = query(
                                     collection(db, 'participants'),

@@ -4,6 +4,7 @@ import * as logger from 'firebase-functions/logger';
 import { onCall, type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import { getTransporter, APP_BASE_URL } from './emailShared';
 import { isHrManagerProfile } from './departmentRoles';
+import { isSmeRole } from './smeIdentityLogic';
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -533,8 +534,9 @@ export const deleteUserCascade = onCall(async (req) => {
       if (!authUser) throw new HttpsError("not-found", "Auth user not found");
       email = authUser.email || undefined;
     }
-    if (!uid || !email) {
-      throw new HttpsError("failed-precondition", "Could not resolve uid & email");
+    // An SME login may have no email (docs/sme-identity-migration-plan.md); the uid is enough.
+    if (!uid) {
+      throw new HttpsError("failed-precondition", "Could not resolve uid");
     }
 
     // ensure authUser loaded for response
@@ -630,10 +632,38 @@ export const deleteUserCascade = onCall(async (req) => {
       }
     }
 
-    // Sweep collections
+    // Sweep collections (never by an empty email: that would match every doc without one)
     for (const col of TARGET_COLLECTIONS) {
-      for (const f of FIELDS_TO_CHECK) await collectWhere(col, f, email);
+      if (email) for (const f of FIELDS_TO_CHECK) await collectWhere(col, f, email);
       for (const f of UID_FIELDS) await collectWhere(col, f, uid);
+    }
+
+    // SME login: also its participant record and the records keyed by its participantId
+    // (docs/sme-identity-migration-plan.md). Only when that participant is this login's
+    // alone: not linked to another uid and claimed by no other login.
+    const smeParticipantId = profile && isSmeRole(profile.role) ? String(profile.participantId || "").trim() : "";
+    if (smeParticipantId) {
+      const participantRef = db.collection("participants").doc(smeParticipantId);
+      const [participantSnap, claimants] = await Promise.all([
+        participantRef.get(),
+        db.collection("users").where("participantId", "==", smeParticipantId).limit(5).get(),
+      ]);
+      const linkedUid = String(participantSnap.data()?.uid || "").trim();
+      const ownedHere =
+        participantSnap.exists &&
+        (!linkedUid || linkedUid === uid) &&
+        claimants.docs.every((d) => d.id === uid);
+      if (ownedHere) {
+        if (!toDelete.has(participantRef.path)) {
+          toDelete.set(participantRef.path, participantRef);
+          byCollectionCount["participants"] = (byCollectionCount["participants"] || 0) + 1;
+        }
+        for (const col of ["applications", "assignedInterventions"]) {
+          await collectWhere(col, "participantId", smeParticipantId);
+        }
+      } else {
+        logger.warn("deleteUserCascade.participantNotOwned", { uid, participantId: smeParticipantId });
+      }
     }
 
     // Build impact summary (backend returns real collection names; UI can mask them)

@@ -308,6 +308,7 @@ const FunderAnalytics: React.FC = () => {
             if (a.email) emailToPid.set(a.email.toLowerCase(), "");
         }
 
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
         const emailsNeedingLookup = listRaw
             .filter((a) => !a.participantId && a.email)
             .map((a) => a.email!.toLowerCase());

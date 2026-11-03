@@ -197,6 +197,23 @@ const getSubmittedDeptIdStrict = (intv: any) => {
     return ''
 }
 
+// The SME's signature lives on its login: users where participantId == pid.
+async function safeFindSmeSignatureByParticipantId(participantId?: string | null): Promise<string | null> {
+    const pid = String(participantId || '').trim()
+    if (!pid) return null
+
+    try {
+        const uSnap = await getDocs(query(collection(db, 'users'), where('participantId', '==', pid)))
+        for (const d of uSnap.docs) {
+            const u = d.data() as any
+            const sig = pickSignatureUrl(u) || pickSignatureUrl(u?.digitalSignature) || pickSignatureUrl(u?.eSignature)
+            if (sig) return sig
+        }
+    } catch { }
+
+    return null
+}
+
 async function safeFindUserSignatureByEmail(email?: string | null): Promise<string | null> {
     if (!email) return null
 
@@ -563,6 +580,10 @@ const ConfirmedInterventionsModal: React.FC<ConfirmedInterventionsModalProps> = 
                     if (!hodSig && hodSignerUid) {
                         hodSig = await safeFindUserSignatureByUid(hodSignerUid)
                     }
+                    if (!smeSig && (smeSignerEmail || isConfirmed(smeObj))) {
+                        smeSig = await safeFindSmeSignatureByParticipantId(participantId)
+                    }
+                    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
                     if (!smeSig && smeSignerEmail) {
                         smeSig = await safeFindUserSignatureByEmail(smeSignerEmail)
                     }

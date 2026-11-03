@@ -223,6 +223,7 @@ const FunderDashboard: React.FC = () => {
                                 const ps = await getDoc(ref)
                                 if (ps.exists()) p = { id: ps.id, ...(ps.data() as any) }
                             }
+                            // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
                             if (!p && a.email) {
                                 const pQ = query(
                                     collection(db, 'participants'),

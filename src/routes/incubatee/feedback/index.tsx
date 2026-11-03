@@ -39,6 +39,8 @@ import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
 import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { getSmeParticipant } from '@/services/smeIdentity'
+import { getEffectiveAppStatus, getSmeApplications } from '@/lib/acceptedApplication'
 import { useDepartmentRoles } from '@/services/departmentRoles'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
@@ -253,26 +255,26 @@ const SmeFeedbackPage: React.FC = () => {
 
     useEffect(() => {
         const run = async () => {
-            if (!user?.email) return
+            if (!user) return
             setLoading(true)
             try {
-                const appSnap = await getDocs(query(collection(db, 'applications'), where('email', '==', user.email)))
-                const appDoc = appSnap.docs[0]
-                if (!appDoc) {
+                // The SME's linked participant; email only until it is linked.
+                const sme = { uid: user.id, participantId: user.participantId, email: user.email }
+                const apps = await getSmeApplications(sme)
+                const app = apps.find(a => getEffectiveAppStatus(a) === 'accepted') || apps[0]
+                if (!app) {
                     setLoading(false)
                     return
                 }
 
-                const app = { id: appDoc.id, ...(appDoc.data() as any) }
                 setApplicationProfile(app)
                 const resolvedParticipantId = clean(app.participantId || app.id)
                 setApplicationId(app.id)
                 setParticipantId(resolvedParticipantId)
                 setCompanyName(clean(app.companyName || app.registeredName || app.businessName || app.beneficiaryName))
 
-                const participantSnap = await getDocs(query(collection(db, 'participants'), where('email', '==', user.email)))
-                const participant = participantSnap.docs[0]?.data() || {}
-                setParticipantProfile(participant)
+                const participant = await getSmeParticipant({ ...sme, participantId: sme.participantId || app.participantId })
+                setParticipantProfile(participant || {})
 
                 const interventionSnap = await getDocs(
                     query(collection(db, 'assignedInterventions'), where('participantId', '==', resolvedParticipantId))
@@ -316,7 +318,7 @@ const SmeFeedbackPage: React.FC = () => {
             }
         }
         run()
-    }, [user?.email, user?.id])
+    }, [user?.email, user?.id, user?.participantId])
 
     const departmentOptions = useMemo(() => {
         const map = new Map<string, string>()
@@ -475,7 +477,7 @@ const SmeFeedbackPage: React.FC = () => {
     }
 
     const handleFeedbackSubmit = async (values: any) => {
-        if (!participantId || !user?.email) {
+        if (!participantId || !user) {
             message.warning('Your SME profile could not be resolved.')
             return
         }
@@ -529,10 +531,10 @@ const SmeFeedbackPage: React.FC = () => {
 
             const docRef = await addDoc(collection(db, 'smeFeedback'), payload)
             const coverAttachments = isSuccessStory
-                ? await uploadFiles(values.coverImage || [], `success-stories/sme-${docRef.id}/cover`)
+                ? await uploadFiles(values.coverImage || [], `success-stories/sme-${docRef.id}/cover`, { participantId })
                 : []
             const evidenceAttachments = isSuccessStory
-                ? await uploadFiles(values.documents || [], `success-stories/sme-${docRef.id}/evidence`)
+                ? await uploadFiles(values.documents || [], `success-stories/sme-${docRef.id}/evidence`, { participantId })
                 : []
             const attachments = [...coverAttachments, ...evidenceAttachments]
             const coverImageUrl = coverAttachments[0]?.url || ''
@@ -551,7 +553,7 @@ const SmeFeedbackPage: React.FC = () => {
     }
 
     const handleInquirySubmit = async (values: any) => {
-        if (!user?.email || !user?.id) {
+        if (!user?.id) {
             message.warning('Your SME profile could not be resolved.')
             return
         }

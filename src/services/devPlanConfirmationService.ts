@@ -63,17 +63,18 @@ const getCreatedAtValue = (d: any) => {
     return 0
 }
 
-// Resolve the same canonical participant record used by the interventions page.
+// Resolve the same canonical participant record used by the interventions page:
+// the login's linked users.participantId (docs/sme-identity-migration-plan.md).
 // Auth uid, participant document id, and email can legitimately differ.
 export const resolveIncubateeParticipantId = async (user: IdentityLike): Promise<string | null> => {
-    if (!user?.email) return null
+    const linked = String(user?.participantId || '').trim()
+    if (linked) return linked
 
     const candidateIds = Array.from(new Set([
-        user.participantId,
-        user.participantDocId,
-        user.profileId,
-        user.id,
-        user.uid
+        user?.participantDocId,
+        user?.profileId,
+        user?.id,
+        user?.uid
     ].map(value => String(value || '').trim()).filter(Boolean)))
 
     for (const id of candidateIds) {
@@ -81,6 +82,8 @@ export const resolveIncubateeParticipantId = async (user: IdentityLike): Promise
         if (snapshot.exists()) return snapshot.id
     }
 
+    // Email fallback until Phase 4, for logins not linked yet.
+    if (!user?.email) return null
     const exact = await getDocs(query(collection(db, 'participants'), where('email', '==', user.email)))
     if (exact.docs[0]) return exact.docs[0].id
 

@@ -6,7 +6,6 @@ import { admin, APP_BASE_URL, db, getHODRecipients, getTransporter } from "./ema
 import { getDepartmentHods, resolveMovDepartmentId, uidsForEmails } from "./movRecipients";
 import { logBrevoSend, sendViaBrevo } from "./brevoClient";
 import { notifyInApp, uidForEmail, uidForParticipant } from "./inAppNotifications";
-import { BREVO_EGRESS } from "./config";
 import { departmentNameOf } from "./departmentRoles";
 
 type Doc = Record<string, any>;
@@ -19,7 +18,7 @@ const LOGIN_URL = APP_BASE_URL.replace(/\/$/, "");
  * participant record. The in-app copy uses 'intervention_reminder_sme', which
  * is deliberately absent from NOTIFICATION_REGISTRY so it never emails twice. */
 export const sendInterventionReminderEmail = onRequest(
-  { ...BREVO_EGRESS, region: REGION, cors: true },
+  { region: REGION, cors: true },
   (req, res) => {
     (async () => {
     let recipientEmail: string | null = null;
@@ -225,7 +224,7 @@ export const onLeaveRequestDecisionEmail = onDocumentWritten(
       after.from || after.startDate ? `From: ${clean(after.from || after.startDate)}` : "",
       after.to || after.endDate ? `To: ${clean(after.to || after.endDate)}` : "",
       decision === "rejected" && after.rejectionReason ? `Reason: ${clean(after.rejectionReason)}` : "",
-    ], "/operations/hr/leave");
+    ], "/leave-management");
     await notifyInApp({
       type: `leave_${decision}`,
       message: `Your ${clean(after.type || after.leaveType) || "leave"} request has been ${decision}.`,
@@ -351,7 +350,7 @@ export const onAssignedInterventionEmail = onDocumentWritten(
           `Hello ${assigned.name},`,
           `${title} has been assigned to you for ${sme.name}.`,
           after.dueDate ? `Due date: ${clean(after.dueDate)}` : "",
-        ], "/coordinator/allocated");
+        ], "/allocated");
         await ref.update(notificationPatch("assignment", "assignee", assigned.email));
       }
       if (sme.email) {
@@ -362,7 +361,7 @@ export const onAssignedInterventionEmail = onDocumentWritten(
         ], "/incubatee/interventions");
         await ref.update(notificationPatch("assignment", "participant", sme.email));
       }
-      await inApp("intervention_assigned", `${title} has been assigned to you for ${sme.name}.`, [assigneeUid], "/coordinator/allocated");
+      await inApp("intervention_assigned", `${title} has been assigned to you for ${sme.name}.`, [assigneeUid], "/allocated");
       await inApp("intervention_assigned_sme", `${title} has been assigned to ${assigned.name}. Please review and accept it.`, [await smeUid()], "/incubatee/interventions");
     }
 
@@ -387,11 +386,11 @@ export const onAssignedInterventionEmail = onDocumentWritten(
         const decision = status(after.participantAcceptanceStatus);
         await send(assigned.email, `Participant ${decision}: ${title}`, "Intervention acceptance update", [
           `${clean(after.participantName) || "The participant"} has ${decision} ${title}.`,
-        ], "/coordinator/allocated");
+        ], "/allocated");
         await ref.update(notificationPatch("assignmentLifecycle", `participant${decision}`, assigned.email));
       }
       const decision = status(after.participantAcceptanceStatus);
-      await inApp(`intervention-${decision}`, `${clean(after.participantName) || "The participant"} has ${decision} ${title}.`, [assigneeUid], "/coordinator/allocated");
+      await inApp(`intervention-${decision}`, `${clean(after.participantName) || "The participant"} has ${decision} ${title}.`, [assigneeUid], "/allocated");
     }
 
     if (before && status(before.participantCompletionStatus) !== status(after.participantCompletionStatus) &&
@@ -403,13 +402,13 @@ export const onAssignedInterventionEmail = onDocumentWritten(
         await send(assigned.email, `Completion ${decision}: ${title}`, "Completion review update", [
           `${clean(after.participantName) || "The participant"} has ${decision} completion of ${title}.`,
           ...(decision === "rejected" && reason ? [`Their reason: “${reason}”`, "Correct it, deliver what's missing, or explain in the system; the HOD decides if you can't agree."] : []),
-        ], "/coordinator/allocated");
+        ], "/allocated");
         await ref.update(notificationPatch("assignmentLifecycle", `completion${decision}`, assigned.email));
       }
       const decision = status(after.participantCompletionStatus);
       // A rejection's in-app notice (with the reason) comes from onWorkflowQueryChanged, as a delivery dispute.
       if (decision === "confirmed") {
-        await inApp("intervention-confirmed", `${clean(after.participantName) || "The participant"} has confirmed completion of ${title}.`, [assigneeUid], "/coordinator/allocated");
+        await inApp("intervention-confirmed", `${clean(after.participantName) || "The participant"} has confirmed completion of ${title}.`, [assigneeUid], "/allocated");
       }
     }
   },

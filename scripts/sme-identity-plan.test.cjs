@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const { planSmeIdentity } = require('./sme-identity-plan.cjs')
+const { planSmeIdentity, planRequestOwners } = require('./sme-identity-plan.cjs')
 
 const user = (uid, data = {}) => ({ uid, data: { role: 'incubatee', email: `${uid}@example.com`, ...data } })
 const participant = (id, data = {}) => ({ id, data: { ...data } })
@@ -106,4 +106,18 @@ test('users.participantId pointing at a missing participant is reported', () => 
     })
     assert.equal(outcomes.toLink.length, 0)
     assert.deepEqual(outcomes.linkedToMissingParticipant, [{ uid: 'u1', participantId: 'gone' }])
+})
+
+test('resource requests get the one SME login with their email, and nothing is guessed', () => {
+    const users = [user('u1', { email: 'A@x.com' }), user('u2', { email: 'dup@x.com' }), user('u3', { email: 'dup@x.com' }), user('staff', { role: 'coordinator', email: 's@x.com' })]
+    const requests = [
+        { id: 'r1', data: { requestedByEmail: 'a@x.com' } },
+        { id: 'r2', data: { requestedByEmail: 'a@x.com', requestedByUid: 'u9' } },
+        { id: 'r3', data: { requestedByEmail: 'dup@x.com' } },
+        { id: 'r4', data: { requestedByEmail: 's@x.com' } },
+        { id: 'r5', data: {} },
+    ]
+    const { patches, unmatched } = planRequestOwners({ requests, users })
+    assert.deepEqual(patches, [{ id: 'r1', patch: { requestedByUid: 'u1' } }])
+    assert.equal(unmatched, 3)
 })

@@ -10,6 +10,10 @@ type QuestionGroupProps = {
     questions: string[]
     disabled?: boolean
     extras?: (index: number) => React.ReactNode
+    /** Follow-up shown under a question's answer (see YesFollowUp). */
+    followUps?: (index: number) => React.ReactNode
+    /** Questions that keep their slot in the saved answers but are not asked as Yes/No. */
+    hidden?: number[]
     firstInStep?: boolean
 }
 
@@ -19,7 +23,7 @@ type QuestionGroupProps = {
  * scroll straight to a specific group after jumping back into its step.
  */
 const QuestionGroup = forwardRef<HTMLDivElement, QuestionGroupProps>(
-    ({ title, baseKey, questions, disabled, extras, firstInStep }, ref) => {
+    ({ title, baseKey, questions, disabled, extras, followUps, hidden, firstInStep }, ref) => {
         const base = baseKey.split('.')
 
         return (
@@ -29,15 +33,18 @@ const QuestionGroup = forwardRef<HTMLDivElement, QuestionGroupProps>(
                 </Title>
 
                 <div>
-                    {questions.map((question, index) => (
-                        <QuestionRow
-                            key={`${baseKey}-${index}`}
-                            namePath={[...base, index]}
-                            label={question}
-                            disabled={disabled}
-                            extra={extras?.(index)}
-                        />
-                    ))}
+                    {questions.map((question, index) =>
+                        hidden?.includes(index) ? null : (
+                            <QuestionRow
+                                key={`${baseKey}-${index}`}
+                                namePath={[...base, index]}
+                                label={question}
+                                disabled={disabled}
+                                extra={extras?.(index)}
+                                followUp={followUps?.(index)}
+                            />
+                        )
+                    )}
                 </div>
             </div>
         )

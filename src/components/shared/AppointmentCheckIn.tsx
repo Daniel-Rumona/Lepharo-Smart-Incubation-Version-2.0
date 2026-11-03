@@ -129,8 +129,10 @@ const invitationMatchesIdentity = (
     const attendeeId = safeString(invitation.attendeeId)
     if (attendeeId) return !!person.attendeeId && attendeeId === person.attendeeId
     if (person.isTrainingEmployee) return false
-    return normalizeEmail(invitation.smeEmail) === email ||
-        participantIds.has(safeString(invitation.smeId))
+    // By the SME's participant id; the email match is a fallback until Phase 4
+    // (docs/sme-identity-migration-plan.md), and never matches two blanks.
+    return participantIds.has(safeString(invitation.smeId)) ||
+        (!!email && normalizeEmail(invitation.smeEmail) === email)
 }
 
 const resolveViewerParticipantIds = async (

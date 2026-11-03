@@ -261,14 +261,25 @@ async function enrichSmes(smes: SchedulableSme[], activeProgramId?: string) {
             clean(data?.beneficiaryName || data?.businessName || data?.companyName)
     })
 
-    // Photos live on users/{uid}; match to SMEs by email.
+    // Photos live on users/{uid}; match to SMEs by users.participantId.
     try {
+        const photos = new Map<string, string>()
+        const pids = Array.from(new Set(smes.map(sme => sme.participantId).filter(Boolean)))
+        for (let i = 0; i < pids.length; i += 10) {
+            const snap = await getDocs(fsQuery(collection(db, 'users'), where('participantId', 'in', pids.slice(i, i + 10))))
+            snap.docs.forEach(d => {
+                const data = d.data() as any
+                const url = clean(data.photoURL)
+                if (url && data.participantId) photos.set(data.participantId, url)
+            })
+        }
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
         const participantsByEmail = new Map<string, string[]>()
         emailsByParticipant.forEach((email, pid) => {
+            if (photos.has(pid)) return
             participantsByEmail.set(email, [...(participantsByEmail.get(email) || []), pid])
         })
         const emails = Array.from(participantsByEmail.keys())
-        const photos = new Map<string, string>()
         for (let i = 0; i < emails.length; i += 10) {
             const snap = await getDocs(fsQuery(collection(db, 'users'), where('email', 'in', emails.slice(i, i + 10))))
             snap.docs.forEach(d => {

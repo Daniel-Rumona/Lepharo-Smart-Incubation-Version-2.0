@@ -1,6 +1,7 @@
-// An SME's choice about receiving WhatsApp messages from the programme.
+// A user's choice about receiving WhatsApp messages from the programme.
 // Stored on users/{uid}.whatsappConsent so it can be read by the reminder job,
-// and so existing SMEs who have never been asked can be asked once.
+// and so existing SMEs who have never been asked can be asked once. Staff set
+// it, with their phone, from Account settings.
 
 export type WhatsAppConsent = {
     status: 'granted' | 'declined'
@@ -9,7 +10,7 @@ export type WhatsAppConsent = {
     answeredAt: unknown
     /** Bump when the wording changes materially, to ask again. */
     version: number
-    source: 'welcome' | 'login-prompt'
+    source: 'welcome' | 'login-prompt' | 'account-settings'
 }
 
 export const WHATSAPP_CONSENT_VERSION = 1

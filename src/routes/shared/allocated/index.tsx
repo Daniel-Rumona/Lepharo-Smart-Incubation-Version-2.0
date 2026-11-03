@@ -89,6 +89,7 @@ import { db, auth, storage } from '@/firebase'
 import SetupSegmented from '@/components/shared/SetupSegmented'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { withOwner } from '@/lib/storageOwner'
+import { checkMovEvidenceInBackground } from '@/services/evidenceCheckService'
 import dayjs, { Dayjs } from 'dayjs'
 import { Helmet } from 'react-helmet'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -2338,6 +2339,18 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                         return
                     }
 
+                    const linkedSnap = await getDocs(
+                        query(collection(db, 'users'), where('participantId', '==', id))
+                    )
+                    const linkedUrl = linkedSnap.docs
+                        .map(userDoc => String((userDoc.data() as any)?.photoURL || '').trim())
+                        .find(Boolean)
+                    if (linkedUrl) {
+                        found[id] = linkedUrl
+                        return
+                    }
+
+                    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
                     // Stored email casing is not guaranteed to match users/{uid}.
                     const rawEmail = String(participant?.email || '').trim()
                     if (rawEmail) {
@@ -3118,7 +3131,7 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
             // One transaction. The MOV metadata is written alongside the
             // completion itself, so a failure can no longer leave the
             // intervention completed with MOVs that have no file.
-            await completeIntervention({
+            const completion = await completeIntervention({
                 db,
                 storage,
                 user: {
@@ -3138,6 +3151,8 @@ const CoordinatorAllocatedInterventions: React.FC = () => {
                 poeEvidence,
                 poeOptional: true
             })
+            // Check the new MOVs' evidence in the background, before anyone reviews them.
+            checkMovEvidenceInBackground(completion.movs.map(row => row.movDocumentId))
 
             message.success(COMPLETION_SUCCESS_MESSAGE)
 

@@ -92,6 +92,8 @@ const openCheckInCount = (
     if (appointment?.appointmentSessionId) {
         return appointment.attendance?.checkedInAt && !appointment.attendance?.checkedOutAt ? 1 : 0
     }
+    // Legacy rows only carry email lists: email fallback until Phase 4
+    // (docs/sme-identity-migration-plan.md).
     const inEmails = checkedInEmails(
         appointment
     )

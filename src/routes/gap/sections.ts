@@ -25,7 +25,7 @@ export const financialManagementQ = [
     'Do you have current Management Accounts?',
     'Do you have a Fixed Asset Register?',
     'Do you have legacy accounting problems (prior year unfinished accounting/bookkeeping tasks)?',
-    'Please assist with read-only access of business bank account – Bank statements only'
+    'Can you provide your last 3 months of business bank statements?'
 ]
 
 export const marketLinkageQ = [
@@ -115,7 +115,7 @@ export const YES_IS_GAP: Partial<Record<string, number[]>> = {
 
 /** Informational prompts with no right answer; never scored as a gap. */
 export const NOT_SCORED: Partial<Record<string, number[]>> = {
-    finance: [15], // read-only bank access request
+    finance: [15], // bank statements request
     training: [1], // "If yes, to which SETA?"
     nvc: [1]
 }

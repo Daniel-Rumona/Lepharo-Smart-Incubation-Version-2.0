@@ -28,6 +28,7 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useDepartmentRoles } from '@/services/departmentRoles'
 import {
     collection,
+    documentId,
     onSnapshot,
     query,
     where,
@@ -571,13 +572,23 @@ const OperationsReports: React.FC = () => {
     const outstandingPieHasData = outstandingPieData.some(p => p.y > 0)
 
 
-    // Subscribe to participants by email (batched 'in' queries)
+    // Subscribe to participants by the apps' participantId (batched 'in' queries);
+    // apps without one are matched by email (email fallback until Phase 4,
+    // docs/sme-identity-migration-plan.md)
     useEffect(() => {
         const sourceApps =
             cohortMode === 'accepted' ? acceptedApps : timeFilteredApps
 
+        const ids = Array.from(
+            new Set(
+                sourceApps
+                    .map(a => String(a.participantId || '').trim())
+                    .filter(Boolean)
+            )
+        )
         const emailSet = new Set(
             sourceApps
+                .filter(a => !a.participantId)
                 .map(a =>
                     String((a as any).email || '')
                         .trim()
@@ -587,32 +598,34 @@ const OperationsReports: React.FC = () => {
         )
         const emails = Array.from(emailSet)
 
-        if (emails.length === 0) {
+        if (ids.length === 0 && emails.length === 0) {
             setParticipants([])
             return
         }
 
-        const batches: string[][] = []
+        const batches: { byId: boolean; values: string[] }[] = []
+        for (let i = 0; i < ids.length; i += 10) {
+            batches.push({ byId: true, values: ids.slice(i, i + 10) })
+        }
         for (let i = 0; i < emails.length; i += 10) {
-            batches.push(emails.slice(i, i + 10))
+            batches.push({ byId: false, values: emails.slice(i, i + 10) })
         }
 
         setParticipants([])
-        const accByEmail = new Map<string, any>()
+        const accById = new Map<string, any>()
         const unsubs = batches.map(batch => {
             const qy = query(
                 collection(db, 'participants'),
-                where('email', 'in', batch)
+                where(batch.byId ? documentId() : 'email', 'in', batch.values)
             )
             return onSnapshot(qy, snap => {
                 snap.docs.forEach(d => {
                     const data = d.data() as any
-                    const e = String(data.email || '').toLowerCase()
-                    if (e && filterReportRecords([{ id: d.id, ...data }], user?.email).length) {
-                        accByEmail.set(e, { id: d.id, ...data })
+                    if (filterReportRecords([{ id: d.id, ...data }], user?.email).length) {
+                        accById.set(d.id, { id: d.id, ...data })
                     }
                 })
-                setParticipants(Array.from(accByEmail.values()))
+                setParticipants(Array.from(accById.values()))
             })
         })
 

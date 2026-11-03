@@ -207,6 +207,7 @@ const getParticipantKey = (row: any): string | null => {
         row?.clientId ||
         row?.beneficiaryName ||
         row?.companyName ||
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
         row?.email ||
         null
     )

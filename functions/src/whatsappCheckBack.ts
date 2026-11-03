@@ -51,11 +51,21 @@ async function staffNumber(assigneeId: string): Promise<string> {
   return "";
 }
 
-/** The SME's WhatsApp number, only if they said yes to WhatsApp updates. */
-async function smeConsentedNumber(email: string): Promise<string> {
-  if (!email) return "";
-  const snap = await db.collection("users").where("email", "==", lower(email)).limit(5).get();
-  const match = snap.docs.find((doc) => {
+/**
+ * The SME's WhatsApp number, only if they said yes to WhatsApp updates.
+ * Their login is found by users.participantId (docs/sme-identity-migration-plan.md).
+ */
+async function smeConsentedNumber(participantId: string, email: string): Promise<string> {
+  let docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  if (participantId) {
+    const linked = await db.collection("users").where("participantId", "==", participantId).limit(5).get();
+    docs = linked.docs.filter((doc) => lower((doc.data() as any).role) === "incubatee");
+  }
+  // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+  if (!docs.length && email) {
+    docs = (await db.collection("users").where("email", "==", lower(email)).limit(5).get()).docs;
+  }
+  const match = docs.find((doc) => {
     const data = doc.data() as any;
     return lower(data.role) === "incubatee" && data.whatsappConsent?.status === "granted";
   });
@@ -98,7 +108,7 @@ export async function sendCheckBackWhatsApp(
 
   if (options.sendToSme) {
     try {
-      const to = await smeConsentedNumber(clean(followUp.participantEmail));
+      const to = await smeConsentedNumber(clean(followUp.participantId), clean(followUp.participantEmail));
       if (to) {
         result.sme = await post(
           smeDispatch({
@@ -142,10 +152,16 @@ export async function recordCheckBackTap(input: {
   // An SME may reply from the number they gave consent on, even if their profile number differs.
   const digits = normalizePhone(input.phoneNumber);
   let smeConsentNumberMatches = false;
-  if (digits && clean(followUp.participantEmail)) {
+  const followUpParticipantId = clean(followUp.participantId);
+  if (digits && (followUpParticipantId || clean(followUp.participantEmail))) {
     for (const candidate of candidatePhoneValues(digits)) {
       const owners = await db.collection("users").where("whatsappConsent.number", "==", candidate).limit(3).get();
-      if (owners.docs.some((doc) => lower((doc.data() as any).email) === lower(followUp.participantEmail))) {
+      if (owners.docs.some((doc) => {
+        const data = doc.data() as any;
+        if (followUpParticipantId && clean(data.participantId)) return clean(data.participantId) === followUpParticipantId;
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        return !!clean(followUp.participantEmail) && lower(data.email) === lower(followUp.participantEmail);
+      })) {
         smeConsentNumberMatches = true;
         break;
       }

@@ -1,5 +1,6 @@
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/firebase";
+import { resolveSmeParticipantId } from "@/services/smeIdentity";
 import { departmentNameOf, loadDepartmentRoles } from "@/services/departmentRoles";
 import {
   formatDeliveryMethod,
@@ -148,21 +149,11 @@ export async function loadMilestoneJourney(args: {
     departmentNameOf(String(data?.departmentId || "").trim(), departments, "") || undefined;
 
   if (args.scope === "sme") {
-    const email = String(args.email || "").trim();
-    if (!email) return [];
-    const suppliedParticipantId = String(args.participantId || "").trim();
-    const emailCandidates = Array.from(new Set([email, email.toLowerCase()]));
-    const participantSnapshots = await Promise.all(
-      emailCandidates.map((candidate) =>
-        getDocs(
-          query(collection(db, "participants"), where("email", "==", candidate))
-        )
-      )
-    );
-    const matchedParticipant = participantSnapshots.find(
-      (snapshot) => !snapshot.empty
-    )?.docs[0];
-    const participantId = suppliedParticipantId || matchedParticipant?.id;
+    // The SME's linked participant; email only until it is linked.
+    const participantId = await resolveSmeParticipantId({
+      participantId: args.participantId,
+      email: args.email,
+    });
     if (!participantId) return [];
 
     const [appointmentsSnapshot, interventionsSnapshot, plansSnapshot] =

@@ -295,6 +295,22 @@ def summarize_records(records) -> dict:
     return summary
 
 
+def count_collection(
+    collection_name: str,
+    filters: list[tuple[str, str, object]] | None = None,
+) -> int | None:
+    """How many records the query matches, counted by Firestore without reading them. None if it can't."""
+    query = db.collection(collection_name)
+    for field, operator, value in filters or []:
+        query = query.where(field, operator, value)
+    try:
+        result = query.count().get()
+        return int(result[0][0].value)
+    except Exception as error:  # noqa: BLE001 - the answer just won't say "N of M"
+        print("count_collection failed:", collection_name, type(error).__name__, flush=True)
+        return None
+
+
 def summarize_collection(
     collection_name: str,
     filters: list[tuple[str, str, object]] | None = None,
@@ -373,6 +389,26 @@ def get_participant_by_email(email: str):
 def get_participant_by_id(participant_id: str):
     doc = db.collection("participants").document(participant_id).get()
     return clean_doc(doc) if doc.exists else None
+
+
+def get_participant_by_uid(uid: str):
+    # A linked SME's participant carries participants/{id}.uid (docs/sme-identity-migration-plan.md).
+    if not uid:
+        return None
+    for doc in db.collection("participants").where("uid", "==", uid).limit(1).stream():
+        return clean_doc(doc)
+    return None
+
+
+def get_participant_by_user(participant_id: str = "", uid: str = "", email: str = ""):
+    """The signed-in SME's participant: by participantId, then by uid."""
+    participant = get_participant_by_id(participant_id) if participant_id else None
+    if not participant:
+        participant = get_participant_by_uid(uid)
+    if not participant and email:
+        # email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        participant = get_participant_by_email(email)
+    return participant
 
 
 def get_participants(max_results: int = 100):
@@ -458,6 +494,15 @@ def get_applications_by_participant(participant_id: str, max_results: int = 50):
     return query_collection("applications", "participantId", participant_id, max_results)
 
 
+def get_applications_by_user(participant_id: str = "", uid: str = "", email: str = "", max_results: int = 50):
+    """The signed-in SME's applications, by participantId."""
+    applications = get_applications_by_participant(participant_id, max_results) if participant_id else []
+    if not applications and email:
+        # email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        applications = get_applications_by_email(email, max_results)
+    return applications
+
+
 def get_active_programs(max_results: int = 100):
     snap = (
         db.collection("programs")
@@ -477,6 +522,28 @@ def get_inquiries_by_email(email: str, max_results: int = 50):
     return query_collection("inquiries", "email", email, max_results)
 
 
+def _merge_by_id(*record_lists, max_results: int) -> list:
+    merged: dict = {}
+    for records in record_lists:
+        for record in records or []:
+            merged.setdefault(record.get("id"), record)
+    return list(merged.values())[:max_results]
+
+
+def get_inquiries_by_user(participant_id: str = "", uid: str = "", email: str = "", max_results: int = 50):
+    """The signed-in SME's inquiries: participantId plus submittedBy == uid, as
+    src/routes/incubatee/feedback reads them."""
+    inquiries = _merge_by_id(
+        query_collection("inquiries", "participantId", participant_id, max_results) if participant_id else [],
+        query_collection("inquiries", "submittedBy", uid, max_results) if uid else [],
+        max_results=max_results,
+    )
+    if not inquiries and email:
+        # email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        inquiries = get_inquiries_by_email(email, max_results)
+    return inquiries
+
+
 def get_inquiries_by_branch(branch_id: str, max_results: int = 200):
     # Mirrors src/services/inquiryService.ts's getBranchInquiries: inquiries are
     # scoped by `branchId`, not programId (a receptionist's inquiries can be
@@ -491,6 +558,20 @@ def get_inquiries(max_results: int = 200):
 
 def get_intake_submissions_by_email(email: str, max_results: int = 50):
     return query_collection("smeIntakeSubmissions", "email", email, max_results)
+
+
+def get_intake_submissions_by_user(participant_id: str = "", uid: str = "", email: str = "", max_results: int = 50):
+    """The signed-in SME's intake submissions, by participantId or uid. Nothing in
+    this repo writes smeIntakeSubmissions, so both id fields are tried."""
+    submissions = _merge_by_id(
+        query_collection("smeIntakeSubmissions", "participantId", participant_id, max_results) if participant_id else [],
+        query_collection("smeIntakeSubmissions", "uid", uid, max_results) if uid else [],
+        max_results=max_results,
+    )
+    if not submissions and email:
+        # email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        submissions = get_intake_submissions_by_email(email, max_results)
+    return submissions
 
 
 def get_intake_submissions(max_results: int = 200):
@@ -581,24 +662,31 @@ def get_monthly_participants_serviced():
 # -------------------------
 
 _IMPACT_FIELDS = (
-    "interventionTitle", "programId", "status", "liftPercent", "rangeLowPercent", "rangeHighPercent",
+    "interventionTitle", "programId", "metric", "unit", "status", "liftPercent", "rangeLowPercent", "rangeHighPercent",
     "treatedChangePercent", "comparisonChangePercent", "treatedCount", "comparisonCount",
     "overlapShare", "byOutcome", "period", "demo", "headline",
 )
 
 
 def _impact_rows(query) -> dict:
-    """Monthly results from functions/src/interventionImpact.ts, best first. Lift is in
-    percentage points of revenue growth against similar SMEs; it shows a link, not cause."""
+    """Monthly results from functions/src/interventionImpact.ts, best first. One row per
+    intervention and measure: revenue lift is in percentage points of growth, jobs lift in
+    jobs per SME, both against similar SMEs; it shows a link, not cause."""
     rows = []
     for snap in query.stream():
         data = snap.to_dict() or {}
-        rows.append({field: data.get(field) for field in _IMPACT_FIELDS})
+        row = {field: data.get(field) for field in _IMPACT_FIELDS}
+        # Results written before jobs were added are revenue.
+        row["metric"] = row.get("metric") or "revenue"
+        row["unit"] = row.get("unit") or "points"
+        rows.append(row)
     order = {"reportable": 0, "early": 1, "insufficient": 2}
-    rows.sort(key=lambda row: (order.get(row.get("status"), 3), -(row.get("liftPercent") or 0)))
+    rows.sort(key=lambda row: (row["metric"] != "revenue", order.get(row.get("status"), 3), -(row.get("liftPercent") or 0)))
     return {
         "results": rows,
         "note": (
+            "Each row is one measure: 'revenue' (liftPercent is percentage points of growth) or 'jobs' "
+            "(liftPercent and the change fields are jobs per SME, despite the field names). Name the measure. "
             "Only 'reportable' results (10+ SMEs each side) may be quoted, using their 'headline'. "
             "'early' results are signals for staff only. Say 'linked to', never 'caused'. "
             "If 'demo' is true the figures come from seeded test SMEs: say so and never present them as real."
@@ -835,7 +923,14 @@ def update_compliance_document_status(
     status: str,
     note: str,
     reviewed_by: str = "AI Compliance Check",
+    ai_review: "dict | None" = None,
+    write_status: bool = True,
 ):
+    """
+    Records an AI check on the document. With write_status=False the stored status
+    is left alone (the AI review is only a suggestion), so a staff decision made
+    while the check was running is not overwritten.
+    """
     doc_ref = (
         db.collection("applications")
         .document(application_id)
@@ -852,7 +947,8 @@ def update_compliance_document_status(
     }
     doc_ref.set(
         {
-            "status": status,
+            **({"status": status} if write_status else {}),
+            **({"aiReview": ai_review} if ai_review is not None else {}),
             "statusHistory": firestore.ArrayUnion([entry]),
             "aiVerificationNote": note,
         },
@@ -1357,6 +1453,10 @@ def save_chat_turn(
     user_text: str,
     assistant_text: str,
     chart: dict | None,
+    cards: list[dict] | None = None,
+    watch: dict | None = None,
+    chaser: dict | None = None,
+    attention: dict | None = None,
 ) -> None:
     if not uid or not session_id:
         return
@@ -1392,6 +1492,11 @@ def save_chat_turn(
             "sender": "assistant",
             "content": assistant_text,
             "chart": chart,
+            "cards": cards or [],
+            # A drafted watch or chaser, so its card is still there when the conversation is reopened.
+            "watch": watch,
+            "chaser": chaser,
+            "attention": attention,
             "createdAt": firestore.SERVER_TIMESTAMP,
         })
         batch.update(session_ref, {
