@@ -23,7 +23,8 @@ const SAMPLE_INPUTS: RiskScoreInputs = {
     docsMissing: 2,
     docsQueried: 0,
     docsRejected: 0,
-    missingDepartmentsCount: 0,
+    // QMS waits on the SME to confirm the plan, Marketing on its HOD to review it.
+    missingDepartmentsCount: 2,
     smePendingAcceptanceCount: 1,
     smePendingConfirmationCount: 0,
     declinedTouches: 1
@@ -122,7 +123,19 @@ export function buildSampleTwinView(): DigitalTwinView {
                 { title: 'Assessment form', status: 'pending', expiry: null }
             ]
         },
-        plan: { departments: 5, departmentConfirmed: 4, smeConfirmed: 3, finalConfirmed: false },
+        plan: {
+            departments: 5,
+            departmentConfirmed: 4,
+            smeConfirmed: 3,
+            finalConfirmed: false,
+            areas: [
+                { departmentName: 'Finance', deptConfirmed: true, smmeConfirmed: true, services: 4 },
+                { departmentName: 'HSE & Labour Compliance', deptConfirmed: true, smmeConfirmed: true, services: 4 },
+                { departmentName: 'Legal Advisory Services', deptConfirmed: true, smmeConfirmed: true, services: 2 },
+                { departmentName: 'QMS', deptConfirmed: true, smmeConfirmed: false, services: 1 },
+                { departmentName: 'Marketing', deptConfirmed: false, smmeConfirmed: false, services: 0 }
+            ]
+        },
         business: {
             revenue: { monthly: 186500, month: now.toISOString().slice(0, 7), source: 'QuantNow' },
             headcount: { total: 9, period: 'Sep 2026', source: 'SME profile' },
@@ -135,12 +148,23 @@ export function buildSampleTwinView(): DigitalTwinView {
             lastContactAt: at(-21).toISOString(),
             ...projection
         },
-        peers: []
+        peers: [],
+        scope: null,
+        byDepartment: [],
+        // Matches the story above: no service for 75 days, a contact 21 days ago.
+        mirror: [
+            { key: 'interventions', records: 12, lastChange: at(-75).toISOString() },
+            { key: 'documents', records: 10, lastChange: at(-9).toISOString() },
+            { key: 'plan', records: 5, lastChange: at(-34).toISOString() },
+            { key: 'evidence', records: 9, lastChange: at(-3).toISOString() },
+            { key: 'contact', records: 4, lastChange: at(-21).toISOString() },
+            { key: 'business', records: 6, lastChange: at(-12).toISOString() }
+        ]
     }
 
 
     const history = sampleHistory(now)
     history[history.length - 1] = { ...history[history.length - 1], needsAttention: needsAttention.score, level: needsAttention.level, growth: growthTotal, source: 'sample' }
 
-    return { record, origin: 'sample', lastSavedAt: null, history }
+    return { record, origin: 'sample', lastSavedAt: null, history, department: null, refused: [] }
 }

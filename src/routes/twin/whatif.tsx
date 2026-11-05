@@ -1,152 +1,130 @@
-import { useId } from 'react'
 import {
     NO_CHANGE_SCENARIO,
-    scenarioLimits,
+    SIMULATED_SERVICE_IN_DAYS,
+    averageOutlook,
+    scenarioFromMoves,
+    scenarioGrowth,
     type DigitalTwinRecord,
-    type TwinScenario
+    type TwinMove,
+    type TwinMoveKey
 } from '@twin/rules'
+import { usePalette } from './palette'
 
-type Limits = ReturnType<typeof scenarioLimits>
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 
-function Lever({ label, hint, value, max, onChange, format }: {
-    label: string
-    hint: string
-    value: number
-    max: number
-    onChange: (value: number) => void
-    format?: (value: number) => string
-}) {
-    const id = useId()
-    return (
-        <div className='twin-lever'>
-            <div className='twin-lever-head'>
-                <label htmlFor={id}>{label}</label>
-                <output htmlFor={id} className='twin-num'>{format ? format(value) : `${value} of ${max}`}</output>
-            </div>
-            <input
-                id={id}
-                type='range'
-                min={0}
-                max={max}
-                step={1}
-                value={value}
-                onChange={event => onChange(Number(event.target.value))}
-                style={{ ['--fill' as any]: `${max ? (value / max) * 100 : 0}%` }}
-            />
-            <div className='twin-bar-detail'>{hint}</div>
-        </div>
-    )
+const MOVE_LABEL: Record<TwinMoveKey, (count: number, forSme: boolean) => string> = {
+    service: () => `Deliver a service within ${SIMULATED_SERVICE_IN_DAYS} days`,
+    documentsUploaded: count => `Collect ${plural(count, 'missing document')}`,
+    renewExpiring: count => `Renew ${plural(count, 'expiring document')} in time`,
+    documentsFixed: count => `Fix ${plural(count, 'queried or rejected document')}`,
+    smeResponses: (count, forSme) => (forSme ? `Answer your ${plural(count, 'pending item')}` : `SME answers ${plural(count, 'pending item')}`),
+    departmentsFollowedUp: count => `Follow up ${plural(count, 'department')} on the plan`,
+    declinesResolved: count => `Resolve ${plural(count, 'declined intervention')}`,
+    interventionsCompleted: count => `Complete ${plural(count, 'open intervention')}`,
+    roadmapConfirmed: count => `Confirm ${plural(count, 'roadmap area')}`
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-    return (
-        <label className='twin-toggle'>
-            <input type='checkbox' checked={checked} onChange={event => onChange(event.target.checked)} />
-            <span className='twin-toggle-track' aria-hidden><span /></span>
-            {label}
-        </label>
-    )
-}
+// Enough to choose from while the whole twin stays on one screen.
+const MOST_MOVES = 6
 
 /**
- * The what-if levers. Each one moves an input the twin rules already use, so
- * the chart, the horizon cards and the growth score show the rules' own answer.
+ * The twin as a simulator: it has already tried every move open to this SME,
+ * each on its own, and ranks them by what they do to the days ahead. Switching
+ * moves on replays the time machine with them, together.
  */
-export function WhatIfControls({ record, scenario, onChange, horizonDays }: {
+export function SimulatedMoves({ record, moves, chosen, onToggle, onClear, horizonDays, forSme = false }: {
     record: DigitalTwinRecord
-    scenario: TwinScenario
-    onChange: (scenario: TwinScenario) => void
+    moves: TwinMove[]
+    chosen: TwinMoveKey[]
+    onToggle: (key: TwinMoveKey) => void
+    onClear: () => void
     horizonDays: number
+    /** Moves the SME makes themselves are worded to them. */
+    forSme?: boolean
 }) {
-    const limits: Limits = scenarioLimits(record)
-    const set = (patch: Partial<TwinScenario>) => onChange({ ...scenario, ...patch })
-    const serving = scenario.serviceInDays !== null
+    const palette = usePalette()
+    const LEVEL = palette.level
+    const baseline = averageOutlook(record, NO_CHANGE_SCENARIO, horizonDays)
+    const picked = moves.filter(move => chosen.includes(move.key))
+    const together = picked.length ? scenarioFromMoves(picked) : null
+    const combined = together ? averageOutlook(record, together, horizonDays) : null
+    const combinedGrowth = together ? scenarioGrowth(record, together).total : null
+    const shown = moves.slice(0, MOST_MOVES)
+    // Each bar is the move's effect against the strongest move of its kind.
+    const strongestDrop = Math.max(1, ...moves.map(move => -move.scoreDelta))
+    const strongestGrowth = Math.max(1, ...moves.map(move => move.growthDelta))
 
-    const everything: TwinScenario = {
-        serviceInDays: 7,
-        documentsUploaded: limits.documentsUploaded,
-        renewExpiring: limits.expiringDocuments > 0,
-        documentsFixed: limits.documentsFixed,
-        smeResponses: limits.smeResponses,
-        departmentsFollowedUp: limits.departmentsFollowedUp,
-        declinesResolved: limits.declinesResolved,
-        interventionsCompleted: limits.interventionsCompleted,
-        roadmapConfirmed: limits.roadmapConfirmed
+    if (!moves.length) {
+        return <div className='twin-empty'>Nothing the twin can try would lower needs attention or lift growth for this SME.</div>
     }
 
     return (
-        <div className='twin-whatif'>
-            <div className='twin-whatif-presets'>
-                <span className='twin-next-label'>Try</span>
-                <button className='twin-tab' onClick={() => set({ serviceInDays: 7 })}>Serve within a week</button>
-                {limits.documentsUploaded + limits.documentsFixed > 0 && (
-                    <button className='twin-tab' onClick={() => set({ documentsUploaded: limits.documentsUploaded, documentsFixed: limits.documentsFixed, renewExpiring: limits.expiringDocuments > 0 })}>
-                        Sort out all documents
-                    </button>
-                )}
-                <button className='twin-tab' onClick={() => onChange(everything)}>Everything on track</button>
-                <button className='twin-tab' onClick={() => onChange(NO_CHANGE_SCENARIO)}>Reset</button>
-            </div>
-
-            <div className='twin-levers'>
-                <div className='twin-lever'>
-                    <div className='twin-lever-head'>
-                        <Toggle label='Deliver a service' checked={serving} onChange={checked => set({ serviceInDays: checked ? 7 : null })} />
-                        <output className='twin-num'>{serving ? (scenario.serviceInDays === 0 ? 'today' : `in ${scenario.serviceInDays} days`) : 'off'}</output>
+        <div className='twin-moves'>
+            <div className='twin-moves-summary' aria-live='polite'>
+                <div>
+                    <div className='twin-moves-caption'>Average needs attention · next {horizonDays} days</div>
+                    <div className='twin-moves-values'>
+                        <span className={`twin-moves-value ${combined ? 'is-before' : ''}`} style={{ ['--v' as any]: LEVEL[baseline.level] }}>
+                            <b>{baseline.score}</b>
+                            <small>{baseline.level}</small>
+                        </span>
+                        {combined && (
+                            <>
+                                <span className='twin-moves-arrow' aria-hidden>→</span>
+                                <span className='twin-moves-value' style={{ ['--v' as any]: LEVEL[combined.level] }}>
+                                    <b>{combined.score}</b>
+                                    <small>{combined.level}</small>
+                                </span>
+                            </>
+                        )}
                     </div>
-                    <input
-                        type='range'
-                        aria-label='Days until the service is delivered'
-                        min={0}
-                        max={horizonDays}
-                        step={1}
-                        disabled={!serving}
-                        value={scenario.serviceInDays ?? 7}
-                        onChange={event => set({ serviceInDays: Number(event.target.value) })}
-                        style={{ ['--fill' as any]: `${((scenario.serviceInDays ?? 0) / horizonDays) * 100}%` }}
-                    />
-                    <div className='twin-bar-detail'>Resets the days since last service on that day.</div>
                 </div>
-
-                {limits.documentsUploaded > 0 && (
-                    <Lever label='Missing documents uploaded' hint='Uploaded and verified now.'
-                        value={scenario.documentsUploaded} max={limits.documentsUploaded} onChange={value => set({ documentsUploaded: value })} />
-                )}
-                {limits.documentsFixed > 0 && (
-                    <Lever label='Queried or rejected documents fixed' hint='Corrected and accepted now.'
-                        value={scenario.documentsFixed} max={limits.documentsFixed} onChange={value => set({ documentsFixed: value })} />
-                )}
-                {limits.smeResponses > 0 && (
-                    <Lever label='SME responds to pending items' hint='Accepts appointments or confirms completed work.'
-                        value={scenario.smeResponses} max={limits.smeResponses} onChange={value => set({ smeResponses: value })} />
-                )}
-                {limits.departmentsFollowedUp > 0 && (
-                    <Lever label='Departments followed up' hint='Plan confirmed and a service assigned.'
-                        value={scenario.departmentsFollowedUp} max={limits.departmentsFollowedUp} onChange={value => set({ departmentsFollowedUp: value })} />
-                )}
-                {limits.declinesResolved > 0 && (
-                    <Lever label='Declined interventions resolved' hint='Rescheduled and agreed with the SME.'
-                        value={scenario.declinesResolved} max={limits.declinesResolved} onChange={value => set({ declinesResolved: value })} />
-                )}
-                {limits.interventionsCompleted > 0 && (
-                    <Lever label='More interventions completed' hint='Moves the growth score, not needs attention.'
-                        value={scenario.interventionsCompleted} max={limits.interventionsCompleted} onChange={value => set({ interventionsCompleted: value })} />
-                )}
-                {limits.roadmapConfirmed > 0 && (
-                    <Lever label='More roadmap areas confirmed' hint='Moves the growth score.'
-                        value={scenario.roadmapConfirmed} max={limits.roadmapConfirmed} onChange={value => set({ roadmapConfirmed: value })} />
-                )}
-                {limits.expiringDocuments > 0 && (
-                    <div className='twin-lever'>
-                        <Toggle
-                            label={`Renew the ${limits.expiringDocuments} document${limits.expiringDocuments === 1 ? '' : 's'} expiring soon`}
-                            checked={scenario.renewExpiring}
-                            onChange={checked => set({ renewExpiring: checked })}
-                        />
-                        <div className='twin-bar-detail'>Renewed before the expiry date, so they never lapse.</div>
-                    </div>
-                )}
+                <div className='twin-moves-side'>
+                    {combined ? (
+                        <>
+                            <span>
+                                {plural(picked.length, 'move')} playing
+                                {combinedGrowth !== null && combinedGrowth !== record.growth.total && <em>Growth {record.growth.total} → {combinedGrowth}</em>}
+                            </span>
+                            <button className='twin-tab twin-moves-reset' onClick={onClear}>Reset</button>
+                        </>
+                    ) : (
+                        <span className='twin-moves-hint'>If nothing changes. Tick moves to replay the future with them.</span>
+                    )}
+                </div>
             </div>
+            <div className='twin-moves-grid'>
+                {shown.map((move, index) => {
+                    const on = chosen.includes(move.key)
+                    const label = MOVE_LABEL[move.key](move.amount, forSme)
+                    const impact = move.scoreDelta < 0 ? -move.scoreDelta / strongestDrop : move.growthDelta / strongestGrowth
+                    return (
+                        <button
+                            key={move.key}
+                            className={`twin-move ${on ? 'is-on' : ''} ${move.scoreDelta < 0 ? '' : 'is-growth-only'}`}
+                            aria-pressed={on}
+                            onClick={() => onToggle(move.key)}
+                            title={label}
+                        >
+                            <span className='twin-move-check' aria-hidden>✓</span>
+                            <span className='twin-move-body'>
+                                <span className='twin-move-label'>
+                                    {index === 0 && <em>Best</em>}
+                                    {label}
+                                </span>
+                                <span className='twin-move-bar'><i style={{ width: `${Math.round(impact * 100)}%` }} /></span>
+                            </span>
+                            <span className='twin-move-effect'>
+                                {move.scoreDelta < 0 && <span className='twin-move-fig'><b>{move.scoreDelta}</b><small>attention</small></span>}
+                                {move.growthDelta > 0 && <span className='twin-move-fig is-growth'><b>+{move.growthDelta}</b><small>growth</small></span>}
+                            </span>
+                        </button>
+                    )
+                })}
+            </div>
+            {moves.length > shown.length && (
+                <div className='twin-moves-more'>{plural(moves.length - shown.length, 'smaller move')} not shown</div>
+            )}
         </div>
     )
 }

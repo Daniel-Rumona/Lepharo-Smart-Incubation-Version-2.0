@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
 const prefersReducedMotion = () =>
@@ -27,11 +27,6 @@ export function useCountUp(value: number, duration = 1400) {
         return () => cancelAnimationFrame(frame)
     }, [value, duration])
     return shown
-}
-
-export function CountUp({ value, decimals = 0, format }: { value: number; decimals?: number; format?: (value: number) => string }) {
-    const shown = useCountUp(value)
-    return <>{format ? format(shown) : shown.toFixed(decimals)}</>
 }
 
 const IDLE_DRIFT_AFTER_MS = 20000
@@ -175,31 +170,15 @@ export function HoloBackground() {
                     }}
                 />
             ))}
-            <div className='twin-streaks'>
-                {Array.from({ length: 7 }).map((_, index) => (
-                    <span
-                        key={index}
-                        style={{
-                            top: `${8 + index * 13}%`,
-                            animationDelay: `${index * 2.3}s`,
-                            animationDuration: `${9 + (index % 3) * 3}s`
-                        }}
-                    />
-                ))}
-            </div>
             <div className='twin-sweep' />
             <div className='twin-vignette' />
         </div>
     )
 }
 
-/**
- * Page-wide magic: a soft light follows the pointer and every click throws a
- * burst of sparks, so the whole scene answers the person using it.
- */
+/** Page-wide magic: a soft light follows the pointer, so the scene answers the person using it. */
 export function MagicLayer() {
     const spotRef = useRef<HTMLDivElement | null>(null)
-    const [bursts, setBursts] = useState<Array<{ id: number; x: number; y: number }>>([])
     useEffect(() => {
         if (prefersReducedMotion()) return
         let targetX = window.innerWidth / 2
@@ -207,15 +186,9 @@ export function MagicLayer() {
         let x = targetX
         let y = targetY
         let frame = 0
-        let nextId = 0
         const move = (event: PointerEvent) => {
             targetX = event.clientX
             targetY = event.clientY
-        }
-        const down = (event: PointerEvent) => {
-            const id = ++nextId
-            setBursts(current => [...current.slice(-4), { id, x: event.clientX, y: event.clientY }])
-            window.setTimeout(() => setBursts(current => current.filter(item => item.id !== id)), 900)
         }
         // Eases the light after the pointer, then sleeps until the pointer moves again.
         const tick = () => {
@@ -230,12 +203,10 @@ export function MagicLayer() {
         }
         window.addEventListener('pointermove', wake)
         window.addEventListener('pointermove', move)
-        window.addEventListener('pointerdown', down)
         frame = requestAnimationFrame(tick)
         return () => {
             window.removeEventListener('pointermove', wake)
             window.removeEventListener('pointermove', move)
-            window.removeEventListener('pointerdown', down)
             cancelAnimationFrame(frame)
         }
     }, [])
@@ -246,14 +217,6 @@ export function MagicLayer() {
             </div>
             <div className='twin-grain' />
             <div className='twin-spot' ref={spotRef} />
-            {bursts.map(burst => (
-                <div key={burst.id} className='twin-burst' style={{ left: burst.x, top: burst.y }}>
-                    <i />
-                    {Array.from({ length: 12 }).map((_, index) => (
-                        <span key={index} style={{ ['--a' as any]: `${index * 30}deg` }} />
-                    ))}
-                </div>
-            ))}
         </div>
     )
 }
@@ -355,9 +318,8 @@ export function CoreReactor({ score, level, color, caption, live = false, unit =
 }
 
 /**
- * A floating holographic panel: it materialises when scrolled into view, bobs
- * gently, tilts towards the pointer with a moving glare, and a light runs
- * around its border.
+ * A holographic glass panel in its own colour. It holds still: the time
+ * machine above is where the twin moves.
  */
 export function HoloPanel({ title, delay = 0, className = '', children, aside, accent, accentTwo }: {
     title: string
@@ -365,84 +327,29 @@ export function HoloPanel({ title, delay = 0, className = '', children, aside, a
     className?: string
     children: ReactNode
     aside?: ReactNode
-    /** The panel's own colour: title foil, border light, corners, glare and bars. */
+    /** The panel's own colour: title, border, corners and highlights. */
     accent?: string
-    /** Second foil colour for the title. */
+    /** Second colour for the title. */
     accentTwo?: string
 }) {
-    const tiltRef = useRef<HTMLDivElement | null>(null)
-    // The cursor light takes on the colour of the panel it is over.
-    const onPointerEnter = () => {
-        if (accent) tiltRef.current?.closest<HTMLElement>('.twin-root')?.style.setProperty('--spot', accent)
-    }
-    const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-        const element = tiltRef.current
-        if (!element || prefersReducedMotion()) return
-        const rect = element.getBoundingClientRect()
-        const px = (event.clientX - rect.left) / rect.width
-        const py = (event.clientY - rect.top) / rect.height
-        element.style.setProperty('--tx', `${((0.5 - py) * 7).toFixed(2)}deg`)
-        element.style.setProperty('--ty', `${((px - 0.5) * 9).toFixed(2)}deg`)
-        element.style.setProperty('--gx', `${(px * 100).toFixed(1)}%`)
-        element.style.setProperty('--gy', `${(py * 100).toFixed(1)}%`)
-    }
-    const onPointerLeave = () => {
-        tiltRef.current?.style.setProperty('--tx', '0deg')
-        tiltRef.current?.style.setProperty('--ty', '0deg')
-        tiltRef.current?.closest<HTMLElement>('.twin-root')?.style.removeProperty('--spot')
-    }
     return (
         <motion.section
             className={`twin-panel ${className}`}
-            initial='hidden'
-            whileInView='shown'
-            viewport={{ once: true, amount: 0.15 }}
-            variants={{
-                hidden: { opacity: 0, y: 50, rotateX: -24, filter: 'blur(10px)' },
-                shown: { opacity: 1, y: 0, rotateX: 0, filter: 'blur(0px)', transition: { duration: 1, delay, ease: [0.16, 1, 0.3, 1] } }
-            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay }}
             style={{
-                ['--bob-delay' as any]: `${-delay * 3}s`,
                 ...(accent ? { ['--accent' as any]: accent } : {}),
                 ...(accentTwo ? { ['--accent-2' as any]: accentTwo } : {})
             }}
         >
-            {/* The clip wipe lives on an inner layer: a fully clipped section would never count as in view. */}
-            <motion.div
-                className='twin-panel-tilt'
-                ref={tiltRef}
-                onPointerMove={onPointerMove}
-                onPointerEnter={onPointerEnter}
-                onPointerLeave={onPointerLeave}
-                variants={{
-                    hidden: { clipPath: 'inset(-10% -10% 110% -10%)' },
-                    // Once revealed the clip is dropped: a live clip on a moving layer is costly.
-                    shown: {
-                        clipPath: 'inset(-10% -10% -10% -10%)',
-                        transitionEnd: { clipPath: 'none' },
-                        transition: { duration: 1.1, delay: delay + 0.1, ease: [0.16, 1, 0.3, 1] }
-                    }
-                }}
-            >
-                {/* The bright edge of the reveal, like a hologram being printed line by line. */}
-                <motion.span
-                    className='twin-panel-print'
-                    aria-hidden
-                    variants={{
-                        hidden: { top: '0%', opacity: 0 },
-                        shown: { top: ['0%', '100%'], opacity: [1, 1, 0], transition: { duration: 1.1, delay: delay + 0.1, ease: [0.16, 1, 0.3, 1] } }
-                    }}
-                />
-                <div className='twin-panel-inner'>
-                    <span className='twin-panel-border' aria-hidden />
-                    <span className='twin-panel-glare' aria-hidden />
-                    <header className='twin-panel-head'>
-                        <h2>{title}</h2>
-                        {aside}
-                    </header>
-                    {children}
-                </div>
-            </motion.div>
+            <div className='twin-panel-inner'>
+                <header className='twin-panel-head'>
+                    <h2>{title}</h2>
+                    {aside}
+                </header>
+                {children}
+            </div>
         </motion.section>
     )
 }

@@ -41,7 +41,8 @@ import {
     WarningOutlined,
     EyeInvisibleOutlined,
     ThunderboltOutlined,
-    DeleteOutlined
+    DeleteOutlined,
+    DeploymentUnitOutlined
 } from '@ant-design/icons'
 import {
     collection,
@@ -64,6 +65,7 @@ import { httpsCallable } from 'firebase/functions'
 import { getDownloadURL, getStorage, ref as storageRef } from 'firebase/storage'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
+import { TWIN_STAFF_ROLES } from '@twin/rules'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { hasSmeGapSubmission } from '@/utils/agreementStatus'
 import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
@@ -714,6 +716,7 @@ const SMEOverview: React.FC = () => {
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
     const navigate = useNavigate()
     const isQuantilytixViewer = isQuantilytixDomain(user?.email)
+    const canOpenTwin = !!user && TWIN_STAFF_ROLES.includes(user.role)
     const { token } = theme.useToken()
 
     // Departments granted "repository" access to a training (Training.access,
@@ -2521,6 +2524,11 @@ const SMEOverview: React.FC = () => {
                     <Space>
                         <Tag icon={<UserOutlined />}>SME Profile</Tag>
                         {isDummyRow && <Tag color='purple'>Internal / Dummy</Tag>}
+                        {canOpenTwin && (
+                            <Button size='small' icon={<DeploymentUnitOutlined />} onClick={() => navigate(`/twin/${selectedRow.appId}`)}>
+                                Open digital twin
+                            </Button>
+                        )}
                         {isQuantilytixViewer && isDummyRow && (
                             <Popconfirm
                                 title='Delete this dummy SME?'

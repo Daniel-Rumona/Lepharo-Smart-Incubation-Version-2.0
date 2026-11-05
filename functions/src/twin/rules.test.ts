@@ -7,13 +7,21 @@ import {
   classifyAssignment,
   comparePeers,
   computeGrowthScore,
+  averageOutlook,
   computeRiskScore,
+  departmentScopeFor,
+  explainNeedsAttention,
+  latestChange,
+  mirrorFreshness,
   NO_CHANGE_SCENARIO,
   projectOutlook,
   projectionCurve,
   resolveComplianceRows,
   scenarioCurve,
+  scenarioFromMoves,
   scenarioGrowth,
+  simulateMoves,
+  summarizeBusiness,
   summarizeCompliance,
   summarizeDelivery,
   type PeerProfile,
@@ -54,6 +62,18 @@ test("coverage: facilitator completion alone is waiting on the SME, not complete
   });
   assert.equal(state.isCompleted, false);
   assert.equal(state.awaitingSmeConfirmation, true);
+});
+
+test("coverage: only the SME declining or a cancellation counts as declined", () => {
+  const declined = (fixture: Record<string, any>) => classifyAssignment(fixture).isDeclined;
+  assert.equal(declined({ assignmentStatus: "cancelled", participantAcceptanceStatus: "declined" }), true);
+  assert.equal(declined({ assignmentStatus: "cancelled" }), true);
+  // The facilitator declined: waiting on staff to reassign, not the SME's decline.
+  assert.equal(declined({ assigneeAcceptanceStatus: "declined", participantAcceptanceStatus: "accepted" }), false);
+  // The SME rejected a completion: it answered, so it is neither declined nor unresponsive.
+  const rejected = classifyAssignment({ participantAcceptanceStatus: "accepted", assigneeCompletionStatus: "completed", participantCompletionStatus: "rejected" });
+  assert.equal(rejected.isDeclined, false);
+  assert.equal(rejected.awaitingSmeConfirmation, false);
 });
 
 test("delivery: overdue means open and past due, never completed", () => {
@@ -154,6 +174,15 @@ test("growth: cancelled and reassigned work no longer counts against the SME", (
   assert.equal(interventions.detail, "1 of 1 interventions completed");
 });
 
+test("business: headcount months keyed by name or by year and month", () => {
+  const business = (monthly: Record<string, unknown>) =>
+    summarizeBusiness({ participant: { headcountHistory: { monthly } }, monthlyMetrics: [], jobContracts: [], now: NOW });
+  assert.deepEqual(business({ September: { permanent: 4, temporary: 1 } }).headcount, { total: 5, period: "Sep 2026", source: "SME profile" });
+  assert.deepEqual(business({ "2026-09": { permanent: 6, temporary: 2 } }).headcount, { total: 8, period: "Sep 2026", source: "SME profile" });
+  // A dated key wins over a bare month name, which could be from any year.
+  assert.equal(business({ October: { permanent: 1 }, "2026-10": { permanent: 3 } }).headcount?.total, 3);
+});
+
 const peer = (twinId: string, needsAttention: number, gender = "Female"): PeerProfile => ({
   twinId,
   group: "B",
@@ -220,6 +249,51 @@ const scenarioRecord = () =>
     { now: NOW, source: "live" }
   );
 
+test("scope: main and monitoring departments see the whole SME, others their own", () => {
+  const departments = [
+    { id: "rom", name: "ROM (Recruitment, Onboarding and Maintenance)", isMain: true, isMonitoring: true },
+    { id: "me", name: "M&E (Monitoring and Evaluation)", isMain: true },
+    { id: "hse", name: "HSE and Labour Compliance", isMain: false },
+  ];
+  assert.equal(departmentScopeFor({ departmentId: "rom" }, departments), null);
+  assert.equal(departmentScopeFor({ departmentId: "me" }, departments), null);
+  assert.equal(departmentScopeFor({}, departments), null);
+  assert.deepEqual(departmentScopeFor({ departmentId: "hse" }, departments), { departmentId: "hse", departmentName: "HSE & Labour Compliance" });
+});
+
+test("record: a department's view counts only its services, and every record keeps each department's score", () => {
+  const sources = {
+    application: { id: "app1", participantId: "p1", programId: "prog1", applicationStatus: "accepted" },
+    participant: { id: "p1" },
+    diagnosticPlans: [{ participantId: "p1", programId: "prog1", interventions: [
+      { id: "iv-hse", departmentId: "hse", title: "HSE file" },
+      { id: "iv-fin", departmentId: "fin", title: "Financial statements" },
+    ] }],
+    assignments: [
+      { programId: "prog1", departmentId: "hse", interventionId: "iv-hse", assignmentStatus: "completed", completedAt: daysFromNow(-5) },
+      { programId: "prog1", departmentId: "fin", interventionId: "iv-fin", assignmentStatus: "assigned", assigneeAcceptanceStatus: "accepted", participantAcceptanceStatus: "pending" },
+    ],
+    departments: [
+      { id: "hse", name: "HSE and Labour Compliance", interventionsDepartment: true },
+      { id: "fin", name: "Financial Compliance", interventionsDepartment: true },
+    ],
+    movs: [],
+    complianceUploads: [],
+  };
+  const whole = buildTwinRecord(sources, { now: NOW, source: "live" });
+  const finance = buildTwinRecord(sources, { now: NOW, source: "live", scope: { departmentId: "fin", departmentName: "Financial Compliance" } });
+  assert.equal(whole.scope, null);
+  assert.equal(whole.delivery.total, 2);
+  assert.deepEqual(whole.byDepartment.map((dep) => dep.departmentId).sort(), ["fin", "hse"]);
+  assert.deepEqual(finance.scope, { departmentId: "fin", departmentName: "Financial Compliance" });
+  assert.equal(finance.delivery.total, 1);
+  assert.equal(finance.needsAttention.inputs.smePendingAcceptanceCount, 1);
+  // The department's score in a whole-SME record is the score its own view shows.
+  assert.equal(whole.byDepartment.find((dep) => dep.departmentId === "fin")!.score, finance.needsAttention.score);
+  // Growth stays the whole SME's in every view.
+  assert.equal(finance.growth.total, whole.growth.total);
+});
+
 test("what-if: no change matches the saved outlook horizons", () => {
   const record = scenarioRecord();
   const curve = projectionCurve(record, 40);
@@ -248,4 +322,91 @@ test("what-if: uploads and responses lower the score and lift growth", () => {
   const growth = scenarioGrowth(record, scenario);
   assert.equal(growth.counts.documentsCovered, 2);
   assert.ok(growth.total > record.growth.total);
+});
+
+test("moves: each move runs alone, ranked by its drop in average needs attention", () => {
+  const record = scenarioRecord();
+  // 47 days without a service, 2 missing documents, 1 intervention awaiting acceptance.
+  record.needsAttention = { ...record.needsAttention, inputs: { ...BASE_INPUTS } };
+  const moves = simulateMoves(record, 40);
+  const keys = moves.map((move) => move.key);
+  assert.ok(keys.includes("service"), "a service lowers the days ahead even though they drift back by day 40");
+  assert.ok(keys.includes("documentsUploaded") && keys.includes("smeResponses"));
+  assert.ok(!keys.includes("declinesResolved"), "nothing to resolve, so no move");
+  moves.forEach((move) => assert.ok(move.scoreDelta < 0 || move.growthDelta > 0));
+  for (let index = 1; index < moves.length; index += 1) {
+    const [before, after] = [moves[index - 1], moves[index]];
+    assert.ok(before.scoreDelta < after.scoreDelta || (before.scoreDelta === after.scoreDelta && before.growthDelta >= after.growthDelta));
+  }
+  const baseline = averageOutlook(record, NO_CHANGE_SCENARIO, 40);
+  const days = scenarioCurve(record, NO_CHANGE_SCENARIO, 40).slice(1);
+  assert.equal(baseline.score, Math.round(days.reduce((sum, day) => sum + day.score, 0) / days.length));
+  const upload = moves.find((move) => move.key === "documentsUploaded")!;
+  assert.equal(upload.score, averageOutlook(record, scenarioFromMoves([upload]), 40).score);
+});
+
+test("moves: chosen together they make one what-if", () => {
+  const scenario = scenarioFromMoves([{ change: { documentsUploaded: 2 } }, { change: { serviceInDays: 7 } }]);
+  assert.deepEqual(scenario, { ...NO_CHANGE_SCENARIO, documentsUploaded: 2, serviceInDays: 7 });
+  assert.deepEqual(scenarioFromMoves([]), NO_CHANGE_SCENARIO);
+});
+
+test("mirror: newest past change per source, and how fresh it is", () => {
+  const docs = [
+    { createdAt: daysFromNow(-90), updatedAt: daysFromNow(-20) },
+    { createdAt: daysFromNow(-5) },
+    { createdAt: daysFromNow(10) },
+  ];
+  assert.equal(latestChange(docs, NOW)?.toISOString(), daysFromNow(-5).toISOString());
+  assert.equal(latestChange([], NOW), null);
+  assert.equal(mirrorFreshness(daysFromNow(-3).toISOString(), NOW), "fresh");
+  assert.equal(mirrorFreshness(daysFromNow(-30).toISOString(), NOW), "ageing");
+  assert.equal(mirrorFreshness(daysFromNow(-90).toISOString(), NOW), "stale");
+  assert.equal(mirrorFreshness(null, NOW), "unknown");
+  const record = scenarioRecord();
+  const interventions = record.mirror.find((feed) => feed.key === "interventions")!;
+  assert.equal(interventions.records, 2);
+  assert.equal(interventions.lastChange, daysFromNow(-80).toISOString());
+  assert.deepEqual(record.mirror.map((feed) => feed.key), ["interventions", "documents", "plan", "evidence", "contact", "business"]);
+});
+
+test("why: every reason says who it is waiting on", () => {
+  const record = scenarioRecord();
+  record.plan = {
+    ...record.plan,
+    areas: [
+      { departmentName: "Finance", deptConfirmed: false, smmeConfirmed: false, services: 0 },
+      { departmentName: "Legal", deptConfirmed: true, smmeConfirmed: false, services: 1 },
+      { departmentName: "HSE", deptConfirmed: true, smmeConfirmed: true, services: 2 },
+    ],
+  };
+  record.compliance = { ...record.compliance, outstanding: [{ title: "Tax Clearance", status: "missing", expiry: null }, { title: "BEE Certificate", status: "expired", expiry: null }] };
+  const inputs = { ...BASE_INPUTS, docsMissing: 2, missingDepartmentsCount: 2, smePendingAcceptanceCount: 1, declinedTouches: 2 };
+  const byKey = Object.fromEntries(explainNeedsAttention(record, inputs).map((reason) => [reason.key, reason]));
+  // A service gap with an unaccepted intervention is on both sides.
+  assert.equal(byKey["inactive-1-month"].owner, "both");
+  assert.match(byKey["inactive-1-month"].detail, /47 days ago.*1 new intervention still waits for the SME to accept/);
+  assert.equal(byKey["documents-missing"].owner, "sme");
+  assert.equal(byKey["documents-missing"].detail, "To upload or renew: Tax Clearance, BEE Certificate.");
+  assert.equal(byKey["departments-follow-up"].owner, "both");
+  assert.equal(byKey["departments-follow-up"].detail, "HOD to review the plan: Finance. SME to confirm the plan: Legal.");
+  assert.equal(byKey["awaiting-sme-response"].waitingOn, "SME");
+  assert.equal(byKey["repeat-declines"].owner, "both");
+  // Without anything waiting on the SME, the service gap is staff's.
+  const staffOnly = explainNeedsAttention(record, { ...inputs, smePendingAcceptanceCount: 0 });
+  assert.equal(staffOnly.find((reason) => reason.key === "inactive-1-month")!.owner, "staff");
+  // A later day with more documents missing than today is described by its count.
+  const later = explainNeedsAttention(record, { ...inputs, docsMissing: 3 });
+  assert.equal(later.find((reason) => reason.key === "documents-missing")!.detail, "3 documents missing or expired by then.");
+  // The deltas are the score's own.
+  assert.deepEqual(explainNeedsAttention(record, inputs).map((reason) => reason.delta), computeRiskScore(inputs).breakdown.map((reason) => reason.delta));
+});
+
+test("why: a department only waiting on its HOD names that HOD", () => {
+  const record = scenarioRecord();
+  record.plan = { ...record.plan, areas: [{ departmentName: "QMS", deptConfirmed: true, smmeConfirmed: true, services: 0 }] };
+  const reason = explainNeedsAttention(record, { ...BASE_INPUTS, missingDepartmentsCount: 1 }).find((item) => item.key === "departments-follow-up")!;
+  assert.equal(reason.owner, "staff");
+  assert.equal(reason.waitingOn, "HOD · QMS");
+  assert.equal(reason.detail, "No service assigned yet: QMS.");
 });

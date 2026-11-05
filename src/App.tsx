@@ -348,7 +348,7 @@ const App = () => {
                                                 shell stays on screen while the chunk loads. */}
                                             <Suspense fallback={<RouteFallback />}>
                                                 <Routes>
-                                                    {/* Full screen, outside the app layout; the page itself admits staff only. */}
+                                                    {/* Full screen, outside the app layout; the page itself admits staff, and SMEs to their own twin. */}
                                                     <Route
                                                         path="twin/:applicationId"
                                                         element={

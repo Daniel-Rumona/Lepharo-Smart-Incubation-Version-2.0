@@ -46,64 +46,64 @@ function computeRiskScore(input) {
     let score;
     if (input.hasNeverReceivedService) {
         score = weights.neverReceivedService;
-        breakdown.push({ label: 'Never received an expected service', delta: score });
+        breakdown.push({ key: 'never-serviced', label: 'Never received an expected service', delta: score });
     }
     else if (input.daysSinceLastService === null) {
         score = weights.unknownLastService;
-        breakdown.push({ label: 'Last service date unknown', delta: score });
+        breakdown.push({ key: 'service-date-unknown', label: 'Last service date unknown', delta: score });
     }
     else if (input.daysSinceLastService >= 180) {
         score = weights.inactive6Months;
-        breakdown.push({ label: 'No service in 6+ months', delta: score });
+        breakdown.push({ key: 'inactive-6-months', label: 'No service in 6+ months', delta: score });
     }
     else if (input.daysSinceLastService >= 90) {
         score = weights.inactive3Months;
-        breakdown.push({ label: 'No service in 3+ months', delta: score });
+        breakdown.push({ key: 'inactive-3-months', label: 'No service in 3+ months', delta: score });
     }
     else if (input.daysSinceLastService >= 30) {
         score = weights.inactive1Month;
-        breakdown.push({ label: 'No service in 1+ month', delta: score });
+        breakdown.push({ key: 'inactive-1-month', label: 'No service in 1+ month', delta: score });
     }
     else {
         score = weights.recentlyServiced;
-        breakdown.push({ label: 'Recently serviced', delta: score });
+        breakdown.push({ key: 'recently-serviced', label: 'Recently serviced', delta: score });
     }
     const missingDocsDelta = Math.min(input.docsMissing * weights.missingDocPerItem, weights.missingDocCap);
     if (missingDocsDelta > 0) {
         score += missingDocsDelta;
-        breakdown.push({ label: `${input.docsMissing} missing document(s)`, delta: missingDocsDelta });
+        breakdown.push({ key: 'documents-missing', label: `${input.docsMissing} missing document(s)`, delta: missingDocsDelta });
     }
     const queriedDocsDelta = Math.min(input.docsQueried * weights.queriedDocPerItem, weights.queriedDocCap);
     if (queriedDocsDelta > 0) {
         score += queriedDocsDelta;
-        breakdown.push({ label: `${input.docsQueried} queried document(s)`, delta: queriedDocsDelta });
+        breakdown.push({ key: 'documents-queried', label: `${input.docsQueried} queried document(s)`, delta: queriedDocsDelta });
     }
     const rejectedDocsDelta = Math.min(input.docsRejected * weights.rejectedDocPerItem, weights.rejectedDocCap);
     if (rejectedDocsDelta > 0) {
         score += rejectedDocsDelta;
-        breakdown.push({ label: `${input.docsRejected} rejected document(s)`, delta: rejectedDocsDelta });
+        breakdown.push({ key: 'documents-rejected', label: `${input.docsRejected} rejected document(s)`, delta: rejectedDocsDelta });
     }
     const missingDeptDelta = Math.min(input.missingDepartmentsCount * weights.missingDeptPerItem, weights.missingDeptCap);
     if (missingDeptDelta > 0) {
         score += missingDeptDelta;
-        breakdown.push({ label: `${input.missingDepartmentsCount} department(s) needing follow-up`, delta: missingDeptDelta });
+        breakdown.push({ key: 'departments-follow-up', label: `${input.missingDepartmentsCount} department(s) needing follow-up`, delta: missingDeptDelta });
     }
     const unresponsiveCount = input.smePendingAcceptanceCount + input.smePendingConfirmationCount;
     const unresponsiveDelta = Math.min(unresponsiveCount * weights.unresponsivePerItem, weights.unresponsiveCap);
     if (unresponsiveDelta > 0) {
         score += unresponsiveDelta;
-        breakdown.push({ label: `${unresponsiveCount} intervention(s) awaiting SME response`, delta: unresponsiveDelta });
+        breakdown.push({ key: 'awaiting-sme-response', label: `${unresponsiveCount} intervention(s) awaiting SME response`, delta: unresponsiveDelta });
     }
     if (unresponsiveCount >= weights.unresponsiveThresholdCount && score < weights.unresponsiveThresholdFloor) {
-        breakdown.push({ label: 'SME responsiveness threshold reached', delta: weights.unresponsiveThresholdFloor - score });
+        breakdown.push({ key: 'sme-responsiveness-floor', label: 'SME responsiveness threshold reached', delta: weights.unresponsiveThresholdFloor - score });
         score = weights.unresponsiveThresholdFloor;
     }
     if (input.declinedTouches >= weights.repeatDeclineThreshold) {
         score += weights.repeatDeclinePenalty;
-        breakdown.push({ label: `${input.declinedTouches} declined intervention(s)`, delta: weights.repeatDeclinePenalty });
+        breakdown.push({ key: 'repeat-declines', label: `${input.declinedTouches} declined intervention(s)`, delta: weights.repeatDeclinePenalty });
     }
     if (score > 100) {
-        breakdown.push({ label: 'Capped at 100', delta: 100 - score });
+        breakdown.push({ key: 'capped', label: 'Capped at 100', delta: 100 - score });
         score = 100;
     }
     return { score, level: getRiskLevel(score), breakdown };

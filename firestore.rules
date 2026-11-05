@@ -665,18 +665,26 @@ service cloud.firestore {
         allow write: if false;
       }
     }
-    // Digital twin records (functions/src/digitalTwin.ts). Staff read; only the
-    // server writes, so no browser can change a saved score or a past day.
+    // Digital twin records (functions/src/digitalTwin.ts). Staff read, and each
+    // SME reads their own; only the server writes, so no browser can change a
+    // saved score or a past day.
     // Keep the role list in sync with TWIN_STAFF_ROLES in functions/src/twin/rules.ts.
     function isTwinStaff() {
       return request.auth != null &&
         currentUser().role in ['director', 'system_admin', 'superadmin', 'admin', 'operations', 'projectadmin', 'projectmanager', 'coordinator'];
     }
+    function ownsTwin(twin) {
+      return request.auth != null && (
+        (twin.get('participantId', '') != '' && currentUser().get('participantId', '') == twin.participantId) ||
+        (request.auth.token.get('email', '') != '' && twin.get('email', '') == request.auth.token.email)
+      );
+    }
     match /digitalTwins/{twinId} {
-      allow read: if isTwinStaff();
+      allow read: if isTwinStaff() || ownsTwin(resource.data);
       allow write: if false;
+      // Checked on the twin itself, so an SME can list their own days.
       match /days/{day} {
-        allow read: if isTwinStaff();
+        allow read: if isTwinStaff() || ownsTwin(get(/databases/$(database)/documents/digitalTwins/$(twinId)).data);
         allow write: if false;
       }
     }

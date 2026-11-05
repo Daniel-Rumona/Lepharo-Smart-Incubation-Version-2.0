@@ -9,7 +9,6 @@ import { canViewControlReportData } from '@/utils/reportVisibility'
 
 import {
     buildRow,
-    firstNonEmpty,
     getApplicationId,
     getBounceStatus as getBounceStatusFor,
     getCommunicationAttempts as getCommunicationAttemptsFor,
@@ -24,6 +23,7 @@ import {
     normalizeText,
     toDate,
 } from './riskEngine'
+import { departmentScopeFor } from '@twin/rules'
 import type { AnyDoc, BounceStatus, OperationalChallenge, ReminderEmailLog, SMERow } from './types'
 
 export function useSMERiskRegisterData(programIdProp?: string) {
@@ -44,35 +44,13 @@ export function useSMERiskRegisterData(programIdProp?: string) {
     const [operationalChallenges, setOperationalChallenges] = useState<OperationalChallenge[]>([])
     const [reminderEmails, setReminderEmails] = useState<ReminderEmailLog[]>([])
     const [emailSuppressions, setEmailSuppressions] = useState<BounceStatus[]>([])
+    const [programs, setPrograms] = useState<AnyDoc[]>([])
+    const [complianceUploads, setComplianceUploads] = useState<Map<string, AnyDoc[]>>(new Map())
 
-    const currentDepartment = useMemo(() => {
-        if (!user?.departmentId) return undefined
-        return departments.find((dep) => String(dep.id) === String(user.departmentId))
-    }, [departments, user?.departmentId])
-
-    // Monitoring departments own the consolidated risk view in the same way as
-    // the main department. Other departments remain limited to their services.
-    const canViewAllDepartments =
-        currentDepartment?.isMain === true || currentDepartment?.isMonitoring === true
-    const isDepartmentScopedView = !!user?.departmentId && !canViewAllDepartments
-    const scopedDepartment = useMemo(() => {
-        if (!isDepartmentScopedView || !user?.departmentId) return undefined
-
-        const name = normalizeDepartmentName(
-            firstNonEmpty(
-                currentDepartment?.name,
-                currentDepartment?.title,
-                currentDepartment?.departmentName,
-                currentDepartment?.displayName,
-                user?.departmentName
-            )
-        )
-
-        return {
-            departmentId: String(user.departmentId),
-            departmentName: name || String(user?.departmentName || 'My Department'),
-        }
-    }, [currentDepartment, isDepartmentScopedView, user?.departmentId, user?.departmentName])
+    // Main and monitoring departments see every SME whole; any other department only
+    // its own services. The digital twin applies the very same rule (departmentScopeFor).
+    const scopedDepartment = useMemo(() => departmentScopeFor(user, departments) ?? undefined, [departments, user])
+    const isDepartmentScopedView = !!scopedDepartment
 
     const departmentScopeLabel = scopedDepartment?.departmentName || 'My Department'
     const expectedDepartmentsLabel = isDepartmentScopedView
@@ -153,8 +131,24 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                     getDocs(emailSuppressionsRef),
                 ])
 
+                // Required documents and the SMEs' own uploads, so documents count as they
+                // do on the Compliance page. A role that cannot read them still gets the register.
+                const [programsSnap, uploadsByApplication] = await Promise.all([
+                    getDocs(collection(db, 'programs')).catch(() => null),
+                    Promise.all(
+                        applicationsSnap.docs.map(async (d) => {
+                            const uploads = await getDocs(collection(db, 'applications', d.id, 'complianceDocuments'))
+                                .then((snap) => snap.docs.map((item) => ({ id: item.id, ...item.data() })))
+                                .catch(() => [] as AnyDoc[])
+                            return [d.id, uploads] as const
+                        })
+                    ),
+                ])
+
                 if (cancelled) return
 
+                setPrograms(programsSnap ? programsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [])
+                setComplianceUploads(new Map(uploadsByApplication))
                 setParticipants(participantsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setApplications(applicationsSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
                 setDiagnosticPlans(diagnosticPlansSnap.docs.map((d) => ({ id: d.id, ...d.data() })))
@@ -208,6 +202,7 @@ export function useSMERiskRegisterData(programIdProp?: string) {
 
         const departmentsById: Record<string, AnyDoc> = {}
         const departmentsByName: Record<string, AnyDoc> = {}
+        const programsById = new Map(programs.map((program) => [String(program.id), program]))
 
         departments.forEach((dep) => {
             departmentsById[String(dep.id)] = dep
@@ -258,6 +253,8 @@ export function useSMERiskRegisterData(programIdProp?: string) {
                     departmentsById,
                     departmentsByName,
                     scopedDepartment,
+                    program: programsById.get(normalizeText(application.programId)) ?? null,
+                    complianceUploads: complianceUploads.get(application.id) ?? [],
                 })
             })
             .filter(Boolean) as SMERow[]
@@ -271,6 +268,8 @@ export function useSMERiskRegisterData(programIdProp?: string) {
         departments,
         sessions,
         scopedDepartment,
+        programs,
+        complianceUploads,
     ])
 
     const getSMEChallenges = (participantId: string) =>

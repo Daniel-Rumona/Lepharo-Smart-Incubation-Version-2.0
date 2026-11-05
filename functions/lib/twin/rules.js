@@ -16,8 +16,8 @@
 //   the same lifecycle and compliance readers.
 // - Interventions, plans and revenue are scoped to the application's programme.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.recommendNextAction = exports.summarizeBusiness = exports.summarizeEvidence = exports.summarizeDelivery = exports.computeGrowthScore = exports.growthFromCounts = exports.growthBandFor = exports.computeNeedsAttention = exports.needsAttentionInputs = exports.summarizeCompliance = exports.resolveComplianceRows = exports.normalizeProgramRequirements = exports.complianceStatusCountsAsCovered = exports.resolveComplianceDocumentStatus = exports.complianceMatchKey = exports.deriveDeliveryCoverage = exports.classifyAssignment = exports.getBestInterventionDate = exports.getInterventionTitle = exports.isSmmeConfirmedForDp = exports.isDeptConfirmedForDp = exports.isConfirmedValue = exports.departmentMatchesScope = exports.getEligibleDpInterventions = exports.isDpInterventionDepartment = exports.isInterventionsDepartment = exports.getDepartmentDocForKey = exports.getInterventionDepartmentKey = exports.indexDepartments = exports.normalizeDepartmentName = exports.resolveGroup = exports.normalizeGroup = exports.getEmail = exports.getParticipantId = exports.pickPlanForProgramme = exports.scopeToProgramme = exports.twinIdFor = exports.twinDayKey = exports.wholeDaysBetween = exports.toDate = exports.firstNonEmpty = exports.normalizeLower = exports.normalizeText = exports.TWIN_STAFF_ROLES = exports.MIN_PEER_GROUP = exports.OUTLOOK_HORIZONS = exports.TWIN_RULE_VERSION = exports.NEEDS_ATTENTION_WEIGHTS = exports.getRiskLevel = exports.computeRiskScore = void 0;
-exports.peerProfileOf = exports.buildTwinRecord = exports.comparePeers = exports.scenarioGrowth = exports.projectionCurve = exports.scenarioCurve = exports.scenarioInputsAt = exports.scenarioLimits = exports.isNoChangeScenario = exports.NO_CHANGE_SCENARIO = exports.projectOutlook = exports.latestContactDate = exports.deriveOutlookStatus = void 0;
+exports.summarizeEvidence = exports.summarizeDelivery = exports.computeGrowthScore = exports.growthFromCounts = exports.growthBandFor = exports.computeNeedsAttention = exports.complianceDocumentCounts = exports.needsAttentionInputs = exports.summarizeCompliance = exports.resolveComplianceRows = exports.normalizeProgramRequirements = exports.complianceStatusCountsAsCovered = exports.resolveComplianceDocumentStatus = exports.complianceMatchKey = exports.deriveDeliveryCoverage = exports.classifyAssignment = exports.getBestInterventionDate = exports.getInterventionTitle = exports.isSmmeConfirmedForDp = exports.isDeptConfirmedForDp = exports.isConfirmedValue = exports.departmentMatchesScope = exports.getEligibleDpInterventions = exports.isDpInterventionDepartment = exports.isInterventionsDepartment = exports.getDepartmentDocForKey = exports.getInterventionDepartmentKey = exports.indexDepartments = exports.departmentScopeFor = exports.normalizeDepartmentName = exports.resolveGroup = exports.normalizeGroup = exports.getEmail = exports.getParticipantId = exports.pickPlanForProgramme = exports.scopeToProgramme = exports.twinIdFor = exports.twinDayKey = exports.wholeDaysBetween = exports.toDate = exports.firstNonEmpty = exports.normalizeLower = exports.normalizeText = exports.TWIN_STAFF_ROLES = exports.MIN_PEER_GROUP = exports.OUTLOOK_HORIZONS = exports.TWIN_RULE_VERSION = exports.NEEDS_ATTENTION_WEIGHTS = exports.getRiskLevel = exports.computeRiskScore = void 0;
+exports.peerProfileOf = exports.buildTwinRecord = exports.comparePeers = exports.mirrorFreshness = exports.latestChange = exports.MIRROR_STALE_DAYS = exports.MIRROR_FRESH_DAYS = exports.explainNeedsAttention = exports.scenarioFromMoves = exports.simulateMoves = exports.averageOutlook = exports.SIMULATED_SERVICE_IN_DAYS = exports.scenarioGrowth = exports.outlookHorizonDays = exports.projectionCurve = exports.scenarioCurve = exports.scenarioInputsAt = exports.scenarioLimits = exports.isNoChangeScenario = exports.NO_CHANGE_SCENARIO = exports.projectOutlook = exports.latestContactDate = exports.deriveOutlookStatus = exports.recommendNextAction = exports.summarizeBusiness = void 0;
 const lifecycle_1 = require("./lifecycle");
 const needsAttention_1 = require("./needsAttention");
 var needsAttention_2 = require("./needsAttention");
@@ -25,7 +25,7 @@ Object.defineProperty(exports, "computeRiskScore", { enumerable: true, get: func
 Object.defineProperty(exports, "getRiskLevel", { enumerable: true, get: function () { return needsAttention_2.getRiskLevel; } });
 Object.defineProperty(exports, "NEEDS_ATTENTION_WEIGHTS", { enumerable: true, get: function () { return needsAttention_2.NEEDS_ATTENTION_WEIGHTS; } });
 /** Bump whenever a calculation below changes, so saved records stay traceable. */
-exports.TWIN_RULE_VERSION = 'v1';
+exports.TWIN_RULE_VERSION = 'v2';
 /** Days ahead the outlook projects, if nothing changes. */
 exports.OUTLOOK_HORIZONS = [20, 40];
 /** Peer groups smaller than this are not shown, so no single SME can be singled out. */
@@ -182,6 +182,23 @@ function normalizeDepartmentName(value) {
     return raw;
 }
 exports.normalizeDepartmentName = normalizeDepartmentName;
+/**
+ * The department a viewer's Risk Register and twin are limited to, or null for the
+ * whole SME. Main and monitoring departments see the whole SME; any other
+ * department sees only its own services. Until departments load, a viewer with a
+ * department is treated as limited to it, as the register always has.
+ */
+function departmentScopeFor(viewer, departments) {
+    const departmentId = normalizeText(viewer?.departmentId);
+    if (!departmentId)
+        return null;
+    const department = departments.find(dep => String(dep.id) === departmentId);
+    if (department?.isMain === true || department?.isMonitoring === true)
+        return null;
+    const name = normalizeDepartmentName(firstNonEmpty(department?.name, department?.title, department?.departmentName, department?.displayName, viewer?.departmentName));
+    return { departmentId, departmentName: name || normalizeText(viewer?.departmentName) || 'My Department' };
+}
+exports.departmentScopeFor = departmentScopeFor;
 function indexDepartments(departments) {
     const byId = {};
     const byName = {};
@@ -282,7 +299,10 @@ function classifyAssignment(assignment) {
     return {
         lifecycle,
         isCompleted: lifecycle.isCompleted,
-        isDeclined: !lifecycle.isCompleted && (lifecycle.isDeclined || lifecycle.key === 'cancelled'),
+        // Declined as the Risk Register has always counted it: the SME turned it down, or
+        // it was cancelled. A facilitator declining (needs reassignment) and the SME
+        // rejecting a completion both wait on staff, so neither counts against the SME.
+        isDeclined: lifecycle.key === 'participant-declined' || lifecycle.key === 'cancelled',
         awaitingSmeAcceptance: lifecycle.key === 'awaiting-participant-acceptance',
         awaitingSmeConfirmation: lifecycle.key === 'awaiting-participant-confirmation'
     };
@@ -514,6 +534,27 @@ const complianceRiskDocs = (summary) => ({
     queried: summary.queried,
     rejected: summary.rejected
 });
+/**
+ * An SME's document counts against its programme's required uploads, read the way
+ * the Compliance page and the SME's own dashboard read them, so the Risk Register,
+ * the ROM dashboard and the twin agree. An expired document counts as missing: it
+ * has to be uploaded again.
+ */
+function complianceDocumentCounts(args) {
+    const summary = summarizeCompliance(resolveComplianceRows({
+        requirements: normalizeProgramRequirements(args.programRequirements || []),
+        embedded: Array.isArray(args.application?.complianceDocuments) ? args.application.complianceDocuments : [],
+        uploads: args.uploads || [],
+        now: args.now
+    }));
+    return {
+        total: summary.total,
+        completed: summary.covered,
+        pending: summary.pending,
+        ...complianceRiskDocs(summary)
+    };
+}
+exports.complianceDocumentCounts = complianceDocumentCounts;
 function computeNeedsAttention(inputs) {
     const result = (0, needsAttention_1.computeRiskScore)(inputs);
     return {
@@ -617,7 +658,7 @@ function summarizeDelivery(assignments, now) {
     const counts = new Map();
     const summary = { total: assignments.length, open: 0, completed: 0, declined: 0, overdue: 0, waitingOnSme: 0, byLifecycle: [] };
     assignments.forEach(assignment => {
-        const lifecycle = (0, lifecycle_1.resolveAssignmentLifecycle)(assignment);
+        const { lifecycle, isDeclined } = classifyAssignment(assignment);
         const entry = counts.get(lifecycle.key) ?? { key: lifecycle.key, label: lifecycle.label, count: 0 };
         entry.count += 1;
         counts.set(lifecycle.key, entry);
@@ -625,7 +666,7 @@ function summarizeDelivery(assignments, now) {
             summary.open += 1;
         if (lifecycle.isCompleted)
             summary.completed += 1;
-        if (lifecycle.isDeclined)
+        if (isDeclined)
             summary.declined += 1;
         if (lifecycle.waitingOn === 'participant')
             summary.waitingOnSme += 1;
@@ -649,10 +690,17 @@ function summarizeEvidence(movs) {
 }
 exports.summarizeEvidence = summarizeEvidence;
 /** Walks back from this month over the last 12 month names the profile form stores. */
+// The SME profile keys months by name ("September"); some records key them as
+// "2026-09". The dated key is read first, because a month name carries no year.
 const recentMonthNames = (now) => Array.from({ length: 12 }, (_, index) => {
     const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
-    return { name: MONTH_NAMES[date.getMonth()], label: `${MONTH_NAMES[date.getMonth()].slice(0, 3)} ${date.getFullYear()}` };
+    return {
+        name: MONTH_NAMES[date.getMonth()],
+        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        label: `${MONTH_NAMES[date.getMonth()].slice(0, 3)} ${date.getFullYear()}`
+    };
 });
+const monthEntry = (monthly, month) => monthly[month.key] ?? monthly[month.name];
 function summarizeBusiness(args) {
     const { participant, now } = args;
     let revenue = null;
@@ -664,16 +712,16 @@ function summarizeBusiness(args) {
     }
     else {
         const monthly = participant?.revenueHistory?.monthly || {};
-        const hit = recentMonthNames(now).find(month => Number(monthly[month.name]) > 0);
+        const hit = recentMonthNames(now).find(month => Number(monthEntry(monthly, month)) > 0);
         if (hit)
-            revenue = { monthly: Number(monthly[hit.name]), month: hit.label, source: 'SME profile' };
+            revenue = { monthly: Number(monthEntry(monthly, hit)), month: hit.label, source: 'SME profile' };
     }
     let headcount = null;
     const headcountMonthly = participant?.headcountHistory?.monthly || {};
     const totalOf = (row) => Number(row?.total ?? (Number(row?.permanent || 0) + Number(row?.temporary || 0)));
-    const monthHit = recentMonthNames(now).find(month => totalOf(headcountMonthly[month.name]) > 0);
+    const monthHit = recentMonthNames(now).find(month => totalOf(monthEntry(headcountMonthly, month)) > 0);
     if (monthHit) {
-        headcount = { total: totalOf(headcountMonthly[monthHit.name]), period: monthHit.label, source: 'SME profile' };
+        headcount = { total: totalOf(monthEntry(headcountMonthly, monthHit)), period: monthHit.label, source: 'SME profile' };
     }
     else {
         const annual = participant?.headcountHistory?.annual || {};
@@ -911,6 +959,9 @@ exports.scenarioCurve = scenarioCurve;
  */
 const projectionCurve = (record, untilDays) => scenarioCurve(record, exports.NO_CHANGE_SCENARIO, untilDays);
 exports.projectionCurve = projectionCurve;
+/** The furthest day this record's outlook looks ahead. */
+const outlookHorizonDays = (record) => record.outlook.horizons[record.outlook.horizons.length - 1]?.days ?? exports.OUTLOOK_HORIZONS[exports.OUTLOOK_HORIZONS.length - 1];
+exports.outlookHorizonDays = outlookHorizonDays;
 /** The growth score once the scenario's changes have happened. */
 function scenarioGrowth(record, scenario) {
     const counts = record.growth.counts;
@@ -926,6 +977,166 @@ function scenarioGrowth(record, scenario) {
     });
 }
 exports.scenarioGrowth = scenarioGrowth;
+/** The move the twin tries for a service: delivered within a week. */
+exports.SIMULATED_SERVICE_IN_DAYS = 7;
+/**
+ * Needs attention averaged over every day from tomorrow to the horizon. A
+ * single day would undersell a service: its effect fades back into the same
+ * band by the horizon, after weeks of lower scores.
+ */
+function averageOutlook(record, scenario, horizonDays) {
+    const days = scenarioCurve(record, scenario, Math.max(1, horizonDays)).slice(1);
+    const score = Math.round(days.reduce((sum, day) => sum + day.score, 0) / days.length);
+    return { score, level: (0, needsAttention_1.getRiskLevel)(score) };
+}
+exports.averageOutlook = averageOutlook;
+/**
+ * Every move open to this SME, each run through the rules on its own, best
+ * first: the biggest drop in average needs attention over the days ahead, then
+ * the biggest growth gain. Moves that change nothing are left out.
+ */
+function simulateMoves(record, horizonDays) {
+    const limits = scenarioLimits(record);
+    const candidates = [
+        { key: 'service', amount: 1, change: { serviceInDays: exports.SIMULATED_SERVICE_IN_DAYS } },
+        { key: 'documentsUploaded', amount: limits.documentsUploaded, change: { documentsUploaded: limits.documentsUploaded } },
+        { key: 'renewExpiring', amount: limits.expiringDocuments, change: { renewExpiring: true } },
+        { key: 'documentsFixed', amount: limits.documentsFixed, change: { documentsFixed: limits.documentsFixed } },
+        { key: 'smeResponses', amount: limits.smeResponses, change: { smeResponses: limits.smeResponses } },
+        { key: 'departmentsFollowedUp', amount: limits.departmentsFollowedUp, change: { departmentsFollowedUp: limits.departmentsFollowedUp } },
+        { key: 'declinesResolved', amount: limits.declinesResolved, change: { declinesResolved: limits.declinesResolved } },
+        { key: 'interventionsCompleted', amount: limits.interventionsCompleted, change: { interventionsCompleted: limits.interventionsCompleted } },
+        { key: 'roadmapConfirmed', amount: limits.roadmapConfirmed, change: { roadmapConfirmed: limits.roadmapConfirmed } }
+    ];
+    const baseline = averageOutlook(record, exports.NO_CHANGE_SCENARIO, horizonDays);
+    return candidates
+        .filter(move => move.amount > 0)
+        .map(move => {
+        const scenario = (0, exports.scenarioFromMoves)([move]);
+        const ahead = averageOutlook(record, scenario, horizonDays);
+        const growth = scenarioGrowth(record, scenario).total;
+        return { ...move, score: ahead.score, level: ahead.level, scoreDelta: ahead.score - baseline.score, growth, growthDelta: growth - record.growth.total };
+    })
+        .filter(move => move.scoreDelta < 0 || move.growthDelta > 0)
+        .sort((a, b) => a.scoreDelta - b.scoreDelta || b.growthDelta - a.growthDelta);
+}
+exports.simulateMoves = simulateMoves;
+/** Several moves at once, as one what-if. */
+const scenarioFromMoves = (moves) => moves.reduce((scenario, move) => ({ ...scenario, ...move.change }), { ...exports.NO_CHANGE_SCENARIO });
+exports.scenarioFromMoves = scenarioFromMoves;
+const countOf = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+const namesOf = (names, most = 3) => names.length <= most ? names.join(', ') : `${names.slice(0, most).join(', ')} and ${names.length - most} more`;
+/**
+ * Every reason for the score on a day, and who it is waiting on: the SME, or
+ * staff who have not done their part. Names (departments, documents) come from
+ * today's record; a later day whose counts differ is described by its counts.
+ */
+function explainNeedsAttention(record, inputs) {
+    const areas = record.plan.areas ?? [];
+    const outstanding = record.compliance.outstanding ?? [];
+    const titles = (statuses) => outstanding.filter(row => statuses.includes(normalizeLower(row.status))).map(row => row.title);
+    const days = inputs.daysSinceLastService;
+    const toAccept = inputs.smePendingAcceptanceCount;
+    const toConfirm = inputs.smePendingConfirmationCount;
+    return (0, needsAttention_1.computeRiskScore)(inputs).breakdown.map((reason) => {
+        const explained = (owner, waitingOn, detail) => ({ ...reason, owner, waitingOn, detail });
+        switch (reason.key) {
+            case 'never-serviced': {
+                const ready = areas.filter(area => area.deptConfirmed && area.smmeConfirmed).map(area => area.departmentName);
+                return explained('staff', 'Facilitators', ready.length
+                    ? `${namesOf(ready)} confirmed the plan, but no service has been delivered yet.`
+                    : 'The plan is confirmed, but no service has been delivered yet.');
+            }
+            case 'service-date-unknown':
+                return explained('staff', 'Facilitators', 'Services are recorded without dates, so the twin cannot tell when the SME was last served.');
+            case 'inactive-6-months':
+            case 'inactive-3-months':
+            case 'inactive-1-month':
+                return toAccept > 0
+                    ? explained('both', 'Facilitators and SME', `Last service ${countOf(days ?? 0, 'day')} ago. ${countOf(toAccept, 'new intervention')} still ${toAccept === 1 ? 'waits' : 'wait'} for the SME to accept.`)
+                    : explained('staff', 'Facilitators', `Last service ${countOf(days ?? 0, 'day')} ago, and nothing delivered since.`);
+            case 'recently-serviced':
+                return explained('none', 'On track', days ? `Served ${countOf(days, 'day')} ago; this is the base score.` : 'Served recently; this is the base score.');
+            case 'documents-missing': {
+                const names = titles(['missing', 'expired']);
+                return explained('sme', 'SME', names.length === inputs.docsMissing
+                    ? `To upload or renew: ${namesOf(names)}.`
+                    : `${countOf(inputs.docsMissing, 'document')} missing or expired by then.`);
+            }
+            case 'documents-queried': {
+                const names = titles(['queried']);
+                return explained('sme', 'SME', names.length === inputs.docsQueried
+                    ? `Staff queried ${namesOf(names)}; the SME has to answer.`
+                    : `${countOf(inputs.docsQueried, 'queried document')} to answer.`);
+            }
+            case 'documents-rejected': {
+                const names = titles(['rejected', 'invalid']);
+                return explained('sme', 'SME', names.length === inputs.docsRejected
+                    ? `To upload again: ${namesOf(names)}.`
+                    : `${countOf(inputs.docsRejected, 'rejected document')} to upload again.`);
+            }
+            case 'departments-follow-up': {
+                const toReview = areas.filter(area => !area.deptConfirmed).map(area => area.departmentName);
+                const toAgree = areas.filter(area => area.deptConfirmed && !area.smmeConfirmed).map(area => area.departmentName);
+                const unassigned = areas.filter(area => area.deptConfirmed && area.smmeConfirmed && area.services === 0).map(area => area.departmentName);
+                if (toReview.length + toAgree.length + unassigned.length !== inputs.missingDepartmentsCount) {
+                    return explained('both', 'HODs and SME', `${countOf(inputs.missingDepartmentsCount, 'department')} still ${inputs.missingDepartmentsCount === 1 ? 'needs' : 'need'} follow-up on the plan.`);
+                }
+                const parts = [
+                    toReview.length ? `HOD to review the plan: ${namesOf(toReview)}` : '',
+                    toAgree.length ? `SME to confirm the plan: ${namesOf(toAgree)}` : '',
+                    unassigned.length ? `No service assigned yet: ${namesOf(unassigned)}` : ''
+                ].filter(Boolean);
+                const hods = [...toReview, ...unassigned];
+                const owner = hods.length && toAgree.length ? 'both' : hods.length ? 'staff' : 'sme';
+                const waitingOn = owner === 'sme' ? 'SME' : owner === 'both' ? 'HODs and SME' : hods.length === 1 ? `HOD · ${hods[0]}` : 'HODs';
+                return explained(owner, waitingOn, `${parts.join('. ')}.`);
+            }
+            case 'awaiting-sme-response': {
+                const parts = [
+                    toAccept ? `${countOf(toAccept, 'intervention')} to accept` : '',
+                    toConfirm ? `${countOf(toConfirm, 'completed intervention')} to confirm` : ''
+                ].filter(Boolean);
+                return explained('sme', 'SME', `The SME has ${parts.join(' and ')}.`);
+            }
+            case 'sme-responsiveness-floor':
+                return explained('sme', 'SME', `With ${needsAttention_1.NEEDS_ATTENTION_WEIGHTS.unresponsiveThresholdCount} or more items unanswered, the score stays at ${needsAttention_1.NEEDS_ATTENTION_WEIGHTS.unresponsiveThresholdFloor} or above.`);
+            case 'repeat-declines':
+                return explained('both', 'SME and facilitators', `${countOf(inputs.declinedTouches, 'intervention')} declined by the SME or cancelled; agree a new plan together.`);
+            case 'capped':
+                return explained('none', '', 'The score never goes above 100.');
+        }
+    });
+}
+exports.explainNeedsAttention = explainNeedsAttention;
+/** A source changed within this many days is fresh; beyond the second, stale. */
+exports.MIRROR_FRESH_DAYS = 14;
+exports.MIRROR_STALE_DAYS = 60;
+const CHANGE_FIELDS = [
+    'updatedAt', 'lastUpdated', 'uploadedAt', 'submittedAt', 'completedAt', 'participantConfirmedAt',
+    'assigneeCompletedAt', 'assignedAt', 'createdAt', 'uploadMonthDate', 'sourceMonth'
+];
+/** The newest change date on any of these documents. Future dates are ignored: they are plans, not changes. */
+function latestChange(docs, now) {
+    let latest = null;
+    for (const item of docs) {
+        for (const field of CHANGE_FIELDS) {
+            const date = toDate(item?.[field]);
+            if (date && date.getTime() <= now.getTime() && (!latest || date.getTime() > latest.getTime()))
+                latest = date;
+        }
+    }
+    return latest;
+}
+exports.latestChange = latestChange;
+function mirrorFreshness(lastChange, now) {
+    const date = toDate(lastChange);
+    if (!date)
+        return 'unknown';
+    const days = (0, exports.wholeDaysBetween)(date, now);
+    return days <= exports.MIRROR_FRESH_DAYS ? 'fresh' : days <= exports.MIRROR_STALE_DAYS ? 'ageing' : 'stale';
+}
+exports.mirrorFreshness = mirrorFreshness;
 const PEER_METRICS = [
     { key: 'needsAttention', label: 'Needs attention', lowerIsBetter: true },
     { key: 'growth', label: 'Growth score', lowerIsBetter: false },
@@ -956,9 +1167,15 @@ function comparePeers(self, all) {
     });
 }
 exports.comparePeers = comparePeers;
-/** Builds one SME's twin for one programme application from its raw documents. */
+/**
+ * Builds one SME's twin for one programme application from its raw documents.
+ * With a scope, needs attention, the outlook, delivery and plan cover that
+ * department's services only, exactly as its HOD's Risk Register row does;
+ * growth, evidence, compliance and business stay the whole SME's.
+ */
 function buildTwinRecord(sources, options) {
     const now = options.now ?? new Date();
+    const scope = options.scope ?? null;
     const { application, participant } = sources;
     const participantId = getParticipantId(application);
     const programId = normalizeText(application.programId) || null;
@@ -969,16 +1186,30 @@ function buildTwinRecord(sources, options) {
     const challenges = (sources.challenges ?? []).filter(scoped);
     const reminderEmails = sources.reminderEmails ?? [];
     const { byId, byName } = indexDepartments(sources.departments);
-    const coverage = deriveDeliveryCoverage({ diagnosticPlan, assignments, departmentsById: byId, departmentsByName: byName });
+    const coverageFor = (slice) => deriveDeliveryCoverage({ diagnosticPlan, assignments, departmentsById: byId, departmentsByName: byName, scope: slice ?? undefined });
+    const coverage = coverageFor(scope);
+    const scopedAssignments = scope
+        ? assignments.filter(item => departmentMatchesScope(getInterventionDepartmentKey(item, byId, byName), scope))
+        : assignments;
+    const embeddedDocuments = Array.isArray(application.complianceDocuments) ? application.complianceDocuments : [];
     const complianceRows = resolveComplianceRows({
         requirements: normalizeProgramRequirements(sources.program?.programRequirements || []),
-        embedded: Array.isArray(application.complianceDocuments) ? application.complianceDocuments : [],
+        embedded: embeddedDocuments,
         uploads: sources.complianceUploads,
         now
     });
+    const monthlyMetrics = (sources.monthlyMetrics ?? []).filter(scoped);
+    const jobContracts = sources.jobContracts ?? [];
     const compliance = summarizeCompliance(complianceRows);
-    const inputs = needsAttentionInputs(coverage, complianceRiskDocs(compliance), now);
+    const riskDocs = complianceRiskDocs(compliance);
+    const inputs = needsAttentionInputs(coverage, riskDocs, now);
     const needsAttention = computeNeedsAttention(inputs);
+    const wholeCoverage = scope ? coverageFor(null) : coverage;
+    const byDepartment = wholeCoverage.expectedDepartments.map(dep => {
+        const slice = { departmentId: dep.departmentId, departmentName: dep.departmentName };
+        const result = computeNeedsAttention(needsAttentionInputs(coverageFor(slice), riskDocs, now));
+        return { ...slice, score: result.score, level: result.level };
+    });
     const lastContact = latestContactDate(challenges, reminderEmails);
     const nextActionContext = {
         expectedDepartments: coverage.expectedDepartments,
@@ -989,7 +1220,7 @@ function buildTwinRecord(sources, options) {
         daysSinceLastService: inputs.daysSinceLastService,
         declinedTouches: coverage.declinedTouches
     };
-    const projection = projectOutlook({ inputs, complianceRows, assignments, now });
+    const projection = projectOutlook({ inputs, complianceRows, assignments: scopedAssignments, now });
     return {
         twinId: (0, exports.twinIdFor)(participantId, programId),
         applicationId: normalizeText(application.id),
@@ -1011,7 +1242,7 @@ function buildTwinRecord(sources, options) {
         source: options.source,
         needsAttention,
         growth: computeGrowthScore({ assignments, compliance, diagnosticPlan }),
-        delivery: summarizeDelivery(assignments, now),
+        delivery: summarizeDelivery(scopedAssignments, now),
         evidence: summarizeEvidence(movs),
         compliance: {
             ...compliance,
@@ -1024,21 +1255,32 @@ function buildTwinRecord(sources, options) {
             departments: coverage.expectedDepartments.length,
             departmentConfirmed: coverage.expectedDepartments.filter(dep => dep.deptConfirmed).length,
             smeConfirmed: coverage.expectedDepartments.filter(dep => dep.smmeConfirmed).length,
-            finalConfirmed: !!diagnosticPlan?.finalConfirmation
+            finalConfirmed: !!diagnosticPlan?.finalConfirmation,
+            areas: coverage.expectedDepartments.map(dep => ({
+                departmentName: dep.departmentName,
+                deptConfirmed: dep.deptConfirmed,
+                smmeConfirmed: dep.smmeConfirmed,
+                services: dep.servicedCount
+            }))
         },
-        business: summarizeBusiness({
-            participant,
-            monthlyMetrics: (sources.monthlyMetrics ?? []).filter(scoped),
-            jobContracts: sources.jobContracts ?? [],
-            now
-        }),
+        business: summarizeBusiness({ participant, monthlyMetrics, jobContracts, now }),
         outlook: {
             status: deriveOutlookStatus({ level: needsAttention.level, challenges, lastContactAt: lastContact, now }),
             nextAction: recommendNextAction(nextActionContext, challenges),
             lastContactAt: iso(lastContact),
             ...projection
         },
-        peers: []
+        peers: [],
+        scope,
+        byDepartment,
+        mirror: [
+            { key: 'interventions', records: assignments.length, lastChange: iso(latestChange(assignments, now)) },
+            { key: 'documents', records: complianceRows.length, lastChange: iso(latestChange([...sources.complianceUploads, ...embeddedDocuments], now)) },
+            { key: 'plan', records: wholeCoverage.expectedDepartments.length, lastChange: iso(latestChange(diagnosticPlan ? [diagnosticPlan] : [], now)) },
+            { key: 'evidence', records: movs.length, lastChange: iso(latestChange(movs, now)) },
+            { key: 'contact', records: challenges.length + reminderEmails.length, lastChange: iso(lastContact) },
+            { key: 'business', records: monthlyMetrics.length + jobContracts.length, lastChange: iso(latestChange([...monthlyMetrics, ...jobContracts], now)) }
+        ]
     };
 }
 exports.buildTwinRecord = buildTwinRecord;

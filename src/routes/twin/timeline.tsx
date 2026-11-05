@@ -4,12 +4,14 @@ import { CaretRightFilled, FastForwardOutlined, PauseOutlined, StepBackwardOutli
 import dayjs from 'dayjs'
 import {
     NO_CHANGE_SCENARIO,
-    computeRiskScore,
+    explainNeedsAttention,
     isNoChangeScenario,
+    outlookHorizonDays,
     projectionCurve,
-    scenarioInputsAt,
     scenarioCurve,
+    scenarioInputsAt,
     type DigitalTwinRecord,
+    type ReasonOwner,
     type RiskLevel,
     type TwinScenario
 } from '@twin/rules'
@@ -17,9 +19,8 @@ import type { TwinHistoryPoint } from '@/services/digitalTwinService'
 import { usePalette } from './palette'
 import { CoreReactor, MoodLight, useParallax } from './scene'
 import { Skyline, type SkylineFocus, type SkylineHandle, type SkylinePoint } from './skyline'
-import { WhatIfControls } from './whatif'
 
-const DAYS_PER_SECOND = 6
+const DAYS_PER_SECOND = 4
 // A short beat between the opening shot settling and the timeline starting to roll.
 const ROLL_AFTER_INTRO_MS = 350
 const HOLD_AT_END_MS = 2600
@@ -28,26 +29,60 @@ const LEVEL_RANK: Record<RiskLevel, number> = { Low: 0, Medium: 1, High: 2, Crit
 export type OutlookMode = 'nothing-changes' | 'what-if'
 
 type Point = { day: number; score: number; level: RiskLevel }
-type TimelineEvent = { key: string; day: number; label: string; tone: 'good' | 'bad' | 'warn' | 'info' }
+export type TimelineEvent = { key: string; day: number; label: string; tone: 'good' | 'bad' | 'warn' | 'info' }
 type Toast = TimelineEvent & { id: number }
 
+export const dayLabel = (day: number) => (day === 0 ? 'Today' : day < 0 ? `${-day} day${day === -1 ? '' : 's'} ago` : `In ${day} day${day === 1 ? '' : 's'}`)
 
-const dayLabel = (day: number) => (day === 0 ? 'Today' : day < 0 ? `${-day} day${day === -1 ? '' : 's'} ago` : `In ${day} day${day === 1 ? '' : 's'}`)
+/**
+ * What happens on the days ahead: level changes on the curve shown, interventions
+ * falling due, documents expiring (or renewed in time) and a what-if service.
+ * The time machine marks these, and the Coming up panel lists them.
+ */
+export function outlookEvents(record: DigitalTwinRecord, curve: Array<{ day: number; level: RiskLevel }>, scenario: TwinScenario | null): TimelineEvent[] {
+    const list: TimelineEvent[] = []
+    for (let day = 1; day < curve.length; day += 1) {
+        const before = curve[day - 1].level
+        const after = curve[day].level
+        if (before !== after) {
+            const worse = LEVEL_RANK[after] > LEVEL_RANK[before]
+            list.push({ key: `level-${day}`, day, label: `${worse ? 'Rises' : 'Falls'} to ${after}`, tone: worse ? 'bad' : 'good' })
+        }
+    }
+    const start = new Date(record.calculatedAt)
+    const furthest = record.outlook.horizons[record.outlook.horizons.length - 1]
+    const toDay = (iso: string) => Math.max(1, Math.ceil((new Date(iso).getTime() - start.getTime()) / DAY_MS))
+    furthest?.dueInterventions.forEach(item => list.push({ key: `due-${item.title}-${item.dueDate}`, day: toDay(item.dueDate), label: `Due: ${item.title}`, tone: 'warn' }))
+    furthest?.expiringDocuments.forEach(item => list.push({
+        key: `doc-${item.title}-${item.expiry}`,
+        day: toDay(item.expiry),
+        label: scenario?.renewExpiring ? `Renewed in time: ${item.title}` : `Expires: ${item.title}`,
+        tone: scenario?.renewExpiring ? 'good' : 'warn'
+    }))
+    if (scenario && scenario.serviceInDays !== null) {
+        list.push({ key: 'service', day: scenario.serviceInDays, label: 'Service delivered', tone: 'good' })
+    }
+    return list.filter(item => item.day <= curve.length - 1).sort((a, b) => a.day - b.day)
+}
 
 /**
  * The twin's centrepiece: every day as a glowing 3D column on the holographic
  * floor, saved history on the left, the next weeks on the right. It plays like
  * a video (a scanner sweeps the days and the core follows it), and staff can
- * pause, scrub, jump to events and switch to What if… to replay the future
- * under their own changes.
+ * pause, scrub, jump to events and replay the future with the simulated moves
+ * they pick.
  */
-export function TimelineHero({ record, history, mode, onModeChange, scenario, onScenarioChange }: {
+export function TimelineHero({ record, history, mode, onModeChange, scenario, jumpTo = null, forSme = false }: {
     record: DigitalTwinRecord
     history: TwinHistoryPoint[]
     mode: OutlookMode
     onModeChange: (mode: OutlookMode) => void
+    /** The moves chosen in the simulated moves panel, as one what-if. */
     scenario: TwinScenario
-    onScenarioChange: (scenario: TwinScenario) => void
+    /** A day picked elsewhere (the Coming up panel) to jump to; a new key jumps again. */
+    jumpTo?: { day: number; key: number } | null
+    /** The SME looking at their own twin: what waits on them is "you". */
+    forSme?: boolean
 }) {
     const reduceMotion = useReducedMotion()
     const palette = usePalette()
@@ -77,7 +112,7 @@ export function TimelineHero({ record, history, mode, onModeChange, scenario, on
         observer.observe(element)
         return () => observer.disconnect()
     }, [stageRef])
-    const horizon = record.outlook.horizons[record.outlook.horizons.length - 1]?.days ?? 40
+    const horizon = outlookHorizonDays(record)
     const pastDays = Math.min(45, Math.max(0, history.length - 1))
     const start = useMemo(() => new Date(record.calculatedAt), [record.calculatedAt])
 
@@ -101,35 +136,14 @@ export function TimelineHero({ record, history, mode, onModeChange, scenario, on
     const frameAt = useCallback((day: number) => frames[Math.max(0, Math.min(count - 1, day + pastDays))], [frames, count, pastDays])
 
     const events: TimelineEvent[] = useMemo(() => {
-        const list: TimelineEvent[] = []
-        const curve = whatIf ?? baseline
-        for (let day = 1; day < curve.length; day += 1) {
-            const before = curve[day - 1].level
-            const after = curve[day].level
-            if (before !== after) {
-                const worse = LEVEL_RANK[after] > LEVEL_RANK[before]
-                list.push({ key: `level-${day}`, day, label: `${worse ? 'Rises' : 'Falls'} to ${after}`, tone: worse ? 'bad' : 'good' })
-            }
-        }
-        const furthest = record.outlook.horizons[record.outlook.horizons.length - 1]
-        const toDay = (iso: string) => Math.max(1, Math.ceil((new Date(iso).getTime() - start.getTime()) / DAY_MS))
-        furthest?.dueInterventions.forEach(item => list.push({ key: `due-${item.title}-${item.dueDate}`, day: toDay(item.dueDate), label: `Due: ${item.title}`, tone: 'warn' }))
-        furthest?.expiringDocuments.forEach(item => list.push({
-            key: `doc-${item.title}-${item.expiry}`,
-            day: toDay(item.expiry),
-            label: activeScenario?.renewExpiring ? `Renewed in time: ${item.title}` : `Expires: ${item.title}`,
-            tone: activeScenario?.renewExpiring ? 'good' : 'warn'
-        }))
-        if (whatIf && activeScenario?.serviceInDays !== null && activeScenario?.serviceInDays !== undefined) {
-            list.push({ key: 'service', day: activeScenario.serviceInDays, label: 'Service delivered', tone: 'good' })
-        }
+        const list = outlookEvents(record, whatIf ?? baseline, whatIf ? activeScenario : null)
         for (let index = 1; index < frames.length && frames[index].day < 0; index += 1) {
             if (frames[index].level !== frames[index - 1].level) {
                 list.push({ key: `past-${frames[index].day}`, day: frames[index].day, label: `Became ${frames[index].level}`, tone: 'info' })
             }
         }
         return list.filter(item => item.day >= -pastDays && item.day <= horizon).sort((a, b) => a.day - b.day)
-    }, [whatIf, baseline, record, start, activeScenario, frames, pastDays, horizon])
+    }, [whatIf, baseline, record, activeScenario, frames, pastDays, horizon])
 
     /* ------------------------------------------------ playback */
     const [day, setDay] = useState(reduceMotion ? 0 : -pastDays)
@@ -170,6 +184,9 @@ export function TimelineHero({ record, history, mode, onModeChange, scenario, on
         placeBeam(value)
     }, [placeBeam])
 
+    // Set by a pausing seek: the frame loop stops at once, not when the pause renders,
+    // so a jump during playback lands on its day instead of a day or so past it.
+    const halted = useRef(false)
     const seek = useCallback((target: number, keepPlaying = false) => {
         const clamped = Math.max(-pastDays, Math.min(horizon, target))
         position.current = clamped
@@ -177,10 +194,24 @@ export function TimelineHero({ record, history, mode, onModeChange, scenario, on
         setFocus(null)
         placeScanner(clamped)
         setDay(clamped)
-        if (!keepPlaying) setPlaying(false)
+        if (!keepPlaying) {
+            halted.current = true
+            setPlaying(false)
+        }
     }, [pastDays, horizon, placeScanner])
 
     useEffect(() => placeScanner(position.current), [placeScanner, count, pastDays])
+    // A day picked in the Coming up panel; each pick jumps once.
+    const handledJump = useRef(jumpTo?.key)
+    useEffect(() => {
+        if (!jumpTo || handledJump.current === jumpTo.key) return
+        handledJump.current = jumpTo.key
+        seek(jumpTo.day)
+    }, [jumpTo, seek])
+    // A view with less saved history (a department's) has no days before its first one.
+    useEffect(() => {
+        if (position.current < -pastDays) seek(-pastDays, true)
+    }, [pastDays, seek])
     useEffect(() => {
         let frame = 0
         const refresh = () => {
@@ -203,10 +234,12 @@ export function TimelineHero({ record, history, mode, onModeChange, scenario, on
 
     useEffect(() => {
         if (!playing) return
+        halted.current = false
         let last = performance.now()
         let holdUntil = 0
         let frame = 0
         const tick = (now: number) => {
+            if (halted.current) return
             const elapsed = (now - last) / 1000
             last = now
             if (rollFrom.current === null || now < rollFrom.current) {
@@ -310,12 +343,14 @@ export function TimelineHero({ record, history, mode, onModeChange, scenario, on
     const pct = (value: number) => `${((value + pastDays) / Math.max(1, pastDays + horizon)) * 100}%`
     const ticks = [-pastDays, 0, ...record.outlook.horizons.map(item => item.days)].filter((value, index, list) => list.indexOf(value) === index)
     const ghost = whatIf ? baseline : null
-    // Why the score is what it is on the day shown (saved days keep only their score).
-    const reasons = day >= 0 ? computeRiskScore(scenarioInputsAt(record, activeScenario ?? NO_CHANGE_SCENARIO, day)).breakdown : null
-    const status = record.outlook.status
-    const statusColor = status.label === 'Needs attention'
-        ? LEVEL_COLOR.Critical
-        : status.label === 'Mitigation in progress' ? palette.accent.violet : palette.accent.emerald
+    // Why the score is what it is on the day shown, and who each part waits on (saved days keep only their score).
+    const reasons = day >= 0 ? explainNeedsAttention(record, scenarioInputsAt(record, activeScenario ?? NO_CHANGE_SCENARIO, day)) : null
+    const OWNER_COLOR: Record<ReasonOwner, string> = {
+        sme: palette.accent.champagne,
+        staff: palette.accent.violet,
+        both: palette.accent.rose,
+        none: LEVEL_COLOR.Low
+    }
 
     return (
         <section ref={heroRef} className='tl-hero' tabIndex={0} onKeyDown={onKeyDown} aria-label='Needs-attention timeline. Space plays or pauses, arrow keys step a day.'>
@@ -333,23 +368,27 @@ export function TimelineHero({ record, history, mode, onModeChange, scenario, on
                     caption={<>{dayLabel(day)}<br />{date.format('ddd D MMM YYYY')}</>}
                 />
                 <div className='tl-why'>
-                    <div className='tl-why-label'>{reasons ? `Why ${current.score} ${day === 0 ? 'today' : dayLabel(day).toLowerCase()}` : 'Saved score for that day'}</div>
-                    {reasons && (
-                        <div className='tl-reasons'>
-                            {reasons.map(reason => (
-                                <span key={reason.label} className='tl-reason'>
-                                    {reason.label}<b>{reason.delta > 0 ? `+${reason.delta}` : reason.delta}</b>
-                                </span>
-                            ))}
-                        </div>
-                    )}
-                </div>
-                <div className='tl-next' style={{ ['--status' as any]: statusColor }}>
-                    <div className='tl-next-head'>
-                        <span>Next action</span>
-                        <span className='tl-status'>{status.label}</span>
+                    <div className='tl-why-label'>
+                        {reasons ? `Why ${current.score} ${day === 0 ? 'today' : dayLabel(day).toLowerCase()} · waiting on` : 'Saved score for that day'}
                     </div>
-                    <div className='tl-next-text'>{record.outlook.nextAction}</div>
+                    {reasons && (
+                        <ul className='tl-reasons'>
+                            {reasons.map(reason => (
+                                <li key={reason.key} className='tl-reason' style={{ ['--owner' as any]: OWNER_COLOR[reason.owner] }} title={reason.detail}>
+                                    <div className='tl-reason-head'>
+                                        <b>{reason.delta > 0 ? `+${reason.delta}` : reason.delta}</b>
+                                        <span className='tl-reason-label'>{reason.label}</span>
+                                    </div>
+                                    <div className='tl-reason-detail'>
+                                        {reason.owner !== 'none' && (
+                                            <span className='tl-owner'>{forSme && reason.owner === 'sme' ? 'You' : reason.waitingOn}</span>
+                                        )}
+                                        {reason.detail}
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
             </div>
 
@@ -461,11 +500,6 @@ export function TimelineHero({ record, history, mode, onModeChange, scenario, on
                     </div>
                 </div>
 
-                {mode === 'what-if' && (
-                    <motion.div className='tl-whatif-wrap' initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} transition={{ duration: 0.4 }}>
-                        <WhatIfControls record={record} scenario={scenario} onChange={onScenarioChange} horizonDays={horizon} />
-                    </motion.div>
-                )}
             </div>
         </section>
     )

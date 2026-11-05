@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { MotionConfig, motion } from 'framer-motion'
 import { ArrowLeftOutlined, MoonOutlined, ReloadOutlined, SunOutlined } from '@ant-design/icons'
@@ -6,50 +6,44 @@ import dayjs from 'dayjs'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useColorMode } from '@/contexts/ThemeContext'
 import {
+    MY_TWIN_ID,
     SAMPLE_TWIN_ID,
+    findMyApplicationIds,
     loadDigitalTwin,
     recalculateDigitalTwin,
     type DigitalTwinView
 } from '@/services/digitalTwinService'
 import { buildSampleTwinView } from '@/services/digitalTwinSample'
 import {
-    NO_CHANGE_SCENARIO,
     TWIN_STAFF_ROLES,
-    isNoChangeScenario,
-    scenarioGrowth,
-    type TwinScenario
+    outlookHorizonDays,
+    scenarioCurve,
+    scenarioFromMoves,
+    simulateMoves,
+    type TwinMoveKey
 } from '@twin/rules'
-import { HoloBar, HoloRing, SegmentRing } from './charts'
+import { ComingUp } from './comingup'
+import { TwinMirror } from './mirror'
 import { PALETTES, TwinPaletteContext, readStoredTwinTheme, storeTwinTheme, usePalette, type TwinTheme } from './palette'
-import { CoreReactor, CountUp, HoloBackground, HoloPanel, MagicLayer, useParallax } from './scene'
+import { CoreReactor, HoloBackground, HoloPanel, MagicLayer, useParallax } from './scene'
 import { TimelineHero, type OutlookMode } from './timeline'
+import { SimulatedMoves } from './whatif'
 import './twin.css'
 
-const formatRand = (value: number) => `R${Math.round(value).toLocaleString('en-ZA')}`
-
-function OriginBadge({ view }: { view: DigitalTwinView }) {
+/** Where the numbers came from: shown on the twin node, and in full in the footnote. */
+function originOf(view: DigitalTwinView, forSme: boolean) {
     const { record, origin, lastSavedAt } = view
-    if (origin === 'sample') return <span className='twin-chip twin-chip-sample'>Sample data · not a real SME</span>
+    if (origin === 'sample') return { short: 'Sample data', full: 'Sample SME: the documents are made up, but every score, move and outlook is worked out by the real twin rules.' }
     if (origin === 'saved') {
-        return <span className='twin-chip twin-chip-saved'>Saved {dayjs(record.calculatedAt).format('D MMM, HH:mm')} · rules {record.ruleVersion}</span>
+        const at = dayjs(record.calculatedAt).format('D MMM, HH:mm')
+        return { short: `Saved ${at}`, full: `Saved record from ${at} · rules ${record.ruleVersion}.` }
     }
-    return (
-        <span className='twin-chip twin-chip-live'>
-            Live · {dayjs(record.calculatedAt).format('HH:mm')} · rules {record.ruleVersion}
-            {lastSavedAt ? ` · last saved ${dayjs(lastSavedAt).format('D MMM')}` : ' · no daily record yet'}
-        </span>
-    )
-}
-
-function Stat({ label, value, color, format }: { label: string; value: number; color?: string; format?: (value: number) => string }) {
-    return (
-        <div className='twin-stat'>
-            <div className='twin-stat-value' style={color ? { color, textShadow: `0 0 12px ${color}` } : undefined}>
-                <CountUp value={value} format={format} />
-            </div>
-            <div className='twin-stat-label'>{label}</div>
-        </div>
-    )
+    const at = dayjs(record.calculatedAt).format('HH:mm')
+    if (forSme) return { short: `Live · ${at}`, full: `Live · updated ${at}.` }
+    return {
+        short: `Live · ${at}`,
+        full: `Live calculation at ${at} · rules ${record.ruleVersion} · ${lastSavedAt ? `last saved ${dayjs(lastSavedAt).format('D MMM')}` : 'no daily record yet'}.`
+    }
 }
 
 function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggleTheme: () => void }) {
@@ -63,29 +57,61 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
     const [notice, setNotice] = useState<string | null>(null)
-    const [outlookMode, setOutlookMode] = useState<OutlookMode>('nothing-changes')
-    const [scenario, setScenario] = useState<TwinScenario>(NO_CHANGE_SCENARIO)
+    // Moves picked in the simulated moves panel; any pick puts the time machine in what-if.
+    const [chosen, setChosen] = useState<TwinMoveKey[]>([])
+    // A day picked in the Coming up panel for the time machine to jump to.
+    const [jump, setJump] = useState<{ day: number; key: number } | null>(null)
+    // HODs of departments that see their own services in the Risk Register see the
+    // same here first, and can switch to the whole SME.
+    const [wholeSme, setWholeSme] = useState(false)
     const stageRef = useParallax<HTMLDivElement>()
+
+    // The view on screen, and every move the twin can simulate for it.
+    const shown = view ? (view.department && !wholeSme ? view.department : view) : null
+    const horizon = shown ? outlookHorizonDays(shown.record) : 0
+    const moves = useMemo(() => (shown ? simulateMoves(shown.record, horizon) : []), [shown, horizon])
+    const scenario = useMemo(() => scenarioFromMoves(moves.filter(move => chosen.includes(move.key))), [moves, chosen])
+    const outlookMode: OutlookMode = chosen.length ? 'what-if' : 'nothing-changes'
 
     const isSample = applicationId === SAMPLE_TWIN_ID
     const isStaff = !!user && TWIN_STAFF_ROLES.includes(user.role)
+    // Every SME sees their own twin; the sample is for staff.
+    const isSme = !!user && user.role === 'incubatee'
+    const canOpen = isStaff || (isSme && !isSample)
 
     const goBack = useCallback(() => {
         if (window.history.length > 1) navigate(-1)
-        else navigate('/')
-    }, [navigate])
+        else navigate(isSme ? '/incubatee' : '/')
+    }, [navigate, isSme])
+    const openMine = useCallback(() => navigate(`/twin/${MY_TWIN_ID}`, { replace: true }), [navigate])
 
     const load = useCallback(async () => {
         setLoading(true)
         setError(null)
+        setNotice(null)
         try {
-            setView(isSample ? buildSampleTwinView() : await loadDigitalTwin(applicationId))
+            if (isSample) {
+                setView(buildSampleTwinView())
+                return
+            }
+            let id = applicationId
+            // An SME opens only their own applications, whatever id is in the address.
+            if (isSme) {
+                const mine = await findMyApplicationIds(user)
+                if (!mine.length) throw new Error('Your digital twin appears once you have applied to a programme.')
+                if (id === MY_TWIN_ID) id = mine[0]
+                else if (!mine.includes(id)) throw new Error('You can only open your own digital twin.')
+            }
+            setView(await loadDigitalTwin(id, user))
         } catch (loadError: any) {
-            setError(loadError?.message || 'The twin could not be calculated.')
+            const message = loadError?.message || 'The twin could not be calculated.'
+            setError(message)
+            // With a twin already on screen (an SME's Refresh) the error shows in the header.
+            setNotice(message)
         } finally {
             setLoading(false)
         }
-    }, [applicationId, isSample])
+    }, [applicationId, isSample, isSme, user])
 
     const recalculate = useCallback(async () => {
         if (isSample) {
@@ -95,7 +121,7 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
         setLoading(true)
         setNotice(null)
         try {
-            const result = await recalculateDigitalTwin(applicationId)
+            const result = await recalculateDigitalTwin(applicationId, user)
             setView(result.view)
             setNotice(result.saved
                 ? 'Recalculated and saved as today’s record.'
@@ -105,12 +131,12 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
         } finally {
             setLoading(false)
         }
-    }, [applicationId, isSample])
+    }, [applicationId, isSample, user])
 
     useEffect(() => {
-        if (identityLoading || !isStaff) return
+        if (identityLoading || !canOpen) return
         load()
-    }, [identityLoading, isStaff, load])
+    }, [identityLoading, canOpen, load])
 
     useEffect(() => {
         const onKey = (event: KeyboardEvent) => {
@@ -120,13 +146,16 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
         return () => window.removeEventListener('keydown', onKey)
     }, [goBack])
 
-    if (!identityLoading && !isStaff) {
+    if (!identityLoading && !canOpen) {
         return (
             <div className='twin-root'>
                 <HoloBackground />
                 <div className='twin-state'>
-                    <p>The digital twin is available to staff only.</p>
-                    <button className='twin-btn' onClick={goBack}><ArrowLeftOutlined /> Back</button>
+                    <p>{isSme ? 'The sample twin is for staff. Your own twin shows your real records.' : 'The digital twin is available to staff, and to each SME for their own business.'}</p>
+                    <div className='twin-row'>
+                        <button className='twin-btn' onClick={goBack}><ArrowLeftOutlined /> Back</button>
+                        {isSme && <button className='twin-btn' onClick={openMine}>Open my digital twin</button>}
+                    </div>
                 </div>
             </div>
         )
@@ -143,6 +172,7 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
                             <div className='twin-row'>
                                 <button className='twin-btn' onClick={goBack}><ArrowLeftOutlined /> Back</button>
                                 <button className='twin-btn' onClick={load}><ReloadOutlined /> Try again</button>
+                                {isSme && applicationId !== MY_TWIN_ID && <button className='twin-btn' onClick={openMine}>Open my digital twin</button>}
                             </div>
                         </>
                     ) : (
@@ -153,13 +183,19 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
         )
     }
 
-    const { record, history } = view
-    const { business, compliance, evidence, delivery, plan } = record
-
-    // What-if: the growth panel shows what the levers would do to the score.
-    const activeScenario = outlookMode === 'what-if' ? scenario : NO_CHANGE_SCENARIO
-    const whatIfActive = !isNoChangeScenario(activeScenario)
-    const whatIfGrowth = whatIfActive ? scenarioGrowth(record, activeScenario) : null
+    const { record, history } = shown!
+    const origin = originOf(view, isSme)
+    const chooseView = (whole: boolean) => {
+        setWholeSme(whole)
+        setChosen([])
+    }
+    // "What if…" starts from the best move; "If nothing changes" clears the picks.
+    const changeMode = (mode: OutlookMode) => {
+        if (mode === 'nothing-changes') setChosen([])
+        else if (!chosen.length && moves[0]) setChosen([moves[0].key])
+    }
+    const toggleMove = (key: TwinMoveKey) =>
+        setChosen(current => (current.includes(key) ? current.filter(item => item !== key) : [...current, key]))
 
     return (
         <div className='twin-root'>
@@ -169,18 +205,25 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
             <div className='twin-shell'>
                 <motion.header className='twin-top' initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
                     <button className='twin-btn' onClick={goBack} aria-label='Back'><ArrowLeftOutlined /> Back</button>
+                    {/* One line: group and programme in front of the name, then whose view it is. */}
                     <div className='twin-title'>
-                        <div className='twin-kicker'>Digital twin</div>
-                        <h1 title={record.smeName}>{record.smeName}</h1>
                         <div className='twin-chips'>
                             <span className='twin-chip'>
                                 {record.profile.group === 'Graduated' ? 'Graduated' : <>Group <strong>{record.profile.group}</strong></>}
                             </span>
                             {record.programName && <span className='twin-chip'>{record.programName}</span>}
-                            {record.profile.sector && <span className='twin-chip'>{record.profile.sector}</span>}
-                            {record.ownerName && <span className='twin-chip'>{record.ownerName}</span>}
-                            <OriginBadge view={view} />
                         </div>
+                        <h1 title={record.smeName}>{record.smeName}</h1>
+                        {view.department && (
+                            <div className='twin-tabs twin-tabs-inline twin-scope' role='tablist' aria-label='Whose view of this SME'>
+                                <button role='tab' aria-selected={!wholeSme} className={`twin-tab ${wholeSme ? '' : 'is-active'}`} onClick={() => chooseView(false)}>
+                                    {view.department.record.scope?.departmentName}
+                                </button>
+                                <button role='tab' aria-selected={wholeSme} className={`twin-tab ${wholeSme ? 'is-active' : ''}`} onClick={() => chooseView(true)}>
+                                    Whole SME
+                                </button>
+                            </div>
+                        )}
                     </div>
                     <div className='twin-actions'>
                         {notice && <span className='twin-notice'>{notice}</span>}
@@ -191,8 +234,9 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
                         >
                             {theme === 'dark' ? <SunOutlined /> : <MoonOutlined />} {theme === 'dark' ? 'Light' : 'Dark'}
                         </button>
-                        <button className='twin-btn twin-btn-primary' onClick={recalculate} disabled={loading}>
-                            <ReloadOutlined spin={loading} /> Recalculate now
+                        {/* Saving a record is the server's job for staff; an SME just reads their records again. */}
+                        <button className='twin-btn twin-btn-primary' onClick={isSme ? load : recalculate} disabled={loading}>
+                            <ReloadOutlined spin={loading} /> {isSme ? 'Refresh' : 'Recalculate now'}
                         </button>
                     </div>
                 </motion.header>
@@ -201,108 +245,54 @@ function DigitalTwinScreen({ theme, onToggleTheme }: { theme: TwinTheme; onToggl
                     record={record}
                     history={history}
                     mode={outlookMode}
-                    onModeChange={setOutlookMode}
+                    onModeChange={changeMode}
                     scenario={scenario}
-                    onScenarioChange={setScenario}
+                    jumpTo={jump}
+                    forSme={isSme}
                 />
 
                 <div className='twin-stage' ref={stageRef}>
                     <div className='twin-deck'>
-                        <div className='twin-wing twin-wing-left'>
-                            <HoloPanel
-                                title='Growth score'
-                                delay={0.35}
-                                accent={ACCENT.emerald}
-                                accentTwo={ACCENT.champagne}
-                                aside={whatIfGrowth && whatIfGrowth.total !== record.growth.total
-                                    ? <span className='twin-tag twin-tag-whatif'>What if: {whatIfGrowth.total} · {whatIfGrowth.band}</span>
-                                    : <span className='twin-tag'>{record.growth.band}</span>}
-                            >
-                                <div className='twin-ring-row'>
-                                    <SegmentRing components={record.growth.components} total={record.growth.total} size={124} />
-                                    <div className='twin-ring-side'>
-                                        {record.growth.components.map((component, index) => (
-                                            <HoloBar
-                                                key={component.key}
-                                                label={component.label}
-                                                value={component.score}
-                                                max={component.maximum}
-                                                detail={component.detail}
-                                                color={ACCENT.emerald}
-                                                delay={0.6 + index * 0.12}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                            </HoloPanel>
+                        <HoloPanel title='Live mirror' delay={0.35} accent={ACCENT.emerald} accentTwo={ACCENT.champagne}>
+                            <TwinMirror record={record} refused={view.refused} synced={origin.short} />
+                        </HoloPanel>
 
-                            <HoloPanel title='Evidence and compliance' delay={0.5} accent={ACCENT.violet} accentTwo={ACCENT.orchid}>
-                                <div className='twin-duo'>
-                                    <div className='twin-duo-item'>
-                                        <div className='twin-duo-title'>MOV evidence approved</div>
-                                        <HoloRing value={evidence.approved} max={evidence.total} size={86} color={ACCENT.violet} sublabel={`of ${evidence.total}`} />
-                                        <ul className='twin-list'>
-                                            <li><span>Waiting on SME</span><b>{evidence.awaitingSme}</b></li>
-                                            <li><span>Waiting on HOD</span><b>{evidence.awaitingHod}</b></li>
-                                            <li><span>Draft</span><b>{evidence.draft}</b></li>
-                                        </ul>
-                                    </div>
-                                    <div className='twin-duo-item'>
-                                        <div className='twin-duo-title'>Compliance documents valid</div>
-                                        <HoloRing value={compliance.covered} max={compliance.total} size={86} color={ACCENT.orchid} sublabel={`of ${compliance.total}`} />
-                                        <ul className='twin-list'>
-                                            <li><span>Missing</span><b>{compliance.missing}</b></li>
-                                            <li><span>Expired</span><b>{compliance.expired}</b></li>
-                                            <li><span>Expiring soon</span><b>{compliance.expiringSoon}</b></li>
-                                            <li><span>Plan areas</span><b>{plan.finalConfirmed ? 'Final' : `${plan.smeConfirmed}/${plan.departments}`}</b></li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            </HoloPanel>
-                        </div>
+                        <HoloPanel
+                            title='Simulated moves'
+                            delay={0.45}
+                            accent={ACCENT.violet}
+                            accentTwo={ACCENT.orchid}
+                            aside={<span className='twin-tag'>Each move tried on its own</span>}
+                        >
+                            <SimulatedMoves
+                                record={record}
+                                moves={moves}
+                                chosen={chosen}
+                                onToggle={toggleMove}
+                                onClear={() => setChosen([])}
+                                horizonDays={horizon}
+                                forSme={isSme}
+                            />
+                        </HoloPanel>
 
-                        <div className='twin-wing twin-wing-right'>
-                            <HoloPanel title='Delivery' delay={0.45} accent={ACCENT.orchid} accentTwo={ACCENT.lilac}>
-                                <div className='twin-stats'>
-                                    <Stat label='Assigned' value={delivery.total} />
-                                    <Stat label='Completed' value={delivery.completed} color={ACCENT.emerald} />
-                                    <Stat label='Open' value={delivery.open} color={ACCENT.lilac} />
-                                    <Stat label='Overdue' value={delivery.overdue} color={delivery.overdue ? LEVEL.High : undefined} />
-                                    <Stat label='Waiting on SME' value={delivery.waitingOnSme} color={delivery.waitingOnSme ? LEVEL.Medium : undefined} />
-                                    <Stat label='Declined' value={delivery.declined} color={delivery.declined ? LEVEL.Critical : undefined} />
-                                </div>
-                                {delivery.total === 0 && <div className='twin-empty'>No interventions assigned in this programme yet.</div>}
-                            </HoloPanel>
-
-                            <HoloPanel title='Business results' delay={0.65} accent={ACCENT.champagne} accentTwo={ACCENT.rose}>
-                                <div className='twin-stats twin-stats-2'>
-                                    <div className='twin-stat'>
-                                        <div className='twin-stat-value'>
-                                            {business.revenue ? <CountUp value={business.revenue.monthly} format={formatRand} /> : '—'}
-                                        </div>
-                                        <div className='twin-stat-label'>
-                                            {business.revenue ? `Monthly revenue · ${business.revenue.source}` : 'Revenue not captured yet'}
-                                        </div>
-                                    </div>
-                                    <div className='twin-stat'>
-                                        <div className='twin-stat-value'>{business.headcount ? <CountUp value={business.headcount.total} /> : '—'}</div>
-                                        <div className='twin-stat-label'>
-                                            {business.headcount ? `Headcount · ${business.headcount.period}` : 'Headcount not captured yet'}
-                                        </div>
-                                    </div>
-                                    <Stat label='Jobs sustained' value={business.jobsSustained} />
-                                    <Stat label='Jobs created · 12 months' value={business.jobsCreatedLast12Months} />
-                                </div>
-                            </HoloPanel>
-                        </div>
+                        <HoloPanel
+                            title='Coming up'
+                            delay={0.55}
+                            accent={ACCENT.champagne}
+                            accentTwo={ACCENT.rose}
+                            aside={<span className={`twin-tag ${chosen.length ? 'twin-tag-whatif' : ''}`}>{chosen.length ? 'With your moves' : 'If nothing changes'}</span>}
+                        >
+                            <ComingUp
+                                record={record}
+                                curve={scenarioCurve(record, scenario, horizon)}
+                                scenario={chosen.length ? scenario : null}
+                                onJump={day => setJump(current => ({ day, key: (current?.key ?? 0) + 1 }))}
+                            />
+                        </HoloPanel>
                     </div>
                 </div>
 
-                <div className='twin-footnote'>
-                    {view.origin === 'sample'
-                        ? 'Sample SME: the documents are made up, but every score and outlook is worked out by the real twin rules. Press Esc to close.'
-                        : 'Rules produce every number; the outlook only moves known dates forward, as if nothing changes. Press Esc to close.'}
-                </div>
+                <div className='twin-footnote'>{origin.full} Press Esc to close.</div>
             </div>
         </div>
     )

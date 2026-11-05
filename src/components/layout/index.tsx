@@ -1446,6 +1446,12 @@ export const CustomLayout: React.FC = () => {
                 icon: <HomeOutlined />,
             },
             {
+                key: "digital-twin",
+                to: "/twin/mine",
+                label: "My Digital Twin",
+                icon: <DeploymentUnitOutlined />,
+            },
+            {
                 key: "calendar",
                 to: "/calendar",
                 label: "Calendar & Notices",

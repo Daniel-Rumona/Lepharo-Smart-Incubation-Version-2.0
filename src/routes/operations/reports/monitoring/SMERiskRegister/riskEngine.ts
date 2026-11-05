@@ -19,6 +19,7 @@ import {
     isDpInterventionDepartment,
     getEligibleDpInterventions,
     departmentMatchesScope,
+    complianceDocumentCounts,
     computeRiskScore,
     deriveDeliveryCoverage,
     needsAttentionInputs
@@ -664,11 +665,22 @@ export function buildRow(args: {
         departmentId?: string
         departmentName?: string
     }
+    /** The application's programme, for its required documents. */
+    program?: AnyDoc | null
+    /** Documents the SME uploaded under applications/{id}/complianceDocuments. */
+    complianceUploads?: AnyDoc[]
 }): SMERow {
     const { participant, application, diagnosticPlan, assignments, sessions, departmentsById, departmentsByName, scopedDepartment } = args
     const participantId = getParticipantId(application ?? participant ?? {})
-    const applicationId = getApplicationId(application ?? participant ?? {})
-    const docs = parseComplianceDocuments(application ?? {})
+    // An application document is its own id; applicationId fields are only on participants.
+    const applicationId = normalizeText(application?.id) || getApplicationId(application ?? participant ?? {})
+    // Documents are counted against the programme's required uploads, as the Compliance
+    // page, the SME's dashboard and the digital twin count them. Applications from
+    // before the complianceDocuments list keep the legacy reading.
+    const uploads = args.complianceUploads ?? []
+    const docs = Array.isArray(application?.complianceDocuments) || uploads.length > 0
+        ? complianceDocumentCounts({ application, programRequirements: args.program?.programRequirements, uploads, now: new Date() })
+        : parseComplianceDocuments(application ?? {})
     const accessInfo = getSystemAccessInfo(application, participant, sessions)
 
     // Coverage comes from the shared twin rules, so the register and the digital
