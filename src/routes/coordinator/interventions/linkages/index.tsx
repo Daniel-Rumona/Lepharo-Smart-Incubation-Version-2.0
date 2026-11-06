@@ -43,15 +43,10 @@ import { getDocs, query, collection, where, addDoc, doc, updateDoc } from "fireb
 import { useFullIdentity } from "@/hooks/src/useFullIdentity";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { MotionCard } from "@/components/dashboards/metrics/Header";
-import sankey from "highcharts/modules/sankey";
-import dependencyWheel from "highcharts/modules/dependency-wheel";
+import { MetricTile } from "@/components/dashboards/metrics/MetricTile";
+import "highcharts/modules/sankey";
+import "highcharts/modules/dependency-wheel";
 
-if (typeof sankey === "function") {
-    sankey(Highcharts);
-}
-if (typeof dependencyWheel === "function") {
-    dependencyWheel(Highcharts);
-}
 
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -679,29 +674,29 @@ const MarketLinkageManager = () => {
         {
             title: "Total Linkages",
             value: linkages.length,
-            icon: <ProjectOutlined style={{ color: "#1677ff" }} />,
-            iconBg: "rgba(22,119,255,.12)",
+            icon: <ProjectOutlined />,
+            tone: 'accent' as const,
             subtitle: "Funding and facilitation",
         },
         {
             title: "Funding Linkages",
             value: fundingLinkages.length,
-            icon: <DollarOutlined style={{ color: "#722ed1" }} />,
-            iconBg: "rgba(114,46,209,.12)",
+            icon: <DollarOutlined />,
+            tone: 'info' as const,
             subtitle: `R ${totalFundingValue.toLocaleString()}`,
         },
         {
             title: "Facilitation Linkages",
             value: facilitationLinkages.length,
-            icon: <TeamOutlined style={{ color: "#13c2c2" }} />,
-            iconBg: "rgba(19,194,194,.14)",
+            icon: <TeamOutlined />,
+            tone: 'info' as const,
             subtitle: "SME connections",
         },
         {
             title: "Total Monetary Value",
             value: `R ${totalFundingValue.toLocaleString()}`,
-            icon: <CalculatorOutlined style={{ color: "#52c41a" }} />,
-            iconBg: "rgba(82,196,26,.14)",
+            icon: <CalculatorOutlined />,
+            tone: 'success' as const,
             subtitle: "Funding records only",
         },
     ];
@@ -713,12 +708,12 @@ const MarketLinkageManager = () => {
                 {metricCards.map((metric) => (
                     <Col xs={24} sm={12} md={8} lg={6} key={metric.title}>
                         <MotionCard style={{ height: "100%" }}>
-                            <MotionCard.Metric
+                            <MetricTile
                                 title={metric.title}
                                 value={metric.value}
                                 subtitle={metric.subtitle}
                                 icon={metric.icon}
-                                iconBg={metric.iconBg}
+                                tone={metric.tone}
                             />
                         </MotionCard>
                     </Col>

@@ -21,19 +21,17 @@ import type { ColumnsType } from 'antd/es/table'
 
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import heatmapModule from 'highcharts/modules/heatmap'
-import exportingModule from 'highcharts/modules/exporting'
-import accessibilityModule from 'highcharts/modules/accessibility'
+import 'highcharts/modules/heatmap'
+import 'highcharts/modules/exporting'
+import 'highcharts/modules/accessibility'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { channelLabel, resolveInquiryChannel } from '@/utils/inquirySource'
+import { formatterPoint } from '@/lib/highchartsTypes'
 
 const { RangePicker } = DatePicker
 const { Title, Text } = Typography
 
 if (typeof Highcharts === 'function') {
-  heatmapModule(Highcharts)
-  exportingModule(Highcharts)
-  accessibilityModule(Highcharts)
 }
 
 type Inquiry = {
@@ -259,7 +257,7 @@ const ReceptionistReports: React.FC = () => {
             formatter: function () {
               // @ts-ignore
               return this.y > 0
-                ? `${this.point.name}<br/>${this.percentage!.toFixed(1)}%`
+                ? `${formatterPoint(this).name}<br/>${this.percentage!.toFixed(1)}%`
                 : null
             }
           },
@@ -296,7 +294,7 @@ const ReceptionistReports: React.FC = () => {
             formatter: function () {
               // @ts-ignore
               return this.y > 0
-                ? `${this.point.name}<br/>${this.percentage!.toFixed(1)}%`
+                ? `${formatterPoint(this).name}<br/>${this.percentage!.toFixed(1)}%`
                 : null
             }
           },
@@ -370,7 +368,7 @@ const ReceptionistReports: React.FC = () => {
         formatter: function () {
           // @ts-ignore
           const y = this.point.y as number
-          const v = (this.point as any).value as number
+          const v = (formatterPoint(this) as any).value as number
           const dayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][y]
           return `<b>${dayName}</b><br/>Inquiries: <b>${v}</b>`
         }

@@ -8,6 +8,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -83,6 +84,7 @@ const normalizeReport = (id: string, data: any): ReportDocument => ({
 
 const normalizeBlock = (id: string, data: any): ReportBlock => ({
   id,
+  archived: data?.archived === true,
   reportId: data?.reportId || '',
   reportTitle: data?.reportTitle || '',
   periodLabel: data?.periodLabel || '',
@@ -286,6 +288,7 @@ export const listenReportBlocks = (
   snap => {
     const rows = snap.docs
       .map(d => normalizeBlock(d.id, d.data()))
+      .filter(block => !block.archived)
       .sort((a, b) => a.sectionOrder - b.sectionOrder || a.blockOrder - b.blockOrder)
     onData(rows)
   }
@@ -302,6 +305,7 @@ export const listenContributorBlocks = (
     snap => {
       const rows = snap.docs
         .map(d => normalizeBlock(d.id, d.data()))
+        .filter(block => !block.archived)
         .sort((a, b) => {
           const aMs = a.updatedAt?.toMillis?.() || 0
           const bMs = b.updatedAt?.toMillis?.() || 0
@@ -384,7 +388,7 @@ export const createReportFromTemplate = async ({
     templateSignature: getReportTemplateSignature(template),
     title: input.title,
     periodLabel: input.periodLabel,
-    frequency: input.frequency,
+    frequency: input.frequency || template.frequency,
     programId: input.programId || null,
     programName: input.programName || null,
     sourceReportId: previousReport?.id || null,
@@ -486,7 +490,7 @@ const statusWeight: Record<ReportBlockStatus, number> = {
 
 export const recalculateReportProgress = async (db: Firestore, reportId: string) => {
   const snap = await getDocs(query(collection(db, REPORT_COLLECTIONS.blocks), where('reportId', '==', reportId)))
-  const blocks = snap.docs.map(d => normalizeBlock(d.id, d.data()))
+  const blocks = snap.docs.map(d => normalizeBlock(d.id, d.data())).filter(block => !block.archived)
   const total = blocks.length
   const approved = blocks.filter(block => block.status === 'approved').length
   const progress = total
@@ -507,60 +511,81 @@ export const recalculateReportProgress = async (db: Firestore, reportId: string)
   })
 }
 
+const millisOf = (value: any) => (typeof value?.toMillis === 'function' ? value.toMillis() : 0)
+
+/** Thrown when a section was saved or reviewed by someone else after this person opened it. */
+export class SectionChangedError extends Error {
+  constructor(byName?: string) {
+    super(`${byName || 'Someone else'} changed this section after you opened it. Copy your text, reload the section, then save again.`)
+    this.name = 'SectionChangedError'
+  }
+}
+
 export const saveReportBlock = async ({
   db,
   block,
   user,
   content,
-  summary = 'Saved block changes.'
+  summary = 'Saved block changes.',
+  baseUpdatedAt
 }: {
   db: Firestore
   block: ReportBlock
   user: ReportUserContext
   content: any
   summary?: string
+  /** The section's updatedAt when this person started editing; a newer save by someone else is refused. */
+  baseUpdatedAt?: any
 }) => {
   const blockRef = doc(db, REPORT_COLLECTIONS.blocks, block.id)
   const revisionRef = doc(collection(blockRef, 'revisions'))
   const activityRef = doc(collection(db, REPORT_COLLECTIONS.activity))
   const reportRef = doc(db, REPORT_COLLECTIONS.reports, block.reportId)
-  const batch = writeBatch(db)
 
-  batch.set(revisionRef, {
-    status: block.status === 'not_started' ? 'draft' : block.status,
-    content: clone(content),
-    summary,
-    createdAt: serverTimestamp(),
-    createdBy: user.uid,
-    createdByName: user.name
+  // A transaction on the fresh section: last-write-wins used to let a late save undo an
+  // approval or overwrite another contributor's text.
+  await runTransaction(db, async transaction => {
+    const freshSnap = await transaction.get(blockRef)
+    if (!freshSnap.exists()) throw new Error('This section no longer exists.')
+    const fresh = normalizeBlock(freshSnap.id, freshSnap.data())
+    const base = baseUpdatedAt === undefined ? block.updatedAt : baseUpdatedAt
+    if (millisOf(fresh.updatedAt) && millisOf(base) && millisOf(fresh.updatedAt) !== millisOf(base) && fresh.updatedBy !== user.uid) {
+      throw new SectionChangedError(fresh.updatedByName)
+    }
+    if (fresh.status === 'approved') throw new Error('This section has been approved, so it can no longer be edited.')
+    const status = fresh.status === 'not_started' ? 'draft' : fresh.status
+
+    transaction.set(revisionRef, {
+      status,
+      content: clone(content),
+      summary,
+      createdAt: serverTimestamp(),
+      createdBy: user.uid,
+      createdByName: user.name
+    })
+    transaction.update(blockRef, {
+      content: clone(content),
+      status,
+      changeRequest: fresh.status === 'changes_requested' ? null : fresh.changeRequest || null,
+      updatedAt: serverTimestamp(),
+      updatedBy: user.uid,
+      updatedByName: user.name
+    })
+    transaction.set(activityRef, {
+      reportId: block.reportId,
+      blockId: block.id,
+      action: 'block_saved',
+      detail: `${block.title} updated.`,
+      createdAt: serverTimestamp(),
+      createdBy: user.uid,
+      createdByName: user.name
+    })
+    transaction.update(reportRef, {
+      updatedAt: serverTimestamp(),
+      updatedBy: user.uid,
+      updatedByName: user.name
+    })
   })
-
-  batch.update(blockRef, {
-    content: clone(content),
-    status: block.status === 'not_started' ? 'draft' : block.status,
-    changeRequest: block.status === 'changes_requested' ? null : block.changeRequest || null,
-    updatedAt: serverTimestamp(),
-    updatedBy: user.uid,
-    updatedByName: user.name
-  })
-
-  batch.set(activityRef, {
-    reportId: block.reportId,
-    blockId: block.id,
-    action: 'block_saved',
-    detail: `${block.title} updated.`,
-    createdAt: serverTimestamp(),
-    createdBy: user.uid,
-    createdByName: user.name
-  })
-
-  batch.update(reportRef, {
-    updatedAt: serverTimestamp(),
-    updatedBy: user.uid,
-    updatedByName: user.name
-  })
-
-  await batch.commit()
   await recalculateReportProgress(db, block.reportId)
 }
 
@@ -579,15 +604,32 @@ const updateBlockReviewState = async ({
   action: string
   detail: string
 }) => {
-  const batch = writeBatch(db)
-  batch.update(doc(db, REPORT_COLLECTIONS.blocks, block.id), {
-    ...patch,
-    updatedAt: serverTimestamp(),
-    updatedBy: user.uid,
-    updatedByName: user.name
+  const blockRef = doc(db, REPORT_COLLECTIONS.blocks, block.id)
+  const activityRef = doc(collection(db, REPORT_COLLECTIONS.activity))
+  await runTransaction(db, async transaction => {
+    const freshSnap = await transaction.get(blockRef)
+    if (!freshSnap.exists()) throw new Error('This section no longer exists.')
+    const fresh = normalizeBlock(freshSnap.id, freshSnap.data())
+    // Two reviewers at once, or a review on a stale screen: act only on the state they saw.
+    if (fresh.status !== block.status || (fresh.submittedTo || null) !== (block.submittedTo || null)) {
+      throw new Error(`This section was already ${fresh.status === 'approved' ? 'approved' : 'updated'} by ${fresh.updatedByName || 'someone else'}. Refresh to see it.`)
+    }
+    transaction.update(blockRef, {
+      ...patch,
+      updatedAt: serverTimestamp(),
+      updatedBy: user.uid,
+      updatedByName: user.name
+    })
+    transaction.set(activityRef, {
+      reportId: block.reportId,
+      blockId: block.id,
+      action,
+      detail,
+      createdAt: serverTimestamp(),
+      createdBy: user.uid,
+      createdByName: user.name
+    })
   })
-  addActivityToBatch({ db, batch, reportId: block.reportId, blockId: block.id, user, action, detail })
-  await batch.commit()
   await recalculateReportProgress(db, block.reportId)
 }
 
@@ -667,6 +709,30 @@ export const approveReportBlock = async ({
   detail: `${block.title} approved.`
 })
 
+/** The report owner reopens an approved section so it can be edited again. */
+export const reopenReportBlock = async ({
+  db,
+  block,
+  user
+}: {
+  db: Firestore
+  block: ReportBlock
+  user: ReportUserContext
+}) => updateBlockReviewState({
+  db,
+  block,
+  user,
+  patch: {
+    status: 'draft',
+    submittedTo: null,
+    approvedAt: null,
+    approvedBy: null,
+    approvedByName: null
+  },
+  action: 'reopened',
+  detail: `${block.title} reopened for editing.`
+})
+
 export const requestReportBlockChanges = async ({
   db,
   block,
@@ -697,36 +763,6 @@ export const requestReportBlockChanges = async ({
   action: 'changes_requested',
   detail: reason
 })
-
-// Compatibility wrapper for any existing Phase 2 call sites.
-export const changeReportBlockStatus = async ({
-  db,
-  block,
-  user,
-  status,
-  reason
-}: {
-  db: Firestore
-  block: ReportBlock
-  user: ReportUserContext
-  status: ReportBlockStatus
-  reason?: string
-}) => {
-  if (status === 'approved') return approveReportBlock({ db, block, user })
-  if (status === 'submitted') return submitReportBlock({ db, block, user, target: 'report_manager' })
-  if (status === 'changes_requested') {
-    return requestReportBlockChanges({ db, block, user, reason: reason || 'Changes requested.', target: 'department' })
-  }
-
-  return updateBlockReviewState({
-    db,
-    block,
-    user,
-    patch: { status },
-    action: status,
-    detail: `${block.title}: ${status.replace(/_/g, ' ')}`
-  })
-}
 
 export const delegateReportBlock = async ({
   db,
@@ -828,6 +864,13 @@ export const syncReportWithTemplate = async ({
   const templateBlocks = template.sections.flatMap(section => section.blocks.map((block, index) => ({ section, block, index })))
   const reportRef = doc(db, REPORT_COLLECTIONS.reports, report.id)
   const batch = writeBatch(db)
+  const templateBlockIds = new Set(templateBlocks.map(({ block }) => block.id))
+
+  // Sections the template no longer has: kept with their content, but out of the report
+  // and its progress (they used to keep counting forever).
+  existingBlocks
+    .filter(block => !templateBlockIds.has(block.templateBlockId) && !block.archived)
+    .forEach(block => batch.update(doc(db, REPORT_COLLECTIONS.blocks, block.id), { archived: true, updatedAt: serverTimestamp() }))
 
   templateBlocks.forEach(({ section, block: templateBlock, index }) => {
     const existing = existingByTemplateBlockId.get(templateBlock.id)
@@ -858,6 +901,7 @@ export const syncReportWithTemplate = async ({
       contributorKeys,
       schema: templateBlock.schema || {},
       sourceDocumentNodeIds: templateBlock.sourceDocumentNodeIds || [],
+      archived: false,
       updatedAt: serverTimestamp(),
       updatedBy: user.uid,
       updatedByName: user.name
@@ -886,7 +930,12 @@ export const syncReportWithTemplate = async ({
     templateName: template.name,
     templateSignature: getReportTemplateSignature(template),
     frequency: template.frequency,
-    contributorKeys: Array.from(new Set(templateBlocks.flatMap(({ block }) => buildContributorKeys(block.editorUserIds, block.editorDepartmentIds)))),
+    // Keep everyone sections were handed to, not only the template's departments.
+    contributorKeys: Array.from(new Set(templateBlocks.flatMap(({ block }) => buildContributorKeys(
+      block.editorUserIds,
+      block.editorDepartmentIds,
+      existingByTemplateBlockId.get(block.id)?.delegatedUserIds || []
+    )))),
     updatedAt: serverTimestamp(),
     updatedBy: user.uid,
     updatedByName: user.name
@@ -1074,7 +1123,3 @@ export const listPreviousReportsForTemplate = async (
     .sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0))
 }
 
-export const createEmptyTemplateStructure = (template: ReportTemplate) => template.sections.map(section => ({
-  ...section,
-  blocks: section.blocks.map(block => ({ ...block, defaultContent: blankContent(block) }))
-}))

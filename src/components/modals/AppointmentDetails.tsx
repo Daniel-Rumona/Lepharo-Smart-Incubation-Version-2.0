@@ -33,6 +33,7 @@ import {
 import dayjs, { type Dayjs } from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import * as appointmentService from '@/services/appointmentService'
 import './AppointmentDetails.css'
 
@@ -163,6 +164,8 @@ export type AppointmentDetailsRecord = {
         count?: number
         checkedOutCount?: number
         currentlyPresentCount?: number
+        checkedInParticipantIds?: string[]
+        checkedOutParticipantIds?: string[]
         checkedInEmails?: string[]
         checkedOutEmails?: string[]
         lastCheckInAt?: any
@@ -255,9 +258,15 @@ const statusLabel = (value?: string) => {
     return normalized || 'unknown'
 }
 
-const statusTag = (value?: string) => {
+const statusTag = (value?: string, appointment?: any) => {
     const normalized = statusLabel(value)
 
+    if (
+        normalized === 'pending' &&
+        appointmentService.getSmeResponseState(appointment, value ?? null) === 'no-response'
+    ) {
+        return <Tag>No response</Tag>
+    }
     if (normalized === 'confirmed') return <Tag color="green">Confirmed</Tag>
     if (normalized === 'pending') return <Tag color="orange">Pending</Tag>
     if (normalized === 'declined') return <Tag color="red">Declined</Tag>
@@ -724,7 +733,20 @@ const AppointmentDetailsModal: React.FC<Props> = ({
     }, [open, appointment?.id])
 
     const members = useMemo<MemberRow[]>(() => {
+        // Check-ins by participant id first; getAppointmentMembers still matches
+        // the email lists (email fallback until Phase 4, docs/sme-identity-migration-plan.md).
+        const checkedInIds = new Set(appointment?.attendanceSummary?.checkedInParticipantIds || [])
+        const checkedOutIds = new Set(appointment?.attendanceSummary?.checkedOutParticipantIds || [])
         return appointmentService.getAppointmentMembers(appointment as any).map((member, index) => {
+            const pid = String(member.participantId || '').trim()
+            const ownAttendance = (member as any).attendance
+            const attendanceStatus: appointmentService.AttendanceStatus | undefined =
+                (pid && checkedOutIds.has(pid)) || ownAttendance?.checkedOutAt
+                    ? 'checked-out'
+                    : member.attendanceStatus !== 'checked-out' &&
+                        ((pid && checkedInIds.has(pid)) || ownAttendance?.checkedInAt)
+                        ? 'checked-in'
+                        : member.attendanceStatus
             return {
                 key: String(member.id || member.participantId || index),
                 name: String(
@@ -741,9 +763,9 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                     member.confirmationStatus ||
                     member.appointmentResponseStatus,
                 status: member.status,
-                checkedIn: ['checked-in', 'checked-out'].includes(member.attendanceStatus || ''),
-                checkedOut: member.attendanceStatus === 'checked-out',
-                attendanceStatus: member.attendanceStatus,
+                checkedIn: ['checked-in', 'checked-out'].includes(attendanceStatus || ''),
+                checkedOut: attendanceStatus === 'checked-out',
+                attendanceStatus,
                 declineReason: appointmentService.getAppointmentDeclineReason(member),
                 foodSelections: member.foodSelections || [],
             }
@@ -766,6 +788,8 @@ const AppointmentDetailsModal: React.FC<Props> = ({
             return matchesQuery && matchesStatus
         })
     }, [members, participantQuery, confirmationFilter])
+
+    const isPastSession = appointmentService.isPastAppointment(appointment as any)
 
     const confirmationCounts = useMemo(() => {
         const counts = { all: members.length, confirmed: 0, pending: 0, declined: 0 }
@@ -847,7 +871,7 @@ const AppointmentDetailsModal: React.FC<Props> = ({
             width: 150,
             render: (value, row) => (
                 <Space direction="vertical" size={2}>
-                    {statusTag(value)}
+                    {statusTag(value, appointment)}
                     {statusLabel(value) === 'declined' && row.declineReason ? (
                         <Text type="danger" style={{ fontSize: 12 }}>
                             {row.declineReason}
@@ -963,35 +987,35 @@ const AppointmentDetailsModal: React.FC<Props> = ({
 
                 <Row gutter={[10, 10]} wrap={false} style={{ marginBottom: 14 }}>
                     <Col span={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title="SMEs"
                             value={memberCount}
-                            icon={<TeamOutlined style={{ color: '#1677ff' }} />}
-                            iconBg="rgba(22,119,255,.1)"
+                            icon={<TeamOutlined />}
+                            tone='info'
                         />
                     </Col>
                     <Col span={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title="Confirmed"
                             value={metrics.confirmed}
-                            icon={<CheckCircleOutlined style={{ color: '#16a34a' }} />}
-                            iconBg="rgba(22,163,74,.1)"
+                            icon={<CheckCircleOutlined />}
+                            tone='success'
                         />
                     </Col>
                     <Col span={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title="Attended"
                             value={attendanceCount}
-                            icon={<UserOutlined style={{ color: '#722ed1' }} />}
-                            iconBg="rgba(114,46,209,.1)"
+                            icon={<UserOutlined />}
+                            tone='info'
                         />
                     </Col>
                     <Col span={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title="Absent"
                             value={absentCount}
-                            icon={<CloseCircleOutlined style={{ color: '#dc2626' }} />}
-                            iconBg="rgba(220,38,38,.1)"
+                            icon={<CloseCircleOutlined />}
+                            tone='danger'
                         />
                     </Col>
                 </Row>
@@ -1219,7 +1243,9 @@ const AppointmentDetailsModal: React.FC<Props> = ({
                                                             textOverflow: 'ellipsis',
                                                         }}
                                                     >
-                                                        {option.label}
+                                                        {option.value === 'pending' && isPastSession
+                                                            ? 'No response'
+                                                            : option.label}
                                                     </Text>
                                                     <Text
                                                         type="secondary"

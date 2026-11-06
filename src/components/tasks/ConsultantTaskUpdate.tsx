@@ -54,7 +54,7 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '../dashboards/metrics/Header'
-
+import { MetricTile } from '../dashboards/metrics/MetricTile'
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 type Status = 'todo' | 'in_progress' | 'cancelled' | 'done'
 type UpdateSection = 'status' | 'progress' | 'bottleneck' | 'note'
@@ -820,9 +820,9 @@ export default function CoordinatorTasksOnly() {
 
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col xs={24} md={8}>
-                    <MotionCard.Metric
-                        icon={<UnorderedListOutlined style={{ color: '#1677ff' }} />}
-                        iconBg="rgba(22,119,255,.12)"
+                    <MetricTile
+                        icon={<UnorderedListOutlined />}
+                        tone='accent'
                         title="Total Tasks"
                         value={totalTasks}
                         subtitle="Tasks assigned to you"
@@ -830,9 +830,9 @@ export default function CoordinatorTasksOnly() {
                 </Col>
 
                 <Col xs={24} md={8}>
-                    <MotionCard.Metric
-                        icon={<ExclamationCircleOutlined style={{ color: '#fa8c16' }} />}
-                        iconBg="rgba(250,140,22,.14)"
+                    <MetricTile
+                        icon={<ExclamationCircleOutlined />}
+                        tone='warning'
                         title="Overdue"
                         value={overdueTasks}
                         subtitle="Past their deadline"
@@ -840,9 +840,9 @@ export default function CoordinatorTasksOnly() {
                 </Col>
 
                 <Col xs={24} md={8}>
-                    <MotionCard.Metric
-                        icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                        iconBg="rgba(82,196,26,.14)"
+                    <MetricTile
+                        icon={<CheckCircleOutlined />}
+                        tone='success'
                         title="Completion Rate"
                         value={`${completionRate}%`}
                         subtitle="Completed out of visible tasks"

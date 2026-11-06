@@ -163,8 +163,8 @@ export const QualityObjectiveManagement: React.FC = () => {
             value: objectives.length,
             subtitle: 'Across all departments',
             important: true,
-            icon: <FileProtectOutlined style={{ color: '#1677ff' }} />,
-            iconBg: 'rgba(22,119,255,.12)'
+            icon: <FileProtectOutlined />,
+            tone: 'info' as const
         },
         {
             key: 'departments-covered',
@@ -172,24 +172,24 @@ export const QualityObjectiveManagement: React.FC = () => {
             value: `${departmentsCovered} / ${departments.length}`,
             subtitle: 'Have at least one objective',
             important: true,
-            icon: <ApartmentOutlined style={{ color: '#722ed1' }} />,
-            iconBg: 'rgba(114,46,209,.12)'
+            icon: <ApartmentOutlined />,
+            tone: 'info' as const
         },
         {
             key: 'rated',
             title: 'Rated',
             value: ratedCount,
             subtitle: `${objectives.length - ratedCount} awaiting a rating`,
-            icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />,
-            iconBg: 'rgba(82,196,26,.12)'
+            icon: <CheckCircleOutlined />,
+            tone: 'success' as const
         },
         {
             key: 'fully-smart',
             title: 'Fully SMART',
             value: fullySmartCount,
             subtitle: 'Meet all 5 SMART criteria',
-            icon: <ThunderboltOutlined style={{ color: '#faad14' }} />,
-            iconBg: 'rgba(250,173,20,.12)'
+            icon: <ThunderboltOutlined />,
+            tone: 'warning' as const
         }
     ]
 

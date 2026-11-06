@@ -4,7 +4,7 @@ import { Card, Row, Col, message, Empty, Spin, Statistic } from 'antd'
 import { PieChartOutlined, RiseOutlined, FundOutlined } from '@ant-design/icons'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import drilldown from 'highcharts/modules/drilldown'
+import 'highcharts/modules/drilldown'
 import {
     collection,
     getDocs,
@@ -16,9 +16,8 @@ import { getAuth } from 'firebase/auth'
 import { db } from '@/firebase'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '../../metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 
-if (typeof drilldown === 'function') drilldown(Highcharts)
 
 type Participant = {
     id: string
@@ -366,6 +365,9 @@ const SectorAnalysis: React.FC = () => {
             series: [{ name: 'Participants', colorByPoint: true, type: 'pie', data }],
             drilldown: {
                 series: Array.from(drilldownMap.entries()).map(([id, rows]) => ({
+                    // Same as the chart type it drills from; Highcharts' types
+                    // now require each drilldown series to say so.
+                    type: 'pie' as const,
                     id,
                     data: rows
                 }))
@@ -400,9 +402,7 @@ const SectorAnalysis: React.FC = () => {
 
     if (!allReady) {
         return (
-            <div style={{ display: 'grid', placeItems: 'center', minHeight: 240 }}>
-                <LoadingOverlay tip='Loading Sector Information' />
-            </div>
+            <PageSkeleton variant='analytics' tiles={0} />
         )
     }
 

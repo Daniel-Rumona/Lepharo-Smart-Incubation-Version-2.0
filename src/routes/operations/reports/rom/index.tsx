@@ -37,10 +37,11 @@ import isBetween from "dayjs/plugin/isBetween";
 import { Helmet } from "react-helmet";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
-import HighchartsMore from "highcharts/highcharts-more";
-import HighchartsFunnel from "highcharts/modules/funnel";
+import "highcharts/highcharts-more";
+import "highcharts/modules/funnel";
 import {
     collection,
+    documentId,
     getDocs,
     onSnapshot,
     query,
@@ -49,11 +50,10 @@ import {
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
+import { useDepartmentRoles } from "@/services/departmentRoles";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
-import {
-    DashboardFilterBar,
-    MotionCard,
-} from "@/components/dashboards/metrics/Header";
+import { DashboardFilterBar } from "@/components/dashboards/metrics/Header";
+import { MetricTile } from "@/components/dashboards/metrics/MetricTile";
 import ReachReportsPanel from "@/components/reports/ReachReportsPanel";
 import {
     REPORT_CHART_COLORS,
@@ -66,8 +66,6 @@ dayjs.extend(isoWeek);
 dayjs.extend(quarterOfYear);
 dayjs.extend(isBetween);
 
-if (typeof HighchartsMore === "function") HighchartsMore(Highcharts);
-if (typeof HighchartsFunnel === "function") HighchartsFunnel(Highcharts);
 
 const { Text, Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -86,16 +84,14 @@ type StatusKey =
 type ApplicationIntervention = {
     id?: string;
     title?: string;
-    area?: string;
-    areaOfSupport?: string;
+    departmentId?: string;
     status?: "required" | "assigned" | "in_progress" | "completed" | string;
 };
 
 type BucketItem = {
     id?: string;
     title?: string;
-    area?: string;
-    areaOfSupport?: string;
+    departmentId?: string;
 };
 
 type InterventionsBuckets = {
@@ -418,22 +414,6 @@ const getSignedAgreement = (
     return keys.some((key) => key === slug || key.includes(slug));
 };
 
-const MetricCard: React.FC<{
-    title: string;
-    value: React.ReactNode;
-    subtitle?: React.ReactNode;
-    icon: React.ReactNode;
-    iconBg?: string;
-}> = ({ title, value, subtitle, icon, iconBg }) => (
-    <MotionCard.Metric
-        title={title}
-        value={value}
-        subtitle={subtitle}
-        icon={icon}
-        iconBg={iconBg || "rgba(22,119,255,.12)"}
-    />
-);
-
 const ChartCard: React.FC<{ title: string; children: React.ReactNode }> = ({
     title,
     children,
@@ -487,6 +467,7 @@ const DataOrEmpty: React.FC<{
 
 const ROMSegmentedReportsPage: React.FC = () => {
     const { user } = useFullIdentity();
+    const { nameOf } = useDepartmentRoles();
     const { activeProgramId, isAllPrograms } = useActiveProgramId();
 
     const { isDark } = useColorMode();
@@ -556,34 +537,45 @@ const ROMSegmentedReportsPage: React.FC = () => {
     );
 
     useEffect(() => {
+        // Participants by the application's participantId; apps without one
+        // are matched by email (email fallback until Phase 4, docs/sme-identity-migration-plan.md).
+        const ids = Array.from(
+            new Set(
+                timeFilteredApplications
+                    .map((app) => String(app.participantId || "").trim())
+                    .filter(Boolean)
+            )
+        );
         const emails = Array.from(
             new Set(
                 timeFilteredApplications
+                    .filter((app) => !app.participantId)
                     .map((app) => normalize(app.email))
                     .filter(Boolean)
             )
         );
 
-        if (!emails.length) {
+        if (!ids.length && !emails.length) {
             setParticipants([]);
             return;
         }
 
-        const batches: string[][] = [];
+        const batches: { field: "id" | "email"; values: string[] }[] = [];
+        for (let i = 0; i < ids.length; i += 10)
+            batches.push({ field: "id", values: ids.slice(i, i + 10) });
         for (let i = 0; i < emails.length; i += 10)
-            batches.push(emails.slice(i, i + 10));
+            batches.push({ field: "email", values: emails.slice(i, i + 10) });
 
         const participantMap = new Map<string, Participant>();
         const unsubs = batches.map((batch) => {
             const participantsQuery = query(
                 collection(db, "participants"),
-                where("email", "in", batch)
+                where(batch.field === "id" ? documentId() : "email", "in", batch.values)
             );
             return onSnapshot(participantsQuery, (snapshot) => {
                 snapshot.docs.forEach((docSnap) => {
                     const data = docSnap.data() as any;
-                    const email = normalize(data.email);
-                    if (email && filterReportRecords([{ id: docSnap.id, ...data }], user?.email).length) participantMap.set(email, { id: docSnap.id, ...data });
+                    if (filterReportRecords([{ id: docSnap.id, ...data }], user?.email).length) participantMap.set(docSnap.id, { id: docSnap.id, ...data });
                 });
                 setParticipants(Array.from(participantMap.values()));
             });
@@ -592,6 +584,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
         return () => unsubs.forEach((unsub) => unsub());
     }, [timeFilteredApplications, user?.email]);
 
+    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
     const participantByEmail = useMemo(() => {
         const map = new Map<string, Participant>();
         participants.forEach((participant) => {
@@ -1012,7 +1005,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
 
         acceptedApplicationsFiltered.forEach((app) => {
             flattenInterventions(app.interventions).forEach((item) => {
-                const area = labelize(item.area || item.areaOfSupport || "Unspecified");
+                const area = item.departmentId || "";
                 if (!byArea[area])
                     byArea[area] = { required: 0, assigned: 0, completed: 0 };
 
@@ -1034,12 +1027,12 @@ const ROMSegmentedReportsPage: React.FC = () => {
         });
 
         return {
-            areas,
+            areas: areas.map((area) => nameOf(area, "Unspecified")),
             required: areas.map((area) => byArea[area].required),
             assigned: areas.map((area) => byArea[area].assigned),
             completed: areas.map((area) => byArea[area].completed),
         };
-    }, [acceptedApplicationsFiltered]);
+    }, [acceptedApplicationsFiltered, nameOf]);
 
     const funnelSeries = useMemo(() => {
         const submitted = timeFilteredApplications.length;
@@ -1074,7 +1067,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
             acceptedApplicationsFiltered.flatMap((app) =>
                 flattenInterventions(app.interventions).map((item) => ({
                     participantId: app.participantId,
-                    areaOfSupport: item.areaOfSupport || item.area,
+                    departmentId: item.departmentId,
                     interventionTitle: item.title,
                     createdAt: app.createdAt,
                     updatedAt: app.updatedAt,
@@ -1173,7 +1166,6 @@ const ROMSegmentedReportsPage: React.FC = () => {
             pie: {
                 innerSize: "60%",
                 showInLegend: true,
-                colorByPoint: true,
                 dataLabels: {
                     enabled: true,
                     format: "{point.name}: {point.y}",
@@ -1210,7 +1202,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
                 },
             ],
             yAxis: {
-                title: { text: null },
+                title: { text: '' },
                 labels: {
                     formatter: function () {
                         return Math.abs(Number(this.value)).toString();
@@ -1382,7 +1374,10 @@ const ROMSegmentedReportsPage: React.FC = () => {
             tooltip: {
                 useHTML: true,
                 formatter: function () {
-                    const pointIndex = this.point.index;
+                    // Highcharts 12+ passes the point itself as `this`;
+                    // older versions passed a wrapper with `.point`.
+                    const self = this as unknown as Highcharts.Point & { point?: Highcharts.Point };
+                    const pointIndex = (self.point ?? self).index;
                     const current = values[pointIndex];
                     const previous = pointIndex > 0 ? values[pointIndex - 1] : null;
                     const rate =
@@ -1602,18 +1597,18 @@ const ROMSegmentedReportsPage: React.FC = () => {
         <>
             <Row gutter={[16, 16]}>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Applicants"
                         value={timeFilteredApplications.length}
                         subtitle={`${dateFrom.format("DD MMM")} - ${dateTo.format(
                             "DD MMM YYYY"
                         )}`}
                         icon={<UserAddOutlined />}
-                        iconBg="rgba(22,119,255,.12)"
+                        tone='info'
                     />
                 </Col>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Accepted"
                         value={acceptedApplications.length}
                         subtitle={`${timeFilteredApplications.length
@@ -1625,11 +1620,11 @@ const ROMSegmentedReportsPage: React.FC = () => {
                             : 0
                             }% conversion`}
                         icon={<CheckCircleOutlined />}
-                        iconBg="rgba(34,197,94,.14)"
+                        tone='success'
                     />
                 </Col>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Pending Review"
                         value={
                             timeFilteredApplications.filter((app) =>
@@ -1638,7 +1633,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
                         }
                         subtitle="Submitted or pending applications"
                         icon={<ClockCircleOutlined />}
-                        iconBg="rgba(245,158,11,.15)"
+                        tone='warning'
                     />
                 </Col>
             </Row>
@@ -1727,30 +1722,30 @@ const ROMSegmentedReportsPage: React.FC = () => {
         <>
             <Row gutter={[16, 16]}>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Accepted Applicants"
                         value={acceptedApplicationsFiltered.length}
                         subtitle="Onboarding cohort in selected window"
                         icon={<TeamOutlined />}
-                        iconBg="rgba(22,119,255,.12)"
+                        tone='info'
                     />
                 </Col>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Documents Signed"
                         value={documentStats.totalSigned}
                         subtitle={`${documentStats.completionRate}% document completion`}
                         icon={<FileDoneOutlined />}
-                        iconBg="rgba(34,197,94,.14)"
+                        tone='success'
                     />
                 </Col>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Documents Missing"
                         value={documentStats.totalMissing}
                         subtitle="GAP, pre-incubation and MOA checks"
                         icon={<WarningOutlined />}
-                        iconBg="rgba(239,68,68,.12)"
+                        tone='danger'
                     />
                 </Col>
             </Row>
@@ -1897,30 +1892,30 @@ const ROMSegmentedReportsPage: React.FC = () => {
         <>
             <Row gutter={[16, 16]}>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Required / Gap Items"
                         value={gapAnalysis.required.reduce((sum, value) => sum + value, 0)}
                         subtitle="Still needing assignment"
                         icon={<AuditOutlined />}
-                        iconBg="rgba(245,158,11,.15)"
+                        tone='warning'
                     />
                 </Col>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Assigned / In Progress"
                         value={gapAnalysis.assigned.reduce((sum, value) => sum + value, 0)}
                         subtitle="Active maintenance work"
                         icon={<ApartmentOutlined />}
-                        iconBg="rgba(22,119,255,.12)"
+                        tone='info'
                     />
                 </Col>
                 <Col xs={24} md={8}>
-                    <MetricCard
+                    <MetricTile
                         title="Completed"
                         value={gapAnalysis.completed.reduce((sum, value) => sum + value, 0)}
                         subtitle="Completed intervention items"
                         icon={<CheckCircleOutlined />}
-                        iconBg="rgba(34,197,94,.14)"
+                        tone='success'
                     />
                 </Col>
             </Row>
@@ -1990,7 +1985,7 @@ const ROMSegmentedReportsPage: React.FC = () => {
                 background={isDark
                     ? "linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))"
                     : "linear-gradient(180deg,#ffffff,#f7faff)"}
-                borderColor={isDark ? "rgba(74,155,255,0.22)" : "#dbeafe"}
+                borderColor={isDark ? "rgba(74, 155, 255,0.22)" : "#dbeafe"}
                 borderRadius={14}
                 boxShadow={isDark
                     ? "inset 0 1px 0 rgba(255,255,255,0.05)"

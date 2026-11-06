@@ -465,6 +465,21 @@ export const checkedInEmails = (appointment?: AppointmentRecord | null) =>
 export const checkedOutEmails = (appointment?: AppointmentRecord | null) =>
     emails(appointment, 'checkedOutEmails')
 
+// Participant ids the session summary carries next to the email lists
+// (appointmentSessionService); matched before email (docs/sme-identity-migration-plan.md).
+const participantIdsIn = (
+    appointment: AppointmentRecord | null | undefined,
+    kind: 'checkedInParticipantIds' | 'checkedOutParticipantIds'
+) =>
+    new Set(
+        [
+            ...(((appointment?.attendance?.summary as any)?.[kind] as string[]) || []),
+            ...(((appointment?.attendanceSummary as any)?.[kind] as string[]) || []),
+        ]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    )
+
 export const isPastAppointment = (appointment?: AppointmentRecord | null, now = dayjs()) => {
     if (!appointment) return false
     const end = resolveAppointmentEnd(appointment)
@@ -473,19 +488,56 @@ export const isPastAppointment = (appointment?: AppointmentRecord | null, now = 
     return Boolean(boundary?.isValid() && boundary.isBefore(now))
 }
 
+/**
+ * The SME's answer to an appointment as it should read on screen.
+ * `no-response` is display-only: an invite still unanswered once the
+ * session has ended can no longer be answered, so it must not read as
+ * "Pending". The stored response is never changed.
+ */
+export type SmeResponseState = 'confirmed' | 'declined' | 'pending' | 'no-response'
+
+export const SME_RESPONSE_META: Record<SmeResponseState, { label: string; color: string }> = {
+    confirmed: { label: 'Confirmed', color: 'green' },
+    declined: { label: 'Declined', color: 'red' },
+    pending: { label: 'Pending', color: 'gold' },
+    'no-response': { label: 'No response', color: 'default' }
+}
+
+/**
+ * `response` reads one member's raw response instead of the appointment's
+ * own (grouped sessions); the session timing always comes from `appointment`.
+ */
+export const getSmeResponseState = (
+    appointment?: AppointmentRecord | null,
+    response?: string | null,
+    now = dayjs()
+): SmeResponseState => {
+    const status = response !== undefined
+        ? getConfirmationStatus(response ?? undefined)
+        : getAppointmentResponseStatus(appointment)
+    if (status === 'confirmed' || status === 'declined') return status
+    return isPastAppointment(appointment, now) ? 'no-response' : 'pending'
+}
+
 export const getAttendanceStatus = (
     member: AppointmentMember,
     appointment: AppointmentRecord,
     now = dayjs()
 ): AttendanceStatus => {
+    const participantId = getAppointmentParticipantId(member)
     const email = getAppointmentParticipantEmail(member)
+    // Email fallback until Phase 4 (docs/sme-identity-migration-plan.md).
     const checkedIn =
         Boolean(member.checkedIn) ||
         member.attendance?.status === 'attended' ||
+        Boolean(member.attendance?.checkedInAt) ||
+        (!!participantId && participantIdsIn(appointment, 'checkedInParticipantIds').has(participantId)) ||
         (!!email && checkedInEmails(appointment).includes(email))
     const checkedOut =
         Boolean(member.checkedOut) ||
         member.attendance?.status === 'checked-out' ||
+        Boolean(member.attendance?.checkedOutAt) ||
+        (!!participantId && participantIdsIn(appointment, 'checkedOutParticipantIds').has(participantId)) ||
         (!!email && checkedOutEmails(appointment).includes(email))
     if (checkedOut) return 'checked-out'
     if (checkedIn) return 'checked-in'

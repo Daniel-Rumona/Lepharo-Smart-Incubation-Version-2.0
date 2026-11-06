@@ -1,13 +1,18 @@
 export * from "./emailFunctions";
 export * from "./inquiryReferral";
 export {
-  listAuthUsers,
   updateUserEmailCascade,
   setEmployeeAccountStatus,
   resendWelcomeEmail,
-  repairMissingInterventionRecords,
   deleteUserCascade,
 } from "./adminTools";
+export {
+  adminStorageList,
+  adminStorageOverview,
+  adminStorageMeasure,
+  adminStorageFileUrl,
+  adminStorageDelete,
+} from "./storageBrowser";
 export * from "./moaFlag";
 export * from "./workflowEmailFunctions";
 export * from "./passwordResetEmail";
@@ -22,15 +27,41 @@ export {
 } from "./userManagement";
 export * from "./syncAssignedInterventions";
 export * from "./syncCoordinatorPrograms";
+export * from "./departmentNameCascade";
+export * from "./lineManagers";
+export { linkMySmeAccount } from "./smeIdentity";
+export {
+  requestSmeLoginCode,
+  verifySmeLoginCode,
+  registerSmeByPhone,
+  createSmeLoginByPhone,
+  changeMyLoginPhone,
+  onSmeWhatsAppNumber,
+} from "./phoneLogin";
+export * from "./ipmReminders";
 export * from "./complianceExpiry";
 export * from "./kpiReminders";
+export * from "./planRoadmapCheckIns";
+export * from "./challengeDueReminders";
 export * from "./revenueMetricsSync";
 export * from "./workflowQueryReminders";
-export * from "./movValidationReminders";
+export * from "./movStageReminders";
+export * from "./movReminders";
+export * from "./movLateConfirmation";
+export * from "./movPackNotifications";
+export * from "./devPlanSmeConfirmed";
+export * from "./workflowQueryNotifications";
+export * from "./outcomeFollowUps";
 export * from "./governanceMeetingReminders";
 export { onInquiryCreatedNotifyStaff } from "./emailInquiries";
 export * from "./pushNotifications";
 
 export { lphWhatsAppGateway } from "./whatsappGateway";
+export { agentProposeAction, agentConfirmAction, agentCancelAction } from "./agentActions";
+export { smeRiskScoringCron } from "./smeRiskScoring";
+export { interventionImpactCron, refreshInterventionImpact } from "./interventionImpact";
 
 export { academyAction, academyCoach } from './academy';
+export { manageTrainingAttendee, deleteTrainingSme } from './trainingAttendees';
+export * from './trainingProgress';
+export * from './trainingCertificates';

@@ -1,0 +1,341 @@
+/* ============================================================================
+   Phone sign-in / registration. The phone edition of AuthShell.css: same warm
+   palette, Lepharo crimson, Plus Jakarta Sans and the same photo, laid out as
+   a photo header with a sheet rising over it.
+   ========================================================================== */
+
+.ml-page {
+  --ml-bg: #fbf8f4;
+  --ml-sheet: #fbf8f4;
+  --ml-ink: #1b1513;
+  --ml-muted: #625a54;
+  --ml-faint: #8b827b;
+  --ml-line: rgba(27, 21, 19, 0.10);
+  --ml-field: #ffffff;
+  --ml-field-line: rgba(27, 21, 19, 0.16);
+  --ml-brand: #c8102e;
+  --ml-link: #b00e29;
+  --ml-warn: #9a5b00;
+
+  position: relative;
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  background: var(--ml-bg);
+  color: var(--ml-ink);
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+html[data-theme="dark"] .ml-page {
+  --ml-bg: #0e0a09;
+  --ml-sheet: #141010;
+  --ml-ink: #f6f0ea;
+  --ml-muted: rgba(246, 240, 234, 0.66);
+  --ml-faint: rgba(246, 240, 234, 0.45);
+  --ml-line: rgba(246, 240, 234, 0.10);
+  --ml-field: rgba(255, 255, 255, 0.04);
+  --ml-field-line: rgba(246, 240, 234, 0.16);
+  --ml-brand: #e2001a;
+  --ml-link: #ff7a86;
+  --ml-warn: #f0b45a;
+}
+
+/* --- Photo header -------------------------------------------------------- */
+
+.ml-hero {
+  position: relative;
+  flex: 0 0 auto;
+  height: calc(176px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  overflow: hidden;
+  isolation: isolate;
+}
+.ml-hero-photo {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: url('/assets/images/welding.jpg') center 35% / cover no-repeat;
+}
+/* Same crimson cast as the desktop panel, deepening toward the sheet. */
+.ml-hero-photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(200, 16, 46, 0.45) 0%, rgba(200, 16, 46, 0) 60%),
+    linear-gradient(180deg, rgba(20, 10, 9, 0.35) 0%, rgba(20, 10, 9, 0.75) 100%);
+}
+
+.ml-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 0;
+}
+/* Frosted glass over the photo in both themes. */
+.ml-circle {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+}
+.ml-circle .workspace-theme-toggle,
+.ml-circle .workspace-theme-toggle .anticon {
+  color: #fff;
+}
+
+.ml-logo {
+  position: absolute;
+  left: 20px;
+  bottom: 40px;
+  height: 22px;
+  width: auto;
+  padding: 6px 10px;
+  box-sizing: content-box;
+  border-radius: 10px;
+  background: #f6f0ea;
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.6);
+}
+
+/* --- Sheet --------------------------------------------------------------- */
+
+.ml-sheet {
+  position: relative;
+  z-index: 1;
+  flex: 1 0 auto;
+  margin-top: -24px;
+  width: 100%;
+  padding: 28px 22px 0;
+  border-radius: 24px 24px 0 0;
+  background: var(--ml-sheet);
+  box-shadow: 0 -10px 30px -12px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  animation: ml-sheet-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (min-width: 480px) {
+  .ml-sheet > * {
+    width: 100%;
+    max-width: 440px;
+    margin-inline: auto;
+  }
+}
+
+.ml-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ml-ink);
+}
+.ml-subtitle {
+  margin: 8px 0 22px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ml-muted);
+}
+
+/* --- Form ---------------------------------------------------------------- */
+
+.ml-form {
+  width: 100%;
+}
+.ml-form .ant-form-item {
+  margin-bottom: 14px;
+}
+.ml-form .ant-form-item-label {
+  padding-bottom: 6px;
+}
+.ml-form .ant-form-item-label > label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ml-ink);
+}
+.ml-form .ant-input,
+.ml-form .ant-input-affix-wrapper {
+  height: 52px;
+  padding-inline: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--ml-field-line);
+  background: var(--ml-field);
+  color: var(--ml-ink);
+  box-shadow: none;
+  font-size: 16px; /* 16px stops iOS zooming the page on focus */
+}
+.ml-form .ant-input-affix-wrapper .ant-input {
+  height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.ml-form .ant-input::placeholder,
+.ml-form .ant-input-affix-wrapper input::placeholder {
+  color: var(--ml-faint);
+}
+.ml-form .ant-input:hover,
+.ml-form .ant-input-affix-wrapper:hover,
+.ml-form .ant-input:focus,
+.ml-form .ant-input-affix-wrapper-focused {
+  border-color: var(--ml-brand);
+}
+.ml-form .ant-input:focus,
+.ml-form .ant-input-affix-wrapper-focused {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ml-brand) 18%, transparent);
+}
+.ml-form .ant-input-suffix {
+  color: var(--ml-muted);
+}
+
+/* A field with a link pinned to the right of its label row; the link sits
+   outside the label so it isn't read as part of the field's name. */
+.ml-field-with-link {
+  position: relative;
+}
+.ml-field-link {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.ml-caps {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ml-warn);
+}
+
+.ml-link {
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ml-link);
+  cursor: pointer;
+}
+
+.ml-primary,
+.ml-google {
+  width: 100%;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.ml-primary:disabled,
+.ml-google:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.ml-primary:active:not(:disabled),
+.ml-google:active:not(:disabled) {
+  transform: scale(0.985);
+}
+.ml-primary {
+  margin-top: 6px;
+  border: none;
+  color: #fff;
+  background: var(--ml-brand);
+  box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--ml-brand) 70%, transparent);
+}
+.ml-google {
+  border: 1px solid var(--ml-field-line);
+  background: var(--ml-field);
+  color: var(--ml-ink);
+}
+
+.ml-divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 18px 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ml-faint);
+}
+.ml-divider::before,
+.ml-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--ml-line);
+}
+
+.ml-circle:focus-visible,
+.ml-link:focus-visible,
+.ml-primary:focus-visible,
+.ml-google:focus-visible {
+  outline: 2px solid var(--ml-brand);
+  outline-offset: 2px;
+}
+
+/* --- Footer -------------------------------------------------------------- */
+
+.ml-footer {
+  margin-top: auto;
+  padding: 24px 0 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ml-faint);
+  --qb-name: var(--ml-ink);
+}
+.ml-footer p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ml-muted);
+}
+/* A second footer link, on its own line rather than wrapping mid-sentence. */
+.ml-footer-line {
+  display: block;
+  margin-top: 6px;
+}
+
+/* --- Motion -------------------------------------------------------------- */
+
+@keyframes ml-sheet-up {
+  from { transform: translateY(28px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes ml-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.ml-rise {
+  animation: ml-rise 0.5s ease-out 0.1s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ml-sheet,
+  .ml-rise {
+    animation: none;
+  }
+}

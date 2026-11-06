@@ -5,7 +5,6 @@ import {
     Col,
     Button,
     Tag,
-    Table,
     Space,
     Empty,
     Result,
@@ -17,8 +16,10 @@ import {
 } from 'antd'
 import {
     MessageOutlined,
-    BarChartOutlined,
-    CheckCircleOutlined
+    TeamOutlined,
+    UserSwitchOutlined,
+    CheckCircleOutlined,
+    ArrowRightOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { db } from '@/firebase'
@@ -40,6 +41,7 @@ import {
     toAssignedInterventionView
 } from '@/services/assignedInterventionService'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import {
@@ -47,10 +49,12 @@ import {
     resolveAppointmentActor
 } from '@/services/appointmentService'
 import ResolveQueryModal from '@/components/modals/ResolveQueryModal'
+import { QueryInbox } from '@/components/queries/QueryInbox'
 import InterventionCompletionModal, {
     type InterventionCompletionTarget
 } from '@/components/interventions/InterventionCompletionModal'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
+import EarlyWarningPanel from '@/components/dashboards/shared/EarlyWarningPanel'
 
 const { Text } = Typography
 
@@ -328,45 +332,6 @@ type AssignmentContext = {
 
     beneficiaryName?: string
     interventionTitle?: string
-}
-
-const QUERY_TYPE_LABELS: Record<string, string> = {
-    'completion-rejection':
-        'Completion Rejection',
-
-    'completion-rejected':
-        'Completion Rejection',
-
-    'mov-request':
-        'Request for Means of Verification (MOV)',
-
-    'mov-issue':
-        'MOV Issue',
-
-    'poe-request':
-        'Proof of Expenditure (POE)',
-
-    'general-query':
-        'General Query'
-}
-
-const getQueryLabel = (
-    type?: string
-) => {
-    if (!type) {
-        return 'Query'
-    }
-
-    return (
-        QUERY_TYPE_LABELS[type] ||
-        type
-            .replace(/-/g, ' ')
-            .replace(
-                /\b\w/g,
-                character =>
-                    character.toUpperCase()
-            )
-    )
 }
 
 const parseAssignedAt = (
@@ -2106,313 +2071,6 @@ export const CoordinatorDashboard:
          * QUERY COLUMNS
          * -----------------------------------------------------
          */
-        const queryColumns =
-            [
-                {
-                    title:
-                        'SME / Intervention',
-
-                    key:
-                        'context',
-
-                    width:
-                        330,
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                CQ
-                        ) => (
-                            <Space
-                                direction='vertical'
-                                size={3}
-                                style={{
-                                    width:
-                                        '100%',
-
-                                    minWidth:
-                                        0
-                                }}
-                            >
-                                <Text
-                                    strong
-                                    ellipsis={{
-                                        tooltip:
-                                            record.beneficiaryName ||
-                                            '—'
-                                    }}
-                                >
-                                    {record.beneficiaryName ||
-                                        '—'}
-                                </Text>
-
-                                <Text
-                                    type='secondary'
-                                    ellipsis={{
-                                        tooltip:
-                                            record.interventionTitle ||
-                                            '—'
-                                    }}
-                                    style={{
-                                        fontSize:
-                                            12
-                                    }}
-                                >
-                                    {record.interventionTitle ||
-                                        '—'}
-                                </Text>
-
-                                {record.subInterventionTitle ? (
-                                    <Tag
-                                        color='blue'
-                                        title={
-                                            record.subInterventionTitle
-                                        }
-                                        style={{
-                                            width:
-                                                'fit-content',
-
-                                            maxWidth:
-                                                '100%',
-
-                                            overflow:
-                                                'hidden',
-
-                                            textOverflow:
-                                                'ellipsis',
-
-                                            whiteSpace:
-                                                'nowrap',
-
-                                            marginInlineEnd:
-                                                0,
-
-                                            borderRadius:
-                                                999,
-
-                                            fontSize:
-                                                11
-                                        }}
-                                    >
-                                        {
-                                            record.subInterventionTitle
-                                        }
-                                    </Tag>
-                                ) : null}
-                            </Space>
-                        )
-                },
-
-                {
-                    title:
-                        'Query',
-
-                    key:
-                        'query',
-
-                    width:
-                        320,
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                CQ
-                        ) => (
-                            <Space
-                                direction='vertical'
-                                size={3}
-                                style={{
-                                    width:
-                                        '100%',
-
-                                    minWidth:
-                                        0
-                                }}
-                            >
-                                <Tag
-                                    color='orange'
-                                    style={{
-                                        width:
-                                            'fit-content',
-
-                                        marginInlineEnd:
-                                            0,
-
-                                        borderRadius:
-                                            999
-                                    }}
-                                >
-                                    {getQueryLabel(
-                                        record.queryType
-                                    )}
-                                </Tag>
-
-                                <Text
-                                    ellipsis={{
-                                        tooltip:
-                                            record.queryMessage ||
-                                            '—'
-                                    }}
-                                >
-                                    {record.queryMessage ||
-                                        '—'}
-                                </Text>
-                            </Space>
-                        )
-                },
-
-                {
-                    title:
-                        'Raised By',
-
-                    dataIndex:
-                        'raisedByDept',
-
-                    key:
-                        'raisedByDept',
-
-                    width:
-                        150,
-
-                    render:
-                        (
-                            department:
-                                string
-                        ) => {
-                            const value =
-                                String(
-                                    department ||
-                                    ''
-                                )
-                                    .trim()
-                                    .toLowerCase()
-
-                            return value ===
-                                'beneficiary'
-                                ? 'SME'
-                                : department ||
-                                'Unknown'
-                        }
-                },
-
-                {
-                    title:
-                        'Raised',
-
-                    dataIndex:
-                        'raisedAt',
-
-                    key:
-                        'raisedAt',
-
-                    width:
-                        125,
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                CQ
-                        ) =>
-                            record.raisedAt
-                                ? dayjs(
-                                    record.raisedAt
-                                ).format(
-                                    'DD MMM YYYY'
-                                )
-                                : '—'
-                },
-
-                {
-                    title:
-                        'Status',
-
-                    dataIndex:
-                        'status',
-
-                    key:
-                        'status',
-
-                    width:
-                        105,
-
-                    render:
-                        (
-                            status:
-                                string
-                        ) => {
-                            const resolved =
-                                String(
-                                    status ||
-                                    'open'
-                                ).toLowerCase() ===
-                                'resolved'
-
-                            return (
-                                <Tag
-                                    color={
-                                        resolved
-                                            ? 'green'
-                                            : 'orange'
-                                    }
-                                    style={{
-                                        borderRadius:
-                                            999
-                                    }}
-                                >
-                                    {(
-                                        status ||
-                                        'open'
-                                    ).toUpperCase()}
-                                </Tag>
-                            )
-                        }
-                },
-
-                {
-                    title:
-                        'Action',
-
-                    key:
-                        'action',
-
-                    width:
-                        100,
-
-                    fixed:
-                        'right' as const,
-
-                    render:
-                        (
-                            _:
-                                any,
-                            record:
-                                CQ
-                        ) =>
-                            (
-                                record.status?.toLowerCase?.() ??
-                                'open'
-                            ) ===
-                                'open' ? (
-                                <Button
-                                    type='link'
-                                    onClick={() =>
-                                        setResolvingDashboardQuery(
-                                            record
-                                        )
-                                    }
-                                >
-                                    Resolve
-                                </Button>
-                            ) : null
-                }
-            ]
-
         /*
          * -----------------------------------------------------
          * METRICS
@@ -2492,6 +2150,37 @@ export const CoordinatorDashboard:
             }, [
                 allInterventions
             ])
+
+        /*
+         * Supported = distinct SMEs allocated to this coordinator.
+         * Reached = those who attended at least one session (or whose
+         * intervention is already completed).
+         */
+        const smeCounts = useMemo(() => {
+            const supported = new Set<string>()
+            const reached = new Set<string>()
+
+            allInterventions.forEach(row => {
+                const smeId = row.participantId || row.id
+
+                supported.add(smeId)
+
+                if (
+                    Number(
+                        row.raw?.tracking
+                            ?.sessionsLogged || 0
+                    ) > 0 ||
+                    row.lifecycle === 'completed'
+                ) {
+                    reached.add(smeId)
+                }
+            })
+
+            return {
+                supported: supported.size,
+                reached: reached.size
+            }
+        }, [allInterventions])
 
         const totalInterventions = allInterventions.length
 
@@ -2606,6 +2295,10 @@ export const CoordinatorDashboard:
                             </title>
                         </Helmet>
 
+                        <div style={{ marginBottom: 16 }}>
+                            <EarlyWarningPanel scope='mine' limit={5} />
+                        </div>
+
                         <Row
                             gutter={[
                                 16,
@@ -2626,19 +2319,15 @@ export const CoordinatorDashboard:
                                 xs={24}
                                 md={6}
                             >
-                                <MotionCard.Metric
+                                <MetricTile
                                     icon={
                                         <MessageOutlined
                                             style={{
                                                 fontSize:
-                                                    18,
-
-                                                color:
-                                                    '#1677ff'
-                                            }}
+                                                    18 }}
                                         />
                                     }
-                                    iconBg='rgba(22,119,255,0.12)'
+                                    tone='accent'
                                     title='Total Required'
                                     value={
                                         allInterventions.length
@@ -2651,24 +2340,20 @@ export const CoordinatorDashboard:
                                 xs={24}
                                 md={6}
                             >
-                                <MotionCard.Metric
+                                <MetricTile
                                     icon={
-                                        <BarChartOutlined
+                                        <TeamOutlined
                                             style={{
                                                 fontSize:
-                                                    18,
-
-                                                color:
-                                                    '#13c2c2'
-                                            }}
+                                                    18 }}
                                         />
                                     }
-                                    iconBg='rgba(19,194,194,0.12)'
-                                    title='In Progress'
+                                    tone='info'
+                                    title='SMEs Supported'
                                     value={
-                                        perfCounts.inProgress
+                                        smeCounts.supported
                                     }
-                                    subtitle='Currently active'
+                                    subtitle='Unique SMEs allocated to you'
                                 />
                             </Col>
 
@@ -2676,35 +2361,31 @@ export const CoordinatorDashboard:
                                 xs={24}
                                 md={6}
                             >
-                                <MotionCard.Metric
+                                <MetricTile
                                     icon={
-                                        <CheckCircleOutlined
+                                        <UserSwitchOutlined
                                             style={{
                                                 fontSize:
-                                                    18,
-
-                                                color:
-                                                    '#52c41a'
-                                            }}
+                                                    18 }}
                                         />
                                     }
-                                    iconBg='rgba(82,196,26,0.12)'
-                                    title='Completed'
+                                    tone='success'
+                                    title='SMEs Reached'
                                     value={
-                                        perfCounts.completed
+                                        smeCounts.reached
                                     }
-                                    subtitle='Successfully delivered'
+                                    subtitle='Attended at least one session'
                                 />
                             </Col>
 
                             <Col xs={24} md={6}>
-                                <MotionCard.Metric
+                                <MetricTile
                                     icon={
                                         <MessageOutlined
-                                            style={{ fontSize: 18, color: '#d48806' }}
+                                            style={{ fontSize: 18 }}
                                         />
                                     }
-                                    iconBg='rgba(250,173,20,0.14)'
+                                    tone='warning'
                                     title='Open Queries'
                                     value={openQueries.length}
                                     subtitle='Click to view and resolve'
@@ -2735,12 +2416,18 @@ export const CoordinatorDashboard:
                                             renderItem={item => (
                                                 <List.Item
                                                     key={item.key}
+                                                    style={{
+                                                        border: '1px solid #d9d9d9',
+                                                        borderRadius: 12,
+                                                        padding: '12px 16px',
+                                                        marginBottom: 10
+                                                    }}
                                                     actions={[
                                                         <Button
                                                             key='complete'
-                                                            type='primary'
-                                                            shape='round'
-                                                            icon={<CheckCircleOutlined />}
+                                                            shape='circle'
+                                                            aria-label='Complete intervention'
+                                                            icon={<ArrowRightOutlined />}
                                                             onClick={() =>
                                                                 setCompletionTarget({
                                                                     assignmentIds: item.assignmentIds,
@@ -2752,9 +2439,7 @@ export const CoordinatorDashboard:
                                                                     )
                                                                 })
                                                             }
-                                                        >
-                                                            Complete
-                                                        </Button>
+                                                        />
                                                     ]}
                                                 >
                                                     <List.Item.Meta
@@ -2917,47 +2602,14 @@ export const CoordinatorDashboard:
 
                 <Modal
                     open={queriesModalOpen}
-                    title={`My Queries (${openQueries.length} open)`}
+                    title={`Waiting for your answer (${openQueries.length})`}
                     footer={null}
-                    width={1100}
+                    width={640}
+                    centered
                     onCancel={() => setQueriesModalOpen(false)}
                     destroyOnClose
                 >
-                                        <Table
-                                            size='small'
-                                            rowKey='id'
-                                            dataSource={
-                                                openQueries
-                                            }
-                                            columns={
-                                                queryColumns as any
-                                            }
-                                            pagination={
-                                                openQueries.length >
-                                                    3
-                                                    ? {
-                                                        pageSize:
-                                                            3,
-
-                                                        showSizeChanger:
-                                                            false,
-
-                                                        position:
-                                                            [
-                                                                'bottomCenter'
-                                                            ]
-                                                    }
-                                                    : false
-                                            }
-                                            scroll={{
-                                                x:
-                                                    1050
-                                            }}
-                                            locale={{
-                                                emptyText:
-                                                    <Empty description='No queries' />
-                                            }}
-                                        />
+                    <QueryInbox queries={openQueries} onAnswer={setResolvingDashboardQuery} />
                 </Modal>
 
                 <InterventionCompletionModal
@@ -3021,6 +2673,10 @@ export const CoordinatorDashboard:
 
                         departmentName:
                             user?.departmentName ||
+                            null,
+
+                        departmentId:
+                            user?.departmentId ||
                             null
                     }}
                     onClose={() =>

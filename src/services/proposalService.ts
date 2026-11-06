@@ -18,6 +18,7 @@ import {
     ref,
     uploadBytes
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db, storage } from '@/firebase'
 import type {
     Proposal,
@@ -341,9 +342,9 @@ export const uploadProposalDocument = async (
         `projectProposals/shared/${proposal.id}/documents/` +
         `${Date.now()}_${safeFileName(file.name)}`
     const storageRef = ref(storage, storagePath)
-    await uploadBytes(storageRef, file, {
+    await uploadBytes(storageRef, file, withOwner({
         contentType: file.type || 'application/octet-stream'
-    })
+    }))
     const url = await getDownloadURL(storageRef)
     const by = actorContributor(actor)
     const documentRef = await addDoc(

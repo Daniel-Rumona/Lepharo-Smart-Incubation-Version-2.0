@@ -1,0 +1,49 @@
+/* "Powered by Quantilytix" lockup. The surrounding text colour is inherited
+   (usually a muted footer tone); the name takes --qb-name, which pages set to
+   their strongest text colour. */
+
+.qb-powered {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Set in the Quantilytix wordmark's face: Segoe UI Bold, with Open Sans Bold
+   (same humanist design lineage, loaded in index.html) where Segoe UI isn't
+   installed. */
+.qb-name {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'Segoe UI', 'Open Sans', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: var(--qb-name, currentColor);
+}
+
+/* The Q mark stands in for the first letter, as in the logo lockup. */
+.qb-q {
+  width: 1.55em;
+  height: 1.55em;
+  margin-right: 0.02em;
+  flex: 0 0 auto;
+}
+.qb-q-s0 { stop-color: #f0554f; }
+.qb-q-s1 { stop-color: #d3216f; }
+.qb-q-s2 { stop-color: #8e2a86; }
+.qb-q-s3 { stop-color: #3b2a73; }
+/* Deep purple vanishes on a dark page; lift the cool end a little. */
+html[data-theme="dark"] .qb-q-s2 { stop-color: #a8389c; }
+html[data-theme="dark"] .qb-q-s3 { stop-color: #6a44b0; }
+
+.qb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

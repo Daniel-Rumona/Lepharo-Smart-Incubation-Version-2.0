@@ -9,12 +9,14 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { assignedInterventionService } from '@/services/assignedInterventionService'
+import { departmentNameOf, loadDepartmentRoles } from '@/services/departmentRoles'
 
 export type IncubateePeerComparisonDimension = 'gender' | 'gapGroup' | 'sector' | 'program'
 
 export type IncubateePerformanceDateRange = [Date | null, Date | null] | null
 
 export type IncubateePerformanceFilters = {
+    /** Department id, or 'all'. */
     department: string | 'all'
     programId: string | 'all'
     consultant: string | 'all'
@@ -27,10 +29,7 @@ export type IncubateePerformanceIntervention = {
     interventionId?: string
     title?: string
     interventionTitle?: string
-    area?: string
-    areaOfSupport?: string
-    department?: string
-    departmentName?: string
+    departmentId?: string
     assigneeEmail?: string
     assigneeName?: string
     status?: string
@@ -130,13 +129,7 @@ export const filterIncubateePerformanceInterventions = (
 ) =>
     interventions.filter(intervention => {
         if (filters.department !== 'all') {
-            const department = normalize(
-                intervention.department ||
-                intervention.departmentName ||
-                intervention.area ||
-                intervention.areaOfSupport
-            )
-            if (department !== normalize(filters.department)) return false
+            if (String(intervention.departmentId || '') !== filters.department) return false
         }
 
         if (filters.programId !== 'all') {
@@ -264,6 +257,7 @@ export const loadIncubateePeerComparison = async (args: {
         'Other/Unknown': 0
     }
     const completedByDepartment = new Map<string, number>()
+    const { departments } = await loadDepartmentRoles()
 
     for (const peerId of peerIds) {
         try {
@@ -336,14 +330,7 @@ export const loadIncubateePeerComparison = async (args: {
             const status = normalize(intervention.assignmentStatus || intervention.status)
             if (status !== 'completed') return
 
-            const department =
-                String(
-                    intervention.department ||
-                    intervention.departmentName ||
-                    intervention.area ||
-                    intervention.areaOfSupport ||
-                    'Unknown'
-                ).trim() || 'Unknown'
+            const department = departmentNameOf(intervention.departmentId, departments, 'Unknown')
 
             completedByDepartment.set(
                 department,

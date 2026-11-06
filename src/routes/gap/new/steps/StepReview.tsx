@@ -4,18 +4,41 @@ import { ArrowLeftOutlined, EditOutlined, RightOutlined } from '@ant-design/icon
 import {
     financialManagement,
     labourHSE,
+    LEGAL_AREAS_QUESTION_INDEX,
     legal,
     marketLinkage,
     marketingCommunication,
     psychometric,
     qualityManagement,
+    SETA_QUESTION_INDEX,
+    TRAINING_NEED_FOLLOW_UPS,
     trainingNeedsYN,
-    wellness
+    wellness,
+    WELLNESS_PROGRAMMES_QUESTION_INDEX
 } from '../questionBanks'
-import { GROUP_META } from '../gapHelpers'
+import { GROUP_META, missingFollowUps } from '../gapHelpers'
 import type { GroupId } from '../types'
 
 const { Text } = Typography
+
+/** Questions that keep a slot in the answers but are not asked as Yes/No. */
+const HIDDEN_QUESTIONS: Partial<Record<GroupId, number[]>> = {
+    trainingNeeds: [SETA_QUESTION_INDEX]
+}
+
+const isAsked = (groupId: GroupId, index: number) =>
+    !HIDDEN_QUESTIONS[groupId]?.includes(index)
+
+/** What the SME gave under a question once they answered Yes (programmes, legal areas, SETA, training needed). */
+const followUpText = (groupId: GroupId, index: number, values: any): string | null => {
+    const list = (items: unknown) => (Array.isArray(items) && items.length ? items.join(', ') : null)
+    if (groupId === 'wellness' && index === WELLNESS_PROGRAMMES_QUESTION_INDEX) return list(values?.wellness?.programmes)
+    if (groupId === 'legal' && index === LEGAL_AREAS_QUESTION_INDEX) return list(values?.legal?.areas)
+    if (groupId !== 'trainingNeeds') return null
+    if (index === 0) return values?.trainingNeeds?.setaName ? `SETA: ${values.trainingNeeds.setaName}` : null
+    const need = TRAINING_NEED_FOLLOW_UPS[index]
+    return need ? values?.trainingNeeds?.categories?.[need.key] || null : null
+}
 
 const GROUP_QUESTIONS: Record<GroupId, { baseKey: string; questions: string[] }> = {
     marketingCommunication: { baseKey: 'marketingCommunication', questions: marketingCommunication },
@@ -37,10 +60,19 @@ const answeredCountFor = (groupId: GroupId, values: any) => {
     const base = baseKey.split('.')
     return questions.reduce(
         (count, _q, index) =>
-            getAt(values, [...base, index, 'answer']) ? count + 1 : count,
+            isAsked(groupId, index) && getAt(values, [...base, index, 'answer']) ? count + 1 : count,
         0
     )
 }
+
+const askedCountFor = (groupId: GroupId) =>
+    GROUP_QUESTIONS[groupId].questions.filter((_q, index) => isAsked(groupId, index)).length
+
+/** Follow-ups this group's Yes answers still need (see missingFollowUps). */
+const missingForGroup = (groupId: GroupId, values: any) =>
+    missingFollowUps(values)
+        .filter(item => item.groupId === groupId)
+        .map(item => item.message)
 
 // Compact, clickable row shown in the overview list — the full question
 // list only renders for whichever one group is currently opened, so the
@@ -52,9 +84,10 @@ const GroupOverviewRow: React.FC<{
 }> = ({ groupId, values, onOpen }) => {
     const { token } = theme.useToken()
     const meta = GROUP_META.find(group => group.id === groupId)!
-    const total = GROUP_QUESTIONS[groupId].questions.length
+    const total = askedCountFor(groupId)
     const answered = answeredCountFor(groupId, values)
-    const complete = answered === total
+    const needsDetail = missingForGroup(groupId, values).length > 0
+    const complete = answered === total && !needsDetail
 
     return (
         <button
@@ -87,7 +120,7 @@ const GroupOverviewRow: React.FC<{
                         color: complete ? token.colorSuccess : token.colorWarning
                     }}
                 >
-                    {answered}/{total} answered
+                    {answered < total ? `${answered}/${total} answered` : needsDetail ? 'Needs detail' : `${answered}/${total} answered`}
                 </Text>
                 <RightOutlined style={{ fontSize: 11, color: token.colorTextTertiary }} />
             </Space>
@@ -148,12 +181,20 @@ const GroupDetail: React.FC<{
                 {meta.title}
             </Text>
             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-                {answered} of {questions.length} answered
+                {answered} of {askedCountFor(groupId)} answered
             </Text>
 
+            {missingForGroup(groupId, values).map(message => (
+                <Text key={message} type="warning" style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
+                    {message}. Tap Edit to add it.
+                </Text>
+            ))}
+
             {questions.map((question, index) => {
+                if (!isAsked(groupId, index)) return null
                 const answer = getAt(values, [...base, index, 'answer'])
                 const comment = getAt(values, [...base, index, 'comment'])
+                const followUp = answer === 'Yes' ? followUpText(groupId, index, values) : null
 
                 return (
                     <div
@@ -169,6 +210,11 @@ const GroupDetail: React.FC<{
                     >
                         <div style={{ minWidth: 0 }}>
                             <Text style={{ fontSize: 12.5 }}>{question}</Text>
+                            {followUp && (
+                                <Text style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
+                                    {followUp}
+                                </Text>
+                            )}
                             {comment && (
                                 <Text
                                     type="secondary"

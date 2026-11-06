@@ -4,6 +4,7 @@ import { Alert, Button } from 'antd'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import GapDetail from './GapDetail'
 import { getAllowedSectionsForDept } from '../sections'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 
 /**
  * Full-page GAP Analysis detail — /operations/gap/:id
@@ -22,9 +23,11 @@ const GAPAnalysisDetailView: React.FC = () => {
     const appId = searchParams.get('appId')
     const preloaded = (location.state as any)?.gapRecord || null
 
-    const departmentName = String(user?.departmentName || '').trim()
-    const allowedSections = getAllowedSectionsForDept(departmentName)
-    const isROM = allowedSections === 'ALL'
+    const { roleOf } = useDepartmentRoles()
+    const departmentRole = roleOf(user?.departmentId)
+    const allowedSections = getAllowedSectionsForDept(departmentRole)
+    // M&E can read every section too, but only ROM confirms and signs.
+    const isROM = departmentRole === 'rom'
 
     const goBack = () => {
         if (window.history.length > 1) navigate(-1)
@@ -53,7 +56,7 @@ const GAPAnalysisDetailView: React.FC = () => {
                 allowedSections={allowedSections}
                 romName={user?.name || ''}
                 romEmail={user?.email || ''}
-                viewerDepartmentName={departmentName}
+                viewerDepartmentRole={departmentRole}
                 mode='page'
                 onBack={goBack}
             />

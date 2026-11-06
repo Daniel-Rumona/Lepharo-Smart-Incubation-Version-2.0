@@ -5,8 +5,9 @@ import { db } from '@/firebase'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { archiveReportTemplate, duplicateReportTemplate, listenReportTemplatesForUser, activateReportTemplate } from './services/reportTemplatesService'
 import type { ReportTemplate, ReportUserContext } from './types'
-import { MetricCard, PageHeader, formatTimestamp } from './shared'
+import { PageHeader, formatTimestamp } from './shared'
 
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 const { Text, Title } = Typography
 
 type Props = {
@@ -68,16 +69,16 @@ const TemplatesManagementPage: React.FC<Props> = ({ user, onBack, onUploadTempla
                 <PageHeader
                     eyebrow="REPORT CONFIGURATION"
                     title="Report Templates"
-                    subtitle="Templates stay out of day-to-day reporting. Configure DOCX source files, reusable sections, blocks and contributor permissions here."
+                    subtitle="A template is the Word report you fill in each period, split into sections with the department that writes each."
                     onBack={onBack}
                     actions={<Button type="primary" icon={<PlusOutlined />} onClick={onUploadTemplate}>Upload Template</Button>}
                 />
 
                 <Row gutter={[12, 12]}>
-                    <Col xs={24} sm={12} lg={6}><MetricCard icon={<FileTextOutlined />} title="Active Templates" value={activeCount} subtitle="Available for new reports" iconBg="rgba(22,119,255,.12)" /></Col>
-                    <Col xs={24} sm={12} lg={6}><MetricCard icon={<SettingOutlined />} title="Mapped Blocks" value={mappedBlocks} subtitle="Across all templates" iconBg="rgba(114,46,209,.11)" /></Col>
-                    <Col xs={24} sm={12} lg={6}><MetricCard icon={<CopyOutlined />} title="Assigned Blocks" value={assignedBlocks} subtitle="With editor ownership" iconBg="rgba(82,196,26,.12)" /></Col>
-                    <Col xs={24} sm={12} lg={6}><MetricCard icon={<FileTextOutlined />} title="Archived" value={archivedCount} subtitle="Hidden from create report" iconBg="rgba(140,140,140,.12)" /></Col>
+                    <Col xs={24} sm={12} lg={6}><MetricTile icon={<FileTextOutlined />} title="Active Templates" value={activeCount} subtitle="Available for new reports" tone='info' /></Col>
+                    <Col xs={24} sm={12} lg={6}><MetricTile icon={<SettingOutlined />} title="Linked to Word" value={mappedBlocks} subtitle="Across all templates" tone='info' /></Col>
+                    <Col xs={24} sm={12} lg={6}><MetricTile icon={<CopyOutlined />} title="With a department" value={assignedBlocks} subtitle="With editor ownership" tone='success' /></Col>
+                    <Col xs={24} sm={12} lg={6}><MetricTile icon={<FileTextOutlined />} title="Archived" value={archivedCount} subtitle="Hidden from create report" tone='neutral' /></Col>
                 </Row>
 
                 <Card className="report-soft-card" styles={{ body: { padding: 14 } }}>

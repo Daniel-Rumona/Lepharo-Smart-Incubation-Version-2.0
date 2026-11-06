@@ -1,0 +1,232 @@
+/* Import SMEs from Excel. */
+
+.imp-steps {
+    margin-bottom: 16px;
+}
+
+.imp-body {
+    display: grid;
+    gap: 12px;
+}
+
+.imp-muted {
+    color: var(--app-text-muted);
+}
+
+.imp-program {
+    font-size: 14px;
+}
+
+.imp-intro {
+    font-size: 13px;
+}
+
+.imp-help {
+    font-size: 12.5px;
+    line-height: 1.6;
+}
+
+.imp-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.imp-list,
+.imp-columns,
+.imp-review {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    max-height: 52vh;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+/* Sheets */
+.imp-sheet {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    padding: 10px 12px;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+}
+
+.imp-sheet.is-skipped {
+    opacity: 0.6;
+}
+
+.imp-sheet-main {
+    flex: 1 1 260px;
+    min-width: 0;
+}
+
+.imp-sheet-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    font-weight: 600;
+}
+
+.imp-count {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--app-text-muted);
+}
+
+.imp-sheet-title {
+    margin-top: 2px;
+    overflow: hidden;
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.imp-sheet-role {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.imp-sheet-role .ant-input {
+    width: 180px;
+}
+
+/* Columns and branches */
+.imp-column {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 8px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+}
+
+.imp-column-main {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+.imp-column-name {
+    font-weight: 600;
+}
+
+.imp-column-sample {
+    overflow: hidden;
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.imp-column-select {
+    width: 240px;
+    max-width: 100%;
+}
+
+.imp-warn {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #d97706;
+}
+
+.imp-subtitle {
+    margin: 8px 0 0;
+    font-size: 14px;
+}
+
+/* Review */
+.imp-review {
+    max-height: 46vh;
+}
+
+.imp-sme {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 12px;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.imp-sme.is-existing {
+    cursor: default;
+    opacity: 0.75;
+}
+
+.imp-sme-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.imp-sme-name {
+    font-weight: 600;
+}
+
+.imp-sme-meta {
+    font-size: 12px;
+}
+
+.imp-sme-source {
+    flex: 0 0 auto;
+    max-width: 30%;
+    overflow: hidden;
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.imp-empty {
+    padding: 24px 0;
+    text-align: center;
+}
+
+.imp-center {
+    justify-items: center;
+    padding: 24px 0;
+    text-align: center;
+}
+
+.imp-done-icon {
+    font-size: 44px;
+    color: #16a34a;
+}
+
+.imp-done-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.imp-failures {
+    margin: 0;
+    padding-left: 18px;
+    text-align: left;
+}
+
+@media (max-width: 640px) {
+    .imp-sme-source {
+        display: none;
+    }
+
+    .imp-column-select,
+    .imp-sheet-role .ant-input {
+        width: 100%;
+    }
+}
+
+.imp-status-input {
+    width: 180px;
+}
+
+@media (max-width: 640px) {
+    .imp-status-input {
+        width: 100%;
+    }
+}

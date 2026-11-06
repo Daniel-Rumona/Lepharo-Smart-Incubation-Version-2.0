@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
-import Drilldown from "highcharts/modules/drilldown";
-import { Card, Col, Empty, Result, Button, Row, Segmented, Skeleton, Space, Statistic, Tag } from "antd";
+import "highcharts/modules/drilldown";
+import { Card, Col, Empty, Result, Button, Row, Segmented, Skeleton, Space, Tag, theme } from "antd";
 import dayjs from "dayjs";
 import {
     collection,
@@ -14,14 +14,14 @@ import {
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
-import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
+import { MotionCard } from "@/components/dashboards/metrics/Header";
 import { getCanonicalInterventionStatus } from "./interventionStatus";
-import { fetchInterventionsDepartments } from "@/utils/reportingDepartments";
+import { fetchAllDepartments } from "@/utils/reportingDepartments";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { filterReportRecords, loadReportVisibilityContext } from "@/utils/reportVisibility";
 import { rollupReportAssignments } from "@/utils/reportGroupAssignments";
 
-if (typeof Drilldown === "function") Drilldown(Highcharts);
 
 type Props = {
     programId?: string;
@@ -140,6 +140,7 @@ export default function InterventionsDeptDrilldownChart({
     title = "",
 }: Props) {
     const { user } = useFullIdentity();
+    const { token } = theme.useToken();
     const chartRef = useRef<HighchartsReact.RefObject>(null);
 
     const [loading, setLoading] = useState(true);
@@ -154,7 +155,7 @@ export default function InterventionsDeptDrilldownChart({
         Array<{
             id: string;
             participantId?: string;
-            interventions?: { required?: Array<{ area?: string }> };
+            interventions?: { required?: Array<{ departmentId?: string }> };
         }>
     >([]);
     const [assigned, setAssigned] = useState<
@@ -170,11 +171,7 @@ export default function InterventionsDeptDrilldownChart({
             participantCompletionStatus?: string;
             beneficiaryCompletionStatus?: string;
             completionStatus?: string;
-            areaOfSupport?: string;
             departmentId?: string;
-            departmentName?: string;
-            department?: string;
-            departmentTitle?: string;
             interventionTitle?: string;
             subInterventionId?: string;
             subInterventionTitle?: string;
@@ -204,7 +201,7 @@ export default function InterventionsDeptDrilldownChart({
                 const scopedProgramId =
                     programId && programId !== "all" ? programId : undefined;
 
-                const deps = await fetchInterventionsDepartments();
+                const deps = await fetchAllDepartments();
 
                 const appFilters: any[] = [];
                 if (scopedProgramId)
@@ -291,37 +288,22 @@ export default function InterventionsDeptDrilldownChart({
         };
 
         run();
-    }, [programId]);
+    }, [programId, user?.email]);
 
-    const depNameByLower = useMemo(() => {
+    const depNameById = useMemo(() => {
         const m = new Map<string, string>();
         for (const d of departments) {
             const n = (d.name || "").trim();
-            if (n) {
-                m.set(n.toLowerCase(), n);
-                m.set(d.id.toLowerCase(), n);
-            }
+            if (n) m.set(d.id, n);
         }
         return m;
     }, [departments]);
 
-    const depKeyFromArea = (area?: string) => {
-        const k = (area || "").trim().toLowerCase();
-        return depNameByLower.get(k);
-    };
+    const depKeyFromId = (departmentId?: string) =>
+        depNameById.get((departmentId || "").trim());
 
-    const depKeyFromAssigned = (record: {
-        areaOfSupport?: string;
-        departmentId?: string;
-        departmentName?: string;
-        department?: string;
-        departmentTitle?: string;
-    }) =>
-        depKeyFromArea(record.departmentId) ||
-        depKeyFromArea(record.departmentName) ||
-        depKeyFromArea(record.department) ||
-        depKeyFromArea(record.departmentTitle) ||
-        depKeyFromArea(record.areaOfSupport);
+    const depKeyFromAssigned = (record: { departmentId?: string }) =>
+        depKeyFromId(record.departmentId);
 
     const filterDeptCanonical = useMemo(() => {
         if (!departmentId) return undefined;
@@ -335,7 +317,7 @@ export default function InterventionsDeptDrilldownChart({
         for (const app of applications) {
             const list = app.interventions?.required ?? [];
             for (const r of list) {
-                const key = depKeyFromArea(r.area);
+                const key = depKeyFromId(r.departmentId);
                 if (!key) continue;
                 if (filterDeptCanonical && key !== filterDeptCanonical) continue;
                 m.set(key, (m.get(key) || 0) + 1);
@@ -440,13 +422,26 @@ export default function InterventionsDeptDrilldownChart({
     ]);
 
     const computed = useMemo(() => {
-        const categories = Array.from(requiredByDept.keys()).sort(
-            (a, b) => (requiredByDept.get(b) || 0) - (requiredByDept.get(a) || 0)
+        // A department appears if it has assigned work in range or required
+        // interventions on applications. Assignments come first: most
+        // applications don't list required interventions with a department,
+        // so building the list from those alone left the card empty.
+        const assignedTotal = (dept: string) =>
+            Array.from(statusCountsByDept.byDept.get(dept)?.values() || []).reduce(
+                (sum, value) => sum + value,
+                0
+            );
+        const categories = Array.from(
+            new Set([...statusCountsByDept.byDept.keys(), ...requiredByDept.keys()])
+        ).sort(
+            (a, b) =>
+                assignedTotal(b) - assignedTotal(a) ||
+                (requiredByDept.get(b) || 0) - (requiredByDept.get(a) || 0)
         );
 
         const topPoints = categories.map((dept) => ({
             name: dept,
-            y: requiredByDept.get(dept) || 0,
+            y: assignedTotal(dept) || requiredByDept.get(dept) || 0,
             drilldown: `dept::${dept}`,
             color: TOP_BAR_COLOR,
             custom: { level: "department", department: dept },
@@ -563,7 +558,7 @@ export default function InterventionsDeptDrilldownChart({
             topSeries: [
                 {
                     type: "bar" as const,
-                    name: "Required interventions",
+                    name: "Interventions",
                     data: topPoints as any[],
                 },
             ],
@@ -591,81 +586,6 @@ export default function InterventionsDeptDrilldownChart({
             };
         });
     }, [computed, requiredByDept]);
-
-    const departmentDeltas = useMemo(() => {
-        const result = new Map<string, number>();
-        let currentStart: Date | undefined;
-        let currentEnd: Date | undefined;
-        if (dateFrom && dateTo) {
-            currentStart = dateFrom;
-            currentEnd = dateTo;
-        } else if (typeof monthIndex === "number" && typeof year === "number") {
-            currentStart = dayjs(`${year}-${String(monthIndex + 1).padStart(2, "0")}-01`).startOf("month").toDate();
-            currentEnd = dayjs(currentStart).endOf("month").toDate();
-        }
-        if (!currentStart || !currentEnd) return result;
-        let previousStart: Date;
-        let previousEnd: Date;
-        const currentDay = dayjs(currentStart);
-        const endDay = dayjs(currentEnd);
-        if (currentDay.isSame(currentDay.startOf("year"), "day") && currentEnd.getFullYear() === currentStart.getFullYear()) {
-            previousStart = currentDay.subtract(1, "year").startOf("year").toDate();
-            previousEnd = endDay.subtract(1, "year").toDate();
-        } else if (currentDay.isSame(currentDay.startOf("month"), "day") && endDay.isSame(endDay.endOf("month"), "day")) {
-            previousStart = currentDay.subtract(1, "month").startOf("month").toDate();
-            previousEnd = currentDay.subtract(1, "month").endOf("month").toDate();
-        } else if (currentDay.isSame(currentDay.startOf("week"), "day") && endDay.isSame(endDay.endOf("week"), "day")) {
-            previousStart = currentDay.subtract(1, "week").startOf("week").toDate();
-            previousEnd = currentDay.subtract(1, "week").endOf("week").toDate();
-        } else {
-            const duration = currentEnd.getTime() - currentStart.getTime() + 1;
-            previousStart = new Date(currentStart.getTime() - duration);
-            previousEnd = new Date(currentStart.getTime() - 1);
-        }
-        const current = new Map<string, number>();
-        const previous = new Map<string, number>();
-        rollupReportAssignments(assigned, getCanonicalInterventionStatus).forEach((rollup) => {
-            if (rollup.status !== "completed") return;
-            const date = rollup.members
-                .map((member) => tsToDate(member.completedAt || member.updatedAt || member.createdAt))
-                .filter((value): value is Date => !!value)
-                .sort((a, b) => b.getTime() - a.getTime())[0];
-            const department = depKeyFromAssigned(rollup.record);
-            if (!date || !department) return;
-            if (date >= currentStart! && date <= currentEnd!) current.set(department, (current.get(department) || 0) + 1);
-            if (date >= previousStart && date <= previousEnd) previous.set(department, (previous.get(department) || 0) + 1);
-        });
-        departments.forEach((department) => {
-            result.set(department.name, (current.get(department.name) || 0) - (previous.get(department.name) || 0));
-        });
-        return result;
-    }, [assigned, dateFrom, dateTo, monthIndex, year, departments]);
-
-    const priorPeriodLabel = useMemo(() => {
-        if (dateFrom && dateTo) {
-            if (dayjs(dateFrom).isSame(dayjs(dateFrom).startOf("year"), "day") && dateTo.getFullYear() === dateFrom.getFullYear()) {
-                return `same period last year (${dayjs(dateFrom).subtract(1, "year").format("DD MMM YYYY")} – ${dayjs(dateTo).subtract(1, "year").format("DD MMM YYYY")})`;
-            }
-            const duration = dateTo.getTime() - dateFrom.getTime() + 1;
-            return `previous ${Math.round(duration / 86400000)} days (${dayjs(new Date(dateFrom.getTime() - duration)).format("DD MMM YYYY")} – ${dayjs(new Date(dateFrom.getTime() - 1)).format("DD MMM YYYY")})`;
-        }
-        if (typeof monthIndex === "number" && typeof year === "number") {
-            return `previous month (${dayjs(`${year}-${String(monthIndex + 1).padStart(2, "0")}-01`).subtract(1, "month").format("MMMM YYYY")})`;
-        }
-        return undefined;
-    }, [dateFrom, dateTo, monthIndex, year]);
-
-    const compactPriorPeriodLabel = useMemo(() => {
-        if (dateFrom && dateTo) {
-            if (dayjs(dateFrom).isSame(dayjs(dateFrom).startOf("year"), "day") && dateTo.getFullYear() === dateFrom.getFullYear()) return "same period last year";
-            if (dayjs(dateFrom).isSame(dayjs(dateFrom).startOf("month"), "day") && dayjs(dateTo).isSame(dayjs(dateTo).endOf("month"), "day")) return "last month";
-            if (dayjs(dateFrom).isSame(dayjs(dateFrom).startOf("week"), "day") && dayjs(dateTo).isSame(dayjs(dateTo).endOf("week"), "day")) return "last week";
-            const selectedDays = dayjs(dateTo).startOf("day").diff(dayjs(dateFrom).startOf("day"), "day") + 1;
-            return `last ${selectedDays} days`;
-        }
-        if (typeof monthIndex === "number" && typeof year === "number") return "last month";
-        return undefined;
-    }, [dateFrom, dateTo, monthIndex, year]);
 
     const openDepartment = (department: string) => {
         setDrillHistory([{ level: "top" }]);
@@ -795,7 +715,8 @@ export default function InterventionsDeptDrilldownChart({
                 },
             },
             credits: { enabled: false },
-            title: { text: title },
+            // The card shows the title; keep the chart itself untitled.
+            title: { text: undefined },
             subtitle: { text: `` },
             xAxis: {
                 type: "category",
@@ -840,7 +761,7 @@ export default function InterventionsDeptDrilldownChart({
                 series: computed.drilldownSeries,
             },
         }),
-        [title, computed, drillState, activeDrillSeries]
+        [computed, drillState, activeDrillSeries]
     );
 
     const currentViewHasData = useMemo(() => {
@@ -890,7 +811,37 @@ export default function InterventionsDeptDrilldownChart({
 
     const canGoBack = drillState.level !== "top";
 
-    return (
+    const showControls = !loading && computed.hasTopData;
+    const tags = (
+        <Space size={8} wrap>
+            {drillState.level !== "top" && (
+                <Button
+                    size="small"
+                    shape="round"
+                    icon={<ArrowLeftOutlined />}
+                    iconPosition="start"
+                    onClick={returnToCards}>Back to departments</Button>
+            )}
+            {(drillState.level !== "top" || filterDeptCanonical) && (
+                <Tag color="purple">
+                    Department: {drillState.level !== "top" ? drillState.department : filterDeptCanonical}
+                </Tag>
+            )}
+            <Tag color="blue">{departmentSummaries.length} intervention departments</Tag>
+            <Tag color="green">{departmentSummaries.reduce((sum, item) => sum + item.required, 0)} required</Tag>
+        </Space>
+    );
+    const viewToggle = (
+        <Segmented
+            value={reportView}
+            onChange={(value) => {
+                setReportView(value as ReportView);
+            }}
+            options={[{ label: "Overview", value: "overview" }, { label: "Time Series", value: "timeSeries" }]}
+        />
+    );
+
+    const content = (
         <div>
             {loading ? (
                 <div style={{ padding: "8px 4px" }}>
@@ -906,41 +857,16 @@ export default function InterventionsDeptDrilldownChart({
                 <Empty description="No data available for the selected filters." />
             ) : (
                 <div>
-                    <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-                        <Col>
-                            <Space size={8}>
-                                {drillState.level !== "top" && (
-                                    <Button
-                                        size="small"
-                                        shape='round'
-                                        icon={<ArrowLeftOutlined />}
-                                        iconPosition="start"
-                                        onClick={returnToCards}>Back to departments</Button>
-                                )}
-                                {(drillState.level !== "top" || filterDeptCanonical) && (
-                                    <Tag color="purple">
-                                        Department: {drillState.level !== "top" ? drillState.department : filterDeptCanonical}
-                                    </Tag>
-                                )}
-                                <Tag color="blue">{computed.categories.length} intervention departments</Tag>
-                                <Tag color="green">{departmentSummaries.reduce((sum, item) => sum + item.required, 0)} required</Tag>
-                            </Space>
-                        </Col>
-                        <Col>
-                            <Segmented
-                                value={reportView}
-                                onChange={(value) => {
-                                    setReportView(value as ReportView);
-                                }}
-                                options={[{ label: "Overview", value: "overview" }, { label: "Time Series", value: "timeSeries" }]}
-                            />
-                        </Col>
-                    </Row>
+                    {/* With a card title these sit in the card's title row instead. */}
+                    {!title && (
+                        <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+                            <Col>{tags}</Col>
+                            <Col>{viewToggle}</Col>
+                        </Row>
+                    )}
 
                     {reportView === "timeSeries" ? (
-                        <Card>
-                            <HighchartsReact highcharts={Highcharts} options={timeSeriesOptions} />
-                        </Card>
+                        <HighchartsReact highcharts={Highcharts} options={timeSeriesOptions} />
                     ) : (
                         <>
                             {drillState.level === "top" && (
@@ -952,25 +878,25 @@ export default function InterventionsDeptDrilldownChart({
                                                 title={item.department}
                                                 hoverable
                                                 onClick={() => openDepartment(item.department)}
-                                                headStyle={{ padding: "0 10px", minHeight: 32, fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                                                bodyStyle={{ padding: "8px 10px" }}
-                                                style={{ height: "100%", border: "1px solid #dbe4f0", borderRadius: 10, boxShadow: "0 4px 14px rgba(15, 23, 42, 0.10)", overflow: "hidden" }}
+                                                styles={{
+                                                    header: { padding: "0 10px", minHeight: 32, fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+                                                    body: { padding: "8px 10px" }
+                                                }}
+                                                style={{ height: "100%", border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 10, boxShadow: token.boxShadowTertiary, overflow: "hidden" }}
                                             >
                                                 <Row gutter={4}>
-                                                    {[["Required", item.required, "#1f2937"], ["Assigned", item.assigned, "#1677ff"], ["Active", item.active, "#d48806"], ["Completed", item.completed, "#389e0d"]].map(([label, value, color]) => (
-                                                        <Col span={6} key={label as string}>
-                                                            <div style={{ fontSize: 10, color: "#8c8c8c", lineHeight: 1.1 }}>{label}</div>
-                                                            <div style={{ fontSize: 17, fontWeight: 700, color: color as string, lineHeight: 1.2 }}>{value as number}</div>
+                                                    {([
+                                                        ["Required", item.required, token.colorText],
+                                                        ["Assigned", item.assigned, token.colorPrimary],
+                                                        ["In progress", item.active, token.colorWarning],
+                                                        ["Completed", item.completed, token.colorSuccess]
+                                                    ] as const).map(([label, value, color]) => (
+                                                        <Col span={6} key={label}>
+                                                            <div style={{ fontSize: 10, color: token.colorTextTertiary, lineHeight: 1.1, whiteSpace: "nowrap" }}>{label}</div>
+                                                            <div style={{ fontSize: 17, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
                                                         </Col>
                                                     ))}
                                                 </Row>
-                                                <Space wrap size={[3, 3]} style={{ marginTop: 3 }}>
-                                                    {departmentDeltas.has(item.department) && (
-                                                        <Tag title={compactPriorPeriodLabel ? `Completed interventions compared with ${compactPriorPeriodLabel}` : undefined} color={(departmentDeltas.get(item.department) || 0) > 0 ? "blue" : (departmentDeltas.get(item.department) || 0) < 0 ? "red" : "default"}>
-                                                            Δ {(departmentDeltas.get(item.department) || 0) > 0 ? "+" : ""}{departmentDeltas.get(item.department) || 0} completed{compactPriorPeriodLabel ? ` vs ${compactPriorPeriodLabel}` : ""}
-                                                        </Tag>
-                                                    )}
-                                                </Space>
                                             </Card>
                                         </Col>
                                     ))}
@@ -1017,5 +943,21 @@ export default function InterventionsDeptDrilldownChart({
                 </div>
             )}
         </div>
+    );
+
+    if (!title) return content;
+
+    return (
+        <MotionCard
+            title={
+                <Space size={12} wrap>
+                    <span>{title}</span>
+                    {showControls && tags}
+                </Space>
+            }
+            extra={showControls ? viewToggle : null}
+        >
+            {content}
+        </MotionCard>
     );
 }

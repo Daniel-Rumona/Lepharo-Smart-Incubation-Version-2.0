@@ -1,9 +1,17 @@
 import type { CSSProperties } from 'react'
 import { Timestamp } from 'firebase/firestore'
 import dayjs from 'dayjs'
+import {
+    computeRiskScore as sharedComputeRiskScore,
+    deriveRiskInputs,
+    RISK_LEVEL_RANK,
+    smeJoinedAt,
+    type RiskScoreInputs as SharedRiskScoreInputs
+} from '../../../../../../functions/src/smeRiskLogic'
 
 import type {
     AnyDoc,
+    RiskDriverKey,
     BounceStatus,
     CommunicationAttempt,
     DepartmentAction,
@@ -32,21 +40,27 @@ export const DOC_REQUIRED_KEYS = [
     'moa'
 ]
 
-// Centralized color tokens so risk-level colors live in one place instead of being
-// scattered across tag/row-style helpers as a mix of AntD tokens and raw hex.
+// The one risk-level palette for the register: tags, chart, cards, row edges. A fixed
+// status scale (critical, serious, warning, good), the same in light and dark themes.
+// Checked for colour-blind separation (adjacent ΔE >= 13.9) and normal-vision separation
+// (>= 15.7). Levels always show with their name, so colour never carries them alone;
+// text stays in text colours.
 export const RISK_LEVEL_COLORS: Record<RiskLevel, string> = {
-    Critical: '#820014',
-    High: '#cf1322',
-    Medium: 'gold',
-    Low: 'green'
+    Critical: '#d03b3b',
+    High: '#ec835a',
+    Medium: '#f5c400',
+    Low: '#0ca30c'
 }
 
-export const RISK_ROW_BACKGROUND: Record<RiskLevel, string> = {
-    Critical: '#ffccc7',
-    High: '#fff1f0',
-    Medium: '#fffbe6',
-    Low: '#f6ffed'
+/** A soft tint of each level, for card and tag backgrounds on either theme. */
+export const RISK_LEVEL_TINTS: Record<RiskLevel, string> = {
+    Critical: '#d03b3b29',
+    High: '#ec835a29',
+    Medium: '#f5c40029',
+    Low: '#0ca30c29'
 }
+
+export const RISK_ROW_BACKGROUND: Record<RiskLevel, string> = RISK_LEVEL_TINTS
 
 export const INACTIVITY_TAG_COLORS: Record<InactivityBucket, string> = {
     'Never Serviced': 'red',
@@ -182,98 +196,24 @@ export function getInterventionParticipantId(doc: AnyDoc): string {
     )
 }
 
-export function normalizeDepartmentName(value: any): string {
-    const raw = normalizeText(value)
-    if (!raw) return ''
-
-    const lower = raw.toLowerCase()
-
-    if (lower === 'rom' || lower.includes('recruitment') || lower.includes('onboarding')) {
-        return 'ROM'
-    }
-
-    if (lower.includes('hse') || lower.includes('labour')) {
-        return 'HSE & Labour Compliance'
-    }
-
-    if (lower.includes('financial')) {
-        return 'Financial Compliance'
-    }
-
-    if (lower === 'pds' || lower.includes('personal development')) {
-        return 'PDS'
-    }
-
-    /*
-     * IMPORTANT:
-     * Marketing must be checked before Market Linkages.
-     *
-     * `marketing` contains the substring `market`, so the previous
-     * `lower.includes('market')` check incorrectly normalised
-     * "Marketing and Communication" to "Market Linkages".
-     */
-    if (
-        lower.includes('marketing') ||
-        lower.includes('marketing and communication') ||
-        lower.includes('marketing & communication') ||
-        lower === 'communication' ||
-        lower === 'communications'
-    ) {
-        return 'Marketing and Communication'
-    }
-
-    if (
-        lower === 'market' ||
-        lower === 'market linkage' ||
-        lower === 'market linkages' ||
-        lower.includes('market linkage')
-    ) {
-        return 'Market Linkages'
-    }
-
-    if (lower.includes('legal')) {
-        return 'Legal Advisory Services'
-    }
-
-    if (lower.includes('wellness')) {
-        return 'Wellness Services'
-    }
-
-    if (lower.includes('training') || lower.includes('academy')) {
-        return 'Training Academy'
-    }
-
-    return raw
-}
-
 export function getInterventionDepartmentKey(
     iv: AnyDoc,
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
+    departmentsById: Record<string, AnyDoc>
 ) {
     const rawDepartmentId = normalizeText(iv?.departmentId)
-    const rawArea = normalizeDepartmentName(firstNonEmpty(iv?.area, iv?.areaOfSupport, iv?.departmentName, iv?.department))
 
     if (rawDepartmentId && departmentsById[rawDepartmentId]) {
         const dep = departmentsById[rawDepartmentId]
         return {
             departmentId: String(dep.id),
-            departmentName: normalizeDepartmentName(dep.name || rawArea || 'Unknown Department')
+            departmentName: normalizeText(dep.name) || 'Unknown Department'
         }
     }
 
-    if (rawArea) {
-        const dep = departmentsByName[rawArea.toLowerCase()]
-        if (dep) {
-            return {
-                departmentId: String(dep.id),
-                departmentName: normalizeDepartmentName(dep.name || rawArea)
-            }
-        }
-
+    if (rawDepartmentId) {
         return {
-            departmentId: rawArea,
-            departmentName: rawArea
+            departmentId: rawDepartmentId,
+            departmentName: 'Unknown Department'
         }
     }
 
@@ -504,33 +444,17 @@ export function isConfirmedValue(v: any): boolean {
     return false
 }
 
-export function isDeptConfirmedForDp(dp: AnyDoc, deptId?: string, deptName?: string): boolean {
+export function isDeptConfirmedForDp(dp: AnyDoc, deptId?: string): boolean {
     const id = String(deptId || '').trim()
-    const name = String(deptName || '').trim()
-
-    const deptValById = id ? dp?.confirmedByDeptId?.[id] : undefined
-    const deptValByName = name ? dp?.confirmed?.[name] : undefined
-
-    return isConfirmedValue(deptValById) || isConfirmedValue(deptValByName)
+    return !!id && isConfirmedValue(dp?.confirmedByDeptId?.[id])
 }
 
-export function isSmmeConfirmedForDp(dp: AnyDoc, deptId?: string, deptName?: string): boolean {
+export function isSmmeConfirmedForDp(dp: AnyDoc, deptId?: string): boolean {
     const id = String(deptId || '').trim()
-    const name = String(deptName || '').trim()
-
-    const smmeConfirmed =
-        (!!id && isConfirmedValue(firstNonEmpty(
-            dp?.smmeConfirmedByDeptId?.[id],
-            dp?.incubateeDepartmentConfirmationsByDeptId?.[id]
-        ))) ||
-        (!!name && isConfirmedValue(firstNonEmpty(
-            dp?.smmeConfirmedByDept?.[name],
-            dp?.incubateeConfirmedByDept?.[name],
-            dp?.incubateeDepartmentConfirmations?.[name],
-            dp?.smmeConfirmedMap?.[name]
-        )))
-
-    return smmeConfirmed
+    return !!id && isConfirmedValue(firstNonEmpty(
+        dp?.smmeConfirmedByDeptId?.[id],
+        dp?.incubateeDepartmentConfirmationsByDeptId?.[id]
+    ))
 }
 
 export function parseComplianceDocuments(application: AnyDoc): {
@@ -686,9 +610,14 @@ export function getSystemAccessInfo(application?: AnyDoc, participant?: AnyDoc, 
         )
     )
 
+    // A linked SME (participants.uid) is matched on its login uid; sessions
+    // carrying a uid are never matched by email.
+    const linkedUid = normalizeText(firstNonEmpty(participant?.uid, application?.uid))
     const matchedSessions = sessions.filter(session => {
-        const sessionEmail = getEmail(session)
         const sessionUid = normalizeText(firstNonEmpty(session?.uid, session?.userId))
+        if (linkedUid && sessionUid) return sessionUid === linkedUid
+        // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+        const sessionEmail = getEmail(session)
         return (!!email && sessionEmail === email) || (!!uid && sessionUid === uid)
     })
 
@@ -715,11 +644,10 @@ export function getSystemAccessInfo(application?: AnyDoc, participant?: AnyDoc, 
 }
 
 export function getDepartmentDocForKey(
-    dep: { departmentId: string; departmentName: string },
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
+    dep: { departmentId: string },
+    departmentsById: Record<string, AnyDoc>
 ): AnyDoc | undefined {
-    return departmentsById[dep.departmentId] || departmentsByName[dep.departmentName.toLowerCase()]
+    return departmentsById[dep.departmentId]
 }
 
 export function isInterventionsDepartment(depDoc?: AnyDoc): boolean {
@@ -728,33 +656,26 @@ export function isInterventionsDepartment(depDoc?: AnyDoc): boolean {
 
 export function isDpInterventionDepartment(
     iv: AnyDoc,
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
+    departmentsById: Record<string, AnyDoc>
 ): boolean {
-    const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
-    return isInterventionsDepartment(getDepartmentDocForKey(dep, departmentsById, departmentsByName))
+    const dep = getInterventionDepartmentKey(iv, departmentsById)
+    return isInterventionsDepartment(getDepartmentDocForKey(dep, departmentsById))
 }
 
 export function getEligibleDpInterventions(
     interventions: AnyDoc[],
-    departmentsById: Record<string, AnyDoc>,
-    departmentsByName: Record<string, AnyDoc>
+    departmentsById: Record<string, AnyDoc>
 ) {
-    return interventions.filter(iv => isDpInterventionDepartment(iv, departmentsById, departmentsByName))
+    return interventions.filter(iv => isDpInterventionDepartment(iv, departmentsById))
 }
 
 export function departmentMatchesScope(
-    dep: { departmentId: string; departmentName: string },
-    scope?: { departmentId?: string; departmentName?: string }
+    dep: { departmentId: string },
+    scope?: { departmentId?: string }
 ) {
-    if (!scope?.departmentId && !scope?.departmentName) return true
-
-    const depId = normalizeLower(dep.departmentId)
-    const depName = normalizeLower(dep.departmentName)
-    const scopeId = normalizeLower(scope.departmentId)
-    const scopeName = normalizeLower(scope.departmentName)
-
-    return (!!scopeId && depId === scopeId) || (!!scopeName && depName === scopeName)
+    const scopeId = normalizeText(scope?.departmentId)
+    if (!scopeId) return true
+    return normalizeText(dep.departmentId) === scopeId
 }
 
 export function hasActiveWarnings(row: SMERow) {
@@ -805,6 +726,53 @@ export function buildServiceProgressRows(dep: DepartmentSummary): ServiceProgres
     return [...expectedRows, ...extraActionRows]
 }
 
+export type RiskMovement = {
+    /** escalated: moved up into High or Critical; new: no earlier score to compare with. */
+    kind: 'new' | 'escalated' | 'up' | 'down' | 'same'
+    previousScore: number | null
+    previousLevel: RiskLevel | null
+    delta: number
+}
+
+/**
+ * The score now against a week ago, from the nightly snapshot's daily history: the last
+ * entry at least 7 days old, else the oldest before today. A change of 5 or more counts.
+ */
+export function riskMovement(row: SMERow, today = dayjs()): RiskMovement {
+    const weekAgo = today.subtract(7, 'day').format('YYYY-MM-DD')
+    const todayKey = today.format('YYYY-MM-DD')
+    const history = [...row.scoreHistory].sort((a, b) => a.date.localeCompare(b.date))
+    const previous =
+        history.filter(entry => entry.date <= weekAgo).pop() ??
+        history.find(entry => entry.date < todayKey)
+    if (!previous) return { kind: 'new', previousScore: null, previousLevel: null, delta: 0 }
+
+    const delta = row.riskScore - previous.score
+    const escalated =
+        RISK_LEVEL_RANK[row.riskLevel] >= RISK_LEVEL_RANK.High &&
+        RISK_LEVEL_RANK[row.riskLevel] > RISK_LEVEL_RANK[previous.level]
+    const kind = escalated ? 'escalated' : delta >= 5 ? 'up' : delta <= -5 ? 'down' : 'same'
+    return { kind, previousScore: previous.score, previousLevel: previous.level, delta }
+}
+
+/** Whether a driver adds to this row's score; inactivity only once the SME is overdue (45+ points). */
+export function rowHasDriver(row: SMERow, key: RiskDriverKey): boolean {
+    return row.riskBreakdown.some(
+        item => item.key === key && item.delta > 0 && (key !== 'inactivity' || item.delta >= 45)
+    )
+}
+
+/** Past its expected service date: one cycle of its recurring support, or 30 days without any. */
+export function isOverdueForService(row: SMERow): boolean {
+    return (row.daysSinceLastService ?? 0) >= (row.expectedServiceIntervalDays ?? 30)
+}
+
+/** "21 days since last service (expected every 7 days)", or just the days without a schedule. */
+export function serviceGapText(row: SMERow): string {
+    const days = `${row.daysSinceLastService} days since last service`
+    return row.expectedServiceIntervalDays ? `${days} (expected every ${row.expectedServiceIntervalDays} days)` : days
+}
+
 export function matchesServiceRecency(row: SMERow, filter: ServiceRecencyFilter): boolean {
     if (filter === 'all') return true
     if (filter === 'never_serviced') return row.totalTouches === 0 || row.daysSinceLastService === null
@@ -850,104 +818,11 @@ export function getBounceStatus(emailSuppressions: BounceStatus[], participantId
     return emailSuppressions.find(entry => String(entry.participantId || '') === String(participantId))
 }
 
-// Named weights for the risk formula (previously inline magic numbers). Values are
-// unchanged from the original implementation -- this is a rename/extraction, not a
-// re-tuning. Exported so computeRiskScore can also be driven by a hypothetical
-// (what-if) RiskScoreInputs object for the simulation panel.
-const RISK_SCORE_WEIGHTS = {
-    neverReceivedService: 85,
-    unknownLastService: 70,
-    inactive6Months: 80,
-    inactive3Months: 65,
-    inactive1Month: 45,
-    recentlyServiced: 15,
-    missingDocPerItem: 4,
-    missingDocCap: 12,
-    queriedDocPerItem: 3,
-    queriedDocCap: 9,
-    rejectedDocPerItem: 4,
-    rejectedDocCap: 12,
-    missingDeptPerItem: 5,
-    missingDeptCap: 15,
-    unresponsivePerItem: 8,
-    unresponsiveCap: 24,
-    unresponsiveThresholdCount: 3,
-    unresponsiveThresholdFloor: 85,
-    repeatDeclinePenalty: 8,
-    repeatDeclineThreshold: 2
-} as const
-
+// The formula itself lives in functions/src/smeRiskLogic.ts so the nightly early-warning
+// job scores SMEs exactly as this register does. Without early-warning inputs the score
+// is the register's original one.
 export function computeRiskScore(input: RiskScoreInputs): RiskScoreResult {
-    const breakdown: { label: string; delta: number }[] = []
-    let score: number
-
-    if (input.hasNeverReceivedService) {
-        score = RISK_SCORE_WEIGHTS.neverReceivedService
-        breakdown.push({ label: 'Never received an expected service', delta: score })
-    } else if (input.daysSinceLastService === null) {
-        score = RISK_SCORE_WEIGHTS.unknownLastService
-        breakdown.push({ label: 'Last service date unknown', delta: score })
-    } else if (input.daysSinceLastService >= 180) {
-        score = RISK_SCORE_WEIGHTS.inactive6Months
-        breakdown.push({ label: 'No service in 6+ months', delta: score })
-    } else if (input.daysSinceLastService >= 90) {
-        score = RISK_SCORE_WEIGHTS.inactive3Months
-        breakdown.push({ label: 'No service in 3+ months', delta: score })
-    } else if (input.daysSinceLastService >= 30) {
-        score = RISK_SCORE_WEIGHTS.inactive1Month
-        breakdown.push({ label: 'No service in 1+ month', delta: score })
-    } else {
-        score = RISK_SCORE_WEIGHTS.recentlyServiced
-        breakdown.push({ label: 'Recently serviced', delta: score })
-    }
-
-    const missingDocsDelta = Math.min(input.docsMissing * RISK_SCORE_WEIGHTS.missingDocPerItem, RISK_SCORE_WEIGHTS.missingDocCap)
-    if (missingDocsDelta > 0) {
-        score += missingDocsDelta
-        breakdown.push({ label: `${input.docsMissing} missing document(s)`, delta: missingDocsDelta })
-    }
-
-    const queriedDocsDelta = Math.min(input.docsQueried * RISK_SCORE_WEIGHTS.queriedDocPerItem, RISK_SCORE_WEIGHTS.queriedDocCap)
-    if (queriedDocsDelta > 0) {
-        score += queriedDocsDelta
-        breakdown.push({ label: `${input.docsQueried} queried document(s)`, delta: queriedDocsDelta })
-    }
-
-    const rejectedDocsDelta = Math.min(input.docsRejected * RISK_SCORE_WEIGHTS.rejectedDocPerItem, RISK_SCORE_WEIGHTS.rejectedDocCap)
-    if (rejectedDocsDelta > 0) {
-        score += rejectedDocsDelta
-        breakdown.push({ label: `${input.docsRejected} rejected document(s)`, delta: rejectedDocsDelta })
-    }
-
-    const missingDeptDelta = Math.min(input.missingDepartmentsCount * RISK_SCORE_WEIGHTS.missingDeptPerItem, RISK_SCORE_WEIGHTS.missingDeptCap)
-    if (missingDeptDelta > 0) {
-        score += missingDeptDelta
-        breakdown.push({ label: `${input.missingDepartmentsCount} department(s) needing follow-up`, delta: missingDeptDelta })
-    }
-
-    const unresponsiveCount = input.smePendingAcceptanceCount + input.smePendingConfirmationCount
-    const unresponsiveDelta = Math.min(unresponsiveCount * RISK_SCORE_WEIGHTS.unresponsivePerItem, RISK_SCORE_WEIGHTS.unresponsiveCap)
-    if (unresponsiveDelta > 0) {
-        score += unresponsiveDelta
-        breakdown.push({ label: `${unresponsiveCount} intervention(s) awaiting SME response`, delta: unresponsiveDelta })
-    }
-
-    if (unresponsiveCount >= RISK_SCORE_WEIGHTS.unresponsiveThresholdCount && score < RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor) {
-        breakdown.push({ label: 'SME responsiveness threshold reached', delta: RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor - score })
-        score = RISK_SCORE_WEIGHTS.unresponsiveThresholdFloor
-    }
-
-    if (input.declinedTouches >= RISK_SCORE_WEIGHTS.repeatDeclineThreshold) {
-        score += RISK_SCORE_WEIGHTS.repeatDeclinePenalty
-        breakdown.push({ label: `${input.declinedTouches} declined intervention(s)`, delta: RISK_SCORE_WEIGHTS.repeatDeclinePenalty })
-    }
-
-    if (score > 100) {
-        breakdown.push({ label: 'Capped at 100', delta: 100 - score })
-        score = 100
-    }
-
-    return { score, level: getRiskLevel(score), breakdown }
+    return sharedComputeRiskScore(input)
 }
 
 
@@ -956,21 +831,7 @@ export function getRiskDriversForRow(row: SMERow): Array<{
     label: string
     points: number
 }> {
-    const result = computeRiskScore({
-        daysSinceLastService: row.daysSinceLastService,
-        hasNeverReceivedService:
-            row.fullyConfirmedDepartmentsCount > 0 &&
-            row.totalTouches === 0,
-        docsMissing: row.docsMissing,
-        docsQueried: row.docsQueried,
-        docsRejected: row.docsRejected,
-        missingDepartmentsCount: row.missingDepartmentsCount,
-        smePendingAcceptanceCount: row.smePendingAcceptanceCount,
-        smePendingConfirmationCount: row.smePendingConfirmationCount,
-        declinedTouches: row.declinedTouches
-    })
-
-    return result.breakdown
+    return row.riskBreakdown
         .filter(item => item.delta > 0)
         .map((item, index) => ({
             key: `risk-driver-${index}-${normalizeLower(item.label)
@@ -981,20 +842,72 @@ export function getRiskDriversForRow(row: SMERow): Array<{
         }))
 }
 
+// Signals this page doesn't load live; the nightly snapshot has them.
+const SNAPSHOT_ONLY_INPUTS = [
+    'missedAppointments',
+    'declinedAppointments',
+    'revenueDropPercent',
+    'overdueFollowUps',
+    'openQueries',
+    'emailBounced',
+    'expiredComplianceDocs',
+    'docsMissing',
+    'docsQueried',
+    'docsRejected'
+] as const
+
+/** The SME's score inputs: live assignments and plan, plus the snapshot's other signals. */
+export function scoreInputsFor(args: {
+    assignments: AnyDoc[]
+    diagnosticPlan?: AnyDoc
+    departmentsById: Record<string, AnyDoc>
+    closedInterventionIds: Set<string>
+    docs: { missing: number; queried: number; rejected: number }
+    snapshot?: AnyDoc
+    joinedAt: number | null
+    now: number
+}): SharedRiskScoreInputs {
+    const stored = args.snapshot?.inputs || null
+    const live = deriveRiskInputs({
+        assignments: args.assignments,
+        appointments: [],
+        monthlyRevenue: [],
+        followUps: [],
+        openQueries: 0,
+        emailBounced: false,
+        compliance: { ...args.docs, expired: 0 },
+        coverage: {
+            plan: args.diagnosticPlan || null,
+            departmentsById: args.departmentsById,
+            closedInterventionIds: args.closedInterventionIds
+        },
+        knownServiceAt: typeof stored?.lastServiceAt === 'number' ? stored.lastServiceAt : null,
+        joinedAt: args.joinedAt
+    }, args.now)
+    if (!stored) return live
+    const fromSnapshot = Object.fromEntries(
+        SNAPSHOT_ONLY_INPUTS.filter(key => stored[key] !== undefined).map(key => [key, stored[key]])
+    )
+    return { ...live, ...fromSnapshot }
+}
+
 export function buildRow(args: {
     participant: AnyDoc
     application: AnyDoc
     diagnosticPlan?: AnyDoc
     assignments: AnyDoc[]
+    /** Interventions an HOD has closed for this SME, even where nothing was ever assigned. */
+    closedInterventionIds?: Set<string>
     sessions: AnyDoc[]
     departmentsById: Record<string, AnyDoc>
-    departmentsByName: Record<string, AnyDoc>
+    /** smeRiskSnapshots/{participantId}, written by the nightly early-warning job. */
+    snapshot?: AnyDoc
     scopedDepartment?: {
         departmentId?: string
         departmentName?: string
     }
 }): SMERow {
-    const { participant, application, diagnosticPlan, assignments, sessions, departmentsById, departmentsByName, scopedDepartment } = args
+    const { participant, application, diagnosticPlan, assignments, sessions, departmentsById, scopedDepartment } = args
     const participantId = getParticipantId(application ?? participant ?? {})
     const applicationId = getApplicationId(application ?? participant ?? {})
     const docs = parseComplianceDocuments(application ?? {})
@@ -1004,9 +917,9 @@ export function buildRow(args: {
     const dpInterventions = Array.isArray(diagnosticPlanDoc.interventions)
         ? diagnosticPlanDoc.interventions
         : []
-    const eligibleDpInterventions = getEligibleDpInterventions(dpInterventions, departmentsById, departmentsByName)
+    const eligibleDpInterventions = getEligibleDpInterventions(dpInterventions, departmentsById)
         .filter((iv: AnyDoc) => {
-            const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
+            const dep = getInterventionDepartmentKey(iv, departmentsById)
             return departmentMatchesScope(dep, scopedDepartment)
         })
     const accessInfo = getSystemAccessInfo(application, participant, sessions)
@@ -1016,10 +929,21 @@ export function buildRow(args: {
     let smePendingConfirmationCount = 0
     const responsivenessRiskDepartmentSet = new Set<string>()
 
+    // Support an HOD has closed is no longer expected, and is not a decline: it must not
+    // read as "never serviced" or add to the declined count.
+    const closedInterventionIds = new Set<string>([
+        ...(args.closedInterventionIds ?? []),
+        ...assignments
+            .filter((assignment: AnyDoc) => !!assignment?.supportClosedAt)
+            .map((assignment: AnyDoc) => normalizeText(assignment?.interventionId))
+            .filter(Boolean),
+    ])
+
     eligibleDpInterventions.forEach((iv: AnyDoc) => {
-        const dep = getInterventionDepartmentKey(iv, departmentsById, departmentsByName)
-        const deptConfirmed = isDeptConfirmedForDp(diagnosticPlanDoc, dep.departmentId, dep.departmentName)
-        const smmeConfirmed = isSmmeConfirmedForDp(diagnosticPlanDoc, dep.departmentId, dep.departmentName)
+        if (closedInterventionIds.has(normalizeText(iv?.id))) return
+        const dep = getInterventionDepartmentKey(iv, departmentsById)
+        const deptConfirmed = isDeptConfirmedForDp(diagnosticPlanDoc, dep.departmentId)
+        const smmeConfirmed = isSmmeConfirmedForDp(diagnosticPlanDoc, dep.departmentId)
 
         if (!expectedMap.has(dep.departmentId)) {
             expectedMap.set(dep.departmentId, {
@@ -1053,7 +977,8 @@ export function buildRow(args: {
     })
 
     assignments.forEach((assignment: AnyDoc) => {
-        const dep = getInterventionDepartmentKey(assignment, departmentsById, departmentsByName)
+        if (assignment?.supportClosedAt) return
+        const dep = getInterventionDepartmentKey(assignment, departmentsById)
         if (!departmentMatchesScope(dep, scopedDepartment)) return
 
         const entry = expectedMap.get(dep.departmentId)
@@ -1112,39 +1037,38 @@ export function buildRow(args: {
         item => !item.deptConfirmed || !item.smmeConfirmed || item.servicedCount === 0
     )
     const fullyConfirmedDepartments = expectedDepartments.filter(item => item.deptConfirmed && item.smmeConfirmed)
+    // The department's side: plan not confirmed, or confirmed both ways with nothing assigned.
+    // Shown separately; it isn't the SME's risk (smeRiskLogic departmentCoverage).
+    const staffDelayDepartments = expectedDepartments
+        .filter(item => !item.deptConfirmed || (item.smmeConfirmed && item.servicedCount === 0))
+        .map(item => item.departmentName)
 
-    const allActions = expectedDepartments.flatMap(item => item.actions)
     const completedTouches = expectedDepartments.reduce((sum, item) => sum + item.completedCount, 0)
     const pendingTouches = expectedDepartments.reduce((sum, item) => sum + item.pendingCount, 0)
     const declinedTouches = expectedDepartments.reduce((sum, item) => sum + item.declinedCount, 0)
     const totalTouches = expectedDepartments.reduce((sum, item) => sum + item.servicedCount, 0)
     const totalExpectedInterventions = expectedDepartments.reduce((sum, item) => sum + item.expectedInterventionIds.length, 0)
 
-    const lastInterventionDate =
-        allActions
-            .map(action => action.date)
-            .filter(Boolean)
-            .sort((a, b) => (b!.getTime() - a!.getTime()))[0] ?? null
-
-    const daysSinceLastService =
-        lastInterventionDate ? today.diff(dayjs(lastInterventionDate), 'day') : null
-
-    const inactivityBucket = getInactivityBucket(daysSinceLastService)
-
-    const hasExpectedServices = fullyConfirmedDepartments.length > 0
-    const hasNeverReceivedService = hasExpectedServices && totalTouches === 0
-
-    const { score: riskScore, level: riskLevel, breakdown: riskBreakdown } = computeRiskScore({
-        daysSinceLastService,
-        hasNeverReceivedService,
-        docsMissing: docs.missing,
-        docsQueried: docs.queried,
-        docsRejected: docs.rejected,
-        missingDepartmentsCount: missingDepartments.length,
-        smePendingAcceptanceCount,
-        smePendingConfirmationCount,
-        declinedTouches
+    // The score is the SME's overall one, from the same derivation as the nightly
+    // early-warning job (smeRiskLogic deriveRiskInputs), across every department,
+    // even in a department-scoped view. Live data covers assignments and the plan;
+    // what this page doesn't load comes from the SME's nightly snapshot.
+    const riskInputs = scoreInputsFor({
+        assignments,
+        diagnosticPlan,
+        departmentsById,
+        closedInterventionIds,
+        docs,
+        snapshot: args.snapshot,
+        joinedAt: smeJoinedAt(application, participant),
+        now: today.valueOf()
     })
+    const { score: riskScore, level: riskLevel, breakdown: riskBreakdown } = computeRiskScore(riskInputs)
+
+    // Service dates follow the score: completed work and attended sessions only.
+    const lastInterventionDate = riskInputs.lastServiceAt ? new Date(riskInputs.lastServiceAt) : null
+    const daysSinceLastService = riskInputs.daysSinceLastService
+    const inactivityBucket = getInactivityBucket(daysSinceLastService)
 
     const notes: string[] = []
     const noServiceReasons: string[] = []
@@ -1221,6 +1145,7 @@ export function buildRow(args: {
         expectedDepartmentsCount: expectedDepartments.length,
         servicedDepartmentsCount: servicedDepartments.length,
         missingDepartmentsCount: missingDepartments.length,
+        staffDelayDepartments,
         deptConfirmedCount: expectedDepartments.filter(dep => dep.deptConfirmed).length,
         smmeConfirmedCount: expectedDepartments.filter(dep => dep.smmeConfirmed).length,
         fullyConfirmedDepartmentsCount: fullyConfirmedDepartments.length,
@@ -1236,11 +1161,17 @@ export function buildRow(args: {
 
         lastInterventionDate,
         daysSinceLastService,
+        expectedServiceIntervalDays: riskInputs.expectedServiceIntervalDays ?? null,
         inactivityBucket,
 
         riskScore,
         riskLevel,
         riskBreakdown,
+        riskInputs,
+        snapshotComputedAt: toDate(args.snapshot?.computedAt),
+        scoreHistory: Array.isArray(args.snapshot?.history)
+            ? args.snapshot!.history.filter((entry: AnyDoc) => typeof entry?.score === 'number' && entry?.date)
+            : [],
         notes,
         noServiceReasons: uniqueStrings(noServiceReasons),
         hasAccessedSystem: accessInfo.hasAccessedSystem,

@@ -1,0 +1,239 @@
+/* "How to access": a full-screen sheet on phones, a modal on desktop.
+   Phones: the video stays pinned under the header and only the steps scroll.
+   Desktop: video and steps sit side by side so everything is visible at once.
+   Colours come from the --app-* tokens; .as-brand (set on the root) points the
+   accent at Lepharo crimson to match the sign-in screens. */
+
+.as-brand {
+    --app-accent: #c8102e;
+    --app-accent-soft: rgba(200, 16, 46, 0.10);
+    --app-accent-border-strong: rgba(200, 16, 46, 0.45);
+}
+html[data-theme="dark"] .as-brand {
+    --app-accent: #ff6b7a;
+    --app-accent-soft: rgba(255, 107, 122, 0.14);
+    --app-accent-border-strong: rgba(255, 107, 122, 0.45);
+}
+
+.howto-wrapper.ant-drawer-content-wrapper {
+    border-radius: 0;
+}
+.howto-body.ant-drawer-body {
+    padding: 0;
+}
+.howto-modal .ant-modal-content {
+    padding: 0;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.howto {
+    display: flex;
+    flex-direction: column;
+    background: var(--app-surface);
+    color: var(--app-text);
+}
+.howto.is-full {
+    height: 100dvh;
+}
+.howto.is-modal {
+    max-height: 92dvh;
+}
+
+.howto-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+}
+.howto.is-full .howto-head {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+}
+.howto-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--app-text);
+}
+.howto-lead {
+    margin: 2px 0 0;
+    font-size: 13.5px;
+    color: var(--app-text-muted);
+}
+
+.howto-main {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.howto-media {
+    flex: 0 0 auto;
+}
+.howto.is-full .howto-yt {
+    margin: 14px 18px 0;
+}
+.howto-close {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 50%;
+    background: var(--app-surface-sunken);
+    color: var(--app-text-muted);
+    font-size: 14px;
+    cursor: pointer;
+}
+.howto-close:hover {
+    color: var(--app-text);
+    background: var(--app-border);
+}
+.howto-close:focus-visible,
+.howto-yt:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.howto-video {
+    position: relative;
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+}
+.howto-video iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.howto-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 18px calc(22px + env(safe-area-inset-bottom, 0px));
+}
+
+.howto-yt {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 46px;
+    border-radius: 12px;
+    border: 1px solid var(--app-border-strong);
+    background: var(--app-surface-sunken);
+    color: var(--app-text);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+}
+.howto-yt .anticon {
+    color: #ff0033;
+    font-size: 18px;
+}
+.howto-yt:hover {
+    border-color: var(--app-accent-border-strong);
+    color: var(--app-text);
+}
+
+.howto-steps-title {
+    margin: 22px 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+}
+
+.howto-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.howto-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.howto-step-num {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+    font-size: 13px;
+    font-weight: 700;
+}
+.howto-step-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 3px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--app-text-muted);
+}
+.howto-step-text strong {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+/* --- Desktop: side by side ----------------------------------------------- */
+
+.howto.is-modal .howto-head {
+    padding: 20px 24px 16px;
+}
+.howto.is-modal .howto-title {
+    font-size: 20px;
+}
+.howto.is-modal .howto-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr);
+    align-items: start;
+    gap: 28px;
+    padding: 0 24px 24px;
+}
+.howto.is-modal .howto-video {
+    border-radius: 14px;
+    overflow: hidden;
+}
+.howto.is-modal .howto-yt {
+    margin-top: 12px;
+    height: 42px;
+}
+.howto.is-modal .howto-scroll {
+    padding: 0;
+    /* Matches the video column's height at the modal's widest, so a long
+       steps list scrolls on its own instead of growing the modal. */
+    max-height: min(450px, calc(92dvh - 120px));
+}
+.howto.is-modal .howto-steps-title {
+    margin-top: 2px;
+}
+
+/* A thin rail joining the step numbers, so the list reads as a sequence. */
+.howto-steps li {
+    position: relative;
+}
+.howto-steps li:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 13.5px;
+    top: 32px;
+    bottom: -12px;
+    width: 1px;
+    background: var(--app-border);
+}

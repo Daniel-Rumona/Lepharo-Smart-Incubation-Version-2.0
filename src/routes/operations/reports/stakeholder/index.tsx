@@ -26,12 +26,10 @@ import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import HCHeatmap from 'highcharts/modules/heatmap'
-import HCNoData from 'highcharts/modules/no-data-to-display'
+import 'highcharts/modules/heatmap'
+import 'highcharts/modules/no-data-to-display'
 import { DashboardHeaderCard } from '@/components/dashboards/metrics/Header'
 
-if (typeof HCHeatmap === 'function') HCHeatmap(Highcharts)
-if (typeof HCNoData === 'function') HCNoData(Highcharts)
 
 // global no-data text
 Highcharts.setOptions({

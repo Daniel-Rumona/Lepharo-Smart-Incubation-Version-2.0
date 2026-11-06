@@ -14,7 +14,7 @@ import { getMessaging, isSupported as isMessagingSupported, type Messaging } fro
 import { firebaseConfig } from "./firebaseConfig";
 import { isCacheDisabledForTab } from "./lib/firestoreCacheOwner";
 
-// ✅ Initialize Firebase App
+// Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
 // ✅ Core Services
@@ -50,7 +50,7 @@ export const db = initializeFirestore(app, {
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
 
-// ✅ Collection References
+// Collection References
 import { collection } from 'firebase/firestore';
 
 export const branchesCollection = collection(db, 'branches');
@@ -59,7 +59,7 @@ export const branchAssignmentAuditCollection = collection(db, 'branchAssignmentA
 export const departmentsCollection = collection(db, 'departments');
 export const inquiriesCollection = collection(db, 'inquiries');
 
-// ✅ Optional: Export Analytics (only if supported)
+// Optional: Export Analytics (only if supported)
 let analytics: ReturnType<typeof getAnalytics> | null = null;
 
 isSupported()

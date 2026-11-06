@@ -46,10 +46,13 @@ export async function endSession(reason: "logout" | "forced" = "logout") {
   const sessionId = sessionStorage.getItem(SS_KEY)
   if (!sessionId) return
 
+  // lastSeenAt is the last activity. A forced end (tab closed or hidden) can
+  // come long after the person stopped using the app, so only a deliberate
+  // logout counts as activity; otherwise durations include idle open tabs.
   await updateDoc(doc(db, "userSessions", sessionId), {
     endedAt: serverTimestamp(),
     endReason: reason,
-    lastSeenAt: serverTimestamp()
+    ...(reason === "logout" ? { lastSeenAt: serverTimestamp() } : {})
   })
 
   sessionStorage.removeItem(SS_KEY)

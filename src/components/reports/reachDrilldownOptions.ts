@@ -1,9 +1,8 @@
 import dayjs from "dayjs";
 import Highcharts from "highcharts";
-import DrilldownModule from "highcharts/modules/drilldown";
+import "highcharts/modules/drilldown";
 import { REPORT_CHART_COLORS } from "./reportChartTheme";
 
-if (typeof DrilldownModule === "function") DrilldownModule(Highcharts);
 
 export type ReachDrilldownActivity = {
   date: Date;

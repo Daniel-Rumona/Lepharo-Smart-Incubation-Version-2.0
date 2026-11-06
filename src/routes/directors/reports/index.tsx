@@ -15,9 +15,11 @@ import { collection, documentId, getDocs, query, where } from 'firebase/firestor
 import dayjs from 'dayjs'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles, type DepartmentRoleKey } from '@/services/departmentRoles'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { useColorMode } from '@/contexts/ThemeContext'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { listenToProposals } from '@/services/proposalService'
 import { PROPOSAL_STAGE_GROUPS } from '@/types/proposal'
 import type { Proposal } from '@/types/proposal'
@@ -32,7 +34,7 @@ type AppDoc = {
     id: string
     participantId?: string
     ageGroup?: string
-    interventions?: { required?: Array<{ area?: string }> }
+    interventions?: { required?: Array<{ departmentId?: string }> }
 }
 
 type ParticipantDoc = {
@@ -47,7 +49,7 @@ type AssignedDoc = {
     participantId?: string
     beneficiaryId?: string
     interventionId?: string
-    areaOfSupport?: string
+    departmentId?: string
     status?: string
     assignmentStatus?: string
     assigneeCompletionStatus?: string
@@ -60,7 +62,7 @@ type AssignedDoc = {
 type MixDimension = 'sector' | 'gender' | 'age' | 'bee'
 
 // Support departments that do not deliver interventions to beneficiaries.
-const EXCLUDED_DEPARTMENTS = ['ihf', 'm&e', 'stakeholder', 'hrm']
+const EXCLUDED_DEPARTMENT_ROLES: DepartmentRoleKey[] = ['inhouseFinance', 'monitoring', 'stakeholder', 'hr']
 const IN_QUERY_LIMIT = 30
 const MIX_TOP_N = 6
 
@@ -73,9 +75,6 @@ const SERIES = {
 
 const clean = (value?: string) => String(value || '').replace(/\s+/g, ' ').trim()
 const lower = (value?: string) => clean(value).toLowerCase()
-
-const isExcludedDepartment = (name: string) =>
-    EXCLUDED_DEPARTMENTS.some(part => name.toLowerCase().includes(part))
 
 const chunk = <T,>(items: T[], size: number) => {
     const out: T[][] = []
@@ -132,6 +131,7 @@ const ChartEmpty = ({ description }: { description: string }) => (
 
 export default function DirectorReports() {
     const { user } = useFullIdentity()
+    const { roleOf, nameOf } = useDepartmentRoles()
     const { activeProgramId } = useActiveProgramId()
     const { mode } = useColorMode()
     const colors = SERIES[mode]
@@ -175,20 +175,20 @@ export default function DirectorReports() {
 
                     // Older assignments carry only an interventionId; take the department from it.
                     const missingIds = Array.from(new Set(assignedRows
-                        .filter(row => !row.areaOfSupport && row.interventionId)
+                        .filter(row => !row.departmentId && row.interventionId)
                         .map(row => row.interventionId as string)))
                     if (missingIds.length) {
-                        const areaById = new Map<string, string>()
+                        const departmentById = new Map<string, string>()
                         for (const ids of chunk(missingIds, IN_QUERY_LIMIT)) {
                             const snap = await getDocs(query(collection(db, 'interventions'), where(documentId(), 'in', ids)))
                             snap.forEach(d => {
                                 const data = d.data() as any
-                                areaById.set(d.id, data.areaOfSupport || data.department || '')
+                                departmentById.set(d.id, data.departmentId || '')
                             })
                         }
-                        assignedRows = assignedRows.map(row => row.areaOfSupport || !row.interventionId
+                        assignedRows = assignedRows.map(row => row.departmentId || !row.interventionId
                             ? row
-                            : { ...row, areaOfSupport: areaById.get(row.interventionId) })
+                            : { ...row, departmentId: departmentById.get(row.interventionId) })
                     }
 
                     if (cancelled) return
@@ -224,15 +224,15 @@ export default function DirectorReports() {
     // ---- 1. Delivery by department: required vs completed ----
     const delivery = useMemo(() => {
         const rows = new Map<string, { name: string; required: number; completed: number }>()
-        const bump = (area: string | undefined, field: 'required' | 'completed') => {
-            const name = clean(area) || 'Other'
-            if (isExcludedDepartment(name)) return
-            const key = name.toLowerCase()
-            const row = rows.get(key) || { name, required: 0, completed: 0 }
+        const bump = (departmentId: string | undefined, field: 'required' | 'completed') => {
+            const key = clean(departmentId)
+            const role = roleOf(key)
+            if (role && EXCLUDED_DEPARTMENT_ROLES.includes(role)) return
+            const row = rows.get(key) || { name: nameOf(key, 'Other'), required: 0, completed: 0 }
             row[field] += 1
             rows.set(key, row)
         }
-        apps.forEach(app => (app.interventions?.required || []).forEach(item => bump(item?.area, 'required')))
+        apps.forEach(app => (app.interventions?.required || []).forEach(item => bump(item?.departmentId, 'required')))
 
         // A recurring intervention (e.g. delivered monthly) gets a fresh assignedInterventions
         // row each cycle, so one required item can otherwise be counted as completed a dozen
@@ -240,12 +240,12 @@ export default function DirectorReports() {
         const completedOnce = new Set<string>()
         assigned.filter(isCompleted).forEach(row => {
             const participant = row.participantId || row.beneficiaryId || ''
-            const identity = row.interventionId || row.areaOfSupport || ''
+            const identity = row.interventionId || row.departmentId || ''
             if (!participant || !identity) return
             const key = `${participant}::${identity}`
             if (completedOnce.has(key)) return
             completedOnce.add(key)
-            bump(row.areaOfSupport, 'completed')
+            bump(row.departmentId, 'completed')
         })
 
         const list = Array.from(rows.values())
@@ -260,7 +260,7 @@ export default function DirectorReports() {
             completed: list.reduce((total, row) => total + row.completed, 0),
             rate: required ? Math.round((completedTowardsRequired / required) * 100) : null
         }
-    }, [apps, assigned])
+    }, [apps, assigned, roleOf, nameOf])
 
     // ---- 2. Delivery trend: completions over the last 12 months ----
     const trend = useMemo(() => {
@@ -443,31 +443,31 @@ export default function DirectorReports() {
 
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric loading={loading}
+                    <MetricTile loading={loading}
                         title='Active beneficiaries' value={activeBeneficiaries}
                         subtitle='Accepted into the programme'
-                        icon={<TeamOutlined style={{ color: '#2563eb' }} />} iconBg='rgba(37,99,235,.12)' />
+                        icon={<TeamOutlined />} tone='info' />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric loading={loading}
+                    <MetricTile loading={loading}
                         title='Interventions delivered'
                         value={delivery.rate === null ? '—' : `${delivery.rate}%`}
                         subtitle={delivery.required
                             ? `Of ${delivery.required} required interventions`
                             : 'No required interventions recorded'}
-                        icon={<CheckCircleOutlined style={{ color: '#059669' }} />} iconBg='rgba(5,150,105,.12)' />
+                        icon={<CheckCircleOutlined />} tone='success' />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric loading={proposalsLoading}
+                    <MetricTile loading={proposalsLoading}
                         title='Open pipeline' value={randFull(pipeline.openValue)}
                         subtitle={`${pipeline.openCount} open proposal${pipeline.openCount === 1 ? '' : 's'}`}
-                        icon={<FileTextOutlined style={{ color: '#7c3aed' }} />} iconBg='rgba(124,58,237,.12)' />
+                        icon={<FileTextOutlined />} tone='info' />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric loading={loading}
+                    <MetricTile loading={loading}
                         title='Largest sector' value={sectorLeader?.name || '—'}
                         subtitle={sectorLeader ? `${sectorLeader.share}% of beneficiaries` : 'No sector data yet'}
-                        icon={<PieChartOutlined style={{ color: '#d97706' }} />} iconBg='rgba(217,119,6,.12)' />
+                        icon={<PieChartOutlined />} tone='warning' />
                 </Col>
             </Row>
 

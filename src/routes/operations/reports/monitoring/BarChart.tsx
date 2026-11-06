@@ -64,7 +64,7 @@ export default function InterventionsByDepartmentChart({
     const [applications, setApplications] = useState<
         Array<{
             id: string;
-            interventions?: { required?: Array<{ area?: string }> };
+            interventions?: { required?: Array<{ departmentId?: string }> };
         }>
     >([]);
     const [assigned, setAssigned] = useState<
@@ -79,7 +79,7 @@ export default function InterventionsByDepartmentChart({
             participantCompletionStatus?: string;
             beneficiaryCompletionStatus?: string;
             completionStatus?: string;
-            areaOfSupport?: string;
+            departmentId?: string;
             createdAt?: any;
             completedAt?: any;
             updatedAt?: any;
@@ -142,23 +142,20 @@ export default function InterventionsByDepartmentChart({
     }, [programId]);
 
     const { categories, series, subtitle, hasData } = useMemo(() => {
-        const depNames = departments.map((d) => d.name).filter(Boolean);
-        const depNameByKey = new Map<string, string>(); // lower → original
-        for (const n of depNames) depNameByKey.set(n.trim().toLowerCase(), n);
+        const depNameById = new Map<string, string>();
+        for (const d of departments) if (d.name) depNameById.set(d.id, d.name);
 
-        const keyFromArea = (area?: string) => {
-            const k = (area || "").trim().toLowerCase();
-            return depNameByKey.get(k) || "Unmapped";
-        };
+        const keyFromDepartment = (departmentId?: string) =>
+            depNameById.get((departmentId || "").trim()) || "Unmapped";
 
         const required = new Map<string, number>();
         const completed = new Map<string, number>();
 
-        // Required: applications.interventions.required[].area → departments.name
+        // Required: applications.interventions.required[].departmentId → departments.name
         for (const app of applications) {
             const list = app.interventions?.required ?? [];
             for (const r of list) {
-                const key = keyFromArea(r.area);
+                const key = keyFromDepartment(r.departmentId);
                 required.set(key, (required.get(key) || 0) + 1);
             }
         }
@@ -170,7 +167,7 @@ export default function InterventionsByDepartmentChart({
             if (getCanonicalInterventionStatus(ai) !== "completed") continue;
             const d = tsToDate(ai.completedAt || ai.updatedAt || ai.createdAt);
             if (!inRange(d, { dateFrom, dateTo, monthIndex, year })) continue;
-            const key = keyFromArea(ai.areaOfSupport);
+            const key = keyFromDepartment(ai.departmentId);
             completed.set(key, (completed.get(key) || 0) + 1);
         }
 

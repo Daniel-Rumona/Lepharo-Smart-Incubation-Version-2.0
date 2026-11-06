@@ -35,7 +35,6 @@ type AssignedInterventionDoc = {
 
   programId?: string
   departmentId?: string
-  areaOfSupport?: string
 
   beneficiaryName?: string
   participantId?: string
@@ -148,16 +147,8 @@ function hasEvidenceOrCompletion(d: AssignedInterventionDoc) {
   return movOk || docsUploadedOk || progressResourcesOk || consultantCompleted || userConfirmed
 }
 
-function matchesDepartment(
-  d: AssignedInterventionDoc,
-  departmentId?: string | null,
-  departmentName?: string
-) {
-  if (departmentId && norm(d.departmentId) === norm(departmentId)) return true
-  const a = norm(d.areaOfSupport).toLowerCase()
-  const n = norm(departmentName).toLowerCase()
-  if (!a || !n) return false
-  return a === n
+function matchesDepartment(d: AssignedInterventionDoc, departmentId?: string | null) {
+  return !!norm(departmentId) && norm(d.departmentId) === norm(departmentId)
 }
 
 async function fetchProgramName(programId?: string | null) {
@@ -276,7 +267,7 @@ export async function buildMonthlyReportDataFromAssignedInterventions(
   updatedSnap.docs.forEach(docSnap => map.set(docSnap.id, docSnap.data() as any))
 
   const all = Array.from(map.values())
-  const deptDocs = all.filter(d => matchesDepartment(d, departmentId, departmentName))
+  const deptDocs = all.filter(d => matchesDepartment(d, departmentId))
 
   // --- Enrichment: program name + participant/app stage/sector/contact
   const participantIds = deptDocs.map(d => norm(d.participantId)).filter(Boolean)

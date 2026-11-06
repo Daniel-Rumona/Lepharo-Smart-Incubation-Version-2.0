@@ -38,11 +38,19 @@ export interface WorkflowQueryContext {
     departmentName?: string | null
     evidenceUrl?: string | null
     lockedInPackAtCreation?: boolean | null
+    /** SME delivery disputes: what the SME says was wrong. */
+    disputeCategory?: string | null
 }
 
 export interface WorkflowQueryResponse {
     message: string
     attachmentUrl?: string | null
+    /** Every file attached with the answer (attachmentUrl is the first). */
+    attachmentUrls?: string[]
+    /** An evidence query answered with an explanation only. */
+    noNewEvidence?: boolean
+    /** For delivery disputes: what the facilitator did (see DisputeOutcome). */
+    outcome?: string | null
     respondedById?: string | null
     respondedBy?: WorkflowQueryActorSnapshot
     respondedAt: Timestamp
@@ -50,9 +58,25 @@ export interface WorkflowQueryResponse {
 
 export interface WorkflowQueryResolution {
     notes?: string | null
+    attachmentUrl?: string | null
     resolvedById?: string | null
     resolvedBy?: WorkflowQueryActorSnapshot
     resolvedAt: Timestamp
+}
+
+/**
+ * One step in a query's life, oldest first: the facilitator answers, the
+ * person who raised it accepts or sends it back, and so on.
+ */
+export interface WorkflowQueryThreadEntry {
+    kind: 'answered' | 'sent-back' | 'accepted' | 'closed' | 'escalated' | 'decided'
+    message?: string | null
+    attachmentUrls?: string[]
+    noNewEvidence?: boolean
+    outcome?: string | null
+    byId?: string | null
+    by?: WorkflowQueryActorSnapshot
+    at: Timestamp
 }
 
 export interface WorkflowQueryMigrationMetadata {
@@ -80,6 +104,12 @@ export interface WorkflowQuery {
     context: WorkflowQueryContext
     response?: WorkflowQueryResponse
     resolution?: WorkflowQueryResolution
+    thread?: WorkflowQueryThreadEntry[]
+    /** The latest send-back, so the facilitator sees what still needs doing. */
+    lastSentBack?: { notes: string; at: Timestamp; by?: WorkflowQueryActorSnapshot } | null
+    sentBackCount?: number
+    /** A delivery dispute escalated to the HOD, and their decision. */
+    escalation?: { to: 'hod'; at: Timestamp; byId?: string | null; by?: WorkflowQueryActorSnapshot; decision?: 'sme' | 'facilitator' | null; decisionNotes?: string | null; decidedAt?: Timestamp | null; decidedBy?: WorkflowQueryActorSnapshot } | null
     createdAt: Timestamp
     updatedAt: Timestamp
     migration?: WorkflowQueryMigrationMetadata

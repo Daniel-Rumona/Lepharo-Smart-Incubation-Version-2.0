@@ -23,7 +23,7 @@ class MenuItem:
 
 
 def role_group(identity: Optional[dict[str, Any]]) -> str:
-    """admin | director | hod | coordinator | receptionist | employee | external | sme | unknown"""
+    """system_admin | director | hod | coordinator | receptionist | employee | external | sme | unknown"""
     if not identity:
         return "unknown"
     if identity.get("kind") == "sme":
@@ -46,7 +46,7 @@ def is_greeting(text: str) -> bool:
 _APPOINTMENTS_SUBMENU = "appointments"
 
 MENUS: dict[str, list[MenuItem]] = {
-    "admin": [
+    "system_admin": [
         MenuItem("Feature governance", "Log a meeting or a feature, see the pipeline", "submenu:governance"),
         MenuItem("User stats", "How many users, by role, and SMEs on the programme", "tool:staff_overview:users"),
         MenuItem("Appointments", "What's coming up across the organisation", "tool:my_appointments"),
@@ -59,17 +59,20 @@ MENUS: dict[str, list[MenuItem]] = {
         MenuItem("Interventions", "Status across all SMEs", "tool:staff_overview:interventions"),
     ],
     "hod": [
-        MenuItem("Interventions", "Status across your SMEs", "tool:staff_overview:interventions"),
+        MenuItem("Interventions", "Status across my SMEs", "tool:staff_overview:interventions"),
         MenuItem("Appointments", "What's coming up, or set one up", f"submenu:{_APPOINTMENTS_SUBMENU}"),
         MenuItem("Find an SME", "Look up an SME and their interventions", "guide:find_sme"),
+        MenuItem("Record a session", "Record coverage for a session you ran", "tool:coverage_pending"),
     ],
     "coordinator": [
         MenuItem("Appointments", "What's coming up, or set one up", f"submenu:{_APPOINTMENTS_SUBMENU}"),
         MenuItem("Find an SME", "Look up an SME and their interventions", "guide:find_sme"),
+        MenuItem("Record a session", "Record coverage for a session you ran", "tool:coverage_pending"),
     ],
     "employee": [
         MenuItem("Appointments", "What's coming up, or set one up", f"submenu:{_APPOINTMENTS_SUBMENU}"),
         MenuItem("Find an SME", "Look up an SME and their interventions", "guide:find_sme"),
+        MenuItem("Record a session", "Record coverage for a session you ran", "tool:coverage_pending"),
     ],
     "receptionist": [
         MenuItem("Today's appointments", "Who is coming in today", "tool:my_appointments"),
@@ -78,9 +81,24 @@ MENUS: dict[str, list[MenuItem]] = {
     "sme": [
         MenuItem("My appointments", "What's coming up and where", "tool:sme_appointments"),
         MenuItem("Respond to an invitation", "Confirm, decline or ask to reschedule", "tool:sme_rsvp"),
+        MenuItem("Send a document", "See what's outstanding and send it here", "tool:sme_documents"),
     ],
     "unknown": [],
 }
+
+# Added to the menu of anyone the gateway marks with documentAccess (admins, directors, ROM and M&E staff).
+_DOCUMENTS_ITEM = MenuItem("SME documents", "Compliance documents and signed POPIA notices", "guide:sme_document")
+# Added for anyone the gateway marks with reportAccess (functions/src/reports registry), e.g. centre coordinators.
+_REPORTS_ITEM = MenuItem("Reports", "Executive and National reports, sent here", "tool:reports")
+
+
+def menu_items(identity: Optional[dict[str, Any]]) -> list[MenuItem]:
+    items = MENUS.get(role_group(identity), [])
+    if not items:
+        return items
+    extra = [item for item, flag in ((_DOCUMENTS_ITEM, "documentAccess"), (_REPORTS_ITEM, "reportAccess")) if (identity or {}).get(flag)]
+    return [*items, *extra]
+
 
 SUBMENUS: dict[str, tuple[str, list[MenuItem]]] = {
     "governance": (
@@ -94,8 +112,8 @@ SUBMENUS: dict[str, tuple[str, list[MenuItem]]] = {
     _APPOINTMENTS_SUBMENU: (
         "Appointments",
         [
-            MenuItem("Upcoming appointments", "What's on your calendar", "tool:my_appointments"),
-            MenuItem("Set up an appointment", "Book a session for one of your SMEs", "guide:schedule"),
+            MenuItem("Upcoming appointments", "What's on my calendar", "tool:my_appointments"),
+            MenuItem("Set up an appointment", "Book a session for one of my SMEs", "guide:schedule"),
         ],
     ),
 }
@@ -116,6 +134,7 @@ GUIDES: dict[str, str] = {
         "for example: \"Book Acme Traders tomorrow at 10:00, virtual.\" I'll find the intervention and confirm with you first."
     ),
     "find_sme": "Tell me the SME's name and I'll look them up and show their active interventions.",
+    "sme_document": "Which SME's documents do you need? Send me the business name and I'll show what they have - or ask for one directly, e.g. \"Acme Traders' CIPC\".",
 }
 
 NO_MENU_REPLY = {
@@ -142,12 +161,22 @@ def _lines(items: list[MenuItem]) -> str:
     return "\n".join(f"{index}. *{item.title}* - {item.blurb}" for index, item in enumerate(items, start=1))
 
 
-def greeting_reply(identity: Optional[dict[str, Any]]) -> tuple[str, Optional[str], Optional[dict[str, Any]]]:
-    """Friendly greeting plus the role's menu. Returns (text fallback, awaiting, interactive list)."""
-    group = role_group(identity)
+def hello_line(identity: Optional[dict[str, Any]]) -> str:
     name = first_name(identity)
-    hello = f"Hey there, {name}! \U0001f44b What can I help you with today?" if name else "Hey there! \U0001f44b What can I help you with today?"
-    items = MENUS.get(group, [])
+    return f"Hey there, {name}! \U0001f44b" if name else "Hey there! \U0001f44b"
+
+
+def greeting_reply(
+    identity: Optional[dict[str, Any]], programme: Optional[str] = None, lead: Optional[str] = None
+) -> tuple[str, Optional[str], Optional[dict[str, Any]]]:
+    """Friendly greeting plus the role's menu. Returns (text fallback, awaiting, interactive list).
+
+    programme names the programme being looked at; lead replaces the greeting line (e.g. after a switch)."""
+    group = role_group(identity)
+    hello = lead or f"{hello_line(identity)} What can I help you with today?"
+    if programme:
+        hello = f"{hello}\n\U0001f4c1 *{programme}* - say *switch programme* to change."
+    items = menu_items(identity)
     if not items:
         return f"{hello}\n\n{NO_MENU_REPLY.get(group, NO_MENU_REPLY['unknown'])}", None, None
     ui = list_ui(
@@ -156,6 +185,58 @@ def greeting_reply(identity: Optional[dict[str, Any]]) -> tuple[str, Optional[st
         section="What I can do",
     )
     return f"{hello}\n\n{_lines(items)}\n\nReply with a number, or just tell me what you need in your own words.", "menu", ui
+
+
+# ---------------------------------------------------------------- programmes
+# Staff answers are limited to one programme (or all, for overseers). The gateway owns the list
+# and the stored choice; this only builds the picker and reads the answer.
+
+PROGRAMME_AWAITING = "programme"
+_PROGRAMME_PREFIX = "lph:programme:"
+ALL_PROGRAMMES = "all"
+_SWITCH_PROGRAMME = re.compile(
+    r"^\s*(?:(?:switch|change|choose|select|pick)\s+(?:the\s+|my\s+|a\s+)?)?programm?e?s?\s*[!.?]*\s*$", re.I
+)
+
+
+def is_programme_switch(text: str) -> bool:
+    return bool(_SWITCH_PROGRAMME.match(text or ""))
+
+
+def programme_options(listing: dict[str, Any]) -> list[tuple[str, str]]:
+    """(id, name) pairs in picker order: "All programmes" first when allowed."""
+    options = [(str(p.get("id")), str(p.get("name") or "Programme")) for p in listing.get("programmes") or [] if p.get("id")]
+    return ([(ALL_PROGRAMMES, "All programmes")] if listing.get("allowAll") else []) + options
+
+
+def programme_picker(listing: dict[str, Any], intro: str) -> tuple[str, str, dict[str, Any]]:
+    options = programme_options(listing)
+    rows = [
+        {"id": f"{_PROGRAMME_PREFIX}{pid}", "title": name[:24], "description": name[:72] if len(name) > 24 else ""}
+        for pid, name in options
+    ]
+    ui = list_ui(f"{intro}\n\nPick one from the list.", rows, button="Programmes", section="Programmes")
+    lines = "\n".join(f"{index}. {name}" for index, (_, name) in enumerate(options, start=1))
+    return f"{intro}\n\n{lines}\n\nReply with a number.", PROGRAMME_AWAITING, ui
+
+
+def resolve_programme_choice(text: str, listing: dict[str, Any]) -> Optional[str]:
+    """The programme id picked by a list tap, a number or a name; None if it isn't a pick."""
+    value = (text or "").strip()
+    options = programme_options(listing)
+    if value.startswith(_PROGRAMME_PREFIX):
+        picked = value[len(_PROGRAMME_PREFIX):]
+        return picked if any(pid == picked for pid, _ in options) else None
+    match = _CHOICE.match(value)
+    if match:
+        index = int(match.group(1)) - 1
+        return options[index][0] if 0 <= index < len(options) else None
+    named = [pid for pid, name in options if value.lower() and value.lower() in name.lower()]
+    return named[0] if len(named) == 1 else None
+
+
+def is_programme_pick(text: str) -> bool:
+    return (text or "").strip().startswith(_PROGRAMME_PREFIX)
 
 
 def submenu_reply(key: str) -> tuple[str, str, dict[str, Any]]:
@@ -175,7 +256,7 @@ def resolve_choice(text: str, identity: Optional[dict[str, Any]], awaiting: Opti
         return None
     index = int(match.group(1)) - 1
     if awaiting == "menu":
-        items = MENUS.get(role_group(identity), [])
+        items = menu_items(identity)
     else:
         key = awaiting.split(":", 1)[1]
         items = SUBMENUS.get(key, ("", []))[1]
@@ -187,6 +268,6 @@ def resolve_choice_id(text: str, identity: Optional[dict[str, Any]]) -> Optional
     parts = (text or "").strip().split(":")
     if len(parts) != 4 or parts[0] != "lph" or parts[1] != "menu" or not parts[3].isdigit():
         return None
-    items = MENUS.get(role_group(identity), []) if parts[2] == "top" else SUBMENUS.get(parts[2], ("", []))[1]
+    items = menu_items(identity) if parts[2] == "top" else SUBMENUS.get(parts[2], ("", []))[1]
     index = int(parts[3]) - 1
     return items[index] if 0 <= index < len(items) else None

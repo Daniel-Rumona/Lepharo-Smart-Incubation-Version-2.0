@@ -4,28 +4,28 @@ PAGE_REGISTRY = {
         "role_area": "applicant",
         "purpose": "Applicant inquiry submissions and guidance.",
         "collections": ["inquiries", "participants"],
-        "tools": ["get_inquiries_by_email", "get_participant_by_email"],
+        "tools": ["get_inquiries_by_user", "get_participant_by_user"],
     },
     "/applicant/profile": {
         "page_name": "Applicant Profile",
         "role_area": "applicant",
         "purpose": "Applicant personal and business profile details.",
         "collections": ["participants"],
-        "tools": ["get_participant_by_email"],
+        "tools": ["get_participant_by_user"],
     },
     "/applicant/programs": {
         "page_name": "Applicant Programs",
         "role_area": "applicant",
         "purpose": "Available programs and application readiness.",
         "collections": ["programs", "applications", "participants"],
-        "tools": ["get_active_programs", "get_applications_by_email"],
+        "tools": ["get_active_programs", "get_applications_by_user"],
     },
     "/applicant": {
         "page_name": "Applicant Dashboard",
         "role_area": "applicant",
         "purpose": "Applicant overview and application progress.",
         "collections": ["participants", "applications", "programs"],
-        "tools": ["get_participant_by_email", "get_applications_by_email"],
+        "tools": ["get_participant_by_user", "get_applications_by_user"],
     },
 
     "/incubatee": {
@@ -33,7 +33,7 @@ PAGE_REGISTRY = {
         "role_area": "incubatee",
         "purpose": "Incubatee overview, progress, interventions, compliance, and roadmap.",
         "collections": ["participants", "assignedInterventions", "diagnosticPlans", "participantComplianceTimeline"],
-        "tools": ["get_participant_by_email", "get_assigned_interventions_by_participant", "get_diagnostic_plan_by_participant", "get_compliance_by_participant"],
+        "tools": ["get_participant_by_user", "get_assigned_interventions_by_participant", "get_diagnostic_plan_by_participant", "get_compliance_by_participant"],
     },
     "/incubatee/interventions": {
         "page_name": "My Interventions",
@@ -61,7 +61,7 @@ PAGE_REGISTRY = {
         "role_area": "incubatee",
         "purpose": "Incubatee and SME profile details.",
         "collections": ["participants", "participantMetricsTimeline"],
-        "tools": ["get_participant_by_email", "get_participant_metrics"],
+        "tools": ["get_participant_by_user", "get_participant_metrics"],
     },
 
     "/operations": {
@@ -78,7 +78,7 @@ PAGE_REGISTRY = {
         "collections": ["clockEvents", "timeRecords", "users"],
         "tools": ["get_clock_events", "get_time_records"],
     },
-    "/operations/hr/leave": {
+    "/leave-management": {
         "page_name": "HR Leave Management",
         "role_area": "operations",
         "purpose": "Staff leave requests, approvals, and balances for the department.",
@@ -112,13 +112,6 @@ PAGE_REGISTRY = {
         "purpose": "Participant compliance status and document verification.",
         "collections": ["participantComplianceTimeline", "participants", "programs"],
         "tools": ["get_compliance", "get_participants"],
-    },
-    "/operations/diagnostic-plans": {
-        "page_name": "Diagnostic Plans",
-        "role_area": "operations",
-        "purpose": "Diagnostic plans, department review, beneficiary review, and confirmations.",
-        "collections": ["diagnosticPlans", "participants", "departments", "interventions"],
-        "tools": ["get_diagnostic_plans", "get_participants"],
     },
     "/operations/assignments": {
         "page_name": "Assignments",

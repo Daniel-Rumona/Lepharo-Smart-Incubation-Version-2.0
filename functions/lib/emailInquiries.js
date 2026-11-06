@@ -27,6 +27,9 @@ exports.onInquiryCreatedNotifyStaff = void 0;
 const logger = __importStar(require("firebase-functions/logger"));
 const firestore_1 = require("firebase-functions/v2/firestore");
 const emailShared_1 = require("./emailShared");
+const syntheticData_1 = require("./syntheticData");
+const inAppNotifications_1 = require("./inAppNotifications");
+const movRecipients_1 = require("./movRecipients");
 const escapeHtml = (value) => String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -104,6 +107,8 @@ exports.onInquiryCreatedNotifyStaff = (0, firestore_1.onDocumentWritten)({ regio
         const after = event.data?.after?.data();
         if (!after || before)
             return; // Only newly-created inquiries
+        if ((0, syntheticData_1.suppressRecordNotifications)(after, event.params.inquiryId))
+            return;
         if (after.source !== "SME")
             return; // Only SME self-submitted inquiries
         const branchId = String(after.branchId || "").trim();
@@ -141,6 +146,25 @@ exports.onInquiryCreatedNotifyStaff = (0, firestore_1.onDocumentWritten)({ regio
             sends.push(transporter.sendMail({ from, to: projectAdminEmails, subject, html, text }));
         }
         await Promise.all(sends);
+        const contact = after.contactInfo || {};
+        const submitter = `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "An SME";
+        const inquiryId = event.params.inquiryId;
+        await Promise.all([
+            (0, inAppNotifications_1.notifyInApp)({
+                type: "inquiry_received",
+                message: `New inquiry from ${submitter} at ${branchName}.`,
+                recipientIds: await (0, movRecipients_1.uidsForEmails)(receptionistEmails),
+                inquiryId,
+                link: `/receptionist/inquiries/${inquiryId}`,
+            }),
+            (0, inAppNotifications_1.notifyInApp)({
+                type: "inquiry_received",
+                message: `New inquiry from ${submitter} at ${branchName}.`,
+                recipientIds: await (0, movRecipients_1.uidsForEmails)(projectAdminEmails),
+                inquiryId,
+                link: `/projectadmin/inquiries/${inquiryId}`,
+            }),
+        ]);
         logger.info("inquiry_notify.sent", {
             inquiryId: event.params.inquiryId,
             branchId,

@@ -38,7 +38,6 @@ import {
   PlusOutlined,
   SendOutlined
 } from '@ant-design/icons'
-import '@/styles/nav-segmented.css'
 import { format } from 'date-fns'
 import { inquiryService } from '@/services/inquiryService'
 import type {
@@ -49,11 +48,13 @@ import type {
 } from '@/types/inquiry'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { auth } from '@/firebase'
+import RecordUnavailable from '@/components/shared/RecordUnavailable'
 import {
   channelLabel,
   resolveInquiryAudience,
   resolveInquiryChannel
 } from '@/utils/inquirySource'
+import { functionsBaseUrl } from '@/firebaseConfig'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
@@ -203,6 +204,10 @@ interface InquiryDetailProps {
    * reported here and the buttons at the bottom of the details are not shown.
    */
   onStatusAction?: (action: InquiryStatusAction | null) => void
+  /** Where this role's inquiry list lives; the way out when the inquiry can't be shown. */
+  listPath?: { label: string; to: string }
+  /** Told when the inquiry turns out to be missing or unreadable, so the page can drop its header actions. */
+  onUnavailable?: (unavailable: boolean) => void
 }
 
 // Firestore Timestamp | Date | number | ISO string -> Date | null
@@ -232,13 +237,20 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
   inquiryId,
   onEdit,
   embedded = false,
-  onStatusAction
+  onStatusAction,
+  listPath = { label: 'Back to inquiries', to: '/receptionist/inquiries' },
+  onUnavailable
 }) => {
   const [inquiry, setInquiry] = useState<Inquiry | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [showCommunicationModal, setShowCommunicationModal] = useState(false)
   const [communicationForm] = Form.useForm()
+
+  const unavailable = !loading && (!inquiry || !inquiry.contactInfo || !inquiry.inquiryDetails)
+  useEffect(() => {
+    onUnavailable?.(unavailable)
+  }, [unavailable, onUnavailable])
   const [composeView, setComposeView] = useState<'write' | 'preview'>('write')
   const isMobile = !Grid.useBreakpoint().md
   const watchedSubject: string = Form.useWatch('subject', communicationForm) || ''
@@ -276,7 +288,7 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
     const idToken = await auth.currentUser?.getIdToken()
     if (!idToken) throw new Error('You must be signed in to send email.')
     const response = await fetch(
-      'https://us-central1-lph-smart-inc.cloudfunctions.net/sendEmail',
+      `${functionsBaseUrl}/sendEmail`,
       {
         method: 'POST',
         headers: {
@@ -449,7 +461,7 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
     const idToken = await auth.currentUser?.getIdToken()
     if (!idToken) throw new Error('You must be signed in to send email.')
     const response = await fetch(
-      'https://us-central1-lph-smart-inc.cloudfunctions.net/notifyInquirySpecialist',
+      `${functionsBaseUrl}/notifyInquirySpecialist`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
@@ -588,27 +600,16 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
   }
 
   if (!inquiry) {
-    return (
-      <Card>
-        <Text type='secondary'>Inquiry not found</Text>
-      </Card>
-    )
+    return <RecordUnavailable noun='inquiry' reason='not-found' back={listPath} />
   }
 
   // Add safety checks for rendering
   if (!inquiry.contactInfo || !inquiry.inquiryDetails) {
     console.error('Critical fields missing in inquiry:', inquiry)
-    return (
-      <Card>
-        <Text type='danger'>Invalid inquiry data structure</Text>
-        <div style={{ marginTop: '16px' }}>
-          <Text type='secondary'>
-            Missing: {!inquiry.contactInfo ? 'contactInfo ' : ''}
-            {!inquiry.inquiryDetails ? 'inquiryDetails' : ''}
-          </Text>
-        </div>
-      </Card>
-    )
+    const missing = [!inquiry.contactInfo && 'contact details', !inquiry.inquiryDetails && 'inquiry details']
+      .filter(Boolean)
+      .join(' and ')
+    return <RecordUnavailable noun='inquiry' reason='incomplete' back={listPath} detail={`Missing ${missing}`} />
   }
 
   const nextFollow = asDate(inquiry.followUp?.nextFollowUpDate)
@@ -900,7 +901,6 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
         <Col xs={24} md={{ flex: '0 0 400px' }}>
           <Segmented
             block
-            className='nav-pill-segmented'
             value={activeSection}
             onChange={value => setActiveSection(String(value))}
             options={tabItems.map(item => ({
@@ -980,7 +980,6 @@ const InquiryDetail: React.FC<InquiryDetailProps> = ({
 
           <Segmented
             block
-            className='nav-pill-segmented'
             value={composeView}
             onChange={value => setComposeView(value as 'write' | 'preview')}
             options={[

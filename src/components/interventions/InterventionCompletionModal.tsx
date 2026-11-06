@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, Col, Form, Modal, Progress, Row, Steps, Typography, message } from 'antd'
-import { CheckCircleOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Col, Form, Modal, Progress, Row, Typography, message, theme } from 'antd'
+import { ArrowLeftOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { db, storage } from '@/firebase'
 import {
     completeIntervention,
@@ -9,8 +9,10 @@ import {
     interventionCompletionError,
     loadInterventionCompletionContext,
     mergeCompletionFailureContext,
+    uploadManualMovs,
     type InterventionCompletionContext
 } from '@/services/interventionCompletionService'
+import { splitMovRequirement } from '@/services/completionMovRules'
 import InterventionCompletionFields from '@/components/interventions/InterventionCompletionFields'
 
 const { Text, Title } = Typography
@@ -43,6 +45,7 @@ const InterventionCompletionModal: React.FC<Props> = ({
     const [form] = Form.useForm()
     const [step, setStep] = useState<0 | 1>(0)
     const [context, setContext] = useState<InterventionCompletionContext | null>(null)
+    const { token } = theme.useToken()
     const [failureMessage, setFailureMessage] = useState('')
     const [saving, setSaving] = useState(false)
     const savingRef = useRef(false)
@@ -80,6 +83,13 @@ const InterventionCompletionModal: React.FC<Props> = ({
         savingRef.current = true
         setSaving(true)
         try {
+            // The MOV is compulsory for everyone who received the intervention; a POE is optional.
+            const { required: movRows } = splitMovRequirement(context.assignments)
+            const manualMovs = await uploadManualMovs({
+                storage,
+                assignments: movRows,
+                filesById: values.movs || {}
+            })
             const result = await completeIntervention({
                 db,
                 storage,
@@ -93,7 +103,10 @@ const InterventionCompletionModal: React.FC<Props> = ({
                 files: values.files,
                 notes: values.notes,
                 recurrencePreset: values.recurrencePreset,
-                deliveryMethod: target.deliveryMethod
+                deliveryMethod: target.deliveryMethod,
+                movAssignmentIds: movRows.map(row => row.id),
+                manualMovs,
+                poeOptional: true
             })
             message.success(COMPLETION_SUCCESS_MESSAGE)
             onCompleted(result.assignmentIds)
@@ -128,13 +141,15 @@ const InterventionCompletionModal: React.FC<Props> = ({
             closable={false}
             maskClosable={false}
             keyboard={false}
-            width={680}
+            width={step === 1 ? 900 : 680}
             destroyOnClose
             footer={
                 <Row gutter={[12, 12]}>
                     <Col xs={24} sm={10}>
                         <Button
                             block
+                            shape='round'
+                            icon={step === 1 ? <ArrowLeftOutlined /> : <ClockCircleOutlined />}
                             disabled={saving}
                             onClick={() => {
                                 if (step === 1) {
@@ -152,6 +167,7 @@ const InterventionCompletionModal: React.FC<Props> = ({
                     <Col xs={24} sm={14}>
                         <Button
                             block
+                            shape='round'
                             type='primary'
                             icon={<CheckCircleOutlined />}
                             loading={saving}
@@ -163,17 +179,10 @@ const InterventionCompletionModal: React.FC<Props> = ({
                 </Row>
             }
         >
-            <Steps
-                current={step}
-                size='small'
-                items={[{ title: 'Review' }, { title: 'Evidence & completion' }]}
-                style={{ marginBottom: 20 }}
-            />
-
             {step === 0 ? (
                 <div style={{ padding: '8px 6px 4px' }}>
                     <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                        <CheckCircleOutlined style={{ fontSize: 48, color: '#52c41a' }} />
+                        <CheckCircleOutlined style={{ fontSize: 48, color: token.colorSuccess }} />
                         <Title level={3} style={{ margin: '10px 0 4px' }}>
                             Intervention progress reached 100%
                         </Title>
@@ -192,7 +201,10 @@ const InterventionCompletionModal: React.FC<Props> = ({
                             ['3', 'Confirm delivery details to create the MOV and request SME confirmation.']
                         ].map(([number, text]) => (
                             <Col xs={24} sm={8} key={number}>
-                                <Card size='small' style={{ height: '100%', background: '#f7faff' }}>
+                                <Card
+                                    size='small'
+                                    style={{ height: '100%', background: token.colorFillAlter, borderColor: token.colorBorderSecondary }}
+                                >
                                     <Text strong style={{ display: 'block', marginBottom: 6 }}>
                                         Step {number}
                                     </Text>

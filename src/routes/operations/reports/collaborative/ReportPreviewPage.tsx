@@ -46,7 +46,7 @@ const ReportPreviewPage: React.FC<Props> = ({ user, reportId, onBack }) => {
     }, [blocks])
 
     if (!report) return <Empty description="Loading preview" />
-    if (!allowed) return <Result status="403" title="Full report preview is restricted" subTitle="Contributors can only view the blocks assigned to them." extra={<Button onClick={onBack}>Back</Button>} />
+    if (!allowed) return <Result status="403" title="Only report owners see the whole report" subTitle="You can see the sections handed to you from My sections." extra={<Button onClick={onBack}>Back</Button>} />
 
     return (
         <div className="report-shell">

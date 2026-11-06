@@ -27,6 +27,9 @@ export type NotificationRecord = {
     type?: string
     message?: string | Record<string, string>
     link?: string
+    /** Older server writers used this instead of `link`. */
+    actionPath?: string
+    recipientIds?: string[]
     createdAt?: any
     readBy?: Record<string, true>
     actions?: NotificationAction[]
@@ -46,6 +49,22 @@ export function resolveNotificationMessage(notif: NotificationRecord, role?: str
     return notif.type ? `Update: ${String(notif.type).replace(/[_-]+/g, ' ')}` : 'You have a new notification.'
 }
 
+export function notificationLink(notif: NotificationRecord): string | undefined {
+    const link = notif.link || notif.actionPath
+    return typeof link === 'string' && link.startsWith('/') ? link : undefined
+}
+
+/**
+ * A doc addressed to specific people is theirs alone, even if it also names a
+ * role: the role listener would otherwise surface someone else's private
+ * notice (an SME's compliance status, a leave decision) to everyone sharing
+ * that role.
+ */
+function isAddressedTo(notif: NotificationRecord, uid: string): boolean {
+    const ids = Array.isArray(notif.recipientIds) ? notif.recipientIds : []
+    return ids.length === 0 || ids.includes(uid)
+}
+
 function createdAtMillis(notif: NotificationRecord): number {
     const value: any = notif.createdAt
     if (value?.toMillis) return value.toMillis()
@@ -60,7 +79,9 @@ function createdAtMillis(notif: NotificationRecord): number {
  * arrive after mount (not for the initial backlog).
  */
 export function useNotificationCenter() {
-    const { user } = useFullIdentity()
+    // The signed-in person's own notifications, even while viewing as someone
+    // else: the rules only allow reading notifications addressed to you.
+    const { actor: user } = useFullIdentity()
     const { notification } = App.useApp()
     const [byId, setById] = useState<Record<string, NotificationRecord>>({})
     const toastedIds = useRef<Set<string>>(new Set())
@@ -73,13 +94,16 @@ export function useNotificationCenter() {
         toastedIds.current = new Set()
         setById({})
 
+        const uid = user.uid
         const role = user.role as string | undefined
         const unsubscribers: Array<() => void> = []
 
         const makeHandler = () => {
             let ready = false
             return (snap: QuerySnapshot) => {
-                const docs: NotificationRecord[] = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as NotificationRecord)
+                const docs: NotificationRecord[] = snap.docs
+                    .map((d) => ({ id: d.id, ...d.data() }) as NotificationRecord)
+                    .filter((d) => isAddressedTo(d, uid))
                 setById((prev) => {
                     const next = { ...prev }
                     docs.forEach((d) => { next[d.id] = d })
@@ -93,6 +117,7 @@ export function useNotificationCenter() {
                         if (toastedIds.current.has(id)) return
                         toastedIds.current.add(id)
                         const data = { id, ...change.doc.data() } as NotificationRecord
+                        if (!isAddressedTo(data, uid)) return
                         notification.info({
                             message: data.type ? String(data.type).replace(/[_-]+/g, ' ') : 'New notification',
                             description: resolveNotificationMessage(data, role),
@@ -115,11 +140,14 @@ export function useNotificationCenter() {
             )
         )
 
+        // Role-wide notices only: the rules let a role read a doc only when it
+        // is marked audience 'role', and a query must prove that up front.
         if (role) {
             unsubscribers.push(
                 onSnapshot(
                     query(
                         collection(db, 'notifications'),
+                        where('audience', '==', 'role'),
                         where('recipientRoles', 'array-contains', role),
                         orderBy('createdAt', 'desc'),
                         limit(PAGE_LIMIT)
@@ -136,6 +164,10 @@ export function useNotificationCenter() {
         () => Object.values(byId).sort((a, b) => createdAtMillis(b) - createdAtMillis(a)).slice(0, PAGE_LIMIT),
         [byId]
     )
+
+    // Read state is per person: a role-wide notice read by one colleague stays
+    // unread for the rest.
+    const isUnread = (n: NotificationRecord) => !!user?.uid && !n.readBy?.[user.uid]
 
     const unreadCount = useMemo(
         () => (user?.uid ? notifications.filter((n) => !n.readBy?.[user.uid]).length : 0),
@@ -163,10 +195,16 @@ export function useNotificationCenter() {
         await markAsRead(notif.id)
     }
 
+    const markAllAsRead = async () => {
+        await Promise.all(notifications.filter(isUnread).map((n) => markAsRead(n.id)))
+    }
+
     return {
         notifications,
         unreadCount,
+        isUnread,
         markAsRead,
+        markAllAsRead,
         applyAction,
         resolveMessage: (n: NotificationRecord) => resolveNotificationMessage(n, user?.role as string | undefined),
     }

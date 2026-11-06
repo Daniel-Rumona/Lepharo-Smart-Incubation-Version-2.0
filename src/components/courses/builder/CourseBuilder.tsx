@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, App, Badge, Button, Empty, Grid, Input, Modal, Radio, Result, Select, Spin, Switch, Tag } from "antd";
-import { ArrowLeftOutlined, EyeOutlined, FileTextOutlined, PlusOutlined } from "@ant-design/icons";
+import { Alert, App, Badge, Button, Empty, Grid, Input, Modal, Radio, Result, Segmented, Select, Spin, Switch, Tag } from "antd";
+import { ArrowLeftOutlined, EyeOutlined, FileTextOutlined, PlusOutlined, RightOutlined, SettingOutlined } from "@ant-design/icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase";
@@ -17,7 +17,6 @@ import {
 import { isExtractableKind } from "@/services/courseContentExtractionService";
 import ExtractContentModal from "../ExtractContentModal";
 import {
-  type AccessCondition,
   type Issue,
   type Item,
   type Kind,
@@ -31,10 +30,11 @@ import NextStepBar, { type NextStep } from "./NextStepBar";
 import OutlinePanel from "./OutlinePanel";
 import PreviewOverlay from "./PreviewOverlay";
 import { type GenerateOptions, sourceLessons } from "./QuestionsTab";
-import { KindIcon, STANDARD_INSTRUCTIONS, kinds, newItem, uid, useBuilderVars } from "./kinds";
+import { KindIcon, STANDARD_INSTRUCTIONS, kindOf, kinds, newItem, uid } from "./kinds";
 import { AiMark, Crumbs, type Suggestion, TopBar } from "./parts";
-import { courseReadiness, defaultTab } from "./readiness";
-import { saveLabel, useCourseDraft } from "./useCourseDraft";
+import { courseReadiness, defaultTab, issueNote } from "./readiness";
+import { saveLabel, isSaveConflict, useCourseDraft } from "./useCourseDraft";
+import { ChoiceCards } from "@/components/queries/ChoiceCards";
 
 /** One item the start flow asked AI to draft, with the outline's context for it. */
 export type DraftJob = { itemId: string; summary?: string; notes?: string };
@@ -88,7 +88,6 @@ export default function CourseBuilder({ id }: { id: string }) {
   const { user } = useFullIdentity();
   const navigate = useNavigate();
   const location = useLocation();
-  const vars = useBuilderVars();
   const screens = Grid.useBreakpoint();
   const draft = useCourseDraft(user?.uid || "", id);
   const { course, mutate } = draft;
@@ -102,6 +101,8 @@ export default function CourseBuilder({ id }: { id: string }) {
   const [generating, setGenerating] = useState<string>();
   const [addTo, setAddTo] = useState<string | null>(null);
   const [addTitle, setAddTitle] = useState("");
+  const [addKind, setAddKind] = useState<Kind>("lesson");
+  const [addHow, setAddHow] = useState<"blank" | "ai" | "doc">("blank");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [descriptionBusy, setDescriptionBusy] = useState(false);
   const [extractFor, setExtractFor] = useState<string>();
@@ -111,6 +112,9 @@ export default function CourseBuilder({ id }: { id: string }) {
   const [missing, setMissing] = useState<SuggestedItem[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [participants, setParticipants] = useState<{ id: string; name: string; email?: string }[]>([]);
+  const [participantsError, setParticipantsError] = useState(false);
+  /** An item created just to fill from a document: removed again if that's cancelled before anything is added. */
+  const [extractNew, setExtractNew] = useState<string>();
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const participantsLoaded = useRef(false);
   const jobs = useRef(new Map<string, DraftJob>());
@@ -122,6 +126,29 @@ export default function CourseBuilder({ id }: { id: string }) {
   const readiness = course ? courseReadiness(course, drafting) : undefined;
   const item = course?.items.find((row) => row.id === selected);
   const modules = course?.modules || [];
+
+  // The publish checklist: one row per item (or course part), not one per problem.
+  const reviewGroups: { key: string; title: string; notes: string[]; first: Issue; item?: Item }[] = [];
+  for (const issue of review || []) {
+    const key = issue.itemId || (issue.code === "emptyModule" ? `module:${issue.moduleId}` : "course");
+    let group = reviewGroups.find((g) => g.key === key);
+    if (!group) {
+      const row = issue.itemId ? course?.items.find((i) => i.id === issue.itemId) : undefined;
+      const module = issue.moduleId ? modules.find((m) => m.id === issue.moduleId) : undefined;
+      group = {
+        key,
+        item: row,
+        first: (issue.itemId && readiness?.states[issue.itemId]?.primary) || issue,
+        notes: [],
+        title: row ? row.title || `Untitled ${kindOf(row.kind).label.toLowerCase()}` : module ? module.title : "Course details",
+      };
+      if (key === "course") reviewGroups.unshift(group);
+      else reviewGroups.push(group);
+    }
+    const own = issue.itemId ? (review || []).filter((i) => i.itemId === issue.itemId) : [issue];
+    const note = group.item ? issueNote(group.item, issue, own) : issue.message.replace(/\.$/, "");
+    if (!group.notes.includes(note)) group.notes.push(note);
+  }
 
   useEffect(() => {
     if (course && (!selected || !course.items.some((row) => row.id === selected)) && course.items.length) {
@@ -144,7 +171,10 @@ export default function CourseBuilder({ id }: { id: string }) {
           })
         )
       )
-      .catch(() => undefined)
+      .catch(() => {
+        participantsLoaded.current = false;
+        setParticipantsError(true);
+      })
       .finally(() => setParticipantsLoading(false));
   }, [review]);
 
@@ -206,7 +236,7 @@ export default function CourseBuilder({ id }: { id: string }) {
         course: context(current),
         lessons,
         questionCount: row.kind === "test" ? 10 : 5,
-        style: "mixed",
+        style: "scenario",
       });
       updateItem(itemId, (latest) => applyDraft(latest, result));
       result.warnings.forEach((warning) => message.warning(warning));
@@ -264,7 +294,7 @@ export default function CourseBuilder({ id }: { id: string }) {
     const field: Suggestion["field"] = action === "objective" ? "objective" : action === "rubric" ? "rubric" : "content";
     const title = assistTitles[action];
     const request = async () => {
-      setSuggestion({ itemId, field, title, loading: true, retry: request });
+      setSuggestion({ itemId, field, title, loading: true, retry: request, base: String((row as any)[field] || "") });
       try {
         const text = await assistWriting({ action, text: row.content, title: row.title, kind: row.kind, course: context(current) });
         setSuggestion((s) => (s && s.itemId === itemId && s.title === title ? { ...s, loading: false, text } : s));
@@ -321,7 +351,10 @@ export default function CourseBuilder({ id }: { id: string }) {
     setSelected(row.id);
     setTab(isAssessment(row) ? "questions" : "content");
     setQuestionId(undefined);
-    if (mode === "doc") setExtractFor(row.id);
+    if (mode === "doc") {
+      setExtractFor(row.id);
+      setExtractNew(row.id);
+    }
     if (mode === "ai") {
       if (isAssessment(row)) {
         const { defaults } = sourceLessons({ ...current, items: [...current.items, row] }, row);
@@ -350,7 +383,22 @@ export default function CourseBuilder({ id }: { id: string }) {
     }
   }
 
+  /** Blocks publishing that the issue list doesn't cover: unread AI drafts, and an empty chosen audience. */
+  const publishBlockers = (current: typeof course) => {
+    if (!current || !readiness) return [] as string[];
+    const unread = readiness.items.filter((row) => readiness.states[row.id].status === "review");
+    return [
+      unread.length ? `${unread.length} AI draft${unread.length === 1 ? "" : "s"} still to read and mark as reviewed` : null,
+      current.publishTo?.mode === "selected" && !(current.publishTo.participantIds || []).length ? "Choose at least one participant, or publish to all incubatees" : null,
+    ].filter(Boolean) as string[];
+  };
+
   async function publish() {
+    const blockers = publishBlockers(course);
+    if (blockers.length) {
+      message.warning(`${blockers[0]}.`);
+      return;
+    }
     setPublishing(true);
     try {
       const saved = await draft.save();
@@ -370,7 +418,18 @@ export default function CourseBuilder({ id }: { id: string }) {
   }
 
   const leave = () =>
-    draft.dirty
+    drafting.size
+      ? modal.confirm({
+          title: "AI is still drafting",
+          content: `${drafting.size} item${drafting.size === 1 ? " is" : "s are"} still being drafted. Leaving stops that; what's finished is kept.`,
+          okText: "Leave",
+          cancelText: "Stay",
+          onOk: async () => {
+            await draft.save();
+            navigate(COURSES);
+          },
+        })
+      : draft.dirty
       ? modal.confirm({
           title: "Leave before your changes sync?",
           content: "They'll be kept on this device as a recovery copy.",
@@ -385,7 +444,7 @@ export default function CourseBuilder({ id }: { id: string }) {
 
   if (draft.loading || !course)
     return (
-      <div className="cb-page cb-center" style={vars}>
+      <div className="cb-page cb-center">
         {draft.loadError ? (
           <Result status="warning" title="This course can't be opened" subTitle={draft.loadError} extra={<Button shape="round" onClick={() => navigate(COURSES)}>Back to courses</Button>} />
         ) : (
@@ -398,7 +457,7 @@ export default function CourseBuilder({ id }: { id: string }) {
 
   if (course.deletedAt)
     return (
-      <div className="cb-page cb-center" style={vars}>
+      <div className="cb-page cb-center">
         <Result
           status="info"
           title="This course is in the deleted list"
@@ -439,7 +498,7 @@ export default function CourseBuilder({ id }: { id: string }) {
               title: `${q(todo)} has no instructions for learners`,
               label: "Use standard instructions",
               run: () => updateItem(todo.id, (row) => ({ ...row, content: STANDARD_INSTRUCTIONS })),
-              secondary: { label: "Write my own", run: () => open("instructions") },
+              secondary: { label: "Write my own", run: () => open("settings") },
             };
           if (todo.kind === "interactive")
             return { title: `${q(todo)} has no coaching instructions yet`, label: "Open it", run: () => open("content") };
@@ -530,22 +589,21 @@ export default function CourseBuilder({ id }: { id: string }) {
     const toReview = items.find((row) => states[row.id].status === "review");
     if (toReview)
       return {
-        title: `${q(toReview)} is an AI draft — give it a read`,
-        label: "Mark as reviewed",
-        run: () => updateItem(toReview.id, (row) => ({ ...row, aiDraft: false })),
-        secondary: { label: "Open it", run: () => select(toReview.id) },
+        title: `${q(toReview)} is an AI draft — give it a read, then mark it as reviewed`,
+        label: "Read it",
+        run: () => select(toReview.id),
       };
     return {
-      title: "Everything is ready. Preview the course as a learner, then publish.",
-      label: "Preview course",
-      run: () => setPreview({ itemId: items[0]?.id }),
+      title: "Everything is ready. Preview it as a learner if you like, then publish.",
+      label: `Publish version ${(course.publishedRevision || 0) + 1}`,
+      run: () => setReview([]),
     };
   })();
 
   const extractItem = course.items.find((row) => row.id === extractFor);
 
   return (
-    <div className="cb-page" style={vars}>
+    <div className="cb-page">
       <TopBar>
         <Button type="text" shape="round" icon={<ArrowLeftOutlined />} aria-label="Back to courses" onClick={leave} />
         <Crumbs
@@ -557,7 +615,11 @@ export default function CourseBuilder({ id }: { id: string }) {
           }
           meta={
             <>
-              {draft.saveState === "failed" ? (
+              {draft.saveState === "failed" && isSaveConflict(draft.error) ? (
+                <button type="button" className="cb-link-button is-error" onClick={() => void draft.reloadSaved()}>
+                  Changed elsewhere — load it
+                </button>
+              ) : draft.saveState === "failed" ? (
                 <button type="button" className="cb-link-button is-error" onClick={() => void draft.save()}>
                   Not synced — retry
                 </button>
@@ -580,7 +642,20 @@ export default function CourseBuilder({ id }: { id: string }) {
 
       <div className="cb-builder-wrap">
         {draft.error && (
-          <Alert type="error" showIcon closable message={draft.error} onClose={() => draft.setError("")} className="cb-mb" />
+          <Alert
+            type="error"
+            showIcon
+            closable
+            className="cb-mb"
+            message={isSaveConflict(draft.error) ? "This course was changed in another tab or on another device." : draft.error}
+            description={isSaveConflict(draft.error) ? "Load the saved version to carry on. What you had here is kept as a recovery copy on this device." : undefined}
+            action={isSaveConflict(draft.error) ? (
+              <Button size="small" type="primary" shape="round" onClick={() => void draft.reloadSaved()}>
+                Load the saved version
+              </Button>
+            ) : undefined}
+            onClose={() => draft.setError("")}
+          />
         )}
         {draft.recovery && (
           <Alert
@@ -660,6 +735,19 @@ export default function CourseBuilder({ id }: { id: string }) {
                 onAssist={(action) => assist(item.id, action)}
                 onAcceptSuggestion={(text) => {
                   if (!suggestion) return;
+                  const now = String((draft.latest.current?.items.find((i) => i.id === suggestion.itemId) as any)?.[suggestion.field] || "");
+                  // The text changed while the suggestion was being written: ask before replacing it.
+                  if (suggestion.base !== undefined && now !== suggestion.base) {
+                    modal.confirm({
+                      centered: true,
+                      title: "Replace your newer edits?",
+                      content: "You changed this text while the suggestion was being written. Accepting replaces those changes.",
+                      okText: "Replace them",
+                      cancelText: "Keep my edits",
+                      onOk: () => updateItem(suggestion.itemId, (row) => ({ ...row, [suggestion.field]: text })),
+                    });
+                    return;
+                  }
                   updateItem(suggestion.itemId, (row) => ({ ...row, [suggestion.field]: text }));
                   setSuggestion(undefined);
                   message.success("Suggestion applied.");
@@ -673,7 +761,6 @@ export default function CourseBuilder({ id }: { id: string }) {
                 onQuestion={setQuestionId}
                 onMarkReviewed={() => updateItem(item.id, (row) => ({ ...row, aiDraft: false }))}
                 onExtract={() => setExtractFor(item.id)}
-                onPreview={() => setPreview({ itemId: item.id })}
                 onDuplicate={() => {
                   const copy = { ...item, id: uid(), title: `${item.title} (copy)`, questions: item.questions.map((row) => ({ ...row, id: uid() })) };
                   mutate((c) => {
@@ -697,11 +784,7 @@ export default function CourseBuilder({ id }: { id: string }) {
               />
             ) : (
               <div className="cb-panel cb-editor-empty">
-                <Empty description="Add a learning item to start building.">
-                  <Button type="primary" shape="round" icon={<PlusOutlined />} onClick={() => setAddTo("")}>
-                    Add item
-                  </Button>
-                </Empty>
+                <Empty description="Add your first learning item with Add item in the outline." />
               </div>
             )}
           </div>
@@ -719,43 +802,52 @@ export default function CourseBuilder({ id }: { id: string }) {
         <div className="cb-add">
           {addTo && <span className="cb-muted">Adding to {modules.find((m) => m.id === addTo)?.title}</span>}
           <div className="cb-field">
+            <span className="cb-label">What kind of item?</span>
+            <ChoiceCards
+              compact
+              columns={2}
+              label="What kind of item?"
+              value={addKind}
+              onChange={(next: string) => {
+                setAddKind(next as Kind);
+                if (!draftable(next as Kind) || (addHow === "doc" && !isExtractableKind(next as Kind))) setAddHow("blank");
+              }}
+              options={kinds.map((kind) => ({ value: kind.kind, label: kind.label, detail: kind.description, icon: <KindIcon kind={kind.kind} /> }))}
+            />
+          </div>
+          <div className="cb-field">
             <label htmlFor="add-item-title">
-              Title <span className="cb-hint">Helps AI write the right thing</span>
+              Title <span className="cb-hint">{addHow === "ai" && !isAssessment({ kind: addKind } as Item) ? "AI writes from it" : "Optional — you can rename it later"}</span>
             </label>
             <Input id="add-item-title" value={addTitle} placeholder="e.g. Getting paid on time" onChange={(e) => setAddTitle(e.target.value)} />
           </div>
-          {kinds.map((kind) => (
-            <div key={kind.kind} className="cb-add-row">
-              <button type="button" className="cb-add-main" onClick={() => addItem(kind.kind, "blank")}>
-                <KindIcon kind={kind.kind} />
-                <span className="cb-choice-text">
-                  <strong>{kind.label}</strong>
-                  <span>{kind.description}</span>
-                </span>
-                <PlusOutlined />
-              </button>
-              {draftable(kind.kind) && (
-                <div className="cb-add-ai">
-                  <Button
-                    size="small"
-                    shape="round"
-                    className="cb-btn-ai"
-                    icon={<AiMark />}
-                    disabled={!isAssessment({ kind: kind.kind } as Item) && !addTitle.trim()}
-                    title={!isAssessment({ kind: kind.kind } as Item) && !addTitle.trim() ? "Add a title first" : undefined}
-                    onClick={() => addItem(kind.kind, "ai")}
-                  >
-                    {isAssessment({ kind: kind.kind } as Item) ? "From lessons" : "Draft with AI"}
-                  </Button>
-                  {isExtractableKind(kind.kind) && (
-                    <Button size="small" shape="round" variant="filled" color="default" icon={<FileTextOutlined />} onClick={() => addItem(kind.kind, "doc")}>
-                      From a document
-                    </Button>
-                  )}
-                </div>
-              )}
+          {draftable(addKind) && (
+            <div className="cb-field">
+              <span className="cb-label">How do you want to start it?</span>
+              <ChoiceCards
+                compact
+                columns={isExtractableKind(addKind) ? 3 : 2}
+                label="How do you want to start it?"
+                value={addHow}
+                onChange={(next: string) => setAddHow(next as "blank" | "ai" | "doc")}
+                options={[
+                  { value: "blank", label: "Blank", detail: "Write it yourself", icon: <PlusOutlined /> },
+                  { value: "ai", label: isAssessment({ kind: addKind } as Item) ? "From lessons" : "Draft with AI", detail: isAssessment({ kind: addKind } as Item) ? "Questions from this module's lessons" : "AI writes a first draft", icon: <AiMark /> },
+                  ...(isExtractableKind(addKind) ? [{ value: "doc", label: "From a document", detail: "Upload a file to use", icon: <FileTextOutlined /> }] : []),
+                ]}
+              />
             </div>
-          ))}
+          )}
+          <Button
+            block
+            type="primary"
+            shape="round"
+            disabled={addHow === "ai" && !isAssessment({ kind: addKind } as Item) && !addTitle.trim()}
+            title={addHow === "ai" && !isAssessment({ kind: addKind } as Item) && !addTitle.trim() ? "Add a title first" : undefined}
+            onClick={() => addItem(addKind, draftable(addKind) ? addHow : "blank")}
+          >
+            Add {kindOf(addKind).label.toLowerCase()}
+          </Button>
         </div>
       </Modal>
 
@@ -765,11 +857,9 @@ export default function CourseBuilder({ id }: { id: string }) {
         open={settingsOpen}
         onCancel={() => setSettingsOpen(false)}
         footer={
-          <div className="course-footer">
-            <Button type="primary" shape="round" onClick={() => setSettingsOpen(false)}>
-              Done
-            </Button>
-          </div>
+          <Button block type="primary" shape="round" onClick={() => setSettingsOpen(false)}>
+            Done
+          </Button>
         }
       >
         <div className="cb-settings-modal">
@@ -818,12 +908,13 @@ export default function CourseBuilder({ id }: { id: string }) {
               <Input id="course-audience" value={course.audience} placeholder="e.g. Early-stage SME owners" onChange={(e) => mutate((c) => ({ ...c, audience: e.target.value }))} />
             </div>
             <div className="cb-field">
-              <label htmlFor="course-level">Level</label>
-              <Select
-                id="course-level"
+              <span className="cb-label">Level</span>
+              <Segmented
+                block
+                aria-label="Level"
                 value={course.level}
-                onChange={(level) => mutate((c) => ({ ...c, level }))}
-                options={["Beginner", "Intermediate", "Advanced"].map((value) => ({ value, label: value }))}
+                onChange={(level: string | number) => mutate((c) => ({ ...c, level: String(level) }))}
+                options={["Beginner", "Intermediate", "Advanced"]}
               />
             </div>
           </div>
@@ -834,41 +925,21 @@ export default function CourseBuilder({ id }: { id: string }) {
             </div>
             <Switch aria-label="Learners follow the order" checked={course.sequential} onChange={(sequential) => mutate((c) => ({ ...c, sequential }))} />
           </div>
-          <div className="cb-field">
-            <span className="cb-label">When can learners access this course?</span>
-            <Radio.Group
-              className="cb-radio-stack"
-              value={course.accessCondition || "always"}
-              onChange={(e) => mutate((c) => ({ ...c, accessCondition: e.target.value as AccessCondition }))}
-            >
-              <Radio value="always">Always accessible</Radio>
-              <Radio value="afterIntervention" disabled>
-                After completing an intervention <Tag className="cb-hide-xs">Coming soon</Tag>
-              </Radio>
-              <Radio value="afterAppointment" disabled>
-                After completing an appointment <Tag className="cb-hide-xs">Coming soon</Tag>
-              </Radio>
-            </Radio.Group>
-          </div>
-          <Alert
-            type="info"
-            showIcon
-            message="Publishing makes the course available to signed-in learners with the link. Learners already enrolled keep the version they started."
-          />
         </div>
       </Modal>
 
       <Modal
         className="academy-modal"
-        title={review?.length ? `${review.length} thing${review.length === 1 ? "" : "s"} to fix before publishing` : "Ready to publish"}
+        title={
+          reviewGroups.length
+            ? `${reviewGroups.length} ${reviewGroups.length === 1 ? "part needs" : "parts need"} attention before publishing`
+            : "Ready to publish"
+        }
         open={review !== null}
         onCancel={() => setReview(null)}
         footer={
           <div className="course-footer">
-            <Button shape="round" disabled={publishing} onClick={() => setReview(null)}>
-              Keep editing
-            </Button>
-            <Button type="primary" shape="round" loading={publishing} disabled={!!review?.length || draft.saveState === "saving"} onClick={() => void publish()}>
+            <Button block type="primary" shape="round" loading={publishing} disabled={!!review?.length || publishBlockers(course).length > 0 || draft.saveState === "saving"} onClick={() => void publish()}>
               Publish version {(course.publishedRevision || 0) + 1}
             </Button>
           </div>
@@ -876,25 +947,39 @@ export default function CourseBuilder({ id }: { id: string }) {
       >
         {review?.length ? (
           <div className="cb-issues">
-            {review.slice(0, 30).map((issue, n) => (
+            <span className="cb-muted">Open each one to fix it. Publishing unlocks when the list is empty.</span>
+            {reviewGroups.map((group) => (
               <button
-                key={n}
+                key={group.key}
                 type="button"
                 className="cb-issue"
                 onClick={() => {
+                  const issue = group.first;
                   setReview(null);
-                  if (issue.itemId) {
-                    const row = course.items.find((i) => i.id === issue.itemId);
-                    if (row) select(row.id, issue.questionId ? "questions" : defaultTab(row, issue), issue.questionId);
-                  } else if (issue.code === "emptyModule") setAddTo(issue.moduleId || "");
+                  if (group.item) select(group.item.id, issue.questionId ? "questions" : defaultTab(group.item, issue), issue.questionId);
+                  else if (issue.code === "emptyModule") setAddTo(issue.moduleId || "");
                   else setSettingsOpen(true);
                 }}
               >
-                {issue.message}
+                {group.item ? (
+                  <KindIcon kind={group.item.kind} />
+                ) : (
+                  <span className="cb-kind cb-kind-course" aria-hidden="true">
+                    <SettingOutlined />
+                  </span>
+                )}
+                <span className="cb-issue-body">
+                  <strong>{group.title}</strong>
+                  <small>{group.notes.join(" · ")}</small>
+                </span>
+                <span className="cb-issue-go">
+                  Fix <RightOutlined />
+                </span>
               </button>
             ))}
-            {review.length > 30 && <span className="cb-muted">…and {review.length - 30} more.</span>}
           </div>
+        ) : publishBlockers(course).length ? (
+          <Alert type="warning" showIcon message="Almost ready" description={publishBlockers(course).map((b) => <div key={b}>{b}.</div>)} />
         ) : (
           <Alert
             type="success"
@@ -929,8 +1014,13 @@ export default function CourseBuilder({ id }: { id: string }) {
               value={course.publishTo?.participantIds || []}
               onChange={(participantIds) => mutate((c) => ({ ...c, publishTo: { mode: "selected", participantIds } }))}
               options={participants.map((p) => ({ value: p.id, label: p.email ? `${p.name} (${p.email})` : p.name }))}
+              status={participantsError ? "error" : undefined}
             />
           )}
+          {course.publishTo?.mode === "selected" && participantsError && (
+            <small className="cb-error-text">The participant list couldn't be loaded. Close and reopen this to try again.</small>
+          )}
+          <small className="cb-muted">Training SMEs get this course when it is linked to their training under Training → Trainings.</small>
         </div>
       </Modal>
 
@@ -985,8 +1075,17 @@ export default function CourseBuilder({ id }: { id: string }) {
       <ExtractContentModal
         item={extractItem}
         open={!!extractItem}
-        onClose={() => setExtractFor(undefined)}
+        onClose={() => {
+          const created = extractNew && extractNew === extractFor ? draft.latest.current?.items.find((i) => i.id === extractNew) : undefined;
+          if (created && !String(created.content || "").trim() && !created.questions.length) {
+            mutate((c) => ({ ...c, items: c.items.filter((i) => i.id !== created.id) }));
+            setSelected(undefined);
+          }
+          setExtractNew(undefined);
+          setExtractFor(undefined);
+        }}
         onApply={(changes) => {
+          setExtractNew(undefined);
           if (extractItem) updateItem(extractItem.id, (row) => ({ ...row, ...changes }));
           setQuestionId(undefined);
         }}

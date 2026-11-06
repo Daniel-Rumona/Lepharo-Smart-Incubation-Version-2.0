@@ -27,6 +27,7 @@ exports.brevoApiKeepAlive = exports.logBrevoSend = exports.sendViaBrevo = void 0
 const logger = __importStar(require("firebase-functions/logger"));
 const scheduler_1 = require("firebase-functions/v2/scheduler");
 const emailShared_1 = require("./emailShared");
+const config_1 = require("./config");
 const BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email";
 const BREVO_ACCOUNT_URL = "https://api.brevo.com/v3/account";
 /**
@@ -111,7 +112,7 @@ async function pingBrevoAccount() {
         throw new Error(data?.message || `Brevo API error (${res.status})`);
     }
 }
-exports.brevoApiKeepAlive = (0, scheduler_1.onSchedule)({ region: "us-central1", schedule: "0 3 * * 1", timeZone: "Africa/Johannesburg" }, async () => {
+exports.brevoApiKeepAlive = (0, scheduler_1.onSchedule)({ ...config_1.BREVO_EGRESS, region: "us-central1", schedule: "0 3 * * 1", timeZone: "Africa/Johannesburg" }, async () => {
     const ref = emailShared_1.db.collection("systemHeartbeats").doc("brevoApiKeepAlive");
     try {
         await pingBrevoAccount();

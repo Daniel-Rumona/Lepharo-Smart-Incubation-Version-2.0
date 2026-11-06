@@ -76,8 +76,6 @@ import {
     ClusterOutlined,
     MailOutlined,
     ApartmentOutlined,
-    DeploymentUnitOutlined,
-    InboxOutlined,
     SettingOutlined,
     FileOutlined,
     VideoCameraOutlined,
@@ -93,7 +91,7 @@ import {
 } from "@ant-design/icons";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { safeLocal } from "@/utils/safeStorage";
-import { LoadingOverlay } from "../shared/LoadingOverlay";
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { endSession } from "@/utils/sessionTracking";
 import {
     ViewAsBanner,
@@ -922,22 +920,10 @@ export const CustomLayout: React.FC = () => {
                         to: "/resources",
                     },
                     {
-                        key: "resources-req",
-                        icon: <InboxOutlined />,
-                        label: "Incubatee Requests",
-                        to: "/resources/requests",
-                    },
-                    {
                         key: "resources-internal",
                         icon: <ApartmentOutlined />,
                         label: "Internal Requests",
                         to: "/resources/internal",
-                    },
-                    {
-                        key: "resources-all",
-                        icon: <DeploymentUnitOutlined />,
-                        label: "Allocations",
-                        to: "/resources/allocations",
                     },
                 ],
             },
@@ -1317,7 +1303,7 @@ export const CustomLayout: React.FC = () => {
                     {
                         key: "compliance-tracker",
                         label: "Compliance",
-                        to: "/incubatee/documents/compliance",
+                        to: "/incubatee/compliance",
                         icon: <ClockCircleOutlined />,
                     },
                 ],
@@ -1726,12 +1712,6 @@ export const CustomLayout: React.FC = () => {
                 to: "/system",
                 label: "System Setup",
                 icon: <BankOutlined />,
-            },
-            {
-                key: "resources",
-                to: "/operations/resources",
-                label: "Resources",
-                icon: <FundProjectionScreenOutlined />,
             },
             {
                 key: "library",
@@ -2535,7 +2515,7 @@ export const CustomLayout: React.FC = () => {
                     background: "#fff",
                 }}
             >
-                <LoadingOverlay tip="Preparing your workspace..." />
+                <DashboardLoader overlay label="Preparing your workspace..." />
             </div>
         );
     }

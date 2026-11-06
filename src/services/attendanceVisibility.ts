@@ -41,11 +41,11 @@ const isQuantilytixControlEmail = (email?: string) =>
 
 const canSeeDirectors = (currentUser?: CurrentUser | null) => {
     const role = normalizeRole(currentUser?.role)
-    return role === 'admin' || role === 'director'
+    return role === 'system_admin' || role === 'director'
 }
 
 const canSeeControlAccounts = (currentUser?: CurrentUser | null) =>
-    normalizeRole(currentUser?.role) === 'admin'
+    normalizeRole(currentUser?.role) === 'system_admin'
 
 const applyVisibilityPostFilter = (
     rows: AttendanceScopedEmployee[],
@@ -161,8 +161,8 @@ export async function resolveAttendanceVisibleEmployees(
     const branchId = getUserBranchId(currentUser)
     const departmentId = currentUser.departmentId || ''
 
-    // ADMIN: can see everything, including control accounts
-    if (role === 'admin') {
+    // SYSTEM ADMIN: can see everything, including control accounts
+    if (role === 'system_admin') {
         const rows = await fetchUsers()
         return dedupeEmployees(rows)
     }

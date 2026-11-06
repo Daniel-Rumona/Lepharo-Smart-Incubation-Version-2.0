@@ -73,7 +73,7 @@ const financialManagementQ = [
   'Do you have current Management Accounts?',
   'Do you have a Fixed Asset Register?',
   'Do you have legacy accounting problems (prior year unfinished accounting/bookkeeping tasks)?',
-  'Please assist with read-only access of business bank account – Bank statements only'
+  'Can you provide your last 3 months of business bank statements?'
 ]
 const labourHSEQ = [
   'UIF Registration (check if company has employees)?',

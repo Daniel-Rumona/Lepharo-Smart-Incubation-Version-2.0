@@ -38,6 +38,8 @@ export const toAppointmentView = (
         coveredPoints: session.coverage.coveredPoints,
         photos: session.coverage.photos || [],
         notes: session.coverage.outcomeSummary,
+        actions: (session.coverage as any).actions || [],
+        nextFocus: (session.coverage as any).nextFocus || '',
         reasonNotHeld: session.coverage.reasonNotHeld,
         createdAt: session.coverage.recordedAt,
         smeAttendance: (session.coverage as any).smeAttendance,
@@ -55,8 +57,12 @@ export const toAppointmentView = (
   departmentId: appointment.departmentId,
   assignedInterventionId: appointment.assignedInterventionId,
   participantId: appointment.smeId,
-  participantName: appointment.smeName,
+  // A Training Academy invitation names the person the SME sent.
+  participantName: appointment.attendeeName ? `${appointment.attendeeName} · ${appointment.smeName}` : appointment.smeName,
   participantEmail: appointment.smeEmail || '',
+  attendeeId: appointment.attendeeId || null,
+  attendeeName: appointment.attendeeName || null,
+  companyName: appointment.attendeeName ? appointment.smeName : undefined,
   interventionId: appointment.interventionId,
   interventionTitle: appointment.interventionTitle,
   subInterventionId: appointment.subInterventionId,
@@ -144,23 +150,31 @@ export async function hydrateAppointmentViews(
     const key = String(view.appointmentSessionId)
     bySessionId.set(key, [...(bySessionId.get(key) || []), view])
   })
+  const participantIdOf = (member: AppointmentView) => String(member.participantId || '').trim()
   bySessionId.forEach(members => {
-    const checkedInEmails = members
-      // An attended outcome from coverage is not a timed check-in.
-      .filter(member => member.attendance?.checkedInAt)
+    // An attended outcome from coverage is not a timed check-in.
+    const checkedInMembers = members.filter(member => member.attendance?.checkedInAt)
+    const checkedOutMembers = members.filter(member => member.attendance?.checkedOutAt)
+    // Readers match on the participant ids first; the email lists are the
+    // email fallback until Phase 4 (docs/sme-identity-migration-plan.md).
+    const checkedInParticipantIds = Array.from(new Set(checkedInMembers.map(participantIdOf).filter(Boolean)))
+    const checkedOutParticipantIds = Array.from(new Set(checkedOutMembers.map(participantIdOf).filter(Boolean)))
+    const checkedInEmails = checkedInMembers
       .map(member => String(member.participantEmail || '').trim().toLowerCase())
       .filter(Boolean)
-    const checkedOutEmails = members
-      .filter(member => member.attendance?.checkedOutAt)
+    const checkedOutEmails = checkedOutMembers
       .map(member => String(member.participantEmail || '').trim().toLowerCase())
       .filter(Boolean)
     members.forEach(view => {
+      view.attendanceSessionGroupParticipantIds = Array.from(new Set(members.map(participantIdOf).filter(Boolean)))
       view.attendanceSessionGroupEmails = members
         .map(member => String(member.participantEmail || '').trim().toLowerCase())
         .filter(Boolean)
       view.attendanceSessionGroupNames = members.map(member => String(member.participantName || '').trim()).filter(Boolean)
       view.attendanceSummary = {
         ...view.attendanceSummary,
+        checkedInParticipantIds,
+        checkedOutParticipantIds,
         checkedInEmails,
         checkedOutEmails
       }

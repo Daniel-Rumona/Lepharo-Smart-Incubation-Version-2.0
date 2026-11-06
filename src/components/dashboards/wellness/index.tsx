@@ -31,6 +31,7 @@ import dayjs from 'dayjs'
 import { GlobalEventModal } from '@/components/modals/Events'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import EventDetailsModal from '@/components/modals/EventDetails'
 import EventsCalendarModal from '@/components/modals/EventsCalender'
 import {
@@ -41,6 +42,7 @@ import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import AppointmentsCard from '../charts/AppointmentsCard'
 import { loadInterventionMetrics, type InterventionMetricSummary } from '@/services/interventionMetricsService'
 import InterventionMetricsGrid from '../metrics/InterventionMetricsGrid'
+import { formatterPoint } from '@/lib/highchartsTypes'
 
 type FirestoreDateLike =
     | Timestamp
@@ -58,7 +60,7 @@ interface InterventionRecord {
     assigneeName?: string
     interventionId?: string
     interventionTitle?: string
-    areaOfSupport?: string
+    departmentId?: string
     status?: string
     assignmentStatus?: string
     participantCompletionStatus?: string
@@ -96,7 +98,6 @@ interface EventRecord {
     format?: 'virtual' | 'in-person' | 'hybrid' | string
     participants?: Array<{ email?: string; type?: string }>
     description?: string
-    areaOfSupport?: string
 }
 
 type CanonicalInterventionState =
@@ -104,9 +105,6 @@ type CanonicalInterventionState =
     | 'in_progress'
     | 'completed'
     | 'pending_confirmation'
-
-const DEPARTMENT = 'Wellness'
-const NORMALIZED_DEPARTMENT = DEPARTMENT.toLowerCase().trim()
 
 const normalizeText = (value: any) =>
     String(value || '')
@@ -299,6 +297,10 @@ const buildConsultantStats = (rows: InterventionRecord[]): ConsultantStats[] => 
 const WellnessDashboard: React.FC = () => {
     const { user } = useFullIdentity()
     const { activeProgramId, isAllPrograms } = useActiveProgramId()
+    const { idForRole, nameOf } = useDepartmentRoles()
+    const wellnessDepartmentId = idForRole('wellness') || ''
+    const isWellnessRecord = (row: any) =>
+        !!wellnessDepartmentId && row?.departmentId === wellnessDepartmentId
 
     const [loading, setLoading] = useState(true)
     const [reloadKey, setReloadKey] = useState(0)
@@ -348,10 +350,7 @@ const WellnessDashboard: React.FC = () => {
                 ...(docSnap.data() as any)
             })) as InterventionRecord[]
 
-            const wellnessAssigned = allAssigned.filter(row => {
-                const rowDept = normalizeText(row.areaOfSupport)
-                return rowDept === NORMALIZED_DEPARTMENT
-            })
+            const wellnessAssigned = allAssigned.filter(isWellnessRecord)
 
             setAssignedWellness(wellnessAssigned)
             setInterventions(wellnessAssigned)
@@ -359,8 +358,8 @@ const WellnessDashboard: React.FC = () => {
 
             const metrics = await loadInterventionMetrics({
                 programId: isAllPrograms ? null : activeProgramId,
-                assignedMatches: row => normalizeText(row.areaOfSupport || row.departmentName) === NORMALIZED_DEPARTMENT,
-                requiredMatches: entry => normalizeText(entry.areaOfSupport || entry.area || entry.departmentName) === NORMALIZED_DEPARTMENT
+                assignedMatches: isWellnessRecord,
+                requiredMatches: isWellnessRecord
             })
             setInterventionMetrics(metrics)
 
@@ -383,7 +382,7 @@ const WellnessDashboard: React.FC = () => {
         } finally {
             setLoading(false)
         }
-    }, [user?.email, activeProgramId, isAllPrograms])
+    }, [user?.email, activeProgramId, isAllPrograms, wellnessDepartmentId])
 
     useEffect(() => {
         fetchAll()
@@ -458,9 +457,9 @@ const WellnessDashboard: React.FC = () => {
                 dataLabels: {
                     enabled: true,
                     distance: 12,
-                    style: { textOutline: 'none', fontWeight: 600 },
+                    style: { textOutline: 'none', fontWeight: '600' },
                     formatter() {
-                        const point = this.point as Highcharts.Point
+                        const point = formatterPoint(this)
                         return `${point.name}: ${point.y}`
                     }
                 }
@@ -568,7 +567,7 @@ const WellnessDashboard: React.FC = () => {
     return (
         <div style={{ padding: 24, minHeight: '100vh' }}>
             <DashboardHeaderCard
-                title='Wellness Services – Overview'
+                title={`${nameOf(wellnessDepartmentId, 'Wellness')} – Overview`}
                 subtitle='Participation, completion, consultant delivery, and upcoming sessions.'
                 onOpenCalendar={() => setCalendarOpen(true)}
                 extraRight={

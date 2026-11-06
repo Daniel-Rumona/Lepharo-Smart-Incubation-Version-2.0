@@ -11,10 +11,12 @@ import { useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { fetchAppointments } from '@/services/appointmentService'
 import DepartmentInterventionsStatus from '../charts/InterventionsBreakdown'
 import { MotionCard } from '../metrics/Header'
+import { MetricTile } from '../metrics/MetricTile'
 import UpcomingAppointmentsCard from '@/components/modals/UpcomingAppointmentsCard'
 import AppointmentsCalendarModal from '@/components/modals/AppointmentsCalender'
 import AppointmentDetailsModal from '@/components/modals/AppointmentDetails'
@@ -36,9 +38,6 @@ type LinkageRecord = {
 
 type DenormInterventionEntry = {
     departmentId?: string
-    departmentName?: string
-    area?: string
-    areaOfSupport?: string
 }
 
 type InterventionBuckets = {
@@ -86,8 +85,7 @@ const LinkagesParticipantsCard = ({ linkages, loading }: { linkages: LinkageReco
             extra={
                 <Button
                     variant="filled"
-                    color="geekblue"
-                    style={{ border: '1px solid dodgerblue' }}
+                    color="primary"
                     shape="round"
                     icon={<ArrowRightOutlined />}
                     onClick={() => navigate(LINKAGES_ROUTE)}
@@ -101,11 +99,11 @@ const LinkagesParticipantsCard = ({ linkages, loading }: { linkages: LinkageReco
                     <Space direction="vertical" size={16} style={{ width: '100%' }}>
                         <Row gutter={[12, 12]}>
                             <Col xs={24} md={8}>
-                                <MotionCard.Metric
+                                <MetricTile
                                     title="Total Linkages"
                                     value={totals.total}
-                                    icon={<LinkOutlined style={{ color: '#1677ff' }} />}
-                                    iconBg="rgba(22,119,255,.12)"
+                                    icon={<LinkOutlined />}
+                                    tone='accent'
                                     wrapperStyle={{
                                         padding: 14,
                                         borderRadius: 8,
@@ -116,12 +114,12 @@ const LinkagesParticipantsCard = ({ linkages, loading }: { linkages: LinkageReco
                             </Col>
 
                             <Col xs={24} md={8}>
-                                <MotionCard.Metric
+                                <MetricTile
                                     title="Funding"
                                     value={totals.funding}
                                     subtitle={`R ${totals.totalValue.toLocaleString()}`}
-                                    icon={<DollarOutlined style={{ color: '#52c41a' }} />}
-                                    iconBg="rgba(82,196,26,.14)"
+                                    icon={<DollarOutlined />}
+                                    tone='success'
                                     wrapperStyle={{
                                         padding: 14,
                                         borderRadius: 8,
@@ -132,12 +130,12 @@ const LinkagesParticipantsCard = ({ linkages, loading }: { linkages: LinkageReco
                             </Col>
 
                             <Col xs={24} md={8}>
-                                <MotionCard.Metric
+                                <MetricTile
                                     title="Facilitation"
                                     value={totals.facilitation}
                                     subtitle={`${totals.facilitationConnections} connections`}
-                                    icon={<TeamOutlined style={{ color: '#fa8c16' }} />}
-                                    iconBg="rgba(250,140,22,.14)"
+                                    icon={<TeamOutlined />}
+                                    tone='warning'
                                     wrapperStyle={{
                                         padding: 14,
                                         borderRadius: 8,
@@ -208,7 +206,8 @@ const MarketLinkagesDashboard = () => {
     const { user } = useFullIdentity() as any
     const { activeProgramId } = useActiveProgramId()
     const programId = activeProgramId || null
-    const deptName = String(user?.departmentName || '').toLowerCase().trim()
+    const { nameOf } = useDepartmentRoles()
+    const departmentId: string = user?.departmentId || ''
 
     const [appointments, setAppointments] = useState<any[]>([])
     const [calendarVisible, setCalendarVisible] = useState(false)
@@ -224,13 +223,7 @@ const MarketLinkagesDashboard = () => {
         completed: 0
     })
 
-    const matchesDept = (entry: DenormInterventionEntry) => {
-        if (!deptName) return true
-        if (user?.departmentId && entry?.departmentId === user.departmentId) return true
-        const area = String(entry?.areaOfSupport || entry?.area || '').toLowerCase().trim()
-        const department = String(entry?.departmentName || '').toLowerCase().trim()
-        return area === deptName || department === deptName
-    }
+    const matchesDept = (entry: DenormInterventionEntry) => !departmentId || entry?.departmentId === departmentId
 
     useEffect(() => {
         const fetchDashboardAppointments = async () => {
@@ -289,10 +282,8 @@ const MarketLinkagesDashboard = () => {
             try {
                 const metrics = await loadInterventionMetrics({
                     programId,
-                    assignedFilters: deptName ? { departmentId: user.departmentId } : {},
-                    assignedMatches: row => !deptName ||
-                        (user?.departmentId && row.departmentId === user.departmentId) ||
-                        String(row.areaOfSupport || row.departmentName || '').toLowerCase().trim() === deptName,
+                    assignedFilters: departmentId ? { departmentId } : {},
+                    assignedMatches: row => !departmentId || row.departmentId === departmentId,
                     requiredMatches: matchesDept
                 })
                 setInterventionMetrics(metrics)
@@ -303,12 +294,12 @@ const MarketLinkagesDashboard = () => {
         }
 
         fetchInterventionsMetrics()
-    }, [programId, user?.departmentId, deptName])
+    }, [programId, departmentId])
 
     return (
         <div style={{ padding: 24, minHeight: '100vh' }}>
             <Helmet>
-                <title>Market Linkages Dashboard | Smart Incubation</title>
+                <title>{`${nameOf(departmentId, 'Market Linkages')} Dashboard | Smart Incubation`}</title>
             </Helmet>
 
             <InterventionMetricsGrid metrics={interventionMetrics} />
@@ -317,7 +308,7 @@ const MarketLinkagesDashboard = () => {
                 <Col xs={24} xl={14}>
                     {programId ? (
                         <DepartmentInterventionsStatus
-                            departmentName={user?.departmentName}
+                            departmentId={departmentId}
                             programId={programId || undefined}
                             pageSize={6}
                         />

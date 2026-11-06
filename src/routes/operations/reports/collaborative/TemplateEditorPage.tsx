@@ -51,7 +51,7 @@ const uid = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toStrin
 
 const newBlock = (): TemplateBlock => ({
     id: uid('block'),
-    title: 'New Block',
+    title: 'New section',
     contentType: 'narrative',
     required: true,
     carryPolicy: 'review',
@@ -64,7 +64,7 @@ const newBlock = (): TemplateBlock => ({
     defaultContent: ''
 })
 
-const newSection = (order: number): TemplateSection => ({ id: uid('section'), title: 'New Section', order, blocks: [newBlock()] })
+const newSection = (order: number): TemplateSection => ({ id: uid('section'), title: 'New heading', order, blocks: [newBlock()] })
 
 type Props = {
     user: ReportUserContext
@@ -208,7 +208,7 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
             await updateReportTemplate({ db, templateId: template.id, user, patch: { sections: [] } })
             setTemplate(current => current ? { ...current, sections: [] } : current)
             setSelected(null)
-            message.success('Template blocks and mappings cleared. The source DOCX was kept for AI detection.')
+            message.success('Headings, sections and Word links cleared. The Word file was kept.')
         } catch (err: any) {
             message.error(err?.message || 'Could not reset the template configuration.')
         } finally {
@@ -217,30 +217,30 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
     }
 
     const extractSourceDocument = async () => {
-        if (!template?.sourceFile?.url) return message.error('Upload a DOCX source file before extracting its structure.')
+        if (!template?.sourceFile?.url) return message.error('Upload the Word file first.')
         setExtracting(true)
         try {
             const response = await fetch(template.sourceFile.url)
-            if (!response.ok) throw new Error('Could not download the source DOCX.')
+            if (!response.ok) throw new Error('Couldn’t download the Word file.')
             const documentStructure = await extractDocxStructure(await response.blob())
             await updateReportTemplate({ db, templateId: template.id, user, patch: { documentStructure } })
             setTemplate(current => current ? { ...current, documentStructure } : current)
             setDocumentPreviewOpen(true)
-            message.success('DOCX structure extracted and saved for manual mapping.')
+            message.success('Read the Word file. Link each section to its place in it.')
         } catch (err: any) {
-            message.error(err?.message || 'Could not extract the DOCX structure.')
+            message.error(err?.message || 'Couldn’t read the Word file.')
         } finally {
             setExtracting(false)
         }
     }
 
     const detectBlocks = async () => {
-        if (!template?.documentStructure) return message.error('Extract the DOCX before using AI detection.')
+        if (!template?.documentStructure) return message.error('Read the Word file first (Read Word file).')
         setDetecting(true)
         try {
             setSuggestions(await detectTemplateBlocks(template.name, template.frequency, template.documentStructure))
             setDocumentPreviewOpen(true)
-        } catch (err: any) { message.error(err?.message || 'Could not detect template blocks.') }
+        } catch (err: any) { message.error(err?.message || 'The AI couldn’t find sections in this document.') }
         finally { setDetecting(false) }
     }
 
@@ -273,7 +273,7 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
 
     if (loading) return <div style={{ padding: 48, textAlign: 'center' }}><Spin /></div>
     if (!template) return <Empty description="Template not found" />
-    if (!canUserManageTemplate(user, template)) return <Result status="403" title="You do not manage this template" subTitle="Account Managers can only edit templates whose programmes are fully within managedPrograms." />
+    if (!canUserManageTemplate(user, template)) return <Result status="403" title="You do not manage this template" subTitle="You can only edit templates for programmes you manage." />
 
     return (
         <div className="report-shell">
@@ -281,9 +281,9 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
                 <PageHeader
                     eyebrow="TEMPLATE CONFIGURATION"
                     title={template.name}
-                    subtitle="Phase 2 is manual: define the report structure and assign department ownership. Operations/HOD users delegate coordinators on the live report."
+                    subtitle="Set out the report's headings and sections, and which department writes each section. Department heads can hand a section to a coordinator on the report itself."
                     onBack={onBack}
-                    actions={<Space><Button icon={<EyeOutlined />} onClick={() => setPreviewOpen(true)}>Preview Blocks</Button><Button icon={<FileSearchOutlined />} loading={extracting} onClick={extractSourceDocument}>Extract DOCX</Button>{template.documentStructure ? <Button loading={detecting} onClick={detectBlocks}>AI Detect Blocks</Button> : null}{template.documentStructure ? <Button onClick={() => setDocumentPreviewOpen(true)}>Source Structure</Button> : null}<Popconfirm title="Reset this template configuration?" description="All sections, blocks and mappings will be removed. The source DOCX stays." okText="Reset configuration" okButtonProps={{ danger: true }} onConfirm={resetConfiguration}><Button danger>Reset Configuration</Button></Popconfirm><Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>Save Template</Button></Space>}
+                    actions={<Space><Button icon={<EyeOutlined />} onClick={() => setPreviewOpen(true)}>Preview</Button><Button icon={<FileSearchOutlined />} loading={extracting} onClick={extractSourceDocument}>Read Word file</Button>{template.documentStructure ? <Button loading={detecting} onClick={detectBlocks}>Find sections with AI</Button> : null}{template.documentStructure ? <Button onClick={() => setDocumentPreviewOpen(true)}>Source Structure</Button> : null}<Popconfirm title="Start this template over?" description="All headings, sections and Word links are removed. The Word file stays." okText="Start over" okButtonProps={{ danger: true }} onConfirm={resetConfiguration}><Button danger>Start over</Button></Popconfirm><Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>Save template</Button></Space>}
                 />
 
                 <Card className="report-soft-card">
@@ -309,7 +309,7 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
                             {template.sections.map(section => (
                                 <Card key={section.id} className="report-soft-card template-section-card" title={
                                     <Input variant="borderless" value={section.title} onChange={e => updateSection(section.id, { title: e.target.value })} style={{ fontWeight: 650 }} />
-                                } extra={<Space><Button size="small" icon={<PlusOutlined />} onClick={() => addBlock(section.id)}>Block</Button><Popconfirm title="Delete this section?" onConfirm={() => removeSection(section.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space>}>
+                                } extra={<Space><Button size="small" icon={<PlusOutlined />} onClick={() => addBlock(section.id)}>Section</Button><Popconfirm title="Delete this section?" onConfirm={() => removeSection(section.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space>}>
                                     <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                         {section.blocks.length ? section.blocks.map(block => (
                                             <div key={block.id} className={`template-block-row ${selected?.blockId === block.id ? 'active' : ''}`} onClick={() => setSelected({ sectionId: section.id, blockId: block.id })}>
@@ -318,25 +318,25 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
                                                     <Col><Text type="secondary" style={{ fontSize: 11 }}>{(block.editorDepartmentNames?.length || 0) + (block.editorUserNames?.length || 0)} assignment(s)</Text></Col>
                                                 </Row>
                                             </div>
-                                        )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No blocks" />}
+                                        )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No sections" />}
                                     </Space>
                                 </Card>
                             ))}
-                            <Button block icon={<PlusOutlined />} onClick={addSection}>Add Section</Button>
+                            <Button block icon={<PlusOutlined />} onClick={addSection}>Add heading</Button>
                         </Space>
                     </div>
 
-                    <Card className="report-soft-card template-structure-editor" title="Block Settings">
+                    <Card className="report-soft-card template-structure-editor" title="Section settings">
                         {activeBlock && selected ? (
                             <Space direction="vertical" size={12} style={{ width: '100%' }}>
                                 <div><Text type="secondary" style={{ fontSize: 11 }}>BLOCK TITLE</Text><Input value={activeBlock.title} onChange={e => updateBlock(selected.sectionId, selected.blockId, { title: e.target.value })} /></div>
                                 <div><Text type="secondary" style={{ fontSize: 11 }}>CONTENT TYPE</Text><Select style={{ width: '100%' }} value={activeBlock.contentType} onChange={(contentType: ReportContentType) => updateBlock(selected.sectionId, selected.blockId, { contentType, defaultContent: contentType === 'table' || contentType === 'kpi' ? { rows: [] } : '' })} options={[
                                     { value: 'narrative', label: 'Narrative' },
-                                    { value: 'kpi', label: 'KPI Block' },
+                                    { value: 'kpi', label: 'KPI table' },
                                     { value: 'table', label: 'Structured Table' },
                                     { value: 'static', label: 'Static / Read-only' }
                                 ]} /></div>
-                                <Checkbox checked={activeBlock.required} onChange={e => updateBlock(selected.sectionId, selected.blockId, { required: e.target.checked })}>Required block</Checkbox>
+                                <Checkbox checked={activeBlock.required} onChange={e => updateBlock(selected.sectionId, selected.blockId, { required: e.target.checked })}>Required section</Checkbox>
                                 {template.documentStructure ? <div><Text type="secondary" style={{ fontSize: 11 }}>SOURCE DOCUMENT BLOCKS</Text><Select mode="multiple" allowClear style={{ width: '100%' }} value={activeBlock.sourceDocumentNodeIds || []} onChange={sourceDocumentNodeIds => updateBlock(selected.sectionId, selected.blockId, { sourceDocumentNodeIds })} options={template.documentStructure.nodes.map(node => ({ value: node.id, label: `${node.id} · ${node.kind} · ${(node.text || 'Empty').slice(0, 90)}` }))} /></div> : null}
                                 <div>
                                     <Text type="secondary" style={{ fontSize: 11 }}>SUPPORTING EVIDENCE</Text>
@@ -348,12 +348,12 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
                                 </div>
                                 <Divider style={{ margin: '2px 0' }} />
                                 <div><Text type="secondary" style={{ fontSize: 11 }}>EDITING DEPARTMENTS</Text><Select mode="multiple" allowClear showSearch optionFilterProp="label" style={{ width: '100%' }} value={activeBlock.editorDepartmentIds} onChange={handleDepartmentChange} options={departments.map(item => ({ value: item.id, label: item.name }))} /></div>
-                                <Alert type="info" showIcon message="Coordinator access is delegated by the Operations/HOD on the live report. Templates assign department ownership only." />
+                                <Alert type="info" showIcon message="Pick the department that writes this section. Its head can hand it to a coordinator on the report." />
                                 <Divider style={{ margin: '2px 0' }} />
                                 <div>
                                     <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 5 }}>Q3 → Q4 CARRY POLICY</Text>
                                     <Radio.Group value={activeBlock.carryPolicy} onChange={e => updateBlock(selected.sectionId, selected.blockId, { carryPolicy: e.target.value as CarryPolicy })}>
-                                        <Space direction="vertical"><Radio value="carry">Carry forward by default</Radio><Radio value="review">Carry as editable starting content</Radio><Radio value="reset">Reset each reporting period</Radio></Space>
+                                        <Space direction="vertical"><Radio value="carry">Copy into the next report</Radio><Radio value="review">Copy as a starting point to edit</Radio><Radio value="reset">Reset each reporting period</Radio></Space>
                                     </Radio.Group>
                                 </div>
                                 {(activeBlock.contentType === 'table' || activeBlock.contentType === 'kpi') ? (
@@ -362,18 +362,18 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
                                 {activeBlock.contentType === 'narrative' || activeBlock.contentType === 'static' ? (
                                     <div><Text type="secondary" style={{ fontSize: 11 }}>DEFAULT / STATIC TEXT</Text><Input.TextArea autoSize={{ minRows: 5, maxRows: 10 }} value={typeof activeBlock.defaultContent === 'string' ? activeBlock.defaultContent : ''} onChange={e => updateBlock(selected.sectionId, selected.blockId, { defaultContent: e.target.value })} /></div>
                                 ) : null}
-                                <Popconfirm title="Delete this block?" onConfirm={() => removeBlock(selected.sectionId, selected.blockId)}><Button danger block icon={<DeleteOutlined />}>Delete Block</Button></Popconfirm>
+                                <Popconfirm title="Delete this section?" onConfirm={() => removeBlock(selected.sectionId, selected.blockId)}><Button danger block icon={<DeleteOutlined />}>Delete section</Button></Popconfirm>
                             </Space>
-                        ) : <Empty description="Select a block" />}
+                        ) : <Empty description="Choose a section" />}
                     </Card>
                 </div>
 
                 <Drawer
                     open={previewOpen}
                     onClose={() => setPreviewOpen(false)}
-                    title="Template Block Preview"
+                    title="Template preview"
                     width={760}
-                    destroyOnHidden
+                    destroyOnClose
                 >
                     <TemplateLayoutPreview
                         template={template}
@@ -381,8 +381,16 @@ const TemplateEditorPage: React.FC<Props> = ({ user, templateId, onBack }) => {
                         onSelectBlock={(sectionId, blockId) => setSelected({ sectionId, blockId })}
                     />
                 </Drawer>
-                <Drawer open={documentPreviewOpen} onClose={() => setDocumentPreviewOpen(false)} title="Extracted DOCX Structure" width={900} destroyOnHidden>
-                    {suggestions.length ? <><Alert type="info" showIcon message="AI proposals — review before applying" description={suggestions.map(item => `${item.confidence}% · ${item.sectionTitle}: ${item.title} (${item.contentType}; ${item.nodeIds.join(', ')})`).join('\n')} style={{ whiteSpace: 'pre-line', marginBottom: 12 }} /><Button type="primary" loading={saving} onClick={applyAiSuggestions} style={{ marginBottom: 16 }}>Apply AI Proposals as Template Blocks</Button></> : null}
+                <Drawer open={documentPreviewOpen} onClose={() => setDocumentPreviewOpen(false)} title="The Word file, as read" width={900} destroyOnClose>
+                    {suggestions.length ? <><Alert type="info" showIcon message="AI suggestions — check them before using them" description={suggestions.map(item => `${item.confidence}% · ${item.sectionTitle}: ${item.title} (${item.contentType}; ${item.nodeIds.join(', ')})`).join('\n')} style={{ whiteSpace: 'pre-line', marginBottom: 12 }} /><Popconfirm
+                        title="Replace this template's sections?"
+                        description="The AI suggestions replace every section and department assignment in this template. Unsaved changes here are lost."
+                        okText="Replace sections"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={applyAiSuggestions}
+                    >
+                        <Button type="primary" loading={saving} style={{ marginBottom: 16 }}>Use these suggestions</Button>
+                    </Popconfirm></> : null}
                     <ExtractedDocumentPreview structure={template.documentStructure} selectedNodeIds={activeBlock?.sourceDocumentNodeIds} />
                 </Drawer>
             </Space>

@@ -85,6 +85,7 @@ export const NOTIFICATION_REGISTRY: Record<string, NotificationTypeConfig> = {
         const role = clean(after.recipientRoles?.[0]);
         const bodyLine = (role && after.message && typeof after.message === "object" && after.message[role])
           || (typeof after.message === "string" && after.message)
+          || (after.message && typeof after.message === "object" && Object.values(after.message).find(Boolean))
           || "You have an open query awaiting your response.";
         const { html, text } = buildNotificationContent(
           "Open query reminder",
@@ -92,6 +93,96 @@ export const NOTIFICATION_REGISTRY: Record<string, NotificationTypeConfig> = {
           "/operations"
         );
         return { subject, html, text };
+      },
+    },
+  },
+  // Outcome check-backs (outcomeFollowUps.ts): the facilitator, then optionally the SME.
+  outcome_follow_up: {
+    email: {
+      tag: "outcome-follow-up",
+      resolveRecipient: async (after) => {
+        const email = clean(after.recipientEmail).toLowerCase();
+        return email.includes("@") ? { email, name: clean(after.recipientName) || "there" } : null;
+      },
+      template: (after, recipient, actionLinks) => {
+        const title = clean(after.interventionTitle) || "an intervention";
+        const sme = clean(after.participantName) || "the business";
+        const { html, text } = buildNotificationContent(
+          "Check-back due",
+          [
+            `Hello ${recipient.name},`,
+            `It is time to check whether ${sme} has kept up the change from "${title}".`,
+            clean(after.intendedOutcome) ? `What we wanted to see: ${clean(after.intendedOutcome)}` : "",
+            "How is it going? Tap one:",
+          ],
+          "/coordinator/check-backs",
+          actionButtonsHtml(after.actions, actionLinks)
+        );
+        return { subject: `Check-back due: ${title} (${sme})`, html, text };
+      },
+    },
+  },
+  outcome_follow_up_sme: {
+    email: {
+      tag: "outcome-follow-up-sme",
+      resolveRecipient: async (after) => {
+        const recipient = await participant(after);
+        return recipient.email ? { email: recipient.email, name: recipient.name } : null;
+      },
+      template: (after, recipient, actionLinks) => {
+        const title = clean(after.interventionTitle) || "your support";
+        const { html, text } = buildNotificationContent(
+          "A quick question",
+          [
+            `Hello ${recipient.name},`,
+            `Some time ago you completed "${title}". Are you still using what you put in place?`,
+          ],
+          "/incubatee/interventions",
+          actionButtonsHtml(after.actions, actionLinks)
+        );
+        return { subject: `Quick question about ${title}`, html, text };
+      },
+    },
+  },
+  // Finance asks the head of department who submitted a MOV pack to attach its
+  // invoice (src/lib/financeActions.ts → requestPackInvoice).
+  mov_invoice_requested: {
+    email: {
+      tag: "mov-invoice-requested",
+      resolveRecipient: async (after) => {
+        const recipient = await resolverEmail(after);
+        return recipient.email ? { email: recipient.email, name: recipient.name } : null;
+      },
+      template: (after, recipient) => {
+        const bodyLine = (typeof after.message === "string" && after.message)
+          || "Finance needs the invoice for your MOV pack before it can be paid.";
+        const { html, text } = buildNotificationContent(
+          "Invoice needed for your MOV pack",
+          [`Hello ${recipient.name},`, bodyLine],
+          "/operations/movs"
+        );
+        return { subject: "Invoice needed for your MOV pack", html, text };
+      },
+    },
+  },
+  // The HOD attached it (src/components/shared/InvoiceRequestPrompt.tsx), so
+  // the finance person who asked hears back.
+  mov_invoice_attached: {
+    email: {
+      tag: "mov-invoice-attached",
+      resolveRecipient: async (after) => {
+        const recipient = await resolverEmail(after);
+        return recipient.email ? { email: recipient.email, name: recipient.name } : null;
+      },
+      template: (after, recipient) => {
+        const bodyLine = (typeof after.message === "string" && after.message)
+          || "A MOV pack invoice you requested has been attached and is ready for your decision.";
+        const { html, text } = buildNotificationContent(
+          "MOV pack invoice attached",
+          [`Hello ${recipient.name},`, bodyLine],
+          "/operations/inhouse/invoices"
+        );
+        return { subject: "MOV pack invoice attached", html, text };
       },
     },
   },

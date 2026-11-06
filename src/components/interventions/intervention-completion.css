@@ -1,0 +1,22 @@
+/* antd wraps the Upload trigger in inline elements, so a `block` button would not fill the card. */
+.completion-upload,
+.completion-upload .ant-upload-select,
+.completion-upload .ant-upload {
+    display: block !important;
+    width: 100%;
+}
+
+.completion-upload .ant-btn {
+    max-width: 100%;
+}
+
+.completion-upload .ant-btn > span:not(.ant-btn-icon) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.completion-evidence-card .ant-card-head-title {
+    min-width: 0;
+}

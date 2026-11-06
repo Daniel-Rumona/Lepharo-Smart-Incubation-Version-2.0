@@ -3,7 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireMoaAfter3Months = void 0;
 // functions/src/moaFlag.ts
 const scheduler_1 = require("firebase-functions/v2/scheduler");
+const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
+const inAppNotifications_1 = require("./inAppNotifications");
 function addMonths(ts, months) {
     const d = ts.toDate();
     const copy = new Date(d.getTime());
@@ -49,6 +51,8 @@ exports.requireMoaAfter3Months = (0, scheduler_1.onSchedule)({ schedule: 'every 
         tasks.push((async () => {
             const appRef = docSnap.ref;
             const data = docSnap.data();
+            if ((0, syntheticData_1.suppressRecordNotifications)(data, docSnap.id))
+                return;
             const acceptedAt = data?.acceptedAt ?? null;
             if (!acceptedAt)
                 return;
@@ -82,6 +86,14 @@ exports.requireMoaAfter3Months = (0, scheduler_1.onSchedule)({ schedule: 'every 
             <p><a href="${actionUrl}" style="display:inline-block;padding:10px 16px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:6px">Open Smart Incubation</a></p>
           </div>`,
                 text: `Your Memorandum of Agreement is required.\nDue date: ${dueText}\nOpen Smart Incubation: ${actionUrl}`,
+            });
+            await (0, inAppNotifications_1.notifyInApp)({
+                type: 'moa_required',
+                message: `${firstNotice ? '' : 'Reminder: '}Your Memorandum of Agreement needs to be signed by ${dueText}.`,
+                recipientIds: [await (0, inAppNotifications_1.uidForParticipant)(data?.participantId, to)],
+                applicationId: appRef.id,
+                participantId: data?.participantId,
+                link: '/incubatee/moa',
             });
             await appRef.update({
                 'emailNotifications.moaRequired.lastSentAt': emailShared_1.admin.firestore.FieldValue.serverTimestamp(),

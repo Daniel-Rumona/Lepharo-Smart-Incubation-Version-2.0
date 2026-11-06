@@ -202,8 +202,6 @@ type AssignedInterventionDoc = {
     programId?: string
     departmentId?: string
 
-    areaOfSupport?: string
-
     beneficiaryName?: string
     participantId?: string
     participantEmail?: string
@@ -249,20 +247,17 @@ type ApplicationDoc = {
 
     interventions?: {
         required?: Array<{
-            area?: string
-            areaOfSupport?: string
+            departmentId?: string
             title?: string
         }>
 
         assigned?: Array<{
-            area?: string
-            areaOfSupport?: string
+            departmentId?: string
             title?: string
         }>
 
         completed?: Array<{
-            area?: string
-            areaOfSupport?: string
+            departmentId?: string
             title?: string
         }>
     }
@@ -1086,9 +1081,6 @@ export async function buildExecutiveQuarterlyReportData({
                           item.departmentId
                       )
                     : ''
-            ) ||
-            norm(
-                item.areaOfSupport
             ) ||
             'Unmapped'
 

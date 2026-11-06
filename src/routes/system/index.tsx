@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
     Row,
     Col,
+    Grid,
     Table,
     Button,
     Modal,
@@ -12,7 +13,7 @@ import {
     message,
     Typography,
     Switch,
-    Segmented,
+    Tag,
     Popconfirm,
     Skeleton
 } from 'antd'
@@ -25,7 +26,9 @@ import {
     EnvironmentOutlined,
     CloseOutlined,
     SettingOutlined,
-    DeleteOutlined
+    DeleteOutlined,
+    ProjectOutlined,
+    FileProtectOutlined
 } from '@ant-design/icons'
 import {
     addDoc,
@@ -44,11 +47,14 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { BranchManagement } from '@/components/branch-management'
 import { motion } from 'framer-motion'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile, type MetricTone } from '@/components/dashboards/metrics/MetricTile'
 import {
     DEFAULT_PROGRAM_LIMIT,
     getProgramLimit,
     saveProgramLimit
 } from '@/services/systemSettingsService'
+import { MobileCardList } from '@/components/shared/MobileCardList'
+import '@/components/shared/setup-segmented.css'
 import { AgreementTemplatesManager } from '@/components/compliance/AgreementTemplatesManager'
 
 const { Option } = Select
@@ -74,10 +80,13 @@ const normalizeUser = (id: string, data: any): RoleUser => ({
 })
 
 const SystemSetupForm: React.FC = () => {
+    const screens = Grid.useBreakpoint()
+    const isMobile = !screens.md
     const [activeSegment, setActiveSegment] = useState<SegmentKey>('department')
     const [departments, setDepartments] = useState<any[]>([])
     const [branches, setBranches] = useState<any[]>([])
     const [programs, setPrograms] = useState<any[]>([])
+    const [agreementTemplates, setAgreementTemplates] = useState<{ total: number; active: number } | null>(null)
     const [operationsUsers, setOperationsUsers] = useState<RoleUser[]>([])
     const [loading, setLoading] = useState(false)
     const [modalVisible, setModalVisible] = useState(false)
@@ -88,6 +97,8 @@ const SystemSetupForm: React.FC = () => {
     const [programLimitLoading, setProgramLimitLoading] = useState(false)
     const [departmentSearch, setDepartmentSearch] = useState('')
     const [programSearch, setProgramSearch] = useState('')
+    const [agreementSearch, setAgreementSearch] = useState('')
+    const [agreementAddSignal, setAgreementAddSignal] = useState(0)
     const [programsLoading, setProgramsLoading] = useState(false)
     const [programTogglingId, setProgramTogglingId] = useState<string | null>(null)
     const [programLimitModalOpen, setProgramLimitModalOpen] = useState(false)
@@ -95,7 +106,7 @@ const SystemSetupForm: React.FC = () => {
 
     const selectedHeadUserId = Form.useWatch('headUserId', form)
 
-    const isSystemAdmin = ['admin', 'system admin', 'system_admin'].includes(
+    const isSystemAdmin = ['system admin', 'system_admin'].includes(
         String(user?.role || '').toLowerCase()
     )
 
@@ -108,6 +119,7 @@ const SystemSetupForm: React.FC = () => {
 
         if (isSystemAdmin) {
             void fetchPrograms()
+            void fetchAgreementTemplates()
         }
     }, [identityLoading, isSystemAdmin])
 
@@ -191,6 +203,18 @@ const SystemSetupForm: React.FC = () => {
         }
     }
 
+    const fetchAgreementTemplates = async () => {
+        try {
+            const snap = await getDocs(collection(db, 'agreementTemplates'))
+            setAgreementTemplates({
+                total: snap.size,
+                active: snap.docs.filter(item => item.data().active !== false).length
+            })
+        } catch (error) {
+            console.error(error)
+        }
+    }
+
     const toggleProgramStatus = async (program: any) => {
         setProgramTogglingId(program.id)
         try {
@@ -217,19 +241,54 @@ const SystemSetupForm: React.FC = () => {
         }
     }
 
-    const metrics = [
+    const withHead = departments.filter(d => d.headUserId || d.hodUserId || d.managerId || d.headName || d.manager).length
+    const withCoordinator = branches.filter(b => b.centreCoordinatorUserId).length
+    const activePrograms = programs.filter(p => p.isActive !== false).length
+
+    const metrics: Array<{
+        key: SegmentKey
+        title: string
+        value: number
+        subtitle: string
+        icon: React.ReactNode
+        tone: MetricTone
+    }> = [
         {
+            key: 'department',
             title: 'Departments',
             value: departments.length,
-            icon: <ApartmentOutlined style={{ fontSize: 20, color: '#1677ff' }} />,
-            iconBg: '#e6f4ff',
+            subtitle: `${withHead} with a head assigned`,
+            icon: <ApartmentOutlined style={{ fontSize: 20 }} />,
+            tone: 'accent'
         },
         {
+            key: 'branch',
             title: 'Branches',
             value: branches.length,
-            icon: <EnvironmentOutlined style={{ fontSize: 20, color: '#722ed1' }} />,
-            iconBg: '#f9f0ff',
-        }
+            subtitle: `${withCoordinator} with a centre coordinator`,
+            icon: <EnvironmentOutlined style={{ fontSize: 20 }} />,
+            tone: 'info'
+        },
+        ...(isSystemAdmin
+            ? [
+                  {
+                      key: 'programs' as SegmentKey,
+                      title: 'Programs',
+                      value: programs.length,
+                      subtitle: `${activePrograms} available · ${programs.length - activePrograms} deactivated`,
+                      icon: <ProjectOutlined style={{ fontSize: 20 }} />,
+                      tone: 'info' as const
+                  },
+                  {
+                      key: 'agreements' as SegmentKey,
+                      title: 'Agreement Templates',
+                      value: agreementTemplates?.total ?? 0,
+                      subtitle: `${agreementTemplates?.active ?? 0} active`,
+                      icon: <FileProtectOutlined style={{ fontSize: 20 }} />,
+                      tone: 'warning' as const
+                  }
+              ]
+            : [])
     ]
 
     const departmentColumns = [
@@ -332,24 +391,6 @@ const SystemSetupForm: React.FC = () => {
                 .some(value => String(value).toLowerCase().includes(keyword))
         )
     }, [programs, programSearch])
-
-    const segmentControl = (
-        <Segmented
-            block
-            options={[
-                { label: 'Departments', value: 'department' },
-                { label: 'Branches', value: 'branch' },
-                ...(isSystemAdmin
-                    ? [
-                        { label: 'Program Settings', value: 'programs' },
-                        { label: 'Agreement Templates', value: 'agreements' }
-                    ]
-                    : [])
-            ]}
-            value={activeSegment}
-            onChange={value => setActiveSegment(value as SegmentKey)}
-        />
-    )
 
     const openEdit = (record: any) => {
         setEditingRecord(record)
@@ -467,13 +508,20 @@ const SystemSetupForm: React.FC = () => {
     return (
         <div style={{ padding: 24, minHeight: '100vh' }}>
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                {metrics.map((metric, index) => (
-                    <Col key={metric.title} xs={24} sm={24} md={12} lg={12} xl={12}>
-                        <MotionCard.Metric
+                {metrics.map(metric => (
+                    <Col key={metric.key} xs={12} xl={24 / metrics.length}>
+                        <MetricTile
                             icon={metric.icon}
-                            iconBg={metric.iconBg}
-                            title={metric.title}
+                            tone={metric.tone}
+                            title={isMobile && metric.key === 'agreements' ? 'Agreements' : metric.title}
                             value={metric.value}
+                            subtitle={isMobile ? undefined : metric.subtitle}
+                            onClick={() => setActiveSegment(metric.key)}
+                            wrapperStyle={
+                                activeSegment === metric.key
+                                    ? { borderColor: '#1677ff', boxShadow: '0 0 0 1px #1677ff' }
+                                    : undefined
+                            }
                         />
                     </Col>
                 ))}
@@ -487,12 +535,8 @@ const SystemSetupForm: React.FC = () => {
                 {activeSegment === 'department' ? (
                     <MotionCard
                         filterBar={
-                            <Row gutter={12} wrap={false} style={{ width: '100%' }}>
-                                <Col span={8}>
-                                    {segmentControl}
-                                </Col>
-
-                                <Col span={8}>
+                            <div className='setup-toolbar'>
+                                <div className='setup-toolbar-search'>
                                     <Input.Search
                                         placeholder='Search departments'
                                         value={departmentSearch}
@@ -501,19 +545,17 @@ const SystemSetupForm: React.FC = () => {
                                         style={{ width: '100%' }}
                                         allowClear
                                     />
-                                </Col>
-
-                                <Col span={8}>
+                                </div>
+                                <div className='setup-toolbar-action'>
                                     <Button
-                                        block
                                         type='primary'
                                         icon={<PlusOutlined />}
                                         onClick={openAdd}
                                     >
                                         Add Department
                                     </Button>
-                                </Col>
-                            </Row>
+                                </div>
+                            </div>
                         }
                     >
                         {loading ? (
@@ -521,6 +563,41 @@ const SystemSetupForm: React.FC = () => {
                                 active
                                 title={false}
                                 paragraph={{ rows: 8, width: '100%' }}
+                            />
+                        ) : isMobile ? (
+                            <MobileCardList
+                                data={filteredDepartments}
+                                getKey={(row: any) => row.id}
+                                pageSize={8}
+                                emptyText='No departments'
+                                renderCard={(record: any) => ({
+                                    title: record.name || 'Unnamed department',
+                                    subtitle: record.contactEmail || undefined,
+                                    fields: [
+                                        { label: 'Head', value: record.headName || record.manager || '—' }
+                                    ],
+                                    note: record.description ? (
+                                        <Text type='secondary'>{record.description}</Text>
+                                    ) : undefined,
+                                    actions: [
+                                        <Button key='edit' icon={<EditOutlined />} onClick={() => openEdit(record)}>
+                                            Edit
+                                        </Button>,
+                                        <Popconfirm
+                                            key='delete'
+                                            title='Delete department?'
+                                            description={`This will permanently delete ${record.name || 'this department'}.`}
+                                            okText='Delete'
+                                            cancelText='Cancel'
+                                            okButtonProps={{ danger: true, loading: deletingDepartmentId === record.id }}
+                                            onConfirm={() => handleDeleteDepartment(record)}
+                                        >
+                                            <Button danger icon={<DeleteOutlined />} loading={deletingDepartmentId === record.id}>
+                                                Delete
+                                            </Button>
+                                        </Popconfirm>
+                                    ]
+                                })}
                             />
                         ) : (
                             <Table
@@ -536,16 +613,12 @@ const SystemSetupForm: React.FC = () => {
                         )}
                     </MotionCard>
                 ) : activeSegment === 'branch' ? (
-                    <BranchManagement filterBarLeading={segmentControl} />
+                    <BranchManagement />
                 ) : activeSegment === 'programs' && isSystemAdmin ? (
                     <MotionCard
                         filterBar={
-                            <Row gutter={12} wrap={false} style={{ width: '100%' }}>
-                                <Col span={8}>
-                                    {segmentControl}
-                                </Col>
-
-                                <Col span={8}>
+                            <div className='setup-toolbar'>
+                                <div className='setup-toolbar-search'>
                                     <Input.Search
                                         placeholder='Search programs'
                                         value={programSearch}
@@ -554,18 +627,16 @@ const SystemSetupForm: React.FC = () => {
                                         style={{ width: '100%' }}
                                         allowClear
                                     />
-                                </Col>
-
-                                <Col span={8}>
+                                </div>
+                                <div className='setup-toolbar-action'>
                                     <Button
-                                        block
                                         icon={<SettingOutlined />}
                                         onClick={() => setProgramLimitModalOpen(true)}
                                     >
                                         Program limit: {programLimit}
                                     </Button>
-                                </Col>
-                            </Row>
+                                </div>
+                            </div>
                         }
                     >
                         {programsLoading ? (
@@ -573,6 +644,34 @@ const SystemSetupForm: React.FC = () => {
                                 active
                                 title={false}
                                 paragraph={{ rows: 8, width: '100%' }}
+                            />
+                        ) : isMobile ? (
+                            <MobileCardList
+                                data={filteredPrograms}
+                                getKey={(row: any) => row.id}
+                                pageSize={8}
+                                emptyText='No programs'
+                                renderCard={(record: any) => ({
+                                    title: record.name || 'Unnamed program',
+                                    subtitle: record.code || undefined,
+                                    badge: (
+                                        <Tag color={record.isActive !== false ? 'green' : 'default'}>
+                                            {record.isActive !== false ? 'Available' : 'Deactivated'}
+                                        </Tag>
+                                    ),
+                                    note: record.description ? (
+                                        <Text type='secondary'>{record.description}</Text>
+                                    ) : undefined,
+                                    actions: [
+                                        <Button
+                                            key='toggle'
+                                            loading={programTogglingId === record.id}
+                                            onClick={() => toggleProgramStatus(record)}
+                                        >
+                                            {record.isActive !== false ? 'Deactivate' : 'Activate'}
+                                        </Button>
+                                    ]
+                                })}
                             />
                         ) : (
                             <Table
@@ -626,8 +725,37 @@ const SystemSetupForm: React.FC = () => {
                         )}
                     </MotionCard>
                 ) : activeSegment === 'agreements' && isSystemAdmin ? (
-                    <MotionCard filterBar={segmentControl}>
-                        <AgreementTemplatesManager canManage={isSystemAdmin} />
+                    <MotionCard
+                        filterBar={
+                            <div className='setup-toolbar'>
+                                <div className='setup-toolbar-search'>
+                                    <Input.Search
+                                        placeholder='Search agreement templates'
+                                        value={agreementSearch}
+                                        onChange={event => setAgreementSearch(event.target.value)}
+                                        onSearch={setAgreementSearch}
+                                        style={{ width: '100%' }}
+                                        allowClear
+                                    />
+                                </div>
+                                <div className='setup-toolbar-action'>
+                                    <Button
+                                        type='primary'
+                                        icon={<PlusOutlined />}
+                                        onClick={() => setAgreementAddSignal(count => count + 1)}
+                                    >
+                                        Add Agreement
+                                    </Button>
+                                </div>
+                            </div>
+                        }
+                    >
+                        <AgreementTemplatesManager
+                            canManage={isSystemAdmin}
+                            search={agreementSearch}
+                            addSignal={agreementAddSignal}
+                            onChanged={() => void fetchAgreementTemplates()}
+                        />
                     </MotionCard>
                 ) : null}
             </motion.div>

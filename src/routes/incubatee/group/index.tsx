@@ -28,9 +28,13 @@ import {
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { getSmeParticipant } from '@/services/smeIdentity'
+import { getSmeApplications } from '@/lib/acceptedApplication'
 import {
+    buildGroupRequirements,
     evaluateGroupEligibility,
     groupLabel,
+    isAgreementCountersigned,
     resolveApplicationGroup,
     type GroupEligibility,
     type GroupEvidence,
@@ -63,9 +67,14 @@ const toDate = (value: any): Date | null => {
     return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-async function loadEvidence(application: any): Promise<GroupEvidence[]> {
-    const flat: GroupEvidence[] = Array.isArray(application.complianceDocuments)
-        ? application.complianceDocuments.map((item: any, index: number) => ({
+async function loadEvidence(application: any, participant: any = {}): Promise<GroupEvidence[]> {
+    // Same source the Compliance pages read: the participant's array when it
+    // has entries, otherwise the application's.
+    const embedded: any[] | null = Array.isArray(participant?.complianceDocuments) && participant.complianceDocuments.length
+        ? participant.complianceDocuments
+        : Array.isArray(application.complianceDocuments) ? application.complianceDocuments : null
+    const flat: GroupEvidence[] = embedded
+        ? embedded.map((item: any, index: number) => ({
             id: item.agreementId || item.presetId || item.id || `flat-${index}`,
             agreementId: item.agreementId,
             title: item.title || item.documentName || item.name || item.type || '',
@@ -105,6 +114,7 @@ async function loadEvidence(application: any): Promise<GroupEvidence[]> {
             agreementId: slug,
             title: item.title || slug,
             kind: 'agreement',
+            status: isAgreementCountersigned(item) ? 'valid' : 'pending',
             signed: isIncubateeAgreementSigned(item, slug),
             raw: item
         }
@@ -140,7 +150,7 @@ export default function GroupProgressForm() {
     const [rules, setRules] = useState<any>({})
 
     useEffect(() => {
-        if (!user?.email) {
+        if (!user) {
             setLoading(false)
             return
         }
@@ -148,33 +158,13 @@ export default function GroupProgressForm() {
         ;(async () => {
             setLoading(true)
             try {
-                const participantSnapshot = await getDocs(query(
-                    collection(db, 'participants'),
-                    where('email', '==', user.email),
-                    limit(1)
-                ))
-                const participantRecord = participantSnapshot.empty
-                    ? null
-                    : { id: participantSnapshot.docs[0].id, ...(participantSnapshot.docs[0].data() as any) }
-
-                let applicationSnapshot
-                if (participantRecord?.id) {
-                    applicationSnapshot = await getDocs(query(
-                        collection(db, 'applications'),
-                        where('participantId', '==', participantRecord.id),
-                        limit(10)
-                    ))
-                }
-                if (!applicationSnapshot || applicationSnapshot.empty) {
-                    applicationSnapshot = await getDocs(query(
-                        collection(db, 'applications'),
-                        where('email', '==', user.email),
-                        limit(10)
-                    ))
-                }
-                const accepted = applicationSnapshot.docs.find(snapshot =>
-                    ['accepted', 'active'].includes(String(snapshot.data().applicationStatus || '').toLowerCase())
-                ) || applicationSnapshot.docs[0]
+                // The SME's linked participant; email only until it is linked.
+                const sme = { uid: user.id, participantId: user.participantId, email: user.email }
+                const participantRecord = await getSmeParticipant(sme)
+                const applications = await getSmeApplications({ ...sme, participantId: participantRecord?.id || sme.participantId })
+                const accepted = applications.find(app =>
+                    ['accepted', 'active'].includes(String(app.applicationStatus || '').toLowerCase())
+                ) || applications[0]
                 if (!accepted) {
                     if (!disposed) {
                         setApplication(null)
@@ -182,14 +172,14 @@ export default function GroupProgressForm() {
                     }
                     return
                 }
-                const applicationRecord = { id: accepted.id, ...(accepted.data() as any) }
+                const applicationRecord = accepted
                 const programSnapshot = applicationRecord.programId
                     ? await getDoc(doc(db, 'programs', applicationRecord.programId))
                     : null
                 const program = programSnapshot?.exists() ? programSnapshot.data() as any : {}
 
                 const [loadedEvidence, interventionSnapshot, resolvedCompliance] = await Promise.all([
-                    loadEvidence(applicationRecord),
+                    loadEvidence(applicationRecord, participantRecord || {}),
                     participantRecord?.id
                         ? getDocs(query(collection(db, 'assignedInterventions'), where('participantId', '==', participantRecord.id)))
                         : getDocs(query(collection(db, 'assignedInterventions'), where('applicationId', '==', applicationRecord.id))),
@@ -211,12 +201,7 @@ export default function GroupProgressForm() {
                 if (!disposed) {
                     setApplication(applicationRecord)
                     setParticipant(participantRecord)
-                    setRequirements(resolvedCompliance.requirements.map(requirement => ({
-                        id: requirement.id,
-                        title: requirement.title,
-                        kind: requirement.kind,
-                        agreementId: requirement.agreementId
-                    })))
+                    setRequirements(buildGroupRequirements(resolvedCompliance.requirements))
                     setRules(program.groupProgressionRules || {})
                     setEvidence(loadedEvidence)
                     setInterventions(loadedInterventions)
@@ -229,7 +214,7 @@ export default function GroupProgressForm() {
             }
         })()
         return () => { disposed = true }
-    }, [user?.email])
+    }, [user?.email, user?.participantId])
 
     const group = useMemo<IncubationGroup>(() =>
         resolveApplicationGroup(application || {}, participant || {}), [application, participant])
@@ -300,7 +285,7 @@ export default function GroupProgressForm() {
                         block
                         type='primary'
                         style={{ marginTop: 12 }}
-                        onClick={() => navigate('/incubatee/documents/compliance')}
+                        onClick={() => navigate('/incubatee/compliance')}
                     >
                         Open compliance
                     </Button>}

@@ -16,6 +16,11 @@ export const AiMark = () => (
 function useTypewriter(text: string, speed = 18) {
   const [length, setLength] = useState(0);
   useEffect(() => {
+    // Reduced motion: show the whole line at once.
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setLength(text.length);
+      return;
+    }
     setLength(0);
     if (!text) return;
     const id = setInterval(() => {
@@ -72,6 +77,8 @@ export type Suggestion = {
   text?: string;
   error?: string;
   retry: () => void;
+  /** The field's text when the suggestion was asked for, to notice edits made meanwhile. */
+  base?: string;
 };
 
 /** A proposed AI change the author accepts or discards. Nothing changes until Accept. */

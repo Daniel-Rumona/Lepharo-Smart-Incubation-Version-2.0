@@ -18,11 +18,14 @@ export type ResolvedColorMode = "light" | "dark";
 
 /**
  * Accent palette. Orthogonal to light/dark: each accent has its own light and
- * dark variant, so any of the three can be paired with any colour mode.
+ * dark variant, so any of them can be paired with any colour mode. Crimson
+ * (the Lepharo brand red) is the default; the others are opt-in.
  */
-export type AccentTheme = "blue" | "ocean" | "violet";
+export type AccentTheme = "crimson" | "blue" | "ocean" | "violet";
 
-export const ACCENT_THEMES: AccentTheme[] = ["blue", "ocean", "violet"];
+export const ACCENT_THEMES: AccentTheme[] = ["crimson", "blue", "ocean", "violet"];
+
+export const DEFAULT_ACCENT: AccentTheme = "crimson";
 
 type ThemeContextValue = {
     /** What the user picked. */
@@ -62,13 +65,13 @@ const readStoredPreference = (): ColorModePreference => {
 const readStoredAccent = (): AccentTheme => {
     try {
         const stored = window.localStorage.getItem(ACCENT_STORAGE_KEY);
-        if (stored === "blue" || stored === "ocean" || stored === "violet") {
-            return stored;
+        if (ACCENT_THEMES.includes(stored as AccentTheme)) {
+            return stored as AccentTheme;
         }
     } catch {
         // Private mode / storage disabled — fall through to the default.
     }
-    return "blue";
+    return DEFAULT_ACCENT;
 };
 
 const resolve = (preference: ColorModePreference): ResolvedColorMode =>

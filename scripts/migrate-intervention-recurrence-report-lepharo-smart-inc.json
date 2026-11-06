@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-11-01T03:09:05.263Z",
+  "project": "lepharo-smart-inc",
+  "mode": "apply",
+  "counts": {
+    "interventions.update": 86,
+    "interventions.scheduleModeSet.recurring": 32,
+    "interventions.oldFieldsRemoved": 273,
+    "interventions.defaultedToOnceOff": 36,
+    "interventions.scheduleModeSet.once-off": 45,
+    "interventions.scheduleModeSet.ad-hoc": 9,
+    "assignedInterventions.unchanged": 235,
+    "assignedInterventions.update": 90,
+    "diagnosticPlans.update": 64,
+    "diagnosticPlans.copiesStripped": 64,
+    "writes": 240
+  },
+  "needsManualReview": []
+}

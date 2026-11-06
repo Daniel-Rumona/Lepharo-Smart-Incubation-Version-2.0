@@ -44,7 +44,7 @@ import dayjs from 'dayjs'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 const { RangePicker } = DatePicker
 const { Option } = Select
 const { TextArea } = Input
@@ -586,44 +586,44 @@ const CenterCoordinatorFollowUps: React.FC = () => {
       {/* Statistics */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} xl={6}>
-          <MotionCard.Metric
+          <MetricTile
             {...metricProps('all')}
             loading={loading}
-            icon={<ClockCircleOutlined style={{ color: '#1677ff' }} />}
-            iconBg='rgba(22,119,255,0.12)'
+            icon={<ClockCircleOutlined />}
+            tone='accent'
             title='Total Follow-ups'
             value={stats.total}
             subtitle='Click to show all'
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>
-          <MotionCard.Metric
+          <MetricTile
             {...metricProps('Pending')}
             loading={loading}
-            icon={<ClockCircleOutlined style={{ color: '#fa8c16' }} />}
-            iconBg='rgba(250,140,22,0.14)'
+            icon={<ClockCircleOutlined />}
+            tone='warning'
             title='Pending'
             value={stats.pending}
             subtitle='Waiting to be actioned'
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>
-          <MotionCard.Metric
+          <MetricTile
             {...metricProps('Overdue')}
             loading={loading}
-            icon={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
-            iconBg='rgba(255,77,79,0.12)'
+            icon={<ExclamationCircleOutlined />}
+            tone='danger'
             title='Overdue'
             value={stats.overdue}
             subtitle='Past their scheduled date'
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>
-          <MotionCard.Metric
+          <MetricTile
             {...metricProps('Completed')}
             loading={loading}
-            icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-            iconBg='rgba(82,196,26,0.12)'
+            icon={<CheckCircleOutlined />}
+            tone='success'
             title='Completed'
             value={stats.completed}
             subtitle='Done and closed'

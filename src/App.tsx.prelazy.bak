@@ -133,7 +133,6 @@ import { CoordinatorsPage } from "./routes/operations/coordinators";
 import OperationsInquiriesPage from "./routes/operations/inquiries";
 import ParticipantOnboardingForm from "./routes/operations/participants/new/ParticipantOnboardingForm";
 import ParticipantSuccess from "./routes/operations/participants/success";
-import OperationsResourceManagement from "@/routes/operations/resources";
 import ComplianceTrackingPage from "./routes/shared/compliance";
 import InterventionsAssignments from "./routes/operations/assignments";
 import InterventionsRequests from "./routes/operations/requests";
@@ -205,8 +204,6 @@ import { ChatSessionProvider } from "@/routes/chat/ChatSessionContext";
 import ApplicationsPage from "./routes/applications";
 import InterventionDatabaseView from "./routes/interventions";
 import Resources from "./routes/resources";
-import RequestedResources from "./routes/resources/requests/RequestedResources";
-import Allocations from "./routes/resources/allocations/allocations";
 import InternalResourceRequestView from "./routes/resources/internal";
 import DataExportPage from "./routes/data-export";
 import TasksModule from "./components/tasks/TaskModule";
@@ -668,10 +665,6 @@ const App = () => {
                                                                 element={<CoordinatorPerformance />}
                                                             />
                                                         </Route>
-                                                        <Route
-                                                            path="resources"
-                                                            element={<OperationsResourceManagement />}
-                                                        />
                                                         <Route path="movs" element={<MOVApprovalsForm />} />
                                                         <Route
                                                             path="inquiries"
@@ -765,14 +758,9 @@ const App = () => {
                                                     <Route path="resources">
                                                         <Route index element={<Resources />} />
                                                         <Route
-                                                            path="requests"
-                                                            element={<RequestedResources />}
-                                                        />
-                                                        <Route
                                                             path="internal"
                                                             element={<InternalResourceRequestView />}
                                                         />
-                                                        <Route path="allocations" element={<Allocations />} />
                                                     </Route>
                                                     <Route path="programs" element={<ProgramManager />} />
                                                     <Route

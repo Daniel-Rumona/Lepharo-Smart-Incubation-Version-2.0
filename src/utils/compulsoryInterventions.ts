@@ -1,3 +1,11 @@
+import { LEGACY_SCHEDULE_FIELDS } from '@/lib/recurrence'
+
+// A plan keeps its own copy of each definition. The schedule is left out:
+// it's always read from the live definition, so a copy can't go stale.
+const SCHEDULE_FIELDS = ['scheduleMode', 'recurrence', 'recurrenceEnd', ...LEGACY_SCHEDULE_FIELDS]
+const withoutSchedule = (definition: any) =>
+    Object.fromEntries(Object.entries(definition).filter(([key]) => !SCHEDULE_FIELDS.includes(key)))
+
 export const interventionId = (item: any): string =>
     String(item?.id || item?.interventionId || '').trim()
 
@@ -11,10 +19,10 @@ export function mergeCompulsoryInterventions(items: any[], definitions: any[]): 
         const id = interventionId(definition)
         if (!id || result.some(item => interventionId(item) === id)) continue
         result.push({
-            ...definition,
+            ...withoutSchedule(definition),
             id,
             title: definition.interventionTitle || definition.title || 'Intervention',
-            area: definition.areaOfSupport || definition.area || '',
+            departmentId: definition.departmentId || null,
             source: 'compulsory',
         })
     }

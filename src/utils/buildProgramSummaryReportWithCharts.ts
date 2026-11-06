@@ -35,7 +35,6 @@ type AssignedInterventionDoc = {
 
   programId?: string
   departmentId?: string
-  areaOfSupport?: string
 
   beneficiaryName?: string
   participantId?: string
@@ -59,7 +58,7 @@ type AssignedInterventionDoc = {
 }
 
 type ApplicationDoc = {
-  interventions?: { required?: Array<{ area?: string }> }
+  interventions?: { required?: Array<{ departmentId?: string }> }
 }
 
 const norm = (s: any) => String(s ?? "").trim()
@@ -203,7 +202,7 @@ export async function buildConsolidatedMeProgramReport(
   const periodLabel = formatPeriodLabel(start, end, span)
 
   // -----------------------------
-  // Departments (canonical name mapping)
+  // Departments (id -> display name)
   // -----------------------------
   const depSnap = await getDocs(
     query(
@@ -217,15 +216,13 @@ export async function buildConsolidatedMeProgramReport(
   })
 
 
-  const depNameByLower = new Map<string, string>()
+  const depNameById = new Map<string, string>()
   for (const d of departments) {
     const n = (d.name || "").trim()
-    if (n) depNameByLower.set(n.toLowerCase(), n)
+    if (n) depNameById.set(d.id, n)
   }
-  const deptKeyFromArea = (area?: string) => {
-    const k = (area || "").trim().toLowerCase()
-    return depNameByLower.get(k) || "Unmapped"
-  }
+  const deptNameFromId = (departmentId?: string) =>
+    depNameById.get(norm(departmentId)) || "Unmapped"
 
   // -----------------------------
   // Required (from applications)
@@ -239,7 +236,7 @@ export async function buildConsolidatedMeProgramReport(
     const x = d.data() as ApplicationDoc
     const req = Array.isArray(x?.interventions?.required) ? x.interventions!.required! : []
     for (const r of req) {
-      const dept = deptKeyFromArea(r.area)
+      const dept = deptNameFromId(r.departmentId)
       requiredByDept.set(dept, (requiredByDept.get(dept) || 0) + 1)
     }
   })
@@ -264,7 +261,7 @@ export async function buildConsolidatedMeProgramReport(
   // -----------------------------
   const deptCounts = new Map<string, number>()
   assignedInPeriod.forEach(ai => {
-    const dept = deptKeyFromArea(ai.areaOfSupport)
+    const dept = deptNameFromId(ai.departmentId)
     deptCounts.set(dept, (deptCounts.get(dept) || 0) + 1)
   })
   const interventionsByDepartment = Array.from(deptCounts.entries())
@@ -346,7 +343,7 @@ export async function buildConsolidatedMeProgramReport(
   const statusDist: Record<string, number> = {}
 
   assignedInPeriod.forEach(ai => {
-    const dept = deptKeyFromArea(ai.areaOfSupport)
+    const dept = deptNameFromId(ai.departmentId)
 
     const stRaw = String(ai.assignmentStatus || "unknown").toLowerCase().trim()
     statusDist[stRaw] = (statusDist[stRaw] || 0) + 1
@@ -505,14 +502,14 @@ const interventionsThisMonth = await buildMonthlyInterventionTrackerRows({
       participantId: ai.participantId,
       beneficiaryName: ai.beneficiaryName,
       participantEmail: ai.participantEmail,
-      areaOfSupport: ai.areaOfSupport,
+      departmentId: ai.departmentId,
       interventionTitle: ai.interventionTitle,
       createdAt: ai.createdAt,
       updatedAt: ai.updatedAt,
       completedAt: ai.completedAt,
       movAttached: hasEvidenceOrCompletion(ai)
     })),
-    deptKeyFromArea,
+    deptNameFromId,
     applicationsByParticipantId
   })
 
@@ -525,7 +522,7 @@ const interventionsThisMonth = await buildMonthlyInterventionTrackerRows({
   const engagementsWithoutMOV: InterventionRow[] = assignedInPeriod
     .filter(ai => !hasEvidenceOrCompletion(ai))
     .map(ai => {
-      const dept = deptKeyFromArea(ai.areaOfSupport)
+      const dept = deptNameFromId(ai.departmentId)
       const title = norm(ai.interventionTitle) || "Unknown Intervention"
       const st = low(ai.assignmentStatus)
       const reason =

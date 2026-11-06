@@ -12,7 +12,7 @@ import {
     message,
 } from "antd";
 import Highcharts from "highcharts";
-import HighchartsMore from "highcharts/highcharts-more";
+import "highcharts/highcharts-more";
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import {
@@ -35,10 +35,8 @@ import {
 
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
-import {
-    DashboardFilterBar,
-    MotionCard,
-} from "@/components/dashboards/metrics/Header";
+import { DashboardFilterBar } from "@/components/dashboards/metrics/Header";
+import { MetricTile } from "@/components/dashboards/metrics/MetricTile";
 import { useActiveProgramId } from "@/lib/useActiveProgramId";
 import { buildMonthlyReportWithCharts } from "@/utils/buildMonthlyReportWithCharts";
 import { exportMonthlyDepartmentReportDocx } from "@/utils/monthlyReportDocx";
@@ -64,7 +62,7 @@ import {
     inRangeInclusive,
     isOverdueAt,
     isReportCompleted,
-    METRIC_ICON_COLORS,
+    METRIC_TONES,
     reportLifecycleStatus,
     tsToDayjs,
     turnaroundDays,
@@ -72,9 +70,6 @@ import {
 
 dayjs.extend(isoWeek);
 
-if (typeof HighchartsMore === "function") {
-    HighchartsMore(Highcharts);
-}
 
 const { RangePicker } = DatePicker;
 
@@ -762,8 +757,6 @@ const ReportingDashboard: React.FC = () => {
                 const departmentName =
                     (user as any)
                         ?.departmentName ||
-                    (user as any)
-                        ?.areaOfSupport ||
                     "Department";
 
                 const reportData =
@@ -879,35 +872,18 @@ const ReportingDashboard: React.FC = () => {
                         value:
                             uniqueSmesHelped,
                         icon: (
-                            <TeamOutlined
-                                style={{
-                                    color: METRIC_ICON_COLORS
-                                        .reach
-                                        .color,
-                                }}
-                            />
+                            <TeamOutlined />
                         ),
-                        iconBg:
-                            METRIC_ICON_COLORS
-                                .reach.bg,
+                        tone: METRIC_TONES.reach,
                     },
                     {
                         title:
                             "Completion Rate",
                         value: `${completionRate}%`,
                         icon: (
-                            <RiseOutlined
-                                style={{
-                                    color: METRIC_ICON_COLORS
-                                        .completion
-                                        .color,
-                                }}
-                            />
+                            <RiseOutlined />
                         ),
-                        iconBg:
-                            METRIC_ICON_COLORS
-                                .completion
-                                .bg,
+                        tone: METRIC_TONES.completion,
                     },
                     {
                         title:
@@ -917,18 +893,9 @@ const ReportingDashboard: React.FC = () => {
                                 ? `${avgTurnaround} days`
                                 : "0 days",
                         icon: (
-                            <FieldTimeOutlined
-                                style={{
-                                    color: METRIC_ICON_COLORS
-                                        .turnaround
-                                        .color,
-                                }}
-                            />
+                            <FieldTimeOutlined />
                         ),
-                        iconBg:
-                            METRIC_ICON_COLORS
-                                .turnaround
-                                .bg,
+                        tone: METRIC_TONES.turnaround,
                     },
                     {
                         title:
@@ -938,18 +905,9 @@ const ReportingDashboard: React.FC = () => {
                                 ? `${avgFeedback}/5`
                                 : "No ratings",
                         icon: (
-                            <StarOutlined
-                                style={{
-                                    color: METRIC_ICON_COLORS
-                                        .feedback
-                                        .color,
-                                }}
-                            />
+                            <StarOutlined />
                         ),
-                        iconBg:
-                            METRIC_ICON_COLORS
-                                .feedback
-                                .bg,
+                        tone: METRIC_TONES.feedback,
                     },
                     {
                         title:
@@ -957,17 +915,9 @@ const ReportingDashboard: React.FC = () => {
                         value:
                             overdueTotal,
                         icon: (
-                            <WarningOutlined
-                                style={{
-                                    color: METRIC_ICON_COLORS
-                                        .overdue
-                                        .color,
-                                }}
-                            />
+                            <WarningOutlined />
                         ),
-                        iconBg:
-                            METRIC_ICON_COLORS
-                                .overdue.bg,
+                        tone: METRIC_TONES.overdue,
                     },
                 ].map((metric) => (
                     <Col
@@ -976,7 +926,7 @@ const ReportingDashboard: React.FC = () => {
                             metric.title
                         }
                     >
-                        <MotionCard.Metric
+                        <MetricTile
                             title={
                                 metric.title
                             }
@@ -986,8 +936,8 @@ const ReportingDashboard: React.FC = () => {
                             icon={
                                 metric.icon
                             }
-                            iconBg={
-                                metric.iconBg
+                            tone={
+                                metric.tone
                             }
                         />
                     </Col>
@@ -998,104 +948,14 @@ const ReportingDashboard: React.FC = () => {
                 <Row
                     gutter={[12, 12]}
                     align="middle"
-                    wrap={false}
                     style={{
                         width: "100%",
                         margin: 0,
                     }}
                 >
-                    {/* Milestone Journey */}
-                    <Col
-                        flex="1 1 0"
-                        style={{
-                            minWidth: 0,
-                        }}
-                    >
-                        <div
-                            className="reporting-filter-control"
-                            style={{
-                                width: "100%",
-                            }}
-                        >
-                            <MilestoneJourneyButton
-                                scope="operations"
-                                departmentId={journeyDepartmentIds[0]}
-                                departmentIds={journeyDepartmentIds}
-                                programId={
-                                    isAllPrograms
-                                        ? null
-                                        : activeProgramId
-                                }
-                            />
-                        </div>
-                    </Col>
-
-                    {/* Date Range */}
-                    <Col
-                        flex="1 1 0"
-                        style={{
-                            minWidth: 0,
-                        }}
-                    >
-                        <RangePicker
-                            value={dateRange}
-                            onChange={(value) =>
-                                value &&
-                                setDateRange([
-                                    value[0] as Dayjs,
-                                    value[1] as Dayjs,
-                                ])
-                            }
-                            style={{
-                                width: "100%",
-                            }}
-                        />
-                    </Col>
-
-                    {/* Department */}
-                    {childDepartments.length > 0 && (
-                        <Col
-                            flex="1 1 0"
-                            style={{
-                                minWidth: 0,
-                            }}
-                        >
-                            <Select
-                                value={departmentScope}
-                                onChange={(value) =>
-                                    setDepartmentScope(
-                                        String(value)
-                                    )
-                                }
-                                style={{
-                                    width: "100%",
-                                }}
-                                options={[
-                                    {
-                                        label: "All",
-                                        value: "all",
-                                    },
-                                    {
-                                        label: String(
-                                            user?.departmentName ||
-                                            "My Department"
-                                        ),
-                                        value: "my",
-                                    },
-                                    ...childDepartments.map(
-                                        (department) => ({
-                                            label: department.name,
-                                            value: department.id,
-                                        })
-                                    ),
-                                ]}
-                            />
-                        </Col>
-                    )}
-
                     {/* View */}
                     <Col
-                        flex="1 1 0"
+                        flex="2 1 460px"
                         style={{
                             minWidth: 0,
                         }}
@@ -1133,6 +993,93 @@ const ReportingDashboard: React.FC = () => {
                             }}
                         />
                     </Col>
+                    {/* Date Range */}
+                    <Col
+                        flex="1 1 260px"
+                        style={{
+                            minWidth: 0,
+                        }}
+                    >
+                        <RangePicker
+                            value={dateRange}
+                            onChange={(value) =>
+                                value &&
+                                setDateRange([
+                                    value[0] as Dayjs,
+                                    value[1] as Dayjs,
+                                ])
+                            }
+                            style={{
+                                width: "100%",
+                            }}
+                        />
+                    </Col>
+
+                    {/* Department */}
+                    {childDepartments.length > 0 && (
+                        <Col
+                            flex="1 1 180px"
+                            style={{
+                                minWidth: 0,
+                            }}
+                        >
+                            <Select
+                                value={departmentScope}
+                                onChange={(value) =>
+                                    setDepartmentScope(
+                                        String(value)
+                                    )
+                                }
+                                style={{
+                                    width: "100%",
+                                }}
+                                options={[
+                                    {
+                                        label: "All",
+                                        value: "all",
+                                    },
+                                    {
+                                        label: String(
+                                            user?.departmentName ||
+                                            "My Department"
+                                        ),
+                                        value: "my",
+                                    },
+                                    ...childDepartments.map(
+                                        (department) => ({
+                                            label: department.name,
+                                            value: department.id,
+                                        })
+                                    ),
+                                ]}
+                            />
+                        </Col>
+                    )}
+
+                    {/* Milestone Journey */}
+                    <Col
+                        flex="0 0 auto"
+                        style={{
+                            minWidth: 0,
+                        }}
+                    >
+                        <div
+                            className="reporting-filter-control"
+                            style={{}}
+                        >
+                            <MilestoneJourneyButton
+                                scope="operations"
+                                departmentId={journeyDepartmentIds[0]}
+                                departmentIds={journeyDepartmentIds}
+                                programId={
+                                    isAllPrograms
+                                        ? null
+                                        : activeProgramId
+                                }
+                            />
+                        </div>
+                    </Col>
+
                 </Row>
             </DashboardFilterBar>
 

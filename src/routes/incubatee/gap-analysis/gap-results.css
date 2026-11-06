@@ -1,0 +1,299 @@
+/* ============================================================================
+   GAP analysis landing for SMEs: results once submitted, or an invitation to
+   start. Builds on the WhatsApp consent page's shell (`wc-` classes); only
+   what differs is here. Every class here is `gr-` prefixed.
+   ========================================================================== */
+
+.gr-loading {
+  display: grid;
+  place-items: center;
+  grid-template-rows: none;
+}
+
+.wc-card.gr-card {
+  width: min(560px, 100%);
+  min-width: 0;
+}
+
+/* Results carry a summary and a list of areas, so they get more room. */
+.wc-card.gr-results {
+  width: min(760px, 100%);
+}
+
+.gr-badge {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 18px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+  color: var(--app-accent);
+  font-size: 24px;
+}
+
+.gr-lead {
+  margin: 0 0 20px;
+  color: var(--app-text-subtle);
+}
+
+.gr-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  color: var(--app-text-muted);
+}
+
+.gr-facts .anticon {
+  margin-right: 8px;
+  color: var(--app-accent);
+}
+
+.gr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+/* --- Summary ------------------------------------------------------------- */
+
+.gr-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.gr-score,
+.gr-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--app-border);
+  border-radius: 16px;
+  background: var(--app-surface-sunken);
+}
+
+.gr-score strong,
+.gr-tile strong {
+  color: var(--app-text);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.gr-score span,
+.gr-tile span {
+  color: var(--app-text-muted);
+  font-size: 13px;
+}
+
+.gr-tile-yes strong {
+  color: var(--ant-color-success, #16a34a);
+}
+
+.gr-tile-gap strong {
+  color: var(--ant-color-warning, #d97706);
+}
+
+.gr-bar,
+.gr-mini {
+  display: flex;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--app-border);
+}
+
+.gr-bar {
+  height: 8px;
+  margin-top: 10px;
+}
+
+.gr-bar-yes {
+  background: #22a35a;
+}
+
+.gr-bar-gap {
+  background: #f0a020;
+}
+
+/* --- Areas --------------------------------------------------------------- */
+
+.gr-heading {
+  margin: 24px 0 10px;
+  color: var(--app-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gr-sections {
+  display: grid;
+  gap: 8px;
+}
+
+.gr-section {
+  overflow: hidden;
+  border: 1px solid var(--app-border);
+  border-radius: 14px;
+  background: var(--app-surface);
+}
+
+.gr-section-open {
+  border-color: var(--app-accent-border, var(--app-border));
+}
+
+.gr-section-head {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gr-section-head:disabled {
+  cursor: default;
+}
+
+.gr-section-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gr-section-title strong {
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gr-mini {
+  width: min(180px, 100%);
+  height: 4px;
+}
+
+.gr-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.gr-pill-gap {
+  color: #b45309;
+  background: color-mix(in srgb, #f0a020 16%, transparent);
+}
+
+.gr-pill-yes {
+  color: #15803d;
+  background: color-mix(in srgb, #22a35a 14%, transparent);
+}
+
+html[data-theme="dark"] .gr-pill-gap {
+  color: #fbbf24;
+}
+
+html[data-theme="dark"] .gr-pill-yes {
+  color: #4ade80;
+}
+
+.gr-chevron {
+  flex: 0 0 auto;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  transition: transform 160ms ease;
+}
+
+.gr-section-open .gr-chevron {
+  transform: rotate(180deg);
+}
+
+.gr-items {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 4px 14px 14px;
+  list-style: none;
+  border-top: 1px solid var(--app-border);
+}
+
+.gr-items li {
+  display: flex;
+  gap: 10px;
+  padding-top: 10px;
+  color: var(--app-text);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.gr-items small {
+  display: block;
+  margin-top: 2px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
+.gr-item-icon {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: #f0a020;
+}
+
+.gr-next {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--app-accent) 8%, transparent);
+}
+
+.gr-next strong {
+  color: var(--app-text);
+}
+
+.gr-next p {
+  margin: 4px 0 0;
+  color: var(--app-text-muted);
+}
+
+/* --- Phones -------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  .gr-summary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .gr-score {
+    grid-column: 1 / -1;
+  }
+
+  /* The actions stay within thumb reach at the bottom. */
+  .gr-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    flex-direction: column;
+    align-items: stretch;
+    margin: auto -16px 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--app-bg);
+    border-top: 1px solid var(--app-border);
+  }
+}

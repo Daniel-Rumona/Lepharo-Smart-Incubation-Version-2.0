@@ -59,8 +59,10 @@ import {
     ref,
     uploadBytes
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { Helmet } from 'react-helmet'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import {
@@ -178,6 +180,7 @@ const LibraryPage: React.FC = () => {
     const role = String(user?.role || '').toLowerCase().replace(/\s+/g, '')
     const isOperations = role === 'operations'
     const isSme = role === 'incubatee' || role === 'participant'
+    const { nameOf } = useDepartmentRoles()
     const departmentId = String(user?.departmentId || '')
     const departmentName = String(user?.departmentName || user?.department?.name || '')
 
@@ -191,8 +194,6 @@ const LibraryPage: React.FC = () => {
 
             if (isOperations && departmentId) {
                 snapshot = await getDocs(query(base, where('departmentId', '==', departmentId)))
-            } else if (isOperations && departmentName) {
-                snapshot = await getDocs(query(base, where('departmentName', '==', departmentName)))
             } else {
                 snapshot = await getDocs(base)
             }
@@ -215,7 +216,7 @@ const LibraryPage: React.FC = () => {
     useEffect(() => {
         if (!identityLoading && user?.id) loadMaterials()
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [identityLoading, user?.id, departmentId, departmentName])
+    }, [identityLoading, user?.id, departmentId])
 
     useEffect(() => {
         return () => {
@@ -224,8 +225,17 @@ const LibraryPage: React.FC = () => {
     }, [previewUrl])
 
     const departments = useMemo(
-        () => Array.from(new Set(materials.map(item => item.departmentName).filter(Boolean))).sort(),
-        [materials]
+        () =>
+            Array.from(
+                new Map(
+                    materials
+                        .filter(item => item.departmentId)
+                        .map(item => [String(item.departmentId), nameOf(item.departmentId, item.departmentName)])
+                )
+            )
+                .map(([value, label]) => ({ value, label }))
+                .sort((a, b) => a.label.localeCompare(b.label)),
+        [materials, nameOf]
     )
 
     const filtered = useMemo(() => {
@@ -244,7 +254,7 @@ const LibraryPage: React.FC = () => {
 
             return (
                 (!needle || searchable.includes(needle)) &&
-                (departmentFilter === 'all' || item.departmentName === departmentFilter) &&
+                (departmentFilter === 'all' || item.departmentId === departmentFilter) &&
                 (categoryFilter === 'all' || item.category === categoryFilter)
             )
         })
@@ -269,7 +279,7 @@ const LibraryPage: React.FC = () => {
         isSme && filtered.some(item => item.downloadable !== false)
     const hasManageableMaterial =
         isOperations && filtered.some(item => item.uploadedBy === user?.id)
-    const canUploadMaterial = isOperations && Boolean(departmentName)
+    const canUploadMaterial = isOperations && Boolean(departmentId)
 
     const guideRegistration = useMemo<PageGuideRegistration>(
         () => ({
@@ -566,7 +576,7 @@ const LibraryPage: React.FC = () => {
     }
 
     const submitMaterial = async (values: any) => {
-        if (!user?.id || !departmentName) {
+        if (!user?.id || !departmentId) {
             message.error('Your account needs a department before you can manage library material.')
             return
         }
@@ -629,15 +639,15 @@ const LibraryPage: React.FC = () => {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
             storagePath = `library/${user.id}/${Date.now()}-${safeName}`
 
-            await uploadBytes(ref(storage, storagePath), file, {
+            await uploadBytes(ref(storage, storagePath), file, withOwner({
                 contentType: file.type || 'application/octet-stream'
-            })
+            }))
 
             await addDoc(collection(db, 'libraryMaterials'), {
                 title: values.title.trim(),
                 description: values.description?.trim() || '',
                 category: values.category,
-                departmentId: departmentId || null,
+                departmentId,
                 departmentName,
                 fileName: file.name,
                 fileType: file.type || '',
@@ -801,7 +811,7 @@ const LibraryPage: React.FC = () => {
                     margin: '0 auto'
                 }}
             >
-                {isOperations && !departmentName && (
+                {isOperations && !departmentId && (
                     <Alert
                         style={{
                             marginBottom: 16,
@@ -832,7 +842,7 @@ const LibraryPage: React.FC = () => {
                             shape='round'
                             icon={<PlusOutlined />}
                             onClick={openUploadModal}
-                            disabled={!departmentName}
+                            disabled={!departmentId}
                             style={{
                                 width: isMobile ? '100%' : undefined,
                                 background: ACCENT,
@@ -901,10 +911,7 @@ const LibraryPage: React.FC = () => {
                                                 value: 'all',
                                                 label: 'All departments'
                                             },
-                                            ...departments.map(value => ({
-                                                value,
-                                                label: value
-                                            }))
+                                            ...departments
                                         ]}
                                     />
                                 ) : null}
@@ -1068,10 +1075,7 @@ const LibraryPage: React.FC = () => {
                                                         value: 'all',
                                                         label: 'All departments'
                                                     },
-                                                    ...departments.map(value => ({
-                                                        value,
-                                                        label: value
-                                                    }))
+                                                    ...departments
                                                 ]}
                                             />
                                         </div>
@@ -1134,7 +1138,7 @@ const LibraryPage: React.FC = () => {
                                                 shape='round'
                                                 icon={<PlusOutlined />}
                                                 onClick={openUploadModal}
-                                                disabled={!departmentName}
+                                                disabled={!departmentId}
                                                 style={{
                                                     background: ACCENT,
                                                     borderColor: ACCENT
@@ -1598,7 +1602,7 @@ const LibraryPage: React.FC = () => {
                 cancelText='Cancel'
                 confirmLoading={saving}
                 okButtonProps={{
-                    disabled: !departmentName,
+                    disabled: !departmentId,
                     className: 'guide-library-save-material',
                     style: { background: ACCENT, borderColor: ACCENT },
                     icon: editingMaterial ? <EditOutlined /> : <UploadOutlined />

@@ -30,7 +30,7 @@ import {
 import { getAuth } from 'firebase/auth'
 import { db } from '@/firebase'
 import { DashboardHeaderCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { useActiveProgramId } from '@/lib/useActiveProgramId' // ← we use your hook
 
 type SegKey = 'program' | 'kpis' | 'resources'
@@ -423,7 +423,7 @@ export default function StrategicDashboard() {
                 }
             />
 
-            {loading && <LoadingOverlay />}
+            {loading && <PageSkeleton variant='analytics' />}
 
             {!loading && (
                 <>

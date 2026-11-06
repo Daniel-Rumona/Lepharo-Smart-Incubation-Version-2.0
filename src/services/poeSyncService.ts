@@ -91,6 +91,8 @@ export const mergePoePayload = ({
 export const buildPoePatch = (payload: PoeSyncResult) => {
     return {
         resources: payload.resources,
+        // Older screens read poeUrls; keep it in step with resources.
+        poeUrls: payload.poeUrls,
         updatedAt: serverTimestamp()
     }
 }

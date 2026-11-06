@@ -165,7 +165,7 @@
     "archival": "Archive after 2 years to cold storage"
   },
   "security": {
-    "read": ["director", "admin"],
+    "read": ["director", "system_admin"],
     "write": ["system"],
     "rules": "Only directors and admins can view audit logs, only system can write"
   }

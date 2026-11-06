@@ -1,0 +1,223 @@
+/* KPI tracker (trk-): page-specific parts on top of the shared ws- workspace.
+   Status colours come from the metric tones (--qtx-tone-fg / --qtx-tone-bg). */
+
+/* --- Toolbar -------------------------------------------------------------- */
+.trk-view.ant-segmented {
+    flex: 0 0 auto;
+}
+
+.trk-department {
+    flex: 2 1 220px;
+    min-width: 0;
+}
+
+.trk-department .ant-select {
+    width: 100%;
+}
+
+.trk-month.ant-picker {
+    flex: 1 1 170px;
+}
+
+.trk-status-strip.ant-segmented {
+    flex-basis: 100%;
+}
+
+/* --- Progress ring (list rows and detail header) ------------------------- */
+.trk-ring {
+    position: relative;
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+}
+
+.trk-ring svg {
+    position: absolute;
+    inset: 0;
+}
+
+.trk-ring-track {
+    fill: none;
+    stroke: var(--app-surface-sunken);
+}
+
+.trk-ring-value {
+    fill: none;
+    stroke: var(--qtx-tone-fg);
+    stroke-linecap: round;
+    transition: stroke-dasharray 400ms ease;
+}
+
+.trk-ring-text {
+    position: relative;
+    font-weight: 700;
+    color: var(--qtx-tone-fg);
+    font-variant-numeric: tabular-nums;
+}
+
+.qtx-tone-neutral .trk-ring-value {
+    stroke: transparent;
+}
+
+/* --- Status pill ----------------------------------------------------------- */
+.trk-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.6;
+    white-space: nowrap;
+    color: var(--qtx-tone-fg);
+    background: var(--qtx-tone-bg);
+}
+
+/* --- Detail ---------------------------------------------------------------- */
+.trk-detail-body {
+    display: grid;
+    gap: 22px;
+    padding: 18px 20px 22px;
+}
+
+.trk-progress {
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--app-surface-sunken);
+}
+
+.trk-progress-figures {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.trk-progress-target {
+    text-align: end;
+}
+
+.trk-progress-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.trk-progress-value {
+    margin-top: 2px;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--app-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.trk-progress-value.is-muted {
+    font-size: 18px;
+    color: var(--app-text-muted);
+}
+
+/* Progress bar with a tick where an even pace would be today. */
+.trk-bar {
+    position: relative;
+    height: 10px;
+    margin-top: 12px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--app-text) 9%, transparent);
+}
+
+.trk-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--qtx-tone-fg);
+    transition: width 400ms ease;
+}
+
+.trk-bar-pace {
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 2px;
+    background: var(--app-text);
+    opacity: 0.55;
+}
+
+.trk-verdict {
+    margin: 12px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--app-text);
+}
+
+.trk-deliverable {
+    margin-top: 4px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+.trk-measure {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+/* Record actions: the controls share the row. */
+.trk-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.trk-actions > .ant-btn,
+.trk-actions > .trk-actual-input {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 40px;
+}
+
+.trk-actions > .trk-actual-input {
+    flex: 2 1 0;
+    display: flex;
+    align-items: center;
+    border-radius: 12px;
+}
+
+/* --- Department comparison ------------------------------------------------ */
+.trk-compare-head {
+    margin-bottom: 8px;
+}
+
+.trk-compare-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+.trk-compare-head .ws-muted {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+}
+
+/* Status strip segments carry their count (in place of metric tiles). */
+.trk-seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.trk-seg-count {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    color: var(--qtx-tone-fg);
+    background: var(--qtx-tone-bg);
+    font-variant-numeric: tabular-nums;
+}

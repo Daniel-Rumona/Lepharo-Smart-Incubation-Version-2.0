@@ -75,7 +75,7 @@ import {
     DashboardHeaderCard,
     MotionCard
 } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
 import { LoadingBlob } from './LoadingBlob'
 import { toDateStr } from '@/lib/utils'
 
@@ -4661,8 +4661,8 @@ const ParticipantRegistrationStepForm = () => {
                     </title>
                 </Helmet>
 
-                <LoadingOverlay
-                    tip='Retrieving your saved application...'
+                <DashboardLoader overlay
+                    label='Retrieving your saved application...'
                 />
             </div>
         )

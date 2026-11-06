@@ -1,4 +1,5 @@
 import { getDownloadURL, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 
 // Keep successful uploads on a retry after a failed session save, without uploading again.
 const uploads = new WeakMap<FirebaseStorage, WeakMap<Blob, Map<string, Promise<string>>>>()
@@ -26,7 +27,7 @@ export async function uploadCoveragePhotos(storage: FirebaseStorage, appointment
         if (!pending) {
             const fileRef = ref(storage, `appointments/${appointmentId}/coverage-photos/${crypto.randomUUID()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
             pending = (async () => {
-                await uploadBytes(fileRef, file)
+                await uploadBytes(fileRef, file, withOwner())
                 const url = await getDownloadURL(fileRef)
                 if (!/^https?:\/\//i.test(url)) throw new Error('No downloadable photo URL was returned.')
                 return url

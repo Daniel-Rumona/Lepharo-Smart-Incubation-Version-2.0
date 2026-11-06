@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+    Alert,
     Button,
     Card,
     DatePicker,
@@ -14,6 +15,7 @@ import {
     message,
     theme
 } from 'antd'
+import type { CardProps } from 'antd'
 import {
     AppstoreOutlined,
     ArrowLeftOutlined,
@@ -48,13 +50,17 @@ import {
     type DocumentReference
 } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
+import { getSmeParticipant } from '@/services/smeIdentity'
 import { httpsCallable } from 'firebase/functions'
 import dayjs, { type Dayjs } from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import SHA256 from 'crypto-js/sha256'
 
 import { auth, db, functions, storage } from '@/firebase'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { DashboardLoader } from '@/components/layout/DashboardLoader'
+import { precheckApplicationDocument, type ApplicationPrecheck } from '@/services/complianceVerificationService'
+import { departmentNameOf, loadDepartmentRoles } from '@/services/departmentRoles'
 
 dayjs.extend(customParseFormat)
 
@@ -98,7 +104,8 @@ type InterventionItem = {
 }
 
 type InterventionGroup = {
-    area: string
+    departmentId: string
+    name: string
     interventions: InterventionItem[]
 }
 
@@ -112,6 +119,18 @@ type DocField = {
     issueDate: Dayjs | null
     expiryDate: Dayjs | null
     completed: boolean
+}
+
+/** The AI's reading of the file chosen for one document (see runPrecheck). */
+type DocumentPrecheck = {
+    status: 'checking' | 'done' | 'failed'
+    /** The chosen file; a result for an older file is dropped. */
+    file: File
+    result?: ApplicationPrecheck
+    /** Dates the check filled in, so the applicant is asked to confirm them. */
+    filledDates?: boolean
+    /** The applicant chose to keep the file despite the warning. */
+    kept?: boolean
 }
 
 type Group = 'A' | 'B' | 'C' | 'Graduated'
@@ -144,9 +163,6 @@ type UploadedDoc = {
 const MIN_MOTIVATION_WORDS = 100
 const MAX_FILE_MB = 10
 
-// An application with no usable document cannot be assessed, so submission
-// is held until at least this share of the programme's requirements is met.
-const MIN_COMPLIANCE_PERCENT = 10
 
 const DOCUMENT_STORAGE_FOLDER = 'participant_documents'
 const ACCEPTED_MIME = [
@@ -156,19 +172,60 @@ const ACCEPTED_MIME = [
     'image/jpg'
 ]
 
+/**
+ * Whether Thuso has finished the line on the current screen. The screen's
+ * motion wrapper remounts on every screen, so each visit starts unspoken.
+ */
+const ThusoSpokenContext = React.createContext<{ spoken: boolean; markSpoken: () => void }>({
+    spoken: true,
+    markSpoken: () => {}
+})
+
+const ThusoLine: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [spoken, setSpoken] = useState(false)
+    const value = useMemo(() => ({ spoken, markSpoken: () => setSpoken(true) }), [spoken])
+    return <ThusoSpokenContext.Provider value={value}>{children}</ThusoSpokenContext.Provider>
+}
+
+/**
+ * What Thuso adds after speaking (the explanation under the line). It fades
+ * in once the line is typed, holding its space meanwhile so nothing jumps.
+ */
+const ThusoAside: React.FC<{ children: React.ReactNode; reducedMotion: boolean }> = ({
+    children,
+    reducedMotion
+}) => {
+    const { spoken } = React.useContext(ThusoSpokenContext)
+    return (
+        <motion.div
+            initial={false}
+            animate={spoken ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}
+            transition={{ duration: reducedMotion ? 0 : 0.45, delay: spoken && !reducedMotion ? 0.15 : 0 }}
+        >
+            {children}
+        </motion.div>
+    )
+}
+
 type TypewriterPhraseProps = {
     text: string
     reducedMotion: boolean
+    /** Average milliseconds per character; each one varies around it. */
     speed?: number
     delay?: number
 }
 
+/** Pause after a character, as a person would: longer at the end of a sentence, shorter at a comma. */
+const pauseAfter = (character: string) =>
+    /[.!?]/.test(character) ? 260 : /[,;:—–]/.test(character) ? 130 : 0
+
 const TypewriterPhrase: React.FC<TypewriterPhraseProps> = ({
     text,
     reducedMotion,
-    speed = 42,
+    speed = 30,
     delay = 320
 }) => {
+    const { markSpoken } = React.useContext(ThusoSpokenContext)
     const [visibleCharacters, setVisibleCharacters] = useState(
         reducedMotion ? text.length : 0
     )
@@ -176,36 +233,29 @@ const TypewriterPhrase: React.FC<TypewriterPhraseProps> = ({
     useEffect(() => {
         if (reducedMotion) {
             setVisibleCharacters(text.length)
+            markSpoken()
             return
         }
 
         setVisibleCharacters(0)
 
-        let intervalId: number | null = null
-
-        const delayId = window.setTimeout(() => {
-            intervalId = window.setInterval(() => {
-                setVisibleCharacters(current => {
-                    if (current >= text.length) {
-                        if (intervalId !== null) {
-                            window.clearInterval(intervalId)
-                        }
-
-                        return text.length
-                    }
-
-                    return current + 1
-                })
-            }, speed)
-        }, delay)
-
-        return () => {
-            window.clearTimeout(delayId)
-
-            if (intervalId !== null) {
-                window.clearInterval(intervalId)
+        // Uneven rhythm rather than a metronome: each character takes
+        // 60-140% of the average, with pauses at punctuation.
+        let timeoutId: number
+        const typeNext = (count: number) => {
+            setVisibleCharacters(count)
+            if (count >= text.length) {
+                markSpoken()
+                return
             }
+            const wait = speed * (0.6 + Math.random() * 0.8) + pauseAfter(text[count - 1] || '')
+            timeoutId = window.setTimeout(() => typeNext(count + 1), wait)
         }
+        timeoutId = window.setTimeout(() => typeNext(1), delay)
+
+        return () => window.clearTimeout(timeoutId)
+        // markSpoken is stable per screen; re-typing only follows the text.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [delay, reducedMotion, speed, text])
 
     const typing = visibleCharacters < text.length
@@ -486,6 +536,68 @@ const ParticipantRegistrationConversational: React.FC = () => {
     const reduceMotion = useReducedMotion()
     const screens = Grid.useBreakpoint()
 
+    // On phones a screen has no card around it: its content sits straight on
+    // the page and its Back/Continue row stays pinned at the bottom, as in the
+    // GAP analysis. Cards inside a screen (documents, review sections) still
+    // group their items.
+    const isMobile = !screens.md
+    const screenCard = (body: React.CSSProperties): Pick<CardProps, 'variant' | 'style' | 'styles'> =>
+        isMobile
+            ? {
+                variant: 'borderless',
+                // Fills the screen so a pinned row rests at the bottom even
+                // when the content is short; intro screens stay centred.
+                style: {
+                    background: 'transparent',
+                    boxShadow: 'none',
+                    alignSelf: 'stretch',
+                    minHeight: '100%',
+                    display: 'flex',
+                    flexDirection: 'column'
+                },
+                styles: {
+                    body: {
+                        ...body,
+                        padding: 0,
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: body.textAlign === 'center' ? 'center' : undefined
+                    }
+                }
+            }
+            : {
+                variant: 'borderless',
+                style: {
+                    borderRadius: 24,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorBgContainer
+                },
+                styles: { body }
+            }
+    const actionRow = (desktop: React.CSSProperties): React.CSSProperties => ({
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gap: 10,
+        ...(isMobile
+            ? {
+                position: 'sticky',
+                bottom: 0,
+                zIndex: 2,
+                marginTop: 'auto',
+                marginInline: -16,
+                padding: '10px 16px calc(20px + env(safe-area-inset-bottom))',
+                background: token.colorBgLayout,
+                borderTop: `1px solid ${token.colorBorderSecondary}`
+            }
+            : desktop)
+    })
+    // Long lists scroll inside their own box on wider screens. On phones the
+    // page already scrolls, so a box would only cut the list short above the
+    // pinned row: the list runs full length instead.
+    const listScroll = (maxHeight: string): React.CSSProperties =>
+        isMobile ? {} : { maxHeight, overflowY: 'auto' }
+
     const programId = searchParams.get('id')
 
     // The link carries a programme name, but the programme document is
@@ -531,6 +643,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
     const [activeSupportArea, setActiveSupportArea] = useState<string | null>(null)
 
     const [documentFields, setDocumentFields] = useState<DocField[]>([])
+    const [prechecks, setPrechecks] = useState<Record<string, DocumentPrecheck>>({})
     const [draftDocumentMeta, setDraftDocumentMeta] = useState<any[]>([])
     const [openDocumentKey, setOpenDocumentKey] = useState<string | null>(null)
 
@@ -715,7 +828,10 @@ const ParticipantRegistrationConversational: React.FC = () => {
 
         const loadInterventions = async () => {
             try {
-                const snap = await getDocs(collection(db, 'interventions'))
+                const [snap, { departments }] = await Promise.all([
+                    getDocs(collection(db, 'interventions')),
+                    loadDepartmentRoles()
+                ])
                 if (!mounted) return
 
                 const grouped = new Map<string, InterventionItem[]>()
@@ -723,22 +839,23 @@ const ParticipantRegistrationConversational: React.FC = () => {
                 snap.docs.forEach(interventionDoc => {
                     const data = interventionDoc.data()
                     const title = String(data.interventionTitle || data.title || '').trim()
-                    const area = String(data.areaOfSupport || 'General').trim()
+                    const departmentId = String(data.departmentId || '').trim()
 
-                    if (!title || data.internal === true || data.compulsory === true) return
+                    if (!title || !departmentId || data.internal === true || data.compulsory === true) return
 
-                    const current = grouped.get(area) || []
+                    const current = grouped.get(departmentId) || []
                     current.push({ id: interventionDoc.id, title })
-                    grouped.set(area, current)
+                    grouped.set(departmentId, current)
                 })
 
                 setInterventionGroups(
                     Array.from(grouped.entries())
-                        .map(([area, interventions]) => ({
-                            area,
+                        .map(([departmentId, interventions]) => ({
+                            departmentId,
+                            name: departmentNameOf(departmentId, departments, 'Other support'),
                             interventions: [...interventions].sort((a, b) => a.title.localeCompare(b.title))
                         }))
-                        .sort((a, b) => a.area.localeCompare(b.area))
+                        .sort((a, b) => a.name.localeCompare(b.name))
                 )
             } catch (error) {
                 console.error('[Application Flow] Failed to load interventions:', error)
@@ -762,28 +879,28 @@ const ParticipantRegistrationConversational: React.FC = () => {
             handled = true
 
             try {
-                if (!user?.email) {
+                if (!user) {
                     messageApi.error('Please sign in again to continue your application.')
                     return
                 }
 
-                const participantSnap = await getDocs(
-                    query(
-                        collection(db, 'participants'),
-                        where('email', '==', user.email)
-                    )
-                )
+                // The SME's linked participant; email only until it is linked.
+                const userSnap = await getDoc(doc(db, 'users', user.uid))
+                const participantRecord = await getSmeParticipant({
+                    uid: user.uid,
+                    participantId: userSnap.data()?.participantId,
+                    email: user.email
+                })
 
                 if (!mounted) return
 
-                if (participantSnap.empty) {
+                if (!participantRecord) {
                     messageApi.error('We could not find your participant profile.')
                     return
                 }
 
-                const participantDoc = participantSnap.docs[0]
-                const participantData = participantDoc.data()
-                const id = participantDoc.id
+                const participantData: any = participantRecord
+                const id = participantRecord.id
                 setParticipantId(id)
 
                 const draftSnap = await getDoc(
@@ -911,7 +1028,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
     )
 
     const activeInterventionGroup = useMemo(
-        () => interventionGroups.find(group => group.area === activeSupportArea) || null,
+        () => interventionGroups.find(group => group.departmentId === activeSupportArea) || null,
         [activeSupportArea, interventionGroups]
     )
 
@@ -934,9 +1051,10 @@ const ParticipantRegistrationConversational: React.FC = () => {
     const selectedSupportByArea = useMemo(() =>
         interventionGroups
             .map(group => ({
-                area: group.area,
+                departmentId: group.departmentId,
+                name: group.name,
                 interventions: group.interventions.filter(intervention =>
-                    (interventionSelections[group.area] || []).includes(intervention.id)
+                    (interventionSelections[group.departmentId] || []).includes(intervention.id)
                 )
             }))
             .filter(group => group.interventions.length > 0),
@@ -944,14 +1062,14 @@ const ParticipantRegistrationConversational: React.FC = () => {
     )
 
     // Flattened for storage: the grouping is presentation, the records
-    // downstream want a flat list carrying its area.
+    // downstream want a flat list carrying its department.
     const selectedInterventions = useMemo(
         () =>
             selectedSupportByArea.flatMap(group =>
                 group.interventions.map(intervention => ({
                     id: intervention.id,
                     title: intervention.title,
-                    area: group.area
+                    departmentId: group.departmentId
                 }))
             ),
         [selectedSupportByArea]
@@ -965,10 +1083,8 @@ const ParticipantRegistrationConversational: React.FC = () => {
     /**
      * Every requirement in this flow is required at application time
      * (programRequirements is filtered on requiredAtApplication), so the score
-     * is simply the share of them met.
-     *
-     * Read from local state rather than from the upload results, so the
-     * threshold can be enforced before anything reaches Storage.
+     * is simply the share of them met. Submission needs all of them (see
+     * submitApplication); the score is stored for staff.
      */
     const complianceScore = documentFields.length
         ? Math.round((compliantDocumentKeys.length / documentFields.length) * 100)
@@ -1069,7 +1185,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
             `${DOCUMENT_STORAGE_FOLDER}/${fileName}`
         )
 
-        await uploadBytes(fileRef, file)
+        await uploadBytes(fileRef, file, withOwner({}, { participantId }))
 
         return { url: await getDownloadURL(fileRef), fileName }
     }
@@ -1178,9 +1294,13 @@ const ParticipantRegistrationConversational: React.FC = () => {
             return
         }
 
-        if (documentFields.length > 0 && complianceScore < MIN_COMPLIANCE_PERCENT) {
+        // Every document the programme marks required at application must be
+        // uploaded and in date; a draft can still be saved without them.
+        const outstandingDocuments = documentFields.filter(document => !isDocumentCompliant(document))
+        if (outstandingDocuments.length > 0) {
             messageApi.error(
-                'Please upload at least one of the required documents before submitting.'
+                `Upload ${outstandingDocuments.map(document => document.title).join(', ')} before submitting. ` +
+                'Expiring documents must be valid for at least another 7 days.'
             )
             await startReviewEdit('documents', 'documents')
             return
@@ -1520,12 +1640,24 @@ const ParticipantRegistrationConversational: React.FC = () => {
         setChallenges(previous => previous.filter((_, itemIndex) => itemIndex !== index))
     }
 
+    // A programme with no questions of its own has no programme-questions
+    // section: straight on to support.
+    const hasNoProgramQuestions = programQuestionsLoaded && programQuestions.length === 0
+
     const openProfileSection = async () => {
         await saveDraft()
         setProfileIndex(0)
         setDirection('forward')
-        setScreen('profileIntro')
+        setScreen(hasNoProgramQuestions ? 'supportIntro' : 'profileIntro')
     }
+
+    // The questions may still be loading when the intro opens (or a restored
+    // draft lands on it): once they turn out to be none, move past it in the
+    // direction the SME was going.
+    useEffect(() => {
+        if (screen !== 'profileIntro' || !hasNoProgramQuestions) return
+        setScreen(direction === 'backward' ? 'challenges' : 'supportIntro')
+    }, [screen, hasNoProgramQuestions, direction])
 
     const startProfileQuestions = async () => {
         await saveDraft()
@@ -1586,21 +1718,21 @@ const ParticipantRegistrationConversational: React.FC = () => {
         setProfileIndex(index => Math.max(0, index - 1))
     }
 
-    const openSupportArea = async (area: string) => {
+    const openSupportArea = async (departmentId: string) => {
         await saveDraft()
-        setActiveSupportArea(area)
+        setActiveSupportArea(departmentId)
         setDirection('forward')
         setScreen('supportDepartment')
     }
 
-    const toggleIntervention = (area: string, interventionId: string) => {
+    const toggleIntervention = (departmentId: string, interventionId: string) => {
         setInterventionSelections(previous => {
-            const current = previous[area] || []
+            const current = previous[departmentId] || []
             const selected = current.includes(interventionId)
 
             return {
                 ...previous,
-                [area]: selected
+                [departmentId]: selected
                     ? current.filter(id => id !== interventionId)
                     : [...current, interventionId]
             }
@@ -1632,8 +1764,155 @@ const ParticipantRegistrationConversational: React.FC = () => {
                     : document
             )
         )
+        void runPrecheck(file, key)
 
         return false
+    }
+
+    /**
+     * Advice while the applicant is still here: the AI reads the chosen file,
+     * warns when it doesn't look like the required, current document, and
+     * fills in empty dates from it. It never blocks; the submit rule and staff
+     * verification decide. A failed check (offline, daily limit) says so quietly.
+     */
+    const runPrecheck = async (file: File, key: string) => {
+        const field = documentFields.find(item => item.key === key)
+        if (!programId || !field) return
+
+        setPrechecks(previous => ({ ...previous, [key]: { status: 'checking', file } }))
+        try {
+            const result = await precheckApplicationDocument({
+                programId,
+                requirementKey: key,
+                requirementTitle: field.title,
+                participantId,
+                file
+            })
+            // Only empty dates are filled, and only with dates the pickers allow.
+            const issued = result.review.extracted.issueDate
+            const expires = result.review.expiresOn || result.review.extracted.expiryDate
+            const patch: Partial<Pick<DocField, 'issueDate' | 'expiryDate'>> = {}
+            if (!field.issueDate && issued && !dayjs(issued).isAfter(dayjs(), 'day')) {
+                patch.issueDate = dayjs(issued)
+            }
+            if (field.requiresExpiry && !field.expiryDate && expires && !disabledExpiryDate(field)(dayjs(expires))) {
+                patch.expiryDate = dayjs(expires)
+            }
+            const filledDates = Object.keys(patch).length > 0
+
+            if (filledDates) {
+                setDocumentFields(previous =>
+                    previous.map(document =>
+                        document.key === key && document.file === file
+                            ? {
+                                ...document,
+                                issueDate: document.issueDate || patch.issueDate || null,
+                                expiryDate: document.expiryDate || patch.expiryDate || null
+                            }
+                            : document
+                    )
+                )
+            }
+            setPrechecks(previous =>
+                previous[key]?.file !== file
+                    ? previous
+                    : { ...previous, [key]: { status: 'done', file, result, filledDates } }
+            )
+        } catch (error) {
+            console.warn('Document pre-check failed', error)
+            setPrechecks(previous =>
+                previous[key]?.file !== file
+                    ? previous
+                    : { ...previous, [key]: { status: 'failed', file } }
+            )
+        }
+    }
+
+    const renderPrecheck = (document: DocField) => {
+        const check = prechecks[document.key]
+        if (!check || check.file !== document.file) return null
+
+        if (check.status === 'checking') {
+            return (
+                <Text type='secondary' role='status' style={{ display: 'block', marginTop: 10, fontSize: 13 }}>
+                    Checking your document…
+                </Text>
+            )
+        }
+
+        if (check.status === 'failed' || !check.result) {
+            return (
+                <Text type='secondary' style={{ display: 'block', marginTop: 10, fontSize: 12.5 }}>
+                    We couldn&apos;t check this file automatically. Our team will check it after you apply.
+                </Text>
+            )
+        }
+
+        const { review } = check.result
+        const read = [
+            review.extracted.issueDate && `issued ${dayjs(review.extracted.issueDate).format('D MMM YYYY')}`,
+            review.expiresOn && `valid until ${dayjs(review.expiresOn).format('D MMM YYYY')}`,
+            review.extracted.holderName
+        ].filter(Boolean).join(' · ')
+        const datesNote = check.filledDates ? ' We filled in the dates from it; please check them.' : ''
+
+        if (review.recommendation === 'valid') {
+            return (
+                <Alert
+                    type='success'
+                    showIcon
+                    style={{ marginTop: 10, borderRadius: 10 }}
+                    message='This looks right.'
+                    description={`${read ? `We read: ${read}.` : ''}${datesNote}`.trim() || undefined}
+                />
+            )
+        }
+
+        if (check.kept) {
+            return (
+                <Text type='secondary' style={{ display: 'block', marginTop: 10, fontSize: 12.5 }}>
+                    You kept this file. Our team will check it after you apply.
+                </Text>
+            )
+        }
+
+        const problem =
+            review.recommendation === 'expired'
+                ? `This document looks out of date. ${review.reason}`
+                : review.recommendation === 'invalid'
+                    ? `This doesn't look like a ${document.title}. ${review.reason}`
+                    : `We couldn't read this file clearly. ${review.reason}`
+
+        return (
+            <Alert
+                type='warning'
+                showIcon
+                style={{ marginTop: 10, borderRadius: 10 }}
+                message={problem}
+                description={
+                    <>
+                        {read && <div>We read: {read}.{datesNote}</div>}
+                        <div style={{ marginTop: 4 }}>
+                            Upload a clearer or newer copy with Replace document, or keep this one if
+                            you&apos;re sure it&apos;s right.
+                        </div>
+                    </>
+                }
+                action={
+                    <Button
+                        size='small'
+                        onClick={() =>
+                            setPrechecks(previous => ({
+                                ...previous,
+                                [document.key]: { ...check, kept: true }
+                            }))
+                        }
+                    >
+                        Keep anyway
+                    </Button>
+                }
+            />
+        )
     }
 
     const clearDocumentFile = (key: string) => {
@@ -1940,6 +2219,8 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             </Text>
                         )}
 
+                        {renderPrecheck(document)}
+
                         <div
                             style={{
                                 display: 'grid',
@@ -2008,7 +2289,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                 <Helmet>
                     <title>Application | Smart Incubation Platform</title>
                 </Helmet>
-                <LoadingOverlay tip='Preparing your application...' />
+                <DashboardLoader overlay label='Preparing your application...' />
             </div>
         )
     }
@@ -2020,7 +2301,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                 <Helmet>
                     <title>Application | Smart Incubation Platform</title>
                 </Helmet>
-                <LoadingOverlay tip={submitStage} />
+                <DashboardLoader overlay label={submitStage} />
             </div>
         )
     }
@@ -2034,7 +2315,8 @@ const ParticipantRegistrationConversational: React.FC = () => {
                 background: token.colorBgLayout,
                 display: 'flex',
                 justifyContent: 'center',
-                padding: '20px 16px'
+                // On phones the pinned Back/Continue row sits flush with the bottom edge.
+                padding: isMobile ? '12px 16px 0' : '20px 16px'
             }}
         >
             {contextHolder}
@@ -2075,7 +2357,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                 height: '100%',
                                 minHeight: 0,
                                 overflow: 'auto',
-                                scrollbarGutter: 'stable',
+                                scrollbarGutter: isMobile ? undefined : 'stable',
                                 display: 'grid',
                                 alignItems: [
                                     'welcome',
@@ -2085,24 +2367,18 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                 ].includes(screen)
                                     ? 'center'
                                     : 'start',
-                                padding: '8px 0 16px'
+                                // On phones the scroll area spans the screen edge to
+                                // edge, so the pinned row's full-width bleed fits
+                                // inside it instead of scrolling sideways.
+                                ...(isMobile
+                                    ? { margin: '0 -16px', padding: '8px 16px 0', overflowX: 'hidden' as const }
+                                    : { padding: '8px 0 16px' })
                             }}
                         >
+                            {/* One per screen: Thuso types its line, then the explanation under it fades in. */}
+                            <ThusoLine>
                             {screen === 'welcome' && (
-                                <Card
-                                    variant='borderless'
-                                    styles={{
-                                        body: {
-                                            padding: 'clamp(28px, 5vw, 48px)',
-                                            textAlign: 'center'
-                                        }
-                                    }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`,
-                                        background: token.colorBgContainer
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(28px, 5vw, 48px)', textAlign: 'center' })}>
                                     <div
                                         style={{
                                             width: 76,
@@ -2151,20 +2427,68 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         />
                                     </Title>
 
-                                    <Paragraph
-                                        type='secondary'
-                                        style={{
-                                            maxWidth: 570,
-                                            margin: '0 auto 28px',
-                                            fontSize: 16,
-                                            lineHeight: 1.7
-                                        }}
-                                    >
-                                        I&apos;ll guide you through a few short questions about your
-                                        business, the support you need, and the documents required for
-                                        your application. We&apos;ll do one question at a time, and your
-                                        progress will be saved as you go.
-                                    </Paragraph>
+                                    <ThusoAside reducedMotion={Boolean(reduceMotion)}>
+                                        <Paragraph
+                                            type='secondary'
+                                            style={{
+                                                maxWidth: 570,
+                                                margin: '0 auto 28px',
+                                                fontSize: 16,
+                                                lineHeight: 1.7
+                                            }}
+                                        >
+                                            I&apos;ll guide you through a few short questions about your
+                                            business, the support you need, and the documents required for
+                                            your application. We&apos;ll do one question at a time, and your
+                                            progress will be saved as you go.
+                                        </Paragraph>
+                                    </ThusoAside>
+
+                                    {/* The programme's required-at-application documents: the
+                                        application cannot be submitted without them. */}
+                                    {documentFields.length > 0 && (
+                                        <div
+                                            style={{
+                                                maxWidth: 520,
+                                                margin: '0 auto 28px',
+                                                padding: '16px 18px',
+                                                textAlign: 'left',
+                                                borderRadius: 16,
+                                                border: `1px solid ${token.colorBorderSecondary}`,
+                                                background: token.colorFillQuaternary
+                                            }}
+                                        >
+                                            <Text strong style={{ display: 'block', fontSize: 15 }}>
+                                                Get these documents ready
+                                            </Text>
+                                            <Text type='secondary' style={{ display: 'block', fontSize: 13, marginBottom: 10 }}>
+                                                You&apos;ll need all of them to submit. PDF, PNG or JPG, up to {MAX_FILE_MB} MB each.
+                                            </Text>
+                                            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
+                                                {documentFields.map(document => (
+                                                    <li key={document.key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                                                        <FileTextOutlined
+                                                            aria-hidden='true'
+                                                            style={{ color: token.colorPrimary, marginTop: 4 }}
+                                                        />
+                                                        <span>
+                                                            {document.title}
+                                                            {document.requiresExpiry && (
+                                                                <Text type='secondary' style={{ display: 'block', fontSize: 12.5 }}>
+                                                                    {document.expiryMonths
+                                                                        ? `Must be current: issued within the last ${document.expiryMonths} month${document.expiryMonths === 1 ? '' : 's'}`
+                                                                        : 'Must still be valid, with its expiry date'}
+                                                                </Text>
+                                                            )}
+                                                        </span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                            <Text type='secondary' style={{ display: 'block', fontSize: 12.5, marginTop: 10 }}>
+                                                No documents yet? You can still start; your progress is saved.
+                                            </Text>
+                                        </div>
+                                    )}
 
                                     <Button
                                         type='primary'
@@ -2185,17 +2509,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'motivation' && (
-                                <Card
-                                    styles={{
-                                        body: {
-                                            padding: 'clamp(22px, 4vw, 36px)'
-                                        }
-                                    }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(22px, 4vw, 36px)' })}>
                                     <Title level={2} style={{ marginBottom: 8 }}>
                                         Why do you want to join this programme?
                                     </Title>
@@ -2260,14 +2574,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         )}
                                     </div>
 
-                                    <div
-                                        style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                            gap: 10,
-                                            marginTop: 22
-                                        }}
-                                    >
+                                    <div style={actionRow({ marginTop: 22 })}>
                                         <Button
                                             size='middle'
                                             icon={<ArrowLeftOutlined />}
@@ -2309,17 +2616,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'challenges' && (
-                                <Card
-                                    styles={{
-                                        body: {
-                                            padding: 'clamp(22px, 4vw, 36px)'
-                                        }
-                                    }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(22px, 4vw, 36px)' })}>
                                     <Title level={2} style={{ marginBottom: 8 }}>
                                         What challenges are holding your business back?
                                     </Title>
@@ -2372,8 +2669,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                             marginTop: 18,
                                             display: 'grid',
                                             gap: 10,
-                                            maxHeight: 'clamp(170px, 27dvh, 250px)',
-                                            overflowY: 'auto',
+                                            ...listScroll('clamp(170px, 27dvh, 250px)'),
                                             paddingRight: challenges.length > 2 ? 4 : 0
                                         }}
                                     >
@@ -2448,14 +2744,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         {saving ? 'Saving...' : `${challenges.length} added`}
                                     </Text>
 
-                                    <div
-                                        style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                            gap: 10,
-                                            marginTop: 12
-                                        }}
-                                    >
+                                    <div style={actionRow({ marginTop: 12 })}>
                                         <Button
                                             size='middle'
                                             icon={<ArrowLeftOutlined />}
@@ -2496,20 +2785,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'profileIntro' && (
-                                <Card
-                                    variant='borderless'
-                                    styles={{
-                                        body: {
-                                            padding: 'clamp(28px, 5vw, 48px)',
-                                            textAlign: 'center'
-                                        }
-                                    }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`,
-                                        background: token.colorBgContainer
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(28px, 5vw, 48px)', textAlign: 'center' })}>
                                     <div
                                         style={{
                                             width: 68,
@@ -2543,23 +2819,24 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         <TypewriterPhrase
                                             reducedMotion={Boolean(reduceMotion)}
                                             text='Now I need a little more about your business.'
-                                            speed={42}
                                         />
                                     </Title>
 
-                                    <Paragraph
-                                        type='secondary'
-                                        style={{
-                                            maxWidth: 540,
-                                            margin: '0 auto 24px',
-                                            fontSize: 15,
-                                            lineHeight: 1.7
-                                        }}
-                                    >
-                                        These questions are specific to
-                                        {programName ? ` ${programName}` : ' this programme'}.
-                                        I&apos;ll ask them one at a time so you can focus on each answer.
-                                    </Paragraph>
+                                    <ThusoAside reducedMotion={Boolean(reduceMotion)}>
+                                        <Paragraph
+                                            type='secondary'
+                                            style={{
+                                                maxWidth: 540,
+                                                margin: '0 auto 24px',
+                                                fontSize: 15,
+                                                lineHeight: 1.7
+                                            }}
+                                        >
+                                            These questions are specific to
+                                            {programName ? ` ${programName}` : ' this programme'}.
+                                            I&apos;ll ask them one at a time so you can focus on each answer.
+                                        </Paragraph>
+                                    </ThusoAside>
 
                                     {!programQuestionsLoaded && (
                                         <Text
@@ -2622,17 +2899,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'profileQuestion' && activeProfileQuestion && (
-                                <Card
-                                    styles={{
-                                        body: {
-                                            padding: 'clamp(26px, 5vw, 44px)'
-                                        }
-                                    }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(26px, 5vw, 44px)' })}>
                                     <Text
                                         type='secondary'
                                         style={{
@@ -2793,8 +3060,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                     style={{
                                                         display: 'grid',
                                                         gap: 8,
-                                                        maxHeight: 'clamp(210px, 32dvh, 300px)',
-                                                        overflowY: 'auto',
+                                                        ...listScroll('clamp(210px, 32dvh, 300px)'),
                                                         paddingRight: 4,
                                                         scrollbarGutter: 'stable'
                                                     }}
@@ -2916,14 +3182,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         {saving ? 'Saving...' : 'Your answer is saved automatically.'}
                                     </Text>
 
-                                    <div
-                                        style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                            gap: 10,
-                                            marginTop: 22
-                                        }}
-                                    >
+                                    <div style={actionRow({ marginTop: 22 })}>
                                         <Button
                                             size='middle'
                                             icon={<ArrowLeftOutlined />}
@@ -2968,20 +3227,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'supportIntro' && (
-                                <Card
-                                    variant='borderless'
-                                    styles={{
-                                        body: {
-                                            padding: 'clamp(28px, 5vw, 48px)',
-                                            textAlign: 'center'
-                                        }
-                                    }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`,
-                                        background: token.colorBgContainer
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(28px, 5vw, 48px)', textAlign: 'center' })}>
                                     <div
                                         style={{
                                             width: 68,
@@ -3015,24 +3261,25 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         <TypewriterPhrase
                                             reducedMotion={Boolean(reduceMotion)}
                                             text="Let's look at the support your business needs."
-                                            speed={42}
                                             delay={260}
                                         />
                                     </Title>
 
-                                    <Paragraph
-                                        type='secondary'
-                                        style={{
-                                            maxWidth: 560,
-                                            margin: '0 auto 24px',
-                                            fontSize: 15,
-                                            lineHeight: 1.7
-                                        }}
-                                    >
-                                        You do not need to choose something from every area. Open the
-                                        areas that matter to your business and select as many support
-                                        options as you need.
-                                    </Paragraph>
+                                    <ThusoAside reducedMotion={Boolean(reduceMotion)}>
+                                        <Paragraph
+                                            type='secondary'
+                                            style={{
+                                                maxWidth: 560,
+                                                margin: '0 auto 24px',
+                                                fontSize: 15,
+                                                lineHeight: 1.7
+                                            }}
+                                        >
+                                            You do not need to choose something from every area. Open the
+                                            areas that matter to your business and select as many support
+                                            options as you need.
+                                        </Paragraph>
+                                    </ThusoAside>
 
                                     <div
                                         style={{
@@ -3051,7 +3298,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                     setProfileIndex(Math.max(programQuestions.length - 1, 0))
                                                     void goTo('profileQuestion', 'backward')
                                                 } else {
-                                                    void goTo('profileIntro', 'backward')
+                                                    void goTo(hasNoProgramQuestions ? 'challenges' : 'profileIntro', 'backward')
                                                 }
                                             }}
                                             style={{ width: '100%', borderRadius: 10, fontWeight: 600 }}
@@ -3074,13 +3321,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'supportAreas' && (
-                                <Card
-                                    styles={{ body: { padding: 'clamp(20px, 3.5vw, 32px)' } }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(20px, 3.5vw, 32px)' })}>
                                     <div
                                         style={{
                                             display: 'flex',
@@ -3127,14 +3368,13 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                     ? 'repeat(2, minmax(0, 1fr))'
                                                     : '1fr',
                                                 gap: 12,
-                                                maxHeight: 'clamp(330px, 57dvh, 520px)',
-                                                overflowY: 'auto',
+                                                ...listScroll('clamp(330px, 57dvh, 520px)'),
                                                 paddingRight: 4
                                             }}
                                         >
                                             {interventionGroups.map(group => {
                                                 const selectedCount =
-                                                    (interventionSelections[group.area] || []).length
+                                                    (interventionSelections[group.departmentId] || []).length
                                                 const examples = group.interventions
                                                     .slice(0, 2)
                                                     .map(item => item.title)
@@ -3143,8 +3383,8 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                 return (
                                                     <button
                                                         type='button'
-                                                        key={group.area}
-                                                        onClick={() => void openSupportArea(group.area)}
+                                                        key={group.departmentId}
+                                                        onClick={() => void openSupportArea(group.departmentId)}
                                                         style={{
                                                             border: `1px solid ${selectedCount > 0
                                                                     ? token.colorPrimaryBorder
@@ -3174,7 +3414,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                             }}
                                                         >
                                                             <Text strong style={{ fontSize: 15 }}>
-                                                                {group.area}
+                                                                {group.name}
                                                             </Text>
                                                             <ArrowRightOutlined
                                                                 style={{ color: token.colorTextSecondary }}
@@ -3220,14 +3460,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         </div>
                                     )}
 
-                                    <div
-                                        style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                            gap: 10,
-                                            marginTop: 22
-                                        }}
-                                    >
+                                    <div style={actionRow({ marginTop: 22 })}>
                                         <Button
                                             size='middle'
                                             icon={<ArrowLeftOutlined />}
@@ -3259,19 +3492,13 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'supportDepartment' && activeInterventionGroup && (
-                                <Card
-                                    styles={{ body: { padding: 'clamp(20px, 3.5vw, 32px)' } }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(20px, 3.5vw, 32px)' })}>
                                     <div style={{ marginBottom: 16 }}>
                                         <Text
                                             type='secondary'
                                             style={{ display: 'block', fontSize: 12, marginBottom: 5 }}
                                         >
-                                            {activeInterventionGroup.area}
+                                            {activeInterventionGroup.name}
                                         </Text>
                                         <Title level={2} style={{ marginBottom: 6 }}>
                                             What support would help your business?
@@ -3283,14 +3510,13 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         style={{
                                             display: 'grid',
                                             gap: 9,
-                                            maxHeight: 'clamp(300px, 53dvh, 480px)',
-                                            overflowY: 'auto',
+                                            ...listScroll('clamp(300px, 53dvh, 480px)'),
                                             paddingRight: 4
                                         }}
                                     >
                                         {activeInterventionGroup.interventions.map(intervention => {
                                             const selected = (
-                                                interventionSelections[activeInterventionGroup.area] || []
+                                                interventionSelections[activeInterventionGroup.departmentId] || []
                                             ).includes(intervention.id)
 
                                             return (
@@ -3299,7 +3525,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                     key={intervention.id}
                                                     onClick={() =>
                                                         toggleIntervention(
-                                                            activeInterventionGroup.area,
+                                                            activeInterventionGroup.departmentId,
                                                             intervention.id
                                                         )
                                                     }
@@ -3350,14 +3576,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         })}
                                     </div>
 
-                                    <div
-                                        style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                            gap: 10,
-                                            marginTop: 22
-                                        }}
-                                    >
+                                    <div style={actionRow({ marginTop: 22 })}>
                                         <Button
                                             size='middle'
                                             icon={<ArrowLeftOutlined />}
@@ -3380,20 +3599,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'documentsIntro' && (
-                                <Card
-                                    variant='borderless'
-                                    styles={{
-                                        body: {
-                                            padding: 'clamp(28px, 5vw, 48px)',
-                                            textAlign: 'center'
-                                        }
-                                    }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`,
-                                        background: token.colorBgContainer
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(28px, 5vw, 48px)', textAlign: 'center' })}>
                                     <div
                                         style={{
                                             width: 68,
@@ -3427,24 +3633,25 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         <TypewriterPhrase
                                             reducedMotion={Boolean(reduceMotion)}
                                             text='I just need a few documents to complete your application.'
-                                            speed={42}
                                             delay={260}
                                         />
                                     </Title>
 
-                                    <Paragraph
-                                        type='secondary'
-                                        style={{
-                                            maxWidth: 560,
-                                            margin: '0 auto 24px',
-                                            fontSize: 15,
-                                            lineHeight: 1.7
-                                        }}
-                                    >
-                                        Open each item, upload the document, and I&apos;ll keep track of
-                                        what is still missing. Document files are not saved in drafts,
-                                        so they must be uploaded again if you leave and return.
-                                    </Paragraph>
+                                    <ThusoAside reducedMotion={Boolean(reduceMotion)}>
+                                        <Paragraph
+                                            type='secondary'
+                                            style={{
+                                                maxWidth: 560,
+                                                margin: '0 auto 24px',
+                                                fontSize: 15,
+                                                lineHeight: 1.7
+                                            }}
+                                        >
+                                            Open each item, upload the document, and I&apos;ll keep track of
+                                            what is still missing. Document files are not saved in drafts,
+                                            so they must be uploaded again if you leave and return.
+                                        </Paragraph>
+                                    </ThusoAside>
 
                                     <div
                                         style={{
@@ -3478,13 +3685,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'documents' && (
-                                <Card
-                                    styles={{ body: { padding: 'clamp(20px, 3.5vw, 32px)' } }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(20px, 3.5vw, 32px)' })}>
                                     <div
                                         style={{
                                             display: 'flex',
@@ -3531,8 +3732,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                     ) : (
                                         <div
                                             style={{
-                                                maxHeight: 'clamp(330px, 58dvh, 520px)',
-                                                overflowY: 'auto',
+                                                ...listScroll('clamp(330px, 58dvh, 520px)'),
                                                 paddingRight: 4
                                             }}
                                         >
@@ -3566,14 +3766,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                         </div>
                                     )}
 
-                                    <div
-                                        style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                            gap: 10,
-                                            marginTop: 22
-                                        }}
-                                    >
+                                    <div style={actionRow({ marginTop: 22 })}>
                                         <Button
                                             size='middle'
                                             icon={<ArrowLeftOutlined />}
@@ -3606,13 +3799,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                             )}
 
                             {screen === 'review' && (
-                                <Card
-                                    styles={{ body: { padding: 'clamp(18px, 2.5vw, 28px)' } }}
-                                    style={{
-                                        borderRadius: 24,
-                                        border: `1px solid ${token.colorBorderSecondary}`
-                                    }}
-                                >
+                                <Card {...screenCard({ padding: 'clamp(18px, 2.5vw, 28px)' })}>
                                     <div style={{ textAlign: 'center', marginBottom: 16 }}>
                                         <div
                                             style={{
@@ -3644,13 +3831,14 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                             <TypewriterPhrase
                                                 reducedMotion={Boolean(reduceMotion)}
                                                 text='Everything is ready for you to review.'
-                                                speed={42}
                                                 delay={260}
                                             />
                                         </Title>
-                                        <Text type='secondary'>
-                                            Check your answers before the final submission step.
-                                        </Text>
+                                        <ThusoAside reducedMotion={Boolean(reduceMotion)}>
+                                            <Text type='secondary'>
+                                                Check your answers before the final submission step.
+                                            </Text>
+                                        </ThusoAside>
                                     </div>
 
                                     <div
@@ -3660,8 +3848,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                 ? 'repeat(2, minmax(0, 1fr))'
                                                 : 'minmax(0, 1fr)',
                                             gap: 12,
-                                            maxHeight: 'clamp(410px, 64dvh, 620px)',
-                                            overflowY: 'auto',
+                                            ...listScroll('clamp(410px, 64dvh, 620px)'),
                                             paddingRight: 4,
                                             alignItems: 'start'
                                         }}
@@ -3798,12 +3985,12 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                                     }}
                                                 >
                                                     {selectedSupportByArea.map(group => (
-                                                        <div key={group.area} style={{ minWidth: 0 }}>
+                                                        <div key={group.departmentId} style={{ minWidth: 0 }}>
                                                             <Text
                                                                 strong
                                                                 style={{ display: 'block', marginBottom: 5 }}
                                                             >
-                                                                {group.area}
+                                                                {group.name}
                                                             </Text>
                                                             <Space wrap size={[5, 5]}>
                                                                 {group.interventions.map(intervention => (
@@ -3881,13 +4068,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
 
                                     <Divider style={{ margin: '16px 0' }} />
 
-                                    <div
-                                        style={{
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                            gap: 10
-                                        }}
-                                    >
+                                    <div style={actionRow({})}>
                                         <Button
                                             size='middle'
                                             icon={<ArrowLeftOutlined />}
@@ -3911,6 +4092,7 @@ const ParticipantRegistrationConversational: React.FC = () => {
                                 </Card>
                             )}
 
+                            </ThusoLine>
                         </motion.div>
                     </AnimatePresence>
                 </div>

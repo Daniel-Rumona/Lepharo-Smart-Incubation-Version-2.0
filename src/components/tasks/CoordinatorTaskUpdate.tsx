@@ -60,7 +60,7 @@ import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { MotionCard } from '../dashboards/metrics/Header'
-
+import { MetricTile, type MetricTone } from '../dashboards/metrics/MetricTile'
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 type Status = 'todo' | 'in_progress' | 'cancelled' | 'done'
 type CoordinatorStatus = Exclude<Status, 'cancelled'>
@@ -1167,14 +1167,14 @@ export default function CoordinatorTasksOnly() {
         alwaysVisible?: boolean
         subtitle: string
         icon: React.ReactNode
-        iconBg: string
+        tone: MetricTone
     }> = [
-            { key: 'total', filter: 'all', title: 'Total Tasks', count: visibleTaskTotal, value: visibleTaskTotal, alwaysVisible: true, subtitle: 'Click to show all', icon: <AppstoreOutlined style={{ color: token.colorPrimary }} />, iconBg: token.colorPrimaryBg },
-            { key: 'todo', filter: 'todo', title: 'To Do', count: statusCounts.todo, value: statusCounts.todo, subtitle: 'Click to filter', icon: <ClockCircleOutlined style={{ color: token.colorTextSecondary }} />, iconBg: token.colorFillSecondary },
-            { key: 'in_progress', filter: 'in_progress', title: 'In Progress', count: statusCounts.in_progress, value: statusCounts.in_progress, alwaysVisible: true, subtitle: 'Click to filter', icon: <ClockCircleOutlined style={{ color: token.colorPrimary }} />, iconBg: token.colorPrimaryBg },
-            { key: 'done', filter: 'done', title: 'Done', count: statusCounts.done, value: statusCounts.done, subtitle: 'Click to filter', icon: <CheckCircleOutlined style={{ color: token.colorSuccess }} />, iconBg: token.colorSuccessBg },
-            { key: 'completion', title: 'Completion Rate', count: statusCounts.done, value: `${completionRate}%`, alwaysVisible: true, subtitle: 'Across visible tasks', icon: <CheckCircleOutlined style={{ color: token.colorSuccess }} />, iconBg: token.colorSuccessBg },
-            { key: 'overdue', filter: 'overdue', title: 'Overdue', count: statusCounts.overdue, value: statusCounts.overdue, subtitle: 'Click to filter', icon: <ExclamationCircleOutlined style={{ color: token.colorError }} />, iconBg: token.colorErrorBg }
+            { key: 'total', filter: 'all', title: 'Total Tasks', count: visibleTaskTotal, value: visibleTaskTotal, alwaysVisible: true, subtitle: 'Click to show all', icon: <AppstoreOutlined />, tone: 'accent' },
+            { key: 'todo', filter: 'todo', title: 'To Do', count: statusCounts.todo, value: statusCounts.todo, subtitle: 'Click to filter', icon: <ClockCircleOutlined />, tone: 'neutral' },
+            { key: 'in_progress', filter: 'in_progress', title: 'In Progress', count: statusCounts.in_progress, value: statusCounts.in_progress, alwaysVisible: true, subtitle: 'Click to filter', icon: <ClockCircleOutlined />, tone: 'info' },
+            { key: 'done', filter: 'done', title: 'Done', count: statusCounts.done, value: statusCounts.done, subtitle: 'Click to filter', icon: <CheckCircleOutlined />, tone: 'success' },
+            { key: 'completion', title: 'Completion Rate', count: statusCounts.done, value: `${completionRate}%`, alwaysVisible: true, subtitle: 'Across visible tasks', icon: <CheckCircleOutlined />, tone: 'success' },
+            { key: 'overdue', filter: 'overdue', title: 'Overdue', count: statusCounts.overdue, value: statusCounts.overdue, subtitle: 'Click to filter', icon: <ExclamationCircleOutlined />, tone: 'danger' }
         ]
 
     return (
@@ -1195,10 +1195,10 @@ export default function CoordinatorTasksOnly() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 16 }}>
                 {metricDefinitions.filter(metric => metric.alwaysVisible || metric.count > 0).map(metric => (
-                    <MotionCard.Metric
+                    <MetricTile
                         key={metric.key}
                         icon={metric.icon}
-                        iconBg={metric.iconBg}
+                        tone={metric.tone}
                         title={metric.title}
                         value={metric.value}
                         subtitle={metric.subtitle}

@@ -1,0 +1,44 @@
+{
+  "planRoadmaps/{roadmapId}": {
+    "title": "string",
+    "departmentId": "string",
+    "departmentName": "string",
+    "programId": "string | null  (used to pick the escalation project admin)",
+    "status": "draft | published | archived  (client creates as 'draft'; HOD publishes after review)",
+    "sourceFileName": "string",
+    "periodStart": "timestamp | null",
+    "periodEnd": "timestamp | null",
+    "createdBy": "uid",
+    "createdAt": "timestamp",
+    "publishedAt": "timestamp | null",
+    "lastCheckInResponseAt": "timestamp | null  (set by the client when the HOD submits a check-in)",
+    "_cronManaged": {
+      "lastCheckInMonth": "yyyy-mm",
+      "lastCheckInSentAt": "timestamp",
+      "missedCheckIns": "number  (consecutive; reset when the HOD responds)",
+      "missedEscalatedAt": "timestamp | null",
+      "lastProgress": "{ total, done, overdue, atRisk, percentDone, at }"
+    }
+  },
+  "planRoadmaps/{roadmapId}/milestones/{milestoneId}": {
+    "title": "string",
+    "deliverable": "string",
+    "responsible": "string",
+    "target": "string",
+    "timeframeText": "string  (the plan's own wording, e.g. 'Quarter 4')",
+    "dueAt": "timestamp | null  (null milestones are never chased)",
+    "dateConfidence": "exact | inferred | unknown",
+    "recurrence": "none | weekly | monthly | quarterly  (completed recurring milestones roll forward)",
+    "status": "not_started | in_progress | at_risk | blocked | done",
+    "note": "string",
+    "movIds": "string[]",
+    "updatedAt": "timestamp  (client sets on every HOD edit; used to detect missed check-ins)",
+    "completedAt": "timestamp | null",
+    "_cronManaged": {
+      "lastStage": "upcoming | due | overdue | null",
+      "lastRemindedAt": "timestamp | null",
+      "overdueReminders": "number",
+      "escalatedAt": "timestamp | null"
+    }
+  }
+}

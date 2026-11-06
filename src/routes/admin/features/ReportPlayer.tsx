@@ -39,6 +39,10 @@ const GREEN = "#2BD9A0";
 type Props = {
     dark?: boolean;
     open: boolean;
+    /** Screen point the reveal ripples out from, usually the Play button. */
+    origin?: { x: number; y: number } | null;
+    /** Already inside a reveal animation (the agent page), so skip our own. */
+    inline?: boolean;
     onClose: () => void;
     records: FeatureGovernanceRecord[];
     meetings: GovernanceMeeting[];
@@ -94,6 +98,25 @@ const css = `
 .rp-float { animation: rp-float 3.4s ease-in-out infinite; }
 .rp-slide { animation: rp-slide .6s cubic-bezier(.2,.8,.2,1) both; }
 .rp-bar { animation: rp-bar 1.4s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rp-reveal { from { clip-path: circle(0px at var(--rp-x) var(--rp-y)); } to { clip-path: circle(var(--rp-r) at var(--rp-x) var(--rp-y)); } }
+@keyframes rp-hide { from { clip-path: circle(var(--rp-r) at var(--rp-x) var(--rp-y)); } to { clip-path: circle(0px at var(--rp-x) var(--rp-y)); } }
+@keyframes rp-fadein { from { opacity:0; } to { opacity:1; } }
+@keyframes rp-wave { 0% { transform: translate(-50%,-50%) scale(0); opacity:.85; } 100% { transform: translate(-50%,-50%) scale(1); opacity:0; } }
+.rp-root.rp-enter { animation: rp-reveal .9s cubic-bezier(.22,.8,.2,1) both; }
+.rp-root.rp-exit { animation: rp-hide .5s cubic-bezier(.55,0,.75,.35) both; pointer-events:none; }
+.rp-opening .rp-stage, .rp-opening .rp-ctrl { animation: rp-fadein .55s .3s both; }
+.rp-waves { position:fixed; inset:0; z-index:2001; pointer-events:none; overflow:hidden; }
+.rp-waves i { position:absolute; left:var(--rp-x); top:var(--rp-y); width:calc(var(--rp-r) * 2); height:calc(var(--rp-r) * 2); border-radius:50%;
+  border:2px solid rgba(129,77,255,.85); box-shadow: 0 0 40px rgba(255,31,133,.35), inset 0 0 40px rgba(129,77,255,.25);
+  animation: rp-wave 1.1s cubic-bezier(.22,.8,.2,1) both; }
+.rp-waves i:nth-child(2) { border-color: rgba(255,31,133,.7); animation-delay:.14s; }
+.rp-waves i:nth-child(3) { border-color: rgba(43,217,160,.6); animation-delay:.28s; }
+@media (prefers-reduced-motion: reduce) {
+  .rp-root.rp-enter { animation: rp-fadein .25s both; }
+  .rp-root.rp-exit { animation: none; opacity:0; }
+  .rp-opening .rp-stage, .rp-opening .rp-ctrl { animation: none; }
+  .rp-waves { display:none; }
+}
 .rp-root { position:fixed; inset:0; z-index:2000; color: var(--rp-fg); overflow:hidden;
   background: radial-gradient(1200px 700px at 15% 10%, var(--rp-bg1) 0%, transparent 60%),
               radial-gradient(1000px 700px at 90% 90%, var(--rp-bg2) 0%, transparent 55%), var(--rp-bg);
@@ -121,6 +144,8 @@ const css = `
 const ReportPlayer = ({
     dark = true,
     open,
+    origin,
+    inline = false,
     onClose,
     records,
     meetings,
@@ -701,14 +726,66 @@ const ReportPlayer = ({
         return () => window.removeEventListener("keydown", onKey);
     }, [open, onClose, slides.length]);
 
-    if (!open) return null;
+    // The player covers the page, so the page behind it must not show (or
+    // scroll with) its own scrollbar. The player's stage scrolls itself when
+    // a slide is taller than the screen.
+    useEffect(() => {
+        if (!open) return;
+        const html = document.documentElement;
+        const body = document.body;
+        const previous = { html: html.style.overflow, body: body.style.overflow };
+        html.style.overflow = "hidden";
+        body.style.overflow = "hidden";
+        return () => {
+            html.style.overflow = previous.html;
+            body.style.overflow = previous.body;
+        };
+    }, [open]);
+
+    // Keep the player mounted while it ripples closed, then unmount.
+    const [mounted, setMounted] = useState(open);
+    const [opening, setOpening] = useState(false);
+    useEffect(() => {
+        if (inline) {
+            setMounted(open);
+            return;
+        }
+        if (open) {
+            setMounted(true);
+            setOpening(true);
+            const settle = setTimeout(() => setOpening(false), 1300);
+            return () => clearTimeout(settle);
+        }
+        const unmount = setTimeout(() => setMounted(false), 520);
+        return () => clearTimeout(unmount);
+    }, [open, inline]);
+
+    // Where the ripple starts and how far it must travel to cover the page.
+    const geo = useMemo(() => {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const x = origin?.x ?? w / 2;
+        const y = origin?.y ?? h / 2;
+        return { x, y, r: Math.hypot(Math.max(x, w - x), Math.max(y, h - y)) + 16 };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, origin]);
+
+    if (!mounted) return null;
     const slide = slides[Math.min(index, slides.length - 1)];
 
     return (
+        <>
         <div
-            className={`rp-root ${dark ? "rp-dark" : "rp-light"}`}
+            className={`rp-root ${dark ? "rp-dark" : "rp-light"} ${inline ? "" : open ? "rp-enter" : "rp-exit"} ${opening && !inline ? "rp-opening" : ""}`}
             role="dialog"
             aria-label="Report playback"
+            style={
+                {
+                    "--rp-x": `${geo.x}px`,
+                    "--rp-y": `${geo.y}px`,
+                    "--rp-r": `${geo.r}px`,
+                } as React.CSSProperties
+            }
         >
             <style>{css}</style>
             <div
@@ -802,6 +879,24 @@ const ReportPlayer = ({
                 </div>
             </div>
         </div>
+        {!inline && opening && open ? (
+            <div
+                className="rp-waves"
+                aria-hidden
+                style={
+                    {
+                        "--rp-x": `${geo.x}px`,
+                        "--rp-y": `${geo.y}px`,
+                        "--rp-r": `${geo.r}px`,
+                    } as React.CSSProperties
+                }
+            >
+                <i />
+                <i />
+                <i />
+            </div>
+        ) : null}
+        </>
     );
 };
 

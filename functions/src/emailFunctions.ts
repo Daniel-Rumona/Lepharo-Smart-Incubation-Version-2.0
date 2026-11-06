@@ -6,6 +6,7 @@ export {
 } from "./emailApplications";
 export {
   onAppointmentWriteNotifyIncubatee,
+  onAppointmentSessionChangedNotifySmes,
   appointmentCompletionNotifier,
 } from "./emailAppointments";
 export {
@@ -15,7 +16,6 @@ export {
   devPlanReminderCron,
 } from "./emailDevPlan";
 export {
-  onMovDocumentWorkflowEmails,
   movReminderCron,
 } from "./emailMov";
 export { sendInterventionReminderEmail } from "./workflowEmailFunctions";

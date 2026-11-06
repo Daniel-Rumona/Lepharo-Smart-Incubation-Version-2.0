@@ -285,6 +285,7 @@ export const InterventionDemandModal: React.FC<
 
         return (
             <Modal
+ wrapClassName="mobile-sheet"
                 title="Intervention Demand"
                 open={open}
                 onCancel={onClose}

@@ -260,7 +260,7 @@ const HseJobsParticipantsCard: React.FC<Props> = ({
                 showViewAll ? (
                     <Button
                         variant="filled"
-                        color="geekblue"
+                        color="primary"
                         shape="round"
                         icon={<ArrowRightOutlined />}
                         onClick={() => navigate('/metrics/jobs')}

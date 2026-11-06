@@ -5,6 +5,7 @@ import { auth, db } from '@/firebase'
 import { cacheBelongsToAnotherAccount } from '@/lib/firestoreCache'
 import { firestoreCacheReady } from '@/lib/firestoreCacheBoot'
 import { clearActivity, isSessionStale } from '@/utils/idleSession'
+import { linkMySmeAccount } from '@/services/smeIdentity'
 
 export type AppIdentity = Record<string, any> & {
     id: string
@@ -26,7 +27,7 @@ type IdentityContextValue = {
 }
 
 const VIEW_AS_STORAGE_KEY = 'developerViewAsUser'
-const VIEW_AS_ROLES = new Set(['admin', 'system_admin'])
+const VIEW_AS_ROLES = new Set(['system_admin'])
 const IdentityContext = createContext<IdentityContextValue | null>(null)
 
 const normalizeRole = (value: unknown) =>
@@ -46,6 +47,30 @@ const makeIdentity = (
     role: normalizeRole(profile.role || 'guest'),
     phone: profile.phone || ''
 })
+
+const SME_LINK_TRIED_KEY = 'smeLinkTried'
+
+// An SME login not yet linked to its participant record (created before the
+// link existed, or whose record staff added later) links itself in the
+// background, once per session (docs/sme-identity-migration-plan.md).
+const repairSmeLink = (
+    identity: AppIdentity,
+    setActor: React.Dispatch<React.SetStateAction<AppIdentity | null>>
+) => {
+    if (identity.role !== 'incubatee' || identity.participantId) return
+    try {
+        if (sessionStorage.getItem(SME_LINK_TRIED_KEY) === identity.uid) return
+        sessionStorage.setItem(SME_LINK_TRIED_KEY, identity.uid)
+    } catch {
+        // Without session storage this simply runs again on the next load.
+    }
+    void linkMySmeAccount().then(participantId => {
+        if (!participantId) return
+        setActor(previous =>
+            previous?.uid === identity.uid ? { ...previous, participantId } : previous
+        )
+    })
+}
 
 const readStoredView = (): AppIdentity | null => {
     try {
@@ -110,6 +135,7 @@ export const IdentityProvider: React.FC<React.PropsWithChildren> = ({ children }
                 profile
             )
             setActor(realIdentity)
+            repairSmeLink(realIdentity, setActor)
             if (VIEW_AS_ROLES.has(realIdentity.role)) {
                 setViewedUser(readStoredView())
             } else {
@@ -124,6 +150,27 @@ export const IdentityProvider: React.FC<React.PropsWithChildren> = ({ children }
             setLoading(false)
         }
     }), [])
+
+    useEffect(() => {
+        const handleProfileUpdated = (event: Event) => {
+            const detail = (event as CustomEvent<Record<string, any>>).detail || {}
+            if (!detail.uid) return
+
+            setActor(previous =>
+                previous?.uid === String(detail.uid)
+                    ? { ...previous, ...detail }
+                    : previous
+            )
+            setViewedUser(previous =>
+                previous?.uid === String(detail.uid)
+                    ? { ...previous, ...detail }
+                    : previous
+            )
+        }
+
+        window.addEventListener('user-profile-updated', handleProfileUpdated)
+        return () => window.removeEventListener('user-profile-updated', handleProfileUpdated)
+    }, [])
 
     const canViewAs = !!actor && VIEW_AS_ROLES.has(actor.role)
     const startViewingAs = useCallback((profile: AppIdentity) => {

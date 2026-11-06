@@ -57,7 +57,8 @@ export default function QuestionsTab({
   const { modal } = App.useApp();
   const { lessons, defaults } = useMemo(() => sourceLessons(course, item), [course, item]);
   const [picked, setPicked] = useState<string[]>(defaults);
-  const [count, setCount] = useState(5);
+  // Same defaults as everywhere else: 10 questions for a test, 5 for a quiz, scenario style.
+  const [count, setCount] = useState(item.kind === "test" ? 10 : 5);
   const [style, setStyle] = useState<GenerateOptions["style"]>("scenario");
   const [openGenerator, setOpenGenerator] = useState(!item.questions.length);
   const unconfirmed = item.questions.filter((q) => q.aiSuggested).length;

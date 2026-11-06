@@ -1,8 +1,13 @@
 import { driver } from 'driver.js'
+import type { Config } from 'driver.js'
 import type { AppGuide } from './guideTypes'
 
 type RunGuideOptions = {
   onDestroyed?: () => void
+  /** Overrides for this run, e.g. a multi-page tour's own buttons and Next handling. */
+  config?: Partial<Config>
+  /** The step to open on, e.g. the last one when going back a page. */
+  startAt?: number
 }
 
 export const runGuide = (
@@ -55,12 +60,14 @@ export const runGuide = (
 
     steps,
 
+    ...options.config,
+
     onDestroyed: () => {
       options.onDestroyed?.()
     }
   })
 
-  driverObj.drive()
+  driverObj.drive(Math.min(Math.max(options.startAt ?? 0, 0), steps.length - 1))
 
   return driverObj
 }

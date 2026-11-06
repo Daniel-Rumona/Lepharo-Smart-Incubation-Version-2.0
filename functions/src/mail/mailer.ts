@@ -19,6 +19,11 @@ function getTransporter() {
       host: requireEnv("SMTP_HOST"),
       port,
       secure,
+      pool: true,
+      maxConnections: 3,
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 30000,
       auth: {
         user: requireEnv("SMTP_USER"),
         pass: requireEnv("SMTP_PASS"),

@@ -1,0 +1,201 @@
+/* ============================================================================
+   WhatsApp consent prompt, shown straight after sign-in. The SME is signed in
+   by now, so the page is painted entirely from the app tokens (--app-*, set
+   per colour mode in styles/dark-mode.css and per accent in
+   styles/accent-themes.css) and follows whichever mode and accent they chose.
+   Every class here is `wc-` prefixed.
+   ========================================================================== */
+
+.wc {
+  position: relative;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--app-bg);
+  color: var(--app-text);
+  overflow-x: clip;
+}
+
+/* --- Ambient background: two slow glows in the chosen accent ------------- */
+
+.wc-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.wc-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  will-change: transform;
+}
+.wc-glow-a {
+  width: 52vw;
+  height: 52vw;
+  top: -24vw;
+  right: -12vw;
+  background: radial-gradient(circle, color-mix(in srgb, var(--app-accent) 22%, transparent), transparent 65%);
+  animation: wcDriftA 26s ease-in-out infinite alternate;
+}
+.wc-glow-b {
+  width: 42vw;
+  height: 42vw;
+  bottom: -22vw;
+  left: -10vw;
+  background: radial-gradient(circle, color-mix(in srgb, var(--app-accent) 14%, transparent), transparent 65%);
+  animation: wcDriftB 32s ease-in-out infinite alternate;
+}
+@keyframes wcDriftA { to { transform: translate3d(-6vw, 5vw, 0) scale(1.1); } }
+@keyframes wcDriftB { to { transform: translate3d(8vw, -4vw, 0) scale(1.15); } }
+
+/* --- Top bar and footer -------------------------------------------------- */
+
+.wc-top,
+.wc-foot {
+  position: relative;
+  z-index: 2;
+  width: min(1100px, calc(100% - 48px));
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.wc-top {
+  padding: 20px 0 8px;
+}
+.wc-top .workspace-theme-toggle,
+.wc-top .workspace-theme-toggle .anticon {
+  color: var(--app-text);
+}
+.wc-foot {
+  padding: 14px 0 20px;
+  font-size: 13px;
+  color: var(--app-text-subtle);
+  --qb-name: var(--app-text);
+}
+
+.wc-logo {
+  height: 34px;
+  width: auto;
+  display: block;
+}
+
+/* --- Card ---------------------------------------------------------------- */
+
+.wc-main {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 16px 24px;
+}
+
+.wc-card {
+  width: min(520px, 100%);
+  padding: 32px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--app-surface) 88%, transparent);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  animation: wcRise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* WhatsApp's own green: it names the channel, so it stays the same whatever
+   the accent. */
+.wc-badge {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 18px;
+  border-radius: 14px;
+  background: rgba(37, 211, 102, 0.12);
+  color: #1da851;
+  font-size: 24px;
+}
+html[data-theme="dark"] .wc-badge {
+  background: rgba(37, 211, 102, 0.14);
+  color: #3ddc84;
+}
+
+.wc-title {
+  margin: 0 0 8px;
+  color: var(--app-text);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+@keyframes wcRise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* --- Phones -------------------------------------------------------------- */
+
+/* A page rather than a floating card: the content runs edge to edge and the
+   two actions stay pinned within thumb reach at the bottom. */
+@media (max-width: 767px) {
+  .wc-top {
+    width: calc(100% - 32px);
+    padding: 14px 0 4px;
+  }
+  .wc-logo {
+    height: 28px;
+  }
+  .wc-main {
+    display: flex;
+    align-items: stretch;
+    padding: 8px 0 0;
+  }
+  .wc-card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 12px 16px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .wc-badge {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 14px;
+    font-size: 22px;
+  }
+  .wc-title {
+    font-size: 22px;
+  }
+  .wc .wcc {
+    flex: 1;
+  }
+  .wc .wcc-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: auto -16px 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--app-bg);
+    border-top: 1px solid var(--app-border);
+  }
+  /* The pinned actions are the last thing on a phone screen. */
+  .wc-foot {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wc-glow,
+  .wc-card {
+    animation: none;
+  }
+}

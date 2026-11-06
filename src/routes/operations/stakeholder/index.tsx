@@ -60,6 +60,7 @@ import {
     getDownloadURL,
     deleteObject
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import dayjs, { Dayjs } from 'dayjs'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import {
@@ -314,7 +315,7 @@ export const StakeholderEngagementPage: React.FC = () => {
                         `stakeholder-engagements/${docRef.id}/${Date.now()}_${idx}_${file.name
                         }`
                     )
-                    const snap = await uploadBytes(storageRef, file)
+                    const snap = await uploadBytes(storageRef, file, withOwner())
                     return getDownloadURL(snap.ref)
                 })
                 imageUrls = await Promise.all(uploads)

@@ -1,13 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handleStaffAction = exports.STAFF_ACTIONS = exports.resolveStaffByPhone = exports.roleGroupOf = void 0;
+exports.handleStaffAction = exports.STAFF_ACTIONS = exports.executeSchedule = exports.validateSchedule = exports.resolveStaffByPhone = exports.UserError = exports.roleGroupOf = void 0;
 const firebase_1 = require("./firebase");
 const whatsappCommon_1 = require("./whatsappCommon");
 const roleKey = (role) => (0, whatsappCommon_1.clean)(role).toLowerCase().replace(/[\s_-]/g, "");
 const roleGroupOf = (role) => {
     const key = roleKey(role);
-    if (key === "admin" || key === "systemadmin")
-        return "admin";
+    if (key === "systemadmin")
+        return "system_admin";
     if (key === "director")
         return "director";
     if (["operations", "headofdepartment", "headsofdepartment"].includes(key))
@@ -32,6 +32,7 @@ class UserError extends Error {
         this.code = code;
     }
 }
+exports.UserError = UserError;
 const ok = (body) => ({ status: 200, body: { ok: true, matched: true, ...body } });
 const fail = (status, error, extra = {}) => ({
     status,
@@ -106,7 +107,7 @@ async function resolveStaffByPhone(phoneNumber) {
         roleGroup: (0, exports.roleGroupOf)(role),
         email: (0, whatsappCommon_1.clean)(data.email) || null,
         phoneNumber: (0, whatsappCommon_1.clean)(data.phone || data.phoneNumber) || phoneNumber,
-        departmentId: (0, whatsappCommon_1.clean)(data.department || data.departmentId) || null,
+        departmentId: (0, whatsappCommon_1.clean)(data.departmentId) || null,
         branchId: (0, whatsappCommon_1.clean)(data.assignedBranch || data.branchId) || null,
     };
 }
@@ -123,7 +124,7 @@ const tally = (values) => {
     return counts;
 };
 async function staffOverview(identity) {
-    if (!["admin", "director", "hod"].includes(identity.roleGroup))
+    if (!["system_admin", "director", "hod"].includes(identity.roleGroup))
         return fail(403, "not_permitted");
     const [participants, assignments, upcoming] = await Promise.all([
         firebase_1.db.collection("participants").count().get(),
@@ -151,7 +152,7 @@ async function staffOverview(identity) {
     return ok(body);
 }
 async function governanceSummary(identity) {
-    if (!["admin", "director"].includes(identity.roleGroup))
+    if (!["system_admin", "director"].includes(identity.roleGroup))
         return fail(403, "not_permitted");
     const [features, meetings] = await Promise.all([
         firebase_1.db.collection("featureGovernance").get(),
@@ -211,7 +212,7 @@ async function myAppointments(identity) {
         return fail(403, "not_permitted");
     const now = Date.now();
     let docs;
-    const orgWide = ["admin", "director", "receptionist"].includes(identity.roleGroup);
+    const orgWide = ["system_admin", "director", "receptionist"].includes(identity.roleGroup);
     if (orgWide) {
         const snapshot = await firebase_1.db.collection("appointmentSessions")
             .where("startAt", ">=", firebase_1.admin.firestore.Timestamp.fromMillis(now - 60 * 60 * 1000))
@@ -242,8 +243,11 @@ async function myAppointments(identity) {
     return ok({ appointments: sessions, scope: orgWide ? "organisation" : "mine" });
 }
 const participantLabel = (data) => (0, whatsappCommon_1.clean)(data?.beneficiaryName) || (0, whatsappCommon_1.clean)(data?.participantName) || (0, whatsappCommon_1.clean)(data?.businessName) || (0, whatsappCommon_1.clean)(data?.companyName) || (0, whatsappCommon_1.clean)(data?.name);
+// System administrators oversee the programme: they can view appointments and interventions but
+// cannot set them up, so they are excluded from the lookups and actions that exist for scheduling.
+const SCHEDULERS = ["hod", "coordinator", "employee"];
 async function searchParticipants(identity, query) {
-    if (!["admin", "hod", "coordinator", "employee"].includes(identity.roleGroup))
+    if (!SCHEDULERS.includes(identity.roleGroup))
         return fail(403, "not_permitted");
     const needle = shortText(query, 80).toLowerCase();
     if (needle.length < 2)
@@ -257,22 +261,15 @@ async function searchParticipants(identity, query) {
 }
 const INACTIVE_ASSIGNMENT = ["cancelled", "completed", "declined"];
 async function searchAssignments(identity, payload) {
-    if (!["admin", "hod", "coordinator", "employee"].includes(identity.roleGroup))
+    if (!SCHEDULERS.includes(identity.roleGroup))
         return fail(403, "not_permitted");
     const participantId = (0, whatsappCommon_1.clean)(payload.participantId);
     const needle = shortText(payload.query, 80).toLowerCase();
     if (!participantId && needle.length < 2)
         return fail(400, "query_required");
-    const fields = [
-        "participantId", "participantName", "interventionTitle", "subInterventionTitle", "assigneeId",
-        "assigneeName", "assignmentStatus", "type", "groupKey", "cycleKey", "createdAt",
-    ];
     let docs = [];
     if (participantId) {
         docs = (await firebase_1.db.collection("assignedInterventions").where("participantId", "==", participantId).limit(100).get()).docs;
-    }
-    else if (identity.roleGroup === "admin") {
-        docs = (await firebase_1.db.collection("assignedInterventions").select(...fields).limit(3000).get()).docs;
     }
     else {
         const found = new Map();
@@ -285,7 +282,7 @@ async function searchAssignments(identity, payload) {
     const assignments = docs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
         .filter((row) => !INACTIVE_ASSIGNMENT.includes((0, whatsappCommon_1.clean)(row.assignmentStatus).toLowerCase()))
-        .filter((row) => identity.roleGroup === "admin" || isOwnedBy(identity, row.assigneeId))
+        .filter((row) => isOwnedBy(identity, row.assigneeId))
         .filter((row) => !needle || (0, whatsappCommon_1.clean)(row.participantName).toLowerCase().includes(needle))
         .slice(0, 8)
         .map((row) => ({
@@ -301,11 +298,11 @@ async function searchAssignments(identity, payload) {
     return ok({ assignments });
 }
 /* ---------------------------------------------------------------- proposals */
-const ROLE_CHOICES = ["admin", "director", "operations", "coordinator", "projectadmin", "receptionist", "employee", "incubatee", "funder"];
+const ROLE_CHOICES = ["system_admin", "director", "operations", "coordinator", "projectadmin", "receptionist", "employee", "incubatee", "funder"];
 const DELIVERY_METHODS = ["in_person", "virtual", "telephonically"];
 const DELIVERY_LABEL = { in_person: "In person", virtual: "Virtual", telephonically: "Telephonic" };
 function validateLogMeeting(identity, raw) {
-    if (identity.roleGroup !== "admin")
+    if (identity.roleGroup !== "system_admin")
         throw new UserError("Only system administrators can log governance meetings.", "not_permitted");
     const title = shortText(raw.title, 160);
     const withName = shortText(raw.withName, 120);
@@ -331,7 +328,7 @@ function validateLogMeeting(identity, raw) {
     return { params: { title, withName, status, meetingDate, discussion, challenges }, summary };
 }
 function validateLogFeature(identity, raw) {
-    if (identity.roleGroup !== "admin")
+    if (identity.roleGroup !== "system_admin")
         throw new UserError("Only system administrators can log features.", "not_permitted");
     const title = shortText(raw.title, 160);
     const description = shortText(raw.description, 1500);
@@ -343,7 +340,7 @@ function validateLogFeature(identity, raw) {
     const dueDate = raw.dueDate ? validDate(raw.dueDate) : null;
     if (raw.dueDate && !dueDate)
         throw new UserError("I couldn't read that target date. Please give it as a date, like 30 September 2026.");
-    const roles = Array.from(new Set((Array.isArray(raw.roles) ? raw.roles : []).map((role) => roleKey(role)).filter((role) => ROLE_CHOICES.includes(role))));
+    const roles = Array.from(new Set((Array.isArray(raw.roles) ? raw.roles : []).map((role) => (0, whatsappCommon_1.clean)(role).toLowerCase().replace(/[\s-]/g, "_")).filter((role) => ROLE_CHOICES.includes(role))));
     const summary = [
         type === "pipeline" ? "Add a feature to the pipeline" : "Log a feature request",
         `Feature: ${title}`,
@@ -355,7 +352,7 @@ function validateLogFeature(identity, raw) {
 }
 const safeKey = (value) => encodeURIComponent(value).replace(/%/g, "_");
 async function loadSchedule(identity, params) {
-    if (!["admin", "hod", "coordinator", "employee"].includes(identity.roleGroup)) {
+    if (!SCHEDULERS.includes(identity.roleGroup)) {
         throw new UserError("Your role can't set up appointments from WhatsApp.", "not_permitted");
     }
     const assignmentId = (0, whatsappCommon_1.clean)(params.assignedInterventionId);
@@ -363,7 +360,7 @@ async function loadSchedule(identity, params) {
     if (!snapshot?.exists)
         throw new UserError("I couldn't find that intervention assignment. Tell me which SME it's for and I'll look it up.");
     const assignment = { id: snapshot.id, ...snapshot.data() };
-    if (identity.roleGroup !== "admin" && !isOwnedBy(identity, assignment.assigneeId)) {
+    if (!isOwnedBy(identity, assignment.assigneeId)) {
         throw new UserError("That intervention is assigned to someone else, so I can't schedule it for you.", "not_permitted");
     }
     if (INACTIVE_ASSIGNMENT.includes((0, whatsappCommon_1.clean)(assignment.assignmentStatus).toLowerCase())) {
@@ -444,6 +441,7 @@ async function validateSchedule(identity, raw) {
         summary,
     };
 }
+exports.validateSchedule = validateSchedule;
 async function executeSchedule(identity, params) {
     const context = await loadSchedule(identity, params);
     const { assignment, participant, sessionId, start, end } = context;
@@ -482,7 +480,7 @@ async function executeSchedule(identity, params) {
             attendanceSummary: { invitedCount: 1, attendedCount: 0, checkedInCount: 0, checkedOutCount: 0 },
             foodMenu: [],
             status: "scheduled",
-            createdVia: "whatsapp",
+            createdVia: identity.channel || "whatsapp",
             createdById: identity.id,
             createdAt: now,
             updatedAt: now,
@@ -519,6 +517,7 @@ async function executeSchedule(identity, params) {
     });
     return `Appointment booked for ${(0, whatsappCommon_1.clean)(assignment.participantName)} on ${formatWhen(start)}. They'll be invited to confirm.`;
 }
+exports.executeSchedule = executeSchedule;
 const PROPOSAL_TTL_MS = 30 * 60 * 1000;
 async function proposeAction(identity, payload) {
     const kind = (0, whatsappCommon_1.clean)(payload.proposalKind);

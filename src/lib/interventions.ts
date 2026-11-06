@@ -19,7 +19,6 @@ import {
     runTransaction,
     Firestore,
 } from 'firebase/firestore'
-import { sendNotification } from '@/utils/sendNotification'
 import {
     isAssignmentAccepted,
     loadAssignmentGroup,
@@ -29,6 +28,7 @@ import { workflowQueryService } from '@/services/workflowQueryService'
 import { toAssignedInterventionView } from '@/services/assignedInterventionService'
 import { buildParticipantLifecycleTransition } from '@/services/assignmentLifecycleService'
 import { findMovForAssignment } from '@/services/movService'
+import { closeDisputeOnConfirmation, disputeCategoryLabel, openDisputeFor, type DisputeCategory } from '@/services/deliveryDisputeService'
 
 export type AStatus = 'pending' | 'accepted' | 'declined'
 export type CComplete = 'pending' | 'completed'
@@ -41,7 +41,7 @@ export interface AssignedIntervention {
     assigneeId: string
     participantName: string
     interventionTitle: string
-    areaOfSupport: string
+    departmentId?: string | null
     dueDate?: any
     createdAt?: any
     updatedAt?: any
@@ -66,7 +66,7 @@ export interface DenormInterventionEntry {
     assignedInterventionId: string
     interventionId: string
     title: string
-    areaOfSupport?: string
+    departmentId?: string | null
     dueDate?: any
     status: 'assigned' | 'completed'
     acceptedAt?: any
@@ -76,7 +76,6 @@ export interface DenormInterventionEntry {
     declineReason?: string
 }
 
-type Role = 'projectadmin' | 'consultant' | 'beneficiary'
 
 // ─────────────────────────────────────────────────────────────
 // Internal helpers
@@ -170,7 +169,7 @@ function stripUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
 function sanitizeDenormEntry(entry: DenormInterventionEntry): DenormInterventionEntry {
     return stripUndefined({
         ...entry,
-        areaOfSupport: entry.areaOfSupport ?? null,
+        departmentId: entry.departmentId ?? null,
         dueDate: entry.dueDate ?? null,
         declineReason: entry.declineReason ?? null,
         feedback: entry.feedback
@@ -230,7 +229,9 @@ export async function acceptAssignedIntervention(db: Firestore, assignedInterven
     const groupKey = normalizeAssignmentGroupKey(a)
     let groupProgressPatch: Record<string, any> = {}
     if (groupKey) {
-        const peers = (await loadAssignmentGroup(db, groupKey))
+        // An SME may not read other SMEs' assignments, so for them the peer
+        // lookup is denied and the assignment keeps its own progress.
+        const peers = (await loadAssignmentGroup(db, groupKey).catch(() => []))
             .filter(peer => peer.id !== assignedInterventionId && isAssignmentAccepted(peer))
             .sort((left, right) =>
                 Number(right?.computedProgress || right?.progress || 0) -
@@ -263,27 +264,15 @@ export async function acceptAssignedIntervention(db: Firestore, assignedInterven
             assignedInterventionId: assignedInterventionId,
             interventionId: a.interventionId,
             title: a.interventionTitle,
-            areaOfSupport: a.areaOfSupport,
+            departmentId: a.departmentId ?? null,
             dueDate: a.dueDate ?? null,
             status: 'assigned',
             acceptedAt: new Date()
         })
     }
 
-    // Notify
-    await sendNotification({
-        participantId: a.participantId,
-        consultantId: a.assigneeId,
-        interventionId: assignedInterventionId,
-        interventionTitle: a.interventionTitle,
-        type: 'intervention-accepted',
-        recipientRoles: ['projectadmin', 'consultant', 'beneficiary' as Role],
-        message: {
-            consultant: `Beneficiary ${a.participantName} accepted: ${a.interventionTitle}.`,
-            projectadmin: `Beneficiary ${a.participantName} accepted the intervention.`,
-            beneficiary: `You accepted: ${a.interventionTitle}.`
-        }
-    })
+    // In-app notice to the facilitator is written server-side by
+    // onAssignedInterventionEmail (functions/src/workflowEmailFunctions.ts).
 }
 
 /** Decline an assigned intervention (incubatee action). */
@@ -310,7 +299,7 @@ export async function declineAssignedIntervention(
             assignedInterventionId,
             interventionId: a.interventionId,
             title: a.interventionTitle,
-            areaOfSupport: a.areaOfSupport,
+            departmentId: a.departmentId ?? null,
             dueDate: a.dueDate ?? null,
             status: 'assigned',
             declinedAt: new Date(),
@@ -318,20 +307,8 @@ export async function declineAssignedIntervention(
         })
     }
 
-    await sendNotification({
-        participantId: a.participantId,
-        consultantId: a.assigneeId,
-        interventionId: assignedInterventionId,
-        interventionTitle: a.interventionTitle,
-        type: 'intervention-declined',
-        recipientRoles: ['projectadmin', 'consultant', 'beneficiary' as Role],
-        message: {
-            consultant: `Beneficiary ${a.participantName} declined: ${a.interventionTitle}.`,
-            projectadmin: `Beneficiary ${a.participantName} declined the intervention.`,
-            beneficiary: `You declined: ${a.interventionTitle}.`
-        },
-        reason
-    })
+    // In-app notice to the facilitator is written server-side by
+    // onAssignedInterventionEmail (functions/src/workflowEmailFunctions.ts).
 }
 
 /** Reject a consultant’s completion claim (incubatee action). */
@@ -339,51 +316,54 @@ export async function rejectCompletion(
     db: Firestore,
     assignedInterventionId: string,
     reason: string,
-    raisedBy: { deptName?: string; uid?: string }
+    raisedBy: { deptName?: string; uid?: string; name?: string; email?: string },
+    category: DisputeCategory = 'other'
 ) {
     const ref = doc(db, 'assignedInterventions', assignedInterventionId)
     const snap = await getDoc(ref)
     if (!snap.exists()) throw new Error('Intervention not found')
     const a = toAssignedInterventionView(snap.id, snap.data()) as unknown as AssignedIntervention
 
-    await updateDoc(ref, buildParticipantLifecycleTransition('reject-completion', a, {
-        now: new Date(),
-        reason
-    }))
-
-    await sendNotification({
-        participantId: a.participantId,
-        consultantId: a.assigneeId,
-        interventionId: assignedInterventionId,
-        interventionTitle: a.interventionTitle,
-        type: 'completion-rejected',
-        recipientRoles: ['projectadmin', 'consultant', 'beneficiary' as Role],
-        message: {
-            consultant: `Beneficiary ${a.participantName} rejected completion: ${a.interventionTitle}.`,
-            projectadmin: `Completion rejected for: ${a.interventionTitle}.`,
-            beneficiary: `You rejected the completion of: ${a.interventionTitle}.`
-        },
-        reason
+    await updateDoc(ref, {
+        ...buildParticipantLifecycleTransition('reject-completion', a, { now: new Date(), reason }),
+        participantCompletionRejectionCategory: category
     })
 
-    // Log a query for follow-up
+    // In-app notice to the facilitator is written server-side by
+    // onAssignedInterventionEmail (functions/src/workflowEmailFunctions.ts);
+    // the HOD is told by onWorkflowQueryChanged (functions/src/workflowQueryNotifications.ts).
+
+    const label = disputeCategoryLabel(category)
+    const message = label ? `${label}: ${reason}` : reason
+    const actor = { id: raisedBy.uid || a.participantId, name: raisedBy.name || null, email: raisedBy.email || null, role: 'incubatee' }
+
+    // Rejecting again sends the open dispute back, rather than opening a second one.
+    const existing = await openDisputeFor(assignedInterventionId)
+    if (existing) {
+        await workflowQueryService.sendBack(existing.id, { notes: message, actorId: actor.id, actor })
+        return
+    }
+
+    const { movDocumentId } = await findMovForAssignment(db, assignedInterventionId)
+    const raw = snap.data() as any
     await workflowQueryService.create({
         programId: a.programId || '',
         type: 'completion-rejected',
-        message: reason,
-        raisedById: raisedBy.uid || a.participantId,
-        raisedBy: {
-            role: 'beneficiary',
-            departmentName: raisedBy.deptName || 'Beneficiary'
-        },
+        message,
+        raisedById: actor.id,
+        raisedBy: { name: actor.name, email: actor.email, role: 'incubatee', departmentName: raisedBy.deptName || null },
         resolverId: a.assigneeId,
         resolver: { role: 'coordinator' },
         target: { type: 'assigned-intervention', id: assignedInterventionId },
         context: {
             participantId: a.participantId,
             interventionId: assignedInterventionId,
-            interventionTitle: a.interventionTitle
-        }
+            interventionTitle: a.interventionTitle,
+            movId: movDocumentId || null,
+            departmentId: a.departmentId || null,
+            departmentName: raw?.departmentName || null,
+            disputeCategory: category
+        } as any
     })
 }
 
@@ -413,13 +393,20 @@ export async function confirmCompletion(
     // Commit completion only after the MOV exists and is linked.
     await updateDoc(ref, completionPatch)
 
+    // Confirming after a correction or re-delivery settles the SME's dispute.
+    try {
+        await closeDisputeOnConfirmation(assignedInterventionId, { id: a.participantId, role: 'incubatee' })
+    } catch (error) {
+        console.warn('Could not close the delivery dispute after confirmation', error)
+    }
+
     // Denorm to applications.completed.
     if (applicationId) {
         await pushDenormEntry(db, applicationId, 'completed', {
             assignedInterventionId,
             interventionId: a.interventionId,
             title: a.interventionTitle,
-            areaOfSupport: a.areaOfSupport,
+            departmentId: a.departmentId ?? null,
             dueDate: a.dueDate ?? null,
             status: 'completed',
             completedAt: new Date(),
@@ -427,18 +414,6 @@ export async function confirmCompletion(
         })
     }
 
-    // 5) notify (unchanged)
-    await sendNotification({
-        participantId: a.participantId,
-        consultantId: a.assigneeId,
-        interventionId: assignedInterventionId,
-        interventionTitle: a.interventionTitle,
-        type: 'intervention-confirmed',
-        recipientRoles: ['consultant', 'projectadmin', 'beneficiary'],
-        message: {
-            consultant: `Beneficiary ${a.participantName || 'client'} confirmed: ${a.interventionTitle}.`,
-            projectadmin: `Intervention "${a.interventionTitle}" has been confirmed by the beneficiary.`,
-            beneficiary: `You confirmed the completion of: ${a.interventionTitle}.`
-        }
-    })
+    // In-app notice to the facilitator is written server-side by
+    // onAssignedInterventionEmail (functions/src/workflowEmailFunctions.ts).
 }

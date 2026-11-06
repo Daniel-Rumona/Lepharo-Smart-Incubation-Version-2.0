@@ -10,6 +10,32 @@ import {
 
 export type SaveState = "saved" | "unsaved" | "saving" | "failed" | "recovery";
 
+/** Another session (tab or device) saved this course since it was loaded. */
+export const isSaveConflict = (message: string) => /another session saved/i.test(message);
+
+/**
+ * Files attached while editing are held as data: URLs until a save uploads them.
+ * When the editor changed during that save, swap in the uploaded links anyway,
+ * so the next save doesn't upload the same files again.
+ */
+const withUploadedLinks = (current: SavedCourse, saved: SavedCourse): SavedCourse => {
+  const uploaded = new Map<string, string>();
+  saved.items.forEach((item) => {
+    (item.materials || []).forEach((m) => uploaded.set(m.id, m.url));
+    item.questions.forEach((q) => (q.materials || []).forEach((m) => uploaded.set(m.id, m.url)));
+  });
+  const swap = <T extends { id: string; url: string }>(list?: T[]) =>
+    (list || []).map((m) => (m.url.startsWith("data:") && uploaded.get(m.id) && !uploaded.get(m.id)!.startsWith("data:") ? { ...m, url: uploaded.get(m.id)! } : m));
+  return {
+    ...current,
+    items: current.items.map((item) => ({
+      ...item,
+      materials: swap(item.materials),
+      questions: item.questions.map((q) => ({ ...q, materials: swap(q.materials) })),
+    })),
+  };
+};
+
 export const saveLabel: Record<SaveState, string> = {
   saved: "Saved",
   unsaved: "Unsaved changes",
@@ -98,7 +124,7 @@ export function useCourseDraft(owner: string, id: string) {
         const next =
           current === snapshot || !current
             ? saved
-            : { ...current, revision: saved.revision, publishedRevision: saved.publishedRevision, updatedAt: saved.updatedAt };
+            : { ...withUploadedLinks(current, saved), revision: saved.revision, publishedRevision: saved.publishedRevision, updatedAt: saved.updatedAt };
         latest.current = next;
         return next;
       });
@@ -126,6 +152,27 @@ export function useCourseDraft(owner: string, id: string) {
       clearTimeout(timer);
     };
   }, [course, dirty, loading, save]);
+
+  // Leaving the builder any way (sidebar, another link, the back arrow) saves a
+  // pending change straight away instead of dropping the autosave that was due.
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
+  useEffect(() => () => {
+    if (dirtyRef.current) void save();
+  }, [save]);
+
+  /** After "Another session saved this course": take the saved version (the local copy stays as a backup). */
+  const reloadSaved = useCallback(async () => {
+    if (latest.current) await backupCourse({ ...latest.current, updatedAt: new Date().toISOString() }).catch(() => undefined);
+    const saved = await getCourse(owner, id);
+    if (!saved) return;
+    const next = normalizeCourse(saved);
+    latest.current = next;
+    setCourse(next);
+    setDirty(false);
+    setSaveState("saved");
+    setError("");
+  }, [owner, id]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -166,6 +213,7 @@ export function useCourseDraft(owner: string, id: string) {
     mutate,
     adopt,
     save,
+    reloadSaved,
     keepLocalCopy,
   };
 }

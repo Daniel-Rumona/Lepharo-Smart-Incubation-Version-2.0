@@ -114,7 +114,17 @@ export function resolveAssignmentLifecycle(data: Record<string, any>): Assignmen
     else if (participantCompletion === 'pending') key = 'awaiting-participant-confirmation'
     else key = 'assigned'
 
-    return { key, ...DEFINITIONS[key], assigneeAcceptance, participantAcceptance, assigneeCompletion, participantCompletion }
+    // An HOD closing support cancels undelivered work; say so instead of a bare "Cancelled".
+    const closedByHod = key === 'cancelled' && !!data.supportClosedAt
+    return {
+        key,
+        ...DEFINITIONS[key],
+        ...(closedByHod ? { label: 'Support Closed', color: 'gold' } : {}),
+        assigneeAcceptance,
+        participantAcceptance,
+        assigneeCompletion,
+        participantCompletion
+    }
 }
 
 export function buildParticipantLifecycleTransition(

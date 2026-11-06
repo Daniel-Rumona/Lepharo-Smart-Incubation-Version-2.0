@@ -15,9 +15,31 @@ const YesNoChoiceCard: React.FC<{
 }> = ({ value, onChange, disabled, ariaLabel }) => {
     const { token } = theme.useToken()
 
-    const options: Array<{ label: 'Yes' | 'No'; icon: React.ReactNode }> = [
-        { label: 'Yes', icon: <CheckOutlined /> },
-        { label: 'No', icon: <CloseOutlined /> }
+    // Yes reads green and No red, at rest (icon) and once picked (whole card).
+    const options: Array<{
+        label: 'Yes' | 'No'
+        icon: React.ReactNode
+        color: string
+        bg: string
+        border: string
+        focus: string
+    }> = [
+        {
+            label: 'Yes',
+            icon: <CheckOutlined />,
+            color: token.colorSuccess,
+            bg: token.colorSuccessBg,
+            border: token.colorSuccessBorder,
+            focus: token.colorSuccessBorderHover
+        },
+        {
+            label: 'No',
+            icon: <CloseOutlined />,
+            color: token.colorError,
+            bg: token.colorErrorBg,
+            border: token.colorErrorBorder,
+            focus: token.colorErrorBorderHover
+        }
     ]
 
     return (
@@ -48,9 +70,9 @@ const YesNoChoiceCard: React.FC<{
                             minHeight: 40,
                             padding: '7px 8px',
                             borderRadius: 10,
-                            border: `1px solid ${selected ? token.colorPrimary : token.colorBorder}`,
-                            background: selected ? token.colorPrimaryBg : token.colorBgContainer,
-                            color: selected ? token.colorPrimary : token.colorText,
+                            border: `1px solid ${selected ? option.color : token.colorBorder}`,
+                            background: selected ? option.bg : token.colorBgContainer,
+                            color: selected ? option.color : token.colorText,
                             cursor: disabled ? 'not-allowed' : 'pointer',
                             opacity: disabled ? 0.6 : 1,
                             font: 'inherit',
@@ -60,7 +82,7 @@ const YesNoChoiceCard: React.FC<{
                             outline: 'none'
                         }}
                         onFocus={event => {
-                            event.currentTarget.style.boxShadow = `0 0 0 2px ${token.colorPrimaryBorder}`
+                            event.currentTarget.style.boxShadow = `0 0 0 2px ${option.focus}`
                         }}
                         onBlur={event => {
                             event.currentTarget.style.boxShadow = 'none'
@@ -83,12 +105,8 @@ const YesNoChoiceCard: React.FC<{
                                     borderRadius: 7,
                                     display: 'grid',
                                     placeItems: 'center',
-                                    background: selected
-                                        ? token.colorPrimary
-                                        : token.colorFillSecondary,
-                                    color: selected
-                                        ? token.colorTextLightSolid
-                                        : token.colorTextSecondary,
+                                    background: selected ? option.color : option.bg,
+                                    color: selected ? token.colorTextLightSolid : option.color,
                                     fontSize: 11,
                                     flex: '0 0 auto'
                                 }}

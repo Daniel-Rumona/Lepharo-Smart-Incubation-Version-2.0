@@ -4,7 +4,8 @@
   text-align: center;
 }
 
-.ant-modal .ant-modal-close {
+.ant-modal .ant-modal-close,
+.modal-style-drawer .ant-drawer-close {
   width: 30px;
   height: 30px;
   border: 1px solid #ff4d4f;
@@ -16,7 +17,8 @@
     background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.ant-modal .ant-modal-close:hover {
+.ant-modal .ant-modal-close:hover,
+.modal-style-drawer .ant-drawer-close:hover {
   border-color: #ff7875;
   color: #ff7875;
   background: color-mix(in srgb, #ff4d4f 16%, transparent);
@@ -24,13 +26,35 @@
   transform: scale(1.06);
 }
 
-.ant-modal .ant-modal-close:active {
+.ant-modal .ant-modal-close:active,
+.modal-style-drawer .ant-drawer-close:active {
   transform: scale(0.96);
 }
 
-.ant-modal .ant-modal-close:focus-visible {
+.ant-modal .ant-modal-close:focus-visible,
+.modal-style-drawer .ant-drawer-close:focus-visible {
   outline: 2px solid color-mix(in srgb, #ff4d4f 55%, transparent);
   outline-offset: 2px;
+}
+
+/* A drawer that borrows the modal look: centred title, close button pinned to the right. */
+.modal-style-drawer .ant-drawer-header-title {
+  position: relative;
+}
+
+.modal-style-drawer .ant-drawer-title {
+  padding-inline: 36px;
+  text-align: center;
+}
+
+.modal-style-drawer .ant-drawer-close {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 50%;
+  margin: -15px 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ant-modal-footer {
@@ -79,28 +103,7 @@
   text-overflow: ellipsis;
 }
 
-/* Ant Design's standard two-button footer renders Cancel before the primary
-   action. Cancel is destructive relative to the primary, so it reads red rather
-   than sharing the primary's accent — including on hover, where the two would
-   otherwise be indistinguishable.
-
-   The `> div >` variant covers footers that wrap their buttons, which the
-   layout rules above already account for. */
-.ant-modal-footer > .ant-btn-default:first-child:has(+ .ant-btn-primary),
-.ant-modal-footer > div > .ant-btn-default:first-child:has(+ .ant-btn-primary) {
-  color: #ff4d4f;
-  border-color: #ff4d4f;
-}
-
-.ant-modal-footer
-  > .ant-btn-default:first-child:has(+ .ant-btn-primary):not(:disabled):hover,
-.ant-modal-footer
-  > div
-  > .ant-btn-default:first-child:has(+ .ant-btn-primary):not(:disabled):hover {
-  color: #ff7875;
-  border-color: #ff7875;
-  background: rgba(255, 77, 79, 0.06);
-}
+/* Cancel is an ordinary outlined button; see styles/buttons.css. */
 
 @media (max-width: 480px) {
   .ant-modal-footer,

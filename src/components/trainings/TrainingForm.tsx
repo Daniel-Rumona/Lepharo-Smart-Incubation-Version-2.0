@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Button, Card, Checkbox, Col, DatePicker, Form, Input, Row, Select, Space, Typography, theme } from "antd";
+import React, { useEffect, useMemo, useState } from "react";
+import { App, Button, Card, Checkbox, Col, DatePicker, Form, Input, Row, Select, Space, Typography, theme } from "antd";
 import {
   ApartmentOutlined,
   ArrowLeftOutlined,
@@ -12,11 +12,14 @@ import {
   FileTextOutlined,
   IdcardOutlined,
   PlusOutlined,
+  ReadOutlined,
   TagsOutlined,
 } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { departmentService } from "@/services/departmentService";
-import type { Training, TrainingAccessGrant, TrainingCapability, TrainingCenter } from "./trainingStorage";
+import { listCatalog, type CatalogCourse } from "@/components/courses/learnerCourses";
+import { stableValue } from "@/lib/useFormChanged";
+import { TRAINING_DETAIL_FIELDS, type Training, type TrainingAccessGrant, type TrainingCapability, type TrainingCenter } from "./trainingStorage";
 
 type FormShape = {
   name: string;
@@ -34,6 +37,7 @@ export type TrainingFormValues = {
   centerCoordinatorAccess: boolean;
   requiredDocuments: string[];
   requiredDetails: string[];
+  courseIds: string[];
 };
 
 const CAPABILITY_LABELS: Record<TrainingCapability, string> = {
@@ -41,22 +45,7 @@ const CAPABILITY_LABELS: Record<TrainingCapability, string> = {
   progress: "Progress",
 };
 
-const DETAIL_PRESETS: { key: string; label: string }[] = [
-  { key: "gender", label: "Gender" },
-  { key: "email", label: "Email Address" },
-  { key: "phone", label: "Phone Number" },
-  { key: "idNumber", label: "ID Number" },
-  { key: "registrationNumber", label: "Registration Number" },
-  { key: "sector", label: "Sector" },
-  { key: "beeLevel", label: "B-BBEE Level" },
-  { key: "province", label: "Province" },
-  { key: "town", label: "Town / City" },
-  { key: "location", label: "Location" },
-  { key: "businessAddress", label: "Business Address" },
-  { key: "blackOwnedPercent", label: "Black Ownership %" },
-  { key: "femaleOwnedPercent", label: "Female Ownership %" },
-  { key: "youthOwnedPercent", label: "Youth Ownership %" },
-];
+const DETAIL_PRESETS = TRAINING_DETAIL_FIELDS;
 
 const LOWERCASE_WORDS = new Set(["of", "the", "and", "for", "to", "in", "on", "a", "an"]);
 
@@ -73,32 +62,60 @@ function normalizeDocumentName(raw: string): string {
     .join(" ");
 }
 
-type SectionKey = "basic" | "contents" | "access" | "documents" | "details";
+type SectionKey = "basic" | "contents" | "courses" | "access" | "documents" | "details";
 
 const SECTIONS: { key: SectionKey; title: string; icon: React.ReactNode }[] = [
   { key: "basic", title: "Basic info", icon: <CalendarOutlined /> },
   { key: "contents", title: "Contents", icon: <TagsOutlined /> },
+  { key: "courses", title: "Courses", icon: <ReadOutlined /> },
   { key: "access", title: "Department access", icon: <ApartmentOutlined /> },
   { key: "documents", title: "Required documents", icon: <FileTextOutlined /> },
   { key: "details", title: "Details", icon: <IdcardOutlined /> },
 ];
 
+/**
+ * Basic info lives in React state like every other section. antd only passes
+ * onFinish the fields mounted on the current step, so on the wizard's last
+ * step (or when editing any section but Basic info) name/duration/centers
+ * would otherwise be missing and the save would throw before writing.
+ */
+const toBasics = (training?: Training | null): Partial<FormShape> =>
+  training
+    ? {
+        name: training.name,
+        duration: [dayjs(training.durationStart), dayjs(training.durationEnd)],
+        centerIds: training.centers.map((c) => c.id),
+      }
+    : { name: "", duration: undefined, centerIds: [] };
+
+/** Everything a save would write, as one comparable value (dates by their instant). */
+const snapshotOf = (basics: Partial<FormShape>, rest: Omit<TrainingFormValues, "name" | "durationStart" | "durationEnd" | "centers">) =>
+  stableValue({
+    name: (basics.name || "").trim(),
+    duration: (basics.duration || []).map((d) => (d ? d.valueOf() : null)),
+    centerIds: [...(basics.centerIds || [])].sort(),
+    ...rest,
+  });
+
+/**
+ * Add or edit a training. It sits in a dialog closed by its ×, so it has one
+ * full-width action: Next / Add training in the wizard, and Update when
+ * editing, which is enabled only once something differs from how it opened.
+ */
 export function TrainingForm({
   initialValues,
   branches,
   onSubmit,
-  onCancel,
 }: {
   initialValues?: Training | null;
   branches: TrainingCenter[];
   onSubmit: (values: TrainingFormValues) => Promise<void>;
-  onCancel: () => void;
 }) {
   const { token } = theme.useToken();
   const isEdit = !!initialValues;
+  const { message } = App.useApp();
   const [form] = Form.useForm<FormShape>();
-  const watchedName = Form.useWatch("name", form);
-  const watchedCenterIds = Form.useWatch("centerIds", form);
+  const [basics, setBasics] = useState<Partial<FormShape>>(() => toBasics(initialValues));
 
   const [categories, setCategories] = useState<string[]>(initialValues?.categories || []);
   const [categoryInput, setCategoryInput] = useState("");
@@ -118,28 +135,40 @@ export function TrainingForm({
 
   const [details, setDetails] = useState<string[]>(initialValues?.requiredDetails || []);
 
+  const [courseIds, setCourseIds] = useState<string[]>(initialValues?.courseIds || []);
+  const [catalog, setCatalog] = useState<CatalogCourse[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
   const [activeSection, setActiveSection] = useState<SectionKey | null>(null);
 
+  const opened = useMemo(
+    () =>
+      snapshotOf(toBasics(initialValues), {
+        categories: initialValues?.categories || [],
+        access: initialValues?.access || [],
+        centerCoordinatorAccess: initialValues?.centerCoordinatorAccess || false,
+        requiredDocuments: initialValues?.requiredDocuments || [],
+        requiredDetails: initialValues?.requiredDetails || [],
+        courseIds: initialValues?.courseIds || [],
+      }),
+    [initialValues]
+  );
+  const changed =
+    snapshotOf(basics, { categories, access, centerCoordinatorAccess, requiredDocuments: documents, requiredDetails: details, courseIds }) !== opened;
+
   useEffect(() => {
-    form.setFieldsValue(
-      initialValues
-        ? {
-            name: initialValues.name,
-            duration: [dayjs(initialValues.durationStart), dayjs(initialValues.durationEnd)],
-            centerIds: initialValues.centers.map((c) => c.id),
-          }
-        : { name: "", duration: undefined, centerIds: [] }
-    );
+    setBasics(toBasics(initialValues));
     setCategories(initialValues?.categories || []);
     setAccess(initialValues?.access || []);
     setCenterCoordinatorAccess(initialValues?.centerCoordinatorAccess || false);
     setDocuments(initialValues?.requiredDocuments || []);
     setDetails(initialValues?.requiredDetails || []);
+    setCourseIds(initialValues?.courseIds || []);
     setWizardStep(0);
     setActiveSection(null);
-  }, [initialValues, form]);
+  }, [initialValues]);
 
   useEffect(() => {
     setDepartmentsLoading(true);
@@ -148,20 +177,25 @@ export function TrainingForm({
       .then((list) => setDepartments(list.map((d) => ({ id: d.id, name: d.name }))))
       .catch(() => setDepartments([]))
       .finally(() => setDepartmentsLoading(false));
+    setCatalogLoading(true);
+    listCatalog()
+      .then(setCatalog)
+      .catch(() => setCatalog([]))
+      .finally(() => setCatalogLoading(false));
   }, []);
 
   const addAccess = () => {
-    if (!pendingDepartment || access.some((a) => a.department === pendingDepartment)) return;
-    setAccess((prev) => [...prev, { department: pendingDepartment, capabilities: [] }]);
+    if (!pendingDepartment || access.some((a) => a.departmentId === pendingDepartment)) return;
+    setAccess((prev) => [...prev, { departmentId: pendingDepartment, capabilities: [] }]);
     setPendingDepartment(undefined);
   };
 
-  const removeAccess = (department: string) => setAccess((prev) => prev.filter((a) => a.department !== department));
+  const removeAccess = (departmentId: string) => setAccess((prev) => prev.filter((a) => a.departmentId !== departmentId));
 
-  const toggleCapability = (department: string, capability: TrainingCapability) => {
+  const toggleCapability = (departmentId: string, capability: TrainingCapability) => {
     setAccess((prev) =>
       prev.map((a) =>
-        a.department === department
+        a.departmentId === departmentId
           ? { ...a, capabilities: a.capabilities.includes(capability) ? a.capabilities.filter((c) => c !== capability) : [...a.capabilities, capability] }
           : a
       )
@@ -222,19 +256,30 @@ export function TrainingForm({
     setDetails((prev) => (prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]));
   };
 
-  const handleFinish = async (values: FormShape) => {
+  const handleFinish = async () => {
+    const values = { ...basics, ...form.getFieldsValue(true) } as Partial<FormShape>;
+    const name = String(values.name || "").trim();
+    const [start, end] = values.duration || [];
+    const centerIds = values.centerIds || [];
+    if (!name || !start || !end || !centerIds.length) {
+      message.error("Add the training's name, dates and centers under Basic info.");
+      if (isEdit) setActiveSection("basic");
+      else setWizardStep(0);
+      return;
+    }
     setSubmitting(true);
     try {
       await onSubmit({
-        name: values.name,
-        durationStart: values.duration[0].toISOString(),
-        durationEnd: values.duration[1].toISOString(),
-        centers: branches.filter((b) => values.centerIds.includes(b.id)),
+        name,
+        durationStart: start.toISOString(),
+        durationEnd: end.toISOString(),
+        centers: branches.filter((b) => centerIds.includes(b.id)),
         categories,
         access,
         centerCoordinatorAccess,
         requiredDocuments: documents,
         requiredDetails: details,
+        courseIds,
       });
     } finally {
       setSubmitting(false);
@@ -392,6 +437,61 @@ export function TrainingForm({
             )}
           </Form.Item>
         );
+      case "courses": {
+        const byId = new Map(catalog.map((c) => [c.id, c]));
+        return (
+          <Form.Item label="Courses (optional)" extra="Published Academy courses this training's SMEs take in their portal.">
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              loading={catalogLoading}
+              optionFilterProp="label"
+              placeholder={catalog.length || catalogLoading ? "Choose courses" : "No published courses yet"}
+              value={courseIds}
+              onChange={setCourseIds}
+              options={catalog.map((c) => ({ value: c.id, label: c.title }))}
+            />
+            {listWell(
+              !courseIds.length,
+              courseIds.length ? (
+                courseIds.map((id) => (
+                  <div
+                    key={id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      width: "100%",
+                      padding: "6px 8px 6px 12px",
+                      background: token.colorBgContainer,
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                      borderRadius: token.borderRadius,
+                    }}
+                  >
+                    <Space size={8}>
+                      <ReadOutlined style={{ color: token.colorPrimary }} />
+                      <Typography.Text>{byId.get(id)?.title || (catalogLoading ? "Loading…" : "Unpublished or deleted course")}</Typography.Text>
+                    </Space>
+                    <Button
+                      shape="circle"
+                      size="small"
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => setCourseIds((prev) => prev.filter((c) => c !== id))}
+                    />
+                  </div>
+                ))
+              ) : (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  No courses linked — SMEs will see the training plan only.
+                </Typography.Text>
+              )
+            )}
+          </Form.Item>
+        );
+      }
       case "access":
         return (
           <Form.Item label="Department access" extra="Departments allowed to view this training's SMEs.">
@@ -404,7 +504,7 @@ export function TrainingForm({
                 optionFilterProp="label"
                 value={pendingDepartment}
                 onChange={setPendingDepartment}
-                options={departments.filter((d) => !access.some((a) => a.department === d.name)).map((d) => ({ value: d.name, label: d.name }))}
+                options={departments.filter((d) => !access.some((a) => a.departmentId === d.id)).map((d) => ({ value: d.id, label: d.name }))}
               />
               <Button shape="circle" type="primary" icon={<PlusOutlined />} onClick={addAccess} />
             </div>
@@ -413,7 +513,7 @@ export function TrainingForm({
               access.length ? (
                 access.map((a) => (
                   <div
-                    key={a.department}
+                    key={a.departmentId}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -429,15 +529,15 @@ export function TrainingForm({
                   >
                     <Space size={8}>
                       <ApartmentOutlined style={{ color: token.colorPrimary }} />
-                      <Typography.Text strong>{a.department}</Typography.Text>
+                      <Typography.Text strong>{departments.find((d) => d.id === a.departmentId)?.name || a.departmentId}</Typography.Text>
                     </Space>
                     <Space size={16}>
                       {(Object.keys(CAPABILITY_LABELS) as TrainingCapability[]).map((capability) => (
-                        <Checkbox key={capability} checked={a.capabilities.includes(capability)} onChange={() => toggleCapability(a.department, capability)}>
+                        <Checkbox key={capability} checked={a.capabilities.includes(capability)} onChange={() => toggleCapability(a.departmentId, capability)}>
                           {CAPABILITY_LABELS[capability]}
                         </Checkbox>
                       ))}
-                      <Button shape="circle" size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeAccess(a.department)} />
+                      <Button shape="circle" size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => removeAccess(a.departmentId)} />
                     </Space>
                   </div>
                 ))
@@ -553,12 +653,14 @@ export function TrainingForm({
   const sectionSummary = (key: SectionKey) => {
     switch (key) {
       case "basic": {
-        const name = watchedName || initialValues?.name;
-        const count = (watchedCenterIds || initialValues?.centers.map((c) => c.id) || []).length;
+        const name = basics.name;
+        const count = (basics.centerIds || []).length;
         return `${name || "Untitled"} · ${count} center${count === 1 ? "" : "s"}`;
       }
       case "contents":
         return categories.length ? `${categories.length} categor${categories.length === 1 ? "y" : "ies"}` : "None set";
+      case "courses":
+        return courseIds.length ? `${courseIds.length} course${courseIds.length === 1 ? "" : "s"}` : "None linked";
       case "access":
         return access.length ? `${access.length} department${access.length === 1 ? "" : "s"}` : "None granted";
       case "documents":
@@ -590,11 +692,6 @@ export function TrainingForm({
             </Col>
           ))}
         </Row>
-        <div style={{ marginTop: 16 }}>
-          <Button shape="round" block onClick={onCancel}>
-            Close
-          </Button>
-        </div>
       </div>
     );
   }
@@ -602,40 +699,43 @@ export function TrainingForm({
   const currentKey: SectionKey = isEdit ? activeSection! : SECTIONS[wizardStep].key;
 
   return (
-    <Form form={form} layout="vertical" onFinish={handleFinish} autoComplete="off">
+    <Form
+      form={form}
+      layout="vertical"
+      initialValues={basics}
+      onValuesChange={(_, all) => setBasics((current) => ({ ...current, ...all }))}
+      // Enter in a field only saves when editing; the wizard saves from its last step's button.
+      onFinish={() => (isEdit ? void handleFinish() : wizardStep < SECTIONS.length - 1 ? void goNext() : undefined)}
+      autoComplete="off"
+    >
+      {/* Going back is navigation, not cancelling, so it sits above the section as a link. */}
+      {(isEdit || wizardStep > 0) && (
+        <Button
+          type="link"
+          icon={<ArrowLeftOutlined />}
+          onClick={isEdit ? () => setActiveSection(null) : goBack}
+          style={{ padding: 0, height: "auto", marginBottom: 12 }}
+        >
+          {isEdit ? "All sections" : `Back to ${SECTIONS[wizardStep - 1].title}`}
+        </Button>
+      )}
+
       {renderSection(currentKey)}
 
-      <div style={{ marginTop: 8, display: "flex", gap: 12 }}>
+      <div style={{ marginTop: 8 }}>
         {isEdit ? (
-          <>
-            <Button shape="round" icon={<ArrowLeftOutlined />} onClick={() => setActiveSection(null)} style={{ flex: 1 }}>
-              Back
-            </Button>
-            <Button shape="round" type="primary" htmlType="submit" loading={submitting} style={{ flex: 1 }}>
-              Update
-            </Button>
-          </>
+          <Button shape="round" type="primary" htmlType="submit" block size="large" disabled={!changed} loading={submitting}>
+            Update
+          </Button>
+        ) : wizardStep < SECTIONS.length - 1 ? (
+          // Separate keys: reusing one <button> let the Next click land as a submit on the last step.
+          <Button key="next" shape="round" type="primary" block size="large" onClick={goNext}>
+            Next
+          </Button>
         ) : (
-          <>
-            {wizardStep > 0 ? (
-              <Button shape="round" onClick={goBack} style={{ flex: 1 }}>
-                Back
-              </Button>
-            ) : (
-              <Button shape="round" onClick={onCancel} style={{ flex: 1 }}>
-                Cancel
-              </Button>
-            )}
-            {wizardStep < SECTIONS.length - 1 ? (
-              <Button shape="round" type="primary" onClick={goNext} style={{ flex: 1 }}>
-                Next
-              </Button>
-            ) : (
-              <Button shape="round" type="primary" htmlType="submit" loading={submitting} style={{ flex: 1 }}>
-                Add training
-              </Button>
-            )}
-          </>
+          <Button key="add" shape="round" type="primary" block size="large" loading={submitting} onClick={() => void handleFinish()}>
+            Add training
+          </Button>
         )}
       </div>
     </Form>

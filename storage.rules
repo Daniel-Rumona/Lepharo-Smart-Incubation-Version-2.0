@@ -13,7 +13,7 @@ service firebase.storage {
     match /academyMaterials/{owner}/{courseId}/{fileId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == owner
-        && firestore.get(/databases/(default)/documents/users/$(owner)).data.role in ['operations', 'coordinator', 'admin', 'system_admin', 'superadmin', 'director', 'projectadmin']
+        && firestore.get(/databases/(default)/documents/users/$(owner)).data.role in ['operations', 'coordinator', 'system_admin', 'superadmin', 'director', 'projectadmin']
         && request.resource.size <= 25 * 1024 * 1024;
       allow update, delete: if false;
     }
@@ -25,12 +25,41 @@ service firebase.storage {
         && request.resource.size <= 25 * 1024 * 1024;
       allow update, delete: if false;
     }
+    // Each user's saved signature image, placed on the documents they sign, so any
+    // signed-in user may read it. Only its owner writes it, and only an image.
+    // Account settings saves signatures/{uid}_{timestamp}.png; the welcome
+    // wizard saves signatures/{uid}/{file}. Replacing a signature adds a new file.
+    match /signatures/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && fileName.matches(request.auth.uid + '_[0-9]+[.]png')
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size <= 5 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+    match /signatures/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size <= 5 * 1024 * 1024;
+      allow update, delete: if false;
+    }
     match /library/{userId}/{fileName} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == userId
         && request.resource.size <= 25 * 1024 * 1024;
       allow delete: if request.auth != null && request.auth.uid == userId;
       allow update: if false;
+    }
+
+    // Each user may maintain one readable profile image at a stable path.
+    match /profile-images/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     match /intervention-evidence/{programId}/{participantId}/{assignmentId}/{fileName} {
@@ -46,6 +75,16 @@ service firebase.storage {
     // Nothing in the app deletes these: a superseded document is replaced by
     // uploading a newer one, which keeps the audit trail intact.
     match /participant_documents/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.size <= 10 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+
+    // Compliance documents an incubatee uploads after onboarding
+    // (routes/incubatee/documents/compliance). Each upload gets a new
+    // timestamped name, so a replacement is a new file, never an overwrite.
+    match /compliance/{applicationId}/{fileName} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.size <= 10 * 1024 * 1024;
@@ -68,7 +107,7 @@ service firebase.storage {
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role.lower().trim() != 'incubatee';
     }
 
-    match /projectProposals/{companyCode}/{proposalId}/{folder}/{fileName} {
+    match /projectProposals/{scope}/{proposalId}/{folder}/{fileName} {
       allow read: if canAccessProposals();
       allow create, update: if canAccessProposals()
         && request.resource.size <= 25 * 1024 * 1024;
@@ -89,11 +128,74 @@ service firebase.storage {
     match /training_enrollments/{trainingId}/{fileName} {
       function isTrainingStaff() {
         return request.auth != null
-          && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['operations', 'coordinator', 'admin', 'system_admin', 'superadmin', 'director', 'projectadmin'];
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['operations', 'coordinator', 'system_admin', 'superadmin', 'director', 'projectadmin'];
       }
       allow read: if isTrainingStaff();
       allow create: if isTrainingStaff() && request.resource.size <= 15 * 1024 * 1024;
       allow update, delete: if false;
+    }
+
+    // A Training Academy person's own ID copy (company documents stay under
+    // training_enrollments). Staff and the SME's director upload; staff, the
+    // director and the person themselves read. trainingRole 'director' is the
+    // SME's owner, not the platform 'director' role.
+    match /training_attendees/{enrollmentId}/{attendeeId}/{fileName} {
+      function attendeeStorageUser() {
+        return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+      }
+      function isTrainingStaff() {
+        return attendeeStorageUser().role in ['operations', 'coordinator', 'system_admin', 'superadmin', 'director', 'projectadmin'];
+      }
+      function isCompanyDirector() {
+        return attendeeStorageUser().role == 'training_sme'
+          && attendeeStorageUser().get('trainingRole', '') == 'director'
+          && attendeeStorageUser().get('participantId', '') == enrollmentId;
+      }
+      function isThePerson() {
+        return attendeeStorageUser().role == 'training_sme'
+          && attendeeStorageUser().get('participantId', '') == enrollmentId
+          && attendeeStorageUser().get('trainingAttendeeId', '') == attendeeId;
+      }
+      allow read: if request.auth != null && (isTrainingStaff() || isCompanyDirector() || isThePerson());
+      allow create: if request.auth != null
+        && (isTrainingStaff() || isCompanyDirector())
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|application/pdf');
+      allow update, delete: if false;
+    }
+
+    // Certificate templates (fillable PDFs), uploaded by Training Academy staff.
+    match /certificate_templates/{templateId}/{fileName} {
+      function isCertificateStaff() {
+        return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['operations', 'coordinator', 'system_admin', 'superadmin', 'director', 'projectadmin'];
+      }
+      allow read: if request.auth != null && isCertificateStaff();
+      allow create: if request.auth != null && isCertificateStaff()
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf';
+      allow update, delete: if false;
+    }
+
+    // Issued certificates are written only by the issuing function (Admin SDK
+    // bypasses these rules). The company opens them through the download URL
+    // stored on the trainingCertificates doc, which that doc's own read rule guards.
+    match /certificates/{trainingId}/{fileName} {
+      allow read: if request.auth != null
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['operations', 'coordinator', 'system_admin', 'superadmin', 'director', 'projectadmin'];
+      allow write: if false;
+    }
+
+    // Collaborative reports: Word templates and section evidence. Report staff only
+    // (same roles as the reports collections in firestore.rules). Without this rule
+    // every template and evidence upload was refused.
+    match /collaborative-reports/{allPaths=**} {
+      function isReportStaff() {
+        return request.auth != null
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role.lower().trim() in ['projectadmin', 'operations', 'coordinator', 'superadmin', 'system_admin'];
+      }
+      allow read: if isReportStaff();
+      allow create: if isReportStaff() && request.resource.size <= 25 * 1024 * 1024;
+      allow update, delete: if isReportStaff();
     }
 
     match /feature-releases/{releaseId}/{fileName} {
@@ -103,6 +205,16 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
       allow update: if false;
       allow delete: if request.auth != null;
+    }
+
+    // Facilities management photos (routes/projectadmin/facilities): issue and gap
+    // images per centre. Removing a photo from a record leaves the file in place.
+    match /facilities/{branchId}/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
     }
   }
 }

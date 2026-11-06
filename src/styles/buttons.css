@@ -1,0 +1,242 @@
+/* ---------------------------------------------------------------------------
+   Buttons — one design for the whole app
+   ---------------------------------------------------------------------------
+   Every antd Button (pages, toolbars, tables, modals, drawers, popconfirms)
+   draws from here, in light and dark mode alike. Shape, weight and padding
+   come from the Button tokens in config/antdTheme.ts; this file owns the
+   things tokens can't express: elevation, hover lift, the tonal "filled"
+   variant, focus ring and footer layout.
+
+   Colour carries meaning, so it is rationed: the accent marks the main action
+   (primary, tonal, links, focus) and red marks danger. Everything else —
+   outlined, dashed and text buttons — stays neutral even on hover. Otherwise
+   on Crimson every Export/Cancel hover would turn red and read as a warning.
+   Accent colours come from --app-accent*, never a hard-coded blue.
+
+   The hierarchy, used the same way on every surface:
+     primary   type="primary"                      the one main action
+     tonal     color="primary" variant="filled"   secondary but highlighted
+     outlined  default                             secondary / Cancel
+     quiet     type="text" | type="link"           row and toolbar actions
+     danger    danger                              destructive
+
+   Selectors carry the `html` prefix and antd's variant classes so they beat
+   antd's own :where()-scoped rules regardless of injection order. Dark-only
+   surfaces live in styles/dark-mode.css section 5.
+   ------------------------------------------------------------------------- */
+
+html .ant-btn {
+    transition:
+        color 160ms ease,
+        background 160ms ease,
+        border-color 160ms ease,
+        box-shadow 200ms ease,
+        transform 140ms ease;
+}
+
+/* --- Primary (solid) ----------------------------------------------------- */
+
+html .ant-btn.ant-btn-variant-solid:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled) {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        0 1px 2px rgba(16, 24, 40, 0.08),
+        0 2px 8px color-mix(in srgb, var(--app-accent) 22%, transparent);
+}
+
+html .ant-btn.ant-btn-variant-solid:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):hover {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 2px 4px rgba(16, 24, 40, 0.08),
+        0 6px 16px color-mix(in srgb, var(--app-accent) 30%, transparent);
+    transform: translateY(-1px);
+}
+
+html .ant-btn.ant-btn-variant-solid.ant-btn-color-dangerous:not(:disabled):not(.ant-btn-disabled) {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        0 1px 2px rgba(16, 24, 40, 0.08),
+        0 2px 8px rgba(255, 77, 79, 0.22);
+}
+
+html .ant-btn.ant-btn-variant-solid.ant-btn-color-dangerous:not(:disabled):not(.ant-btn-disabled):hover {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 2px 4px rgba(16, 24, 40, 0.08),
+        0 6px 16px rgba(255, 77, 79, 0.3);
+}
+
+/* --- Outlined / default -------------------------------------------------- */
+/* A quiet surface with a hairline shadow. Hover stays neutral — a slightly
+   deeper surface, firmer border and the lift — so it never competes with the
+   primary action or looks like a danger button on a red accent. */
+
+html .ant-btn.ant-btn-variant-outlined.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled),
+html .ant-btn.ant-btn-variant-dashed.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled) {
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+
+html .ant-btn.ant-btn-variant-outlined.ant-btn-color-default:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):hover,
+html .ant-btn.ant-btn-variant-dashed.ant-btn-color-default:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):hover {
+    color: var(--app-text);
+    border-color: rgba(16, 24, 40, 0.42);
+    background: #eef1f5;
+    box-shadow: 0 4px 12px rgba(16, 24, 40, 0.12);
+    transform: translateY(-1px);
+}
+
+html .ant-btn.ant-btn-variant-outlined.ant-btn-color-default:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):active,
+html .ant-btn.ant-btn-variant-dashed.ant-btn-color-default:not(.ant-btn-background-ghost):not(:disabled):not(.ant-btn-disabled):active {
+    color: var(--app-text);
+    border-color: rgba(16, 24, 40, 0.5);
+    background: #e4e8ee;
+}
+
+/* Outlined accent / danger (ghost primary, color="primary" variant="outlined"). */
+html .ant-btn.ant-btn-variant-outlined.ant-btn-color-primary:not(:disabled):not(.ant-btn-disabled):hover {
+    background: var(--app-accent-wash);
+    transform: translateY(-1px);
+}
+
+html .ant-btn.ant-btn-variant-outlined.ant-btn-color-dangerous:not(:disabled):not(.ant-btn-disabled):hover {
+    background: rgba(255, 77, 79, 0.06);
+    transform: translateY(-1px);
+}
+
+/* --- Tonal (variant="filled") -------------------------------------------- */
+/* The highlighted secondary action: accent-tinted fill with a matching
+   border, so it reads as a button rather than a tag. Any colour (success,
+   warning, purple…) gets a border in its own hue; primary and default are
+   tuned below. */
+
+html .ant-btn.ant-btn-variant-filled:not(:disabled):not(.ant-btn-disabled) {
+    border-color: color-mix(in srgb, currentColor 32%, transparent);
+}
+
+html .ant-btn.ant-btn-variant-filled.ant-btn-color-primary:not(:disabled):not(.ant-btn-disabled) {
+    color: var(--app-accent-strong);
+    background: var(--app-accent-soft);
+    border-color: var(--app-accent-border);
+}
+
+html .ant-btn.ant-btn-variant-filled.ant-btn-color-primary:not(:disabled):not(.ant-btn-disabled):hover {
+    color: var(--app-accent-contrast);
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--app-accent) 28%, transparent);
+    transform: translateY(-1px);
+}
+
+html .ant-btn.ant-btn-variant-filled.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled) {
+    border-color: var(--app-border-strong);
+}
+
+html .ant-btn.ant-btn-variant-filled.ant-btn-color-dangerous:not(:disabled):not(.ant-btn-disabled) {
+    border-color: rgba(255, 77, 79, 0.35);
+}
+
+/* --- Quiet (text / link) ------------------------------------------------- */
+/* Live in tables and toolbars, where a lift or glow on every row is noise. */
+
+html .ant-btn.ant-btn-variant-text.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled):hover {
+    color: var(--app-text);
+    background: rgba(16, 24, 40, 0.08);
+}
+
+html .ant-btn.ant-btn-variant-text.ant-btn-color-default:not(:disabled):not(.ant-btn-disabled):active {
+    background: rgba(16, 24, 40, 0.1);
+}
+
+html .ant-btn.ant-btn-variant-link:not(:disabled):not(.ant-btn-disabled):hover {
+    color: var(--app-accent-strong);
+}
+
+/* --- Rows and dense contexts --------------------------------------------- */
+
+html .ant-table .ant-btn:not(:disabled):hover,
+html .ant-list .ant-btn:not(:disabled):hover,
+html .ant-btn.ant-btn-sm:not(:disabled):hover,
+html .ant-btn-compact-item:not(:disabled):hover {
+    transform: none;
+}
+
+html .ant-table .ant-btn.ant-btn-variant-solid:not(:disabled):not(.ant-btn-disabled),
+html .ant-table .ant-btn.ant-btn-variant-solid:not(:disabled):not(.ant-btn-disabled):hover {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* Buttons joined to an input (Space.Compact, Input.Search) match the input's
+   corners instead of being pills. antd still squares the inner edge. */
+html .ant-btn.ant-btn-compact-item {
+    border-radius: 6px;
+}
+
+/* --- Pressed, focus, disabled -------------------------------------------- */
+
+html .ant-btn:not(:disabled):not(.ant-btn-disabled):active {
+    transform: translateY(0) scale(0.98);
+}
+
+html .ant-btn:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+html .ant-btn:disabled,
+html .ant-btn.ant-btn-disabled {
+    box-shadow: none;
+    transform: none;
+}
+
+/* --- Modal, confirm and drawer footers ----------------------------------- */
+/* Modals: equal-width buttons (styles/modal-footer.css). Drawers are wide, so
+   their actions sit right-aligned at a consistent minimum width instead. In
+   both, Cancel is an ordinary outlined button — the primary carries the
+   accent, so the two never compete. */
+
+html .ant-modal-confirm-btns {
+    display: flex;
+    gap: 8px;
+}
+
+html .ant-modal-confirm-btns > .ant-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    margin-inline-start: 0 !important;
+}
+
+html .ant-drawer-footer .ant-btn {
+    min-width: 96px;
+}
+
+html .ant-drawer-footer > .ant-btn + .ant-btn {
+    margin-inline-start: 8px;
+}
+
+/* --- Modal and drawer close (X) ------------------------------------------ */
+/* A neutral circle at rest; it only turns red when you're about to use it. */
+
+html .ant-modal .ant-modal-close,
+html .modal-style-drawer .ant-drawer-close {
+    border-color: var(--app-border-strong);
+    color: var(--app-text-muted);
+    background: var(--app-surface);
+}
+
+html .ant-modal .ant-modal-close:hover,
+html .modal-style-drawer .ant-drawer-close:hover {
+    border-color: #ff7875;
+    color: #ff4d4f;
+    background: rgba(255, 77, 79, 0.08);
+    box-shadow: 0 0 0 3px rgba(255, 77, 79, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html .ant-btn {
+        transition: none;
+    }
+
+    html .ant-btn:not(:disabled):hover,
+    html .ant-btn:not(:disabled):active {
+        transform: none !important;
+    }
+}

@@ -107,7 +107,7 @@ const SECTION_FIELDS: Record<SectionKey, string[]> = {
     who: ['sourceTypeInternal', 'source', 'smeParticipantId'],
     // Who it is from and the contact details depend on each other, so editing shares one section.
     contact: ['sourceTypeInternal', 'source', 'smeParticipantId', 'firstName', 'lastName', 'email', 'phone'],
-    inquiry: ['inquiryType', 'department', 'description'],
+    inquiry: ['inquiryType', 'departmentId', 'description'],
     management: ['priority', 'classification'],
     followup: ['nextFollowUpDate', 'followUpMethod', 'followUpNotes']
 }
@@ -293,7 +293,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
     const selectedSmeId = Form.useWatch('smeParticipantId', form)
     const smeProgramId = forcedProgramId || watchedProgramId
     const [contactLocked, setContactLocked] = useState(false)
-    const [departmentOptions, setDepartmentOptions] = useState<string[]>([])
+    const [departmentOptions, setDepartmentOptions] = useState<{ id: string; name: string }[]>([])
     const { token } = theme.useToken()
     const [currentStep, setCurrentStep] = useState(0)
     const [activeSection, setActiveSection] = useState<SectionKey | null>(null)
@@ -386,11 +386,8 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                 )
                 const snap = await getDocs(qRef)
                 const depts = snap.docs
-                    .map(d => {
-                        const data = d.data() as any
-                        return data?.name || data?.departmentName
-                    })
-                    .filter(Boolean) as string[]
+                    .map(d => ({ id: d.id, name: String((d.data() as any)?.name || '') }))
+                    .filter(d => d.name)
 
                 setDepartmentOptions(depts)
             } catch (e) {
@@ -544,7 +541,8 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                     inquiryType: values.inquiryType,
                     businessStage: values.businessStage || '',
                     industry: values.industry || '',
-                    department: values.department || '',
+                    departmentId: values.departmentId || '',
+                    department: departmentOptions.find(d => d.id === values.departmentId)?.name || '',
                     description: values.description,
                     budget: values.budget || '',
                     timeline: values.timeline || ''
@@ -654,7 +652,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                     values.company
                 ].filter(Boolean).join(' · ')
             case 'inquiry':
-                return [values.inquiryType, values.department].filter(Boolean).join(' · ') || 'Not set'
+                return [values.inquiryType, departmentOptions.find(d => d.id === values.departmentId)?.name].filter(Boolean).join(' · ') || 'Not set'
             case 'management':
                 return [values.priority && `${values.priority} priority`, values.classification]
                     .filter(Boolean).join(' · ') || 'Not set'
@@ -1148,7 +1146,7 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                 <Col xs={24} sm={12}>
                                     <Form.Item
                                         label='Department'
-                                        name='department'
+                                        name='departmentId'
                                         rules={[{ required: true, message: 'Please select a department' }]}
                                     >
                                         <Select
@@ -1157,8 +1155,8 @@ const InquiryForm: React.FC<InquiryFormProps> = ({
                                             optionFilterProp='children'
                                         >
                                             {departmentOptions.map(department => (
-                                                <Option key={department} value={department}>
-                                                    {department}
+                                                <Option key={department.id} value={department.id}>
+                                                    {department.name}
                                                 </Option>
                                             ))}
                                         </Select>

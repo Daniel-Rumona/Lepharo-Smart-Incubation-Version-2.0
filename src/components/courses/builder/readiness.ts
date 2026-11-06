@@ -113,9 +113,7 @@ export const isQuestionIssue = (issue?: Issue) =>
 
 export const defaultTab = (item: Item, issue?: Issue) =>
   isAssessment(item)
-    ? issue && ["content"].includes(issue.code || "")
-      ? "instructions"
-      : issue && ["passMark", "attempts", "timeLimit", "minutes", "module"].includes(issue.code || "")
+    ? issue && ["content", "passMark", "attempts", "timeLimit", "minutes", "module"].includes(issue.code || "")
       ? "settings"
       : "questions"
     : issue && ["minutes", "module", "turns"].includes(issue.code || "")

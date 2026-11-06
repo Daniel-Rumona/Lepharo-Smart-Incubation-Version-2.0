@@ -16,7 +16,7 @@ const statusLabel: Record<string, string> = {
   released: "Completed",
 };
 const roleLabel: Record<string, string> = {
-  admin: "System Administrators",
+  system_admin: "System Administrators",
   director: "CEO",
   operations: "Heads Of Departments",
   projectmanager: "Employee",

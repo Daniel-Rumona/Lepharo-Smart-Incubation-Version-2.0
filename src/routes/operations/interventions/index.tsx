@@ -40,9 +40,19 @@ import {
     Timestamp,
     getDoc,
     writeBatch,
+    deleteField,
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
+import {
+    buildOutcomeDef,
+    OUTCOME_TYPES,
+    OUTCOME_TYPE_LABELS,
+    type OutcomeDef,
+} from "@/services/evidenceModel";
+import { InterventionWizard, wizardInitialFrom, type WizardValues } from "./InterventionWizard";
+import { InterventionDetailModal } from "./InterventionDetailModal";
+import WhatsWorkingCard from "@/components/dashboards/shared/WhatsWorkingCard";
 import {
     DeleteOutlined,
     EditOutlined,
@@ -58,26 +68,29 @@ import {
     type DashboardMetric,
 } from "@/components/dashboards/metrics/MetricsGrid";
 import { Helmet } from "react-helmet";
-import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import {
     guideTarget,
     usePageGuides,
     type PageGuideRegistration,
 } from "@/components/guide-me";
+import {
+    formatRecurrence as formatRecurrenceText,
+    LEGACY_SCHEDULE_FIELDS,
+    readSchedule,
+    scheduleFields,
+    schedulePreset,
+    type RecurrenceUnit,
+    type ScheduleMode,
+    type SchedulePreset,
+    type StoredRecurrence,
+} from "@/lib/recurrence";
 
 const { Option } = Select;
 const { Text } = Typography;
 
-type RecurrenceUnit = "day" | "week" | "month" | "quarter" | "year";
-type RecurrencePreset =
-    | "as-needed"
-    | "weekly"
-    | "bi-weekly"
-    | "monthly"
-    | "quarterly"
-    | "yearly"
-    | "custom";
-type SupportedFrequency = "as-needed" | "weekly" | "bi-weekly" | "monthly";
+type RecurrencePreset = SchedulePreset | "custom";
+type SupportedFrequency = SchedulePreset;
 type RecurrenceEndMode =
     | "fixed-cycles"
     | "end-date"
@@ -96,13 +109,14 @@ type SubInterventionTemplate = {
 type InterventionDoc = {
     id: string;
     interventionTitle: string;
-    areaOfSupport: string;
     departmentId?: string | null;
     compulsory?: boolean;
-    recurring?: boolean;
+    scheduleMode?: ScheduleMode;
+    recurrence?: { every: number; unit: RecurrenceUnit; strict?: boolean } | null;
 
+    // Older schedule fields, read only (through readSchedule) until migrated.
+    recurring?: boolean;
     recurrencePreset?: RecurrencePreset | null;
-    recurrence?: { every: number; unit: RecurrenceUnit } | null;
     recurrenceFrequency?: "monthly" | "weekly" | "bi-weekly" | "other" | null;
     frequency?: "as-needed" | "weekly" | "bi-weekly" | "monthly" | null;
     recurrenceStrict?: boolean | null;
@@ -121,64 +135,19 @@ type InterventionDoc = {
 
     assignmentMode?: InterventionAssignmentMode;
 
+    /** Optional. Absent on legacy interventions, which keep working unchanged. */
+    outcomeDef?: OutcomeDef | null;
+
     createdAt?: any;
     updatedAt?: any;
 };
 
 type InterventionAssignmentMode = "once-off" | "ad-hoc" | "recurring";
 
-const presetToRecurrence = (
-    preset: RecurrencePreset
-): { every: number; unit: RecurrenceUnit } | null => {
-    if (preset === "weekly") return { every: 1, unit: "week" };
-    if (preset === "bi-weekly") return { every: 2, unit: "week" };
-    if (preset === "monthly") return { every: 1, unit: "month" };
-    if (preset === "quarterly") return { every: 1, unit: "quarter" };
-    if (preset === "yearly") return { every: 1, unit: "year" };
-    return null;
-};
-
-const derivePresetFromRecurrence = (
-    recurrence: { every: number; unit: RecurrenceUnit } | null | undefined
-): RecurrencePreset => {
-    if (!recurrence) return "custom";
-    if (recurrence.unit === "week" && recurrence.every === 1) return "weekly";
-    if (recurrence.unit === "week" && recurrence.every === 2) return "bi-weekly";
-    if (recurrence.unit === "month" && recurrence.every === 1) return "monthly";
-    if (recurrence.unit === "quarter" && recurrence.every === 1)
-        return "quarterly";
-    if (recurrence.unit === "year" && recurrence.every === 1) return "yearly";
-    return "custom";
-};
-
-const legacyFrequencyToRecurrence = (
-    f: InterventionDoc["recurrenceFrequency"]
-): { every: number; unit: RecurrenceUnit } | null => {
-    if (!f) return null;
-    if (f === "weekly") return { every: 1, unit: "week" };
-    if (f === "bi-weekly") return { every: 2, unit: "week" };
-    if (f === "monthly") return { every: 1, unit: "month" };
-    return null;
-};
-
-const formatRecurrence = (
-    rec: { every: number; unit: RecurrenceUnit } | null | undefined
-) => {
-    if (!rec) return "";
-    const unitLabel =
-        rec.unit === "day"
-            ? "day(s)"
-            : rec.unit === "week"
-                ? "week(s)"
-                : rec.unit === "month"
-                    ? "month(s)"
-                    : rec.unit === "quarter"
-                        ? "quarter(s)"
-                        : "year(s)";
-
-    return rec.every === 1
-        ? `Every ${unitLabel}`
-        : `Every ${rec.every} ${unitLabel}`;
+/** The preset shown for a definition; 'custom' when it states no schedule or one the screens don't offer. */
+const displayPreset = (record: InterventionDoc): RecurrencePreset => {
+    const schedule = readSchedule(record);
+    return schedule.source === "default" ? "custom" : schedulePreset(schedule) || "custom";
 };
 
 const isMonthlyCalendar = (
@@ -547,12 +516,13 @@ const InterventionsManager: React.FC = () => {
     // Filters
     const [searchText, setSearchText] = useState("");
     const [flagFilter, setFlagFilter] = useState<string>("all");
+    const [detailId, setDetailId] = useState<string | null>(null);
     const [assignmentModeFilter, setAssignmentModeFilter] =
         useState<string>("all");
 
     // department scope
     const [effectiveDeptId, setEffectiveDeptId] = useState<string>(""); // used for create/edit defaults
-    const [effectiveDeptName, setEffectiveDeptName] = useState<string>(""); // used for areaOfSupport display
+    const [effectiveDeptName, setEffectiveDeptName] = useState<string>(""); // used for department display
     const [managedDeptIds, setManagedDeptIds] = useState<string[]>([]); // what user can SEE/MANAGE
     const [managedDeptNameMap, setManagedDeptNameMap] = useState<
         Record<string, string>
@@ -575,16 +545,6 @@ const InterventionsManager: React.FC = () => {
                 if (maybeDeptId) {
                     const s = await getDoc(doc(db, "departments", maybeDeptId));
                     if (s.exists()) deptSnap = s;
-                }
-
-                // fallback by name
-                if (!deptSnap && userDepartment) {
-                    const qDept = query(
-                        collection(db, "departments"),
-                        where("name", "==", userDepartment)
-                    );
-                    const snap = await getDocs(qDept);
-                    if (!snap.empty) deptSnap = snap.docs[0];
                 }
 
                 if (!deptSnap) {
@@ -667,7 +627,9 @@ const InterventionsManager: React.FC = () => {
                 setIsParentDept(false);
             }
         })();
-    }, [userDepartment, user]);
+        // Keyed on the values it reads, not the whole user object, which changes
+        // identity on every profile refresh and would re-run these reads.
+    }, [userDepartment, (user as any)?.departmentId]);
 
     const fetchInterventions = async () => {
         if (managedDeptIds.length === 0) {
@@ -722,42 +684,31 @@ const InterventionsManager: React.FC = () => {
 
     const openModal = (record?: InterventionDoc) => {
         if (record) {
-            const recFromNew = record.recurrence || null;
-            const recFromLegacy =
-                legacyFrequencyToRecurrence(record.recurrenceFrequency) || null;
-            const recurrence = recFromNew || recFromLegacy;
-
-            const preset =
-                record.frequency === "as-needed" ||
-                    record.assignmentMode === "ad-hoc" ||
-                    record.assignmentMode === "once-off"
-                    ? "as-needed"
-                    : record.recurrencePreset || derivePresetFromRecurrence(recurrence);
-
-            const strict =
-                typeof record.recurrenceStrict === "boolean"
-                    ? record.recurrenceStrict
-                    : isMonthlyCalendar(recurrence)
-                        ? true
-                        : true;
+            const schedule = readSchedule(record);
+            const recurrence = schedule.recurrence;
+            const preset = displayPreset(record);
+            const strict = schedule.strict ?? true;
 
             const hasSubs = !!record.hasSubInterventions;
             const subs = activeSubList(record.subInterventions || []);
 
             form.setFieldsValue({
                 interventionTitle: record.interventionTitle,
-                areaOfSupport: effectiveDeptName || userDepartment,
+                deliverableName: record.outcomeDef?.deliverable?.name || "",
+                intendedOutcome: record.outcomeDef?.intendedOutcome || "",
+                outcomeType: record.outcomeDef?.outcomeType,
+                followUpAfterDays: record.outcomeDef?.followUpAfterDays,
+                followUpRequired:
+                    record.outcomeDef?.followUp?.required ??
+                    !!record.outcomeDef?.intendedOutcome,
+                smeCheckIn: !!record.outcomeDef?.followUp?.smeCheckIn,
                 compulsory: !!record.compulsory,
                 assignmentMode: preset === "as-needed" ? "ad-hoc" : "recurring",
-                recurring: record.assignmentMode === "recurring" || !!record.recurring,
+                recurring: schedule.scheduleMode === "recurring",
 
                 recurrencePreset: preset,
-                recurrenceUnit:
-                    recurrence?.unit ||
-                    (preset !== "custom" ? presetToRecurrence(preset)?.unit : undefined),
-                recurrenceEvery:
-                    recurrence?.every ||
-                    (preset !== "custom" ? presetToRecurrence(preset)?.every : undefined),
+                recurrenceUnit: recurrence?.unit,
+                recurrenceEvery: recurrence?.every,
 
                 recurrenceStrict: strict,
                 recurrenceEndMode: record.recurrenceEnd?.mode || "until-closed",
@@ -794,7 +745,6 @@ const InterventionsManager: React.FC = () => {
         } else {
             form.resetFields();
             form.setFieldsValue({
-                areaOfSupport: effectiveDeptName || userDepartment,
                 compulsory: false,
                 assignmentMode: "ad-hoc",
                 recurring: false,
@@ -821,8 +771,7 @@ const InterventionsManager: React.FC = () => {
 
     const allocateCompulsoryToAccepted = async (
         interventionId: string,
-        title: string,
-        deptNameForAssignment: string
+        title: string
     ) => {
         const snapshot = await getDoc(doc(db, "interventions", interventionId));
         if (!snapshot.exists()) throw new Error("Intervention not found");
@@ -848,29 +797,14 @@ const InterventionsManager: React.FC = () => {
                 return;
             }
             const recurring = selectedFrequency !== "as-needed";
-            const assignmentMode: InterventionAssignmentMode = recurring
-                ? "recurring"
-                : "ad-hoc";
-
-            let recurrencePreset: RecurrencePreset | null = null;
-            let recurrence: { every: number; unit: RecurrenceUnit } | null = null;
-            let recurrenceStrict: boolean | null = null;
+            const schedule = scheduleFields(selectedFrequency, {
+                strict: !!values.recurrenceStrict,
+                nonRecurringMode:
+                    values.nonRecurringMode === "once-off" ? "once-off" : "ad-hoc",
+            });
             let recurrenceEnd: InterventionDoc["recurrenceEnd"] = null;
 
             if (recurring) {
-                const preset = selectedFrequency;
-
-                recurrencePreset = preset;
-
-                const built = presetToRecurrence(preset);
-                if (!built) {
-                    message.error("Invalid recurrence preset");
-                    setLoading(false);
-                    return;
-                }
-                recurrence = built;
-
-                recurrenceStrict = !!values.recurrenceStrict;
                 const recurrenceEndMode = values.recurrenceEndMode as RecurrenceEndMode;
                 if (!recurrenceEndMode) {
                     message.error("Choose when recurring support should end.");
@@ -901,8 +835,6 @@ const InterventionsManager: React.FC = () => {
                 } else {
                     recurrenceEnd = { mode: recurrenceEndMode };
                 }
-            } else {
-                recurrenceStrict = null;
             }
 
             const hasSubInterventions = !!values.hasSubInterventions;
@@ -937,13 +869,6 @@ const InterventionsManager: React.FC = () => {
                 setLoading(false);
                 return;
             }
-
-            // Resolve owning dept name for areaOfSupport (always match actual owning dept)
-            const owningDeptName =
-                managedDeptNameMap[owningDeptId] ||
-                effectiveDeptName ||
-                userDepartment ||
-                "";
 
             const nextTitle = String(values.interventionTitle || "").trim();
             const subInterventions = mergeSubInterventionsForSave(
@@ -980,22 +905,47 @@ const InterventionsManager: React.FC = () => {
                 return;
             }
 
+            // Classic form (edit) supplies only the two visible fields; keep the
+            // rest of the stored definition. The wizard supplies everything.
+            const previousOutcome = previousDefinition?.outcomeDef || null;
+            const sameWording =
+                !!previousOutcome &&
+                String(values.deliverableName || "").trim() ===
+                (previousOutcome.deliverable?.name || "") &&
+                String(values.intendedOutcome || "").trim() ===
+                (previousOutcome.intendedOutcome || "");
+            const outcomeDef = buildOutcomeDef({
+                deliverableName: values.deliverableName,
+                deliverableDescription:
+                    values.deliverableDescription ??
+                    previousOutcome?.deliverable?.description,
+                deliverableRequired: previousOutcome?.deliverable?.required,
+                intendedOutcome: values.intendedOutcome,
+                outcomeType: Object.hasOwn(values, "outcomeType")
+                    ? values.outcomeType
+                    : previousOutcome?.outcomeType,
+                followUpAfterDays: Object.hasOwn(values, "followUpAfterDays")
+                    ? values.followUpAfterDays
+                    : previousOutcome?.followUpAfterDays,
+                followUpRequired: Object.hasOwn(values, "followUpRequired")
+                    ? values.followUpRequired
+                    : previousOutcome?.followUp?.required,
+                smeCheckIn: Object.hasOwn(values, "smeCheckIn")
+                    ? values.smeCheckIn
+                    : previousOutcome?.followUp?.smeCheckIn,
+                fromSuggestion: !!values.outcomeFromSuggestion,
+            });
+            if (outcomeDef && sameWording && previousOutcome) {
+                outcomeDef.origin = previousOutcome.origin;
+            }
+
             const payload: Omit<InterventionDoc, "id"> = {
                 interventionTitle: nextTitle,
-                areaOfSupport: owningDeptName,
                 departmentId: owningDeptId,
                 compulsory: !!values.compulsory,
-                assignmentMode,
-
-                recurring,
-                recurrencePreset,
-                recurrence,
-                recurrenceStrict,
+                scheduleMode: schedule.scheduleMode,
+                recurrence: schedule.recurrence as StoredRecurrence | null,
                 recurrenceEnd,
-                frequency:
-                    selectedFrequency === "as-needed" ? "as-needed" : selectedFrequency,
-                recurrenceFrequency:
-                    selectedFrequency === "as-needed" ? "other" : selectedFrequency,
 
                 hasSubInterventions,
                 subInterventions,
@@ -1018,19 +968,32 @@ const InterventionsManager: React.FC = () => {
             };
 
             if (editId) {
-                await updateDoc(doc(db, "interventions", editId), payload as any);
+                await updateDoc(doc(db, "interventions", editId), {
+                    ...(payload as any),
+                    // The schedule now lives in scheduleMode + recurrence only.
+                    ...Object.fromEntries(
+                        LEGACY_SCHEDULE_FIELDS.map((field) => [field, deleteField()])
+                    ),
+                    // Clearing both fields removes the definition; untouched
+                    // legacy records never gain the key.
+                    ...(outcomeDef
+                        ? { outcomeDef }
+                        : previousDefinition?.outcomeDef
+                            ? { outcomeDef: deleteField() }
+                            : {}),
+                });
                 message.success("Intervention updated!");
 
                 if (!!values.compulsory) {
                     await allocateCompulsoryToAccepted(
                         editId,
-                        values.interventionTitle,
-                        owningDeptName
+                        values.interventionTitle
                     );
                 }
             } else {
                 const ref = await addDoc(collection(db, "interventions"), {
                     ...(payload as any),
+                    ...(outcomeDef ? { outcomeDef } : {}),
                     createdAt: Timestamp.now(),
                 });
                 message.success("Intervention added!");
@@ -1038,8 +1001,7 @@ const InterventionsManager: React.FC = () => {
                 if (!!values.compulsory) {
                     await allocateCompulsoryToAccepted(
                         ref.id,
-                        values.interventionTitle,
-                        owningDeptName
+                        values.interventionTitle
                     );
                 }
             }
@@ -1092,8 +1054,7 @@ const InterventionsManager: React.FC = () => {
         return interventions.filter((item) => {
             const title = normalize(item.interventionTitle);
             const deptName = normalize(
-                managedDeptNameMap[String(item.departmentId || "")] ||
-                item.areaOfSupport
+                managedDeptNameMap[String(item.departmentId || "")]
             );
 
             const matchesSearch =
@@ -1102,19 +1063,13 @@ const InterventionsManager: React.FC = () => {
             const matchesFlag =
                 flagFilter === "all" ||
                 (flagFilter === "compulsory" && !!item.compulsory) ||
-                (flagFilter === "recurring" && !!item.recurring) ||
-                (flagFilter === "subInterventions" && !!item.hasSubInterventions);
+                (flagFilter === "recurring" &&
+                    readSchedule(item).scheduleMode === "recurring") ||
+                (flagFilter === "subInterventions" && !!item.hasSubInterventions) ||
+                (flagFilter === "noOutcome" && !item.outcomeDef?.intendedOutcome) ||
+                (flagFilter === "checkBack" && !!item.outcomeDef?.followUp?.required);
 
-            const frequency =
-                item.frequency === "as-needed" ||
-                    (!item.recurring &&
-                        ["ad-hoc", "once-off"].includes(item.assignmentMode || ""))
-                    ? "as-needed"
-                    : item.recurrencePreset ||
-                    derivePresetFromRecurrence(
-                        item.recurrence ||
-                        legacyFrequencyToRecurrence(item.recurrenceFrequency)
-                    );
+            const frequency = displayPreset(item);
 
             const matchesAssignmentMode =
                 assignmentModeFilter === "all" || frequency === assignmentModeFilter;
@@ -1154,19 +1109,44 @@ const InterventionsManager: React.FC = () => {
             ]
             : []),
         {
+            title: "Deliverable",
+            key: "deliverable",
+            responsive: ["md"],
+            render: (_: any, r: InterventionDoc) =>
+                r.outcomeDef?.deliverable?.name ? (
+                    <Tag color="blue">{r.outcomeDef.deliverable.name}</Tag>
+                ) : (
+                    <Text type="secondary">Not set</Text>
+                ),
+        },
+        {
+            title: "Check-back",
+            key: "checkBack",
+            responsive: ["lg"],
+            render: (_: any, r: InterventionDoc) => {
+                const followUp = r.outcomeDef?.followUp;
+                if (!r.outcomeDef?.intendedOutcome) return <Text type="secondary">Not set</Text>;
+                if (!followUp?.required) return <Text type="secondary">None</Text>;
+                return (
+                    <Tag style={{ borderRadius: 999 }}>
+                        {r.outcomeDef?.followUpAfterDays || 60} days
+                        {followUp.smeCheckIn ? " · + SME" : ""}
+                    </Tag>
+                );
+            },
+        },
+        {
             title: "Flags",
             key: "flags",
             render: (_: any, r: InterventionDoc) => {
-                const rec =
-                    r.recurrence ||
-                    legacyFrequencyToRecurrence(r.recurrenceFrequency) ||
-                    null;
-                const recText = r.recurring ? formatRecurrence(rec) : "";
-                const strict =
-                    typeof r.recurrenceStrict === "boolean" ? r.recurrenceStrict : null;
+                const schedule = readSchedule(r);
+                const recurring = schedule.scheduleMode === "recurring";
+                const rec = schedule.recurrence;
+                const recText = recurring ? formatRecurrenceText(rec, "") : "";
+                const strict = schedule.strict;
 
                 const strictSuffix =
-                    r.recurring && rec
+                    recurring && rec
                         ? strict === false
                             ? "Optional"
                             : "Required"
@@ -1175,14 +1155,14 @@ const InterventionsManager: React.FC = () => {
                 return (
                     <Space wrap>
                         {r.compulsory && <Tag color="red">Compulsory</Tag>}
-                        {r.recurring && (
+                        {recurring && (
                             <Tag color="geekblue">
                                 Scheduled
                                 {recText ? ` — ${recText}` : ""}
                                 {strictSuffix ? ` — ${strictSuffix}` : ""}
                             </Tag>
                         )}
-                        {!r.recurring && <Tag color="blue">As needed</Tag>}
+                        {!recurring && <Tag color="blue">As needed</Tag>}
                         {r.hasSubInterventions && (
                             <Tag icon={<UnorderedListOutlined />} color="cyan">
                                 Sub-steps (MOV)
@@ -1196,13 +1176,12 @@ const InterventionsManager: React.FC = () => {
             title: "Actions",
             key: "actions",
             render: (_: any, record: InterventionDoc) => (
-                <Space>
+                <Space onClick={(event) => event.stopPropagation()}>
                     <Button
                         data-guide="edit-intervention-action"
                         shape="round"
                         variant="filled"
-                        color="geekblue"
-                        style={{ border: "1px solid dodgerblue" }}
+                        color="primary"
                         icon={<EditOutlined />}
                         onClick={() => openModal(record)}
                     >
@@ -1218,7 +1197,6 @@ const InterventionsManager: React.FC = () => {
                         <Button
                             shape="round"
                             danger
-                            style={{ border: "1px solid red" }}
                             icon={<DeleteOutlined />}
                         />
                     </Popconfirm>
@@ -1229,7 +1207,18 @@ const InterventionsManager: React.FC = () => {
 
     const totalInterventions = interventions.length;
     const recurringCount = useMemo(
-        () => interventions.filter((i) => i.recurring).length,
+        () =>
+            interventions.filter(
+                (i) => readSchedule(i).scheduleMode === "recurring"
+            ).length,
+        [interventions]
+    );
+    const outcomeDefinedCount = useMemo(
+        () => interventions.filter((i) => !!i.outcomeDef?.intendedOutcome).length,
+        [interventions]
+    );
+    const checkBackCount = useMemo(
+        () => interventions.filter((i) => !!i.outcomeDef?.followUp?.required).length,
         [interventions]
     );
     const summaryMetrics = useMemo<DashboardMetric[]>(
@@ -1238,20 +1227,34 @@ const InterventionsManager: React.FC = () => {
                 key: "total-interventions",
                 title: "Total Interventions",
                 value: totalInterventions,
-                icon: <FileDoneOutlined style={{ color: "#1677ff" }} />,
-                iconBg: "rgba(22,119,255,.12)",
+                icon: <FileDoneOutlined />,
+                tone: 'accent' as const,
                 important: true,
             },
             {
                 key: "recurring-interventions",
                 title: "Recurring Interventions",
                 value: recurringCount,
-                icon: <ReloadOutlined style={{ color: "#722ed1" }} />,
-                iconBg: "rgba(114,46,209,.12)",
+                icon: <ReloadOutlined />,
+                tone: 'info' as const,
                 important: true,
             },
+            {
+                key: "outcome-defined",
+                title: "Outcome defined",
+                value: `${outcomeDefinedCount} of ${totalInterventions}`,
+                icon: <FileDoneOutlined />,
+                tone: 'info' as const,
+            },
+            {
+                key: "check-back-on",
+                title: "With check-back",
+                value: checkBackCount,
+                icon: <ReloadOutlined />,
+                tone: 'warning' as const,
+            },
         ],
-        [recurringCount, totalInterventions]
+        [checkBackCount, outcomeDefinedCount, recurringCount, totalInterventions]
     );
     return (
         <div style={{ minHeight: "100vh", padding: 24 }}>
@@ -1265,12 +1268,16 @@ const InterventionsManager: React.FC = () => {
 
             {loading ? (
                 <div style={{ minHeight: "100vh" }}>
-                    <LoadingOverlay tip="Loading interventions" />
+                    <PageSkeleton variant='list' />
                 </div>
             ) : (
                 <>
                     <div data-guide="intervention-metrics" style={{ marginBottom: 16 }}>
                         <MetricsGrid metrics={summaryMetrics} />
+                    </div>
+
+                    <div data-guide="intervention-impact" style={{ marginBottom: 16 }}>
+                        <WhatsWorkingCard canRefresh includeEarly />
                     </div>
 
                     <MotionCard
@@ -1299,6 +1306,8 @@ const InterventionsManager: React.FC = () => {
                                                 value: "subInterventions",
                                                 label: "With sub-interventions",
                                             },
+                                            { value: "noOutcome", label: "No outcome defined" },
+                                            { value: "checkBack", label: "With check-back" },
                                         ]}
                                     />
                                 </Col>
@@ -1342,6 +1351,10 @@ const InterventionsManager: React.FC = () => {
                                 columns={columns as any}
                                 dataSource={filteredInterventions}
                                 rowKey="id"
+                                onRow={(record: InterventionDoc) => ({
+                                    onClick: () => setDetailId(record.id),
+                                    style: { cursor: "pointer" },
+                                })}
                                 pagination={{
                                     pageSize: 8,
                                     position: ["bottomCenter"],
@@ -1351,10 +1364,24 @@ const InterventionsManager: React.FC = () => {
                         </div>
                     </MotionCard>
 
+                    <InterventionDetailModal
+                        record={(interventions.find((i) => i.id === detailId) as any) || null}
+                        departmentLabel={
+                            managedDeptNameMap[
+                            String(interventions.find((i) => i.id === detailId)?.departmentId || "")
+                            ]
+                        }
+                        onClose={() => setDetailId(null)}
+                        onEdit={(record) => {
+                            setDetailId(null);
+                            openModal(record as unknown as InterventionDoc);
+                        }}
+                    />
+
                     <Modal
                         className="guide-intervention-modal"
                         centered
-                        title={editId ? "Edit Intervention" : "Add Intervention"}
+                        title={editId ? "Edit Intervention" : "New Intervention"}
                         open={modalOpen}
                         onCancel={() => {
                             setModalOpen(false);
@@ -1363,426 +1390,36 @@ const InterventionsManager: React.FC = () => {
                             form.resetFields();
                         }}
                         onOk={() => form.submit()}
+                        footer={null}
                         okText={editId ? "Update" : "Add"}
                         okButtonProps={{ className: "guide-intervention-submit" }}
                         confirmLoading={loading}
                         destroyOnClose
                         width={780}
                     >
-                        <Form
-                            layout="vertical"
-                            form={form}
-                            onFinish={onFinish}
-                            initialValues={{
-                                areaOfSupport: effectiveDeptName || userDepartment,
-                                compulsory: false,
-                                assignmentMode: "once-off",
-                                recurring: false,
-                                recurrencePreset: undefined,
-                                recurrenceUnit: undefined,
-                                recurrenceEvery: undefined,
-                                recurrenceStrict: true,
-                                hasSubInterventions: false,
-                                subInterventions: [
-                                    { subId: makeSubId(), title: "", description: "" },
-                                ],
+                        {/* One flow for both: adding walks through the steps; editing opens on the
+                            review, where each section can be changed on its own. */}
+                        <InterventionWizard
+                            key={editId || "new"}
+                            mode={editId ? "edit" : "create"}
+                            initial={
+                                editId
+                                    ? wizardInitialFrom(interventions.find((item) => item.id === editId))
+                                    : undefined
+                            }
+                            departmentId={effectiveDeptId}
+                            departmentName={effectiveDeptName || userDepartment}
+                            existingTitles={interventions
+                                .filter((item) => item.departmentId === effectiveDeptId && item.id !== editId)
+                                .map((item) => item.interventionTitle)}
+                            saving={loading}
+                            onSubmit={(values: WizardValues) => onFinish(values)}
+                            onCancel={() => {
+                                setModalOpen(false);
+                                setEditId(null);
+                                setPrevCompulsory(false);
                             }}
-                        >
-                            <div data-guide="intervention-title-field">
-                                <Form.Item
-                                    label="Intervention Title"
-                                    name="interventionTitle"
-                                    rules={[
-                                        { required: true, message: "Enter intervention title" },
-                                    ]}
-                                >
-                                    <Input />
-                                </Form.Item>
-                            </div>
-
-                            <Row gutter={[16, 8]}>
-                                <Col xs={24} sm={10}>
-                                    <div data-guide="intervention-frequency-field">
-                                        <Form.Item
-                                            label="Frequency of intervention"
-                                            name="recurrencePreset"
-                                            rules={[{ required: true, message: "Select a frequency" }]}
-                                            extra="This applies to the main intervention and all of its sub-interventions."
-                                            style={{ marginBottom: 8 }}
-                                        >
-                                            <Select placeholder="Select frequency">
-                                                <Option value="as-needed">As needed</Option>
-                                                <Option value="weekly">Weekly</Option>
-                                                <Option value="bi-weekly">Every two weeks</Option>
-                                                <Option value="monthly">Once a month</Option>
-                                            </Select>
-                                        </Form.Item>
-                                    </div>
-                                </Col>
-                                <Col xs={24} sm={7}>
-                                    <div data-guide="intervention-compulsory-field">
-                                        <Form.Item
-                                            label="Compulsory"
-                                            name="compulsory"
-                                            valuePropName="checked"
-                                            style={{ marginBottom: 8 }}
-                                        >
-                                            <Switch />
-                                        </Form.Item>
-                                    </div>
-                                </Col>
-                                <Col xs={24} sm={7}>
-                                    <Form.Item
-                                        noStyle
-                                        shouldUpdate={(prev, curr) =>
-                                            prev.recurrencePreset !== curr.recurrencePreset
-                                        }
-                                    >
-                                        {({ getFieldValue }) => {
-                                            const preset = getFieldValue("recurrencePreset") as
-                                                | RecurrencePreset
-                                                | undefined;
-                                            const recurrence =
-                                                preset && preset !== "as-needed"
-                                                    ? presetToRecurrence(preset)
-                                                    : null;
-                                            return recurrence ? (
-                                                <div data-guide="intervention-cycle-requirement">
-                                                    <Form.Item
-                                                        label={strictLabelFor(recurrence)}
-                                                        name="recurrenceStrict"
-                                                        valuePropName="checked"
-                                                        style={{ marginBottom: 8 }}
-                                                    >
-                                                        <Switch />
-                                                    </Form.Item>
-                                                </div>
-                                            ) : (
-                                                <Form.Item
-                                                    label="Cycle requirement"
-                                                    style={{ marginBottom: 8 }}
-                                                >
-                                                    <Text type="secondary">As needed</Text>
-                                                </Form.Item>
-                                            );
-                                        }}
-                                    </Form.Item>
-                                </Col>
-                            </Row>
-
-                            <Form.Item
-                                noStyle
-                                shouldUpdate={(prev, curr) =>
-                                    prev.recurrencePreset !== curr.recurrencePreset ||
-                                    prev.recurrenceEndMode !== curr.recurrenceEndMode
-                                }
-                            >
-                                {({ getFieldValue }) => {
-                                    const frequency = getFieldValue("recurrencePreset");
-                                    const isRecurring = !!frequency && frequency !== "as-needed";
-                                    const endMode = getFieldValue(
-                                        "recurrenceEndMode"
-                                    ) as RecurrenceEndMode;
-                                    if (!isRecurring) return null;
-
-                                    return (
-                                        <div data-guide="intervention-recurrence-end">
-                                            <Row gutter={[16, 8]}>
-                                                <Col xs={24} md={12}>
-                                                    <Form.Item
-                                                        label="Recurring support ends"
-                                                        name="recurrenceEndMode"
-                                                        rules={[
-                                                            {
-                                                                required: true,
-                                                                message: "Choose a support duration",
-                                                            },
-                                                        ]}
-                                                    >
-                                                        <Select>
-                                                            <Option value="fixed-cycles">
-                                                                After a set number of cycles
-                                                            </Option>
-                                                            <Option value="end-date">On a specific date</Option>
-                                                            <Option value="until-closed">
-                                                                When the HOD closes it
-                                                            </Option>
-                                                            <Option value="programme-end">
-                                                                When the programme ends
-                                                            </Option>
-                                                        </Select>
-                                                    </Form.Item>
-                                                </Col>
-                                                <Col xs={24} md={12}>
-                                                    {endMode === "fixed-cycles" && (
-                                                        <Form.Item
-                                                            label="Number of cycles"
-                                                            name="recurrenceCycles"
-                                                            rules={[
-                                                                {
-                                                                    required: true,
-                                                                    message: "Enter the number of cycles",
-                                                                },
-                                                            ]}
-                                                        >
-                                                            <InputNumber min={1} style={{ width: "100%" }} />
-                                                        </Form.Item>
-                                                    )}
-                                                    {endMode === "end-date" && (
-                                                        <Form.Item
-                                                            label="End date"
-                                                            name="recurrenceEndDate"
-                                                            rules={[
-                                                                { required: true, message: "Select an end date" },
-                                                            ]}
-                                                        >
-                                                            <DatePicker style={{ width: "100%" }} />
-                                                        </Form.Item>
-                                                    )}
-                                                    {endMode === "programme-end" && (
-                                                        <Text type="secondary">
-                                                            Ends with the programme and stops future milestones
-                                                            and projections.
-                                                        </Text>
-                                                    )}
-                                                    {endMode === "until-closed" && (
-                                                        <Text type="secondary">
-                                                            Continues until the HOD marks the support as closed
-                                                            or no longer required.
-                                                        </Text>
-                                                    )}
-                                                </Col>
-                                            </Row>
-                                        </div>
-                                    );
-                                }}
-                            </Form.Item>
-
-                            <Row gutter={[16, 8]}>
-                                <Col xs={24} md={12}>
-                                    <div data-guide="intervention-milestone-toggle">
-                                        <Form.Item
-                                            label="Sub-interventions (MOV breakdown)"
-                                            name="hasSubInterventions"
-                                            valuePropName="checked"
-                                            extra="Turn this on if the action changes per month/cycle but it stays under one main intervention."
-                                        >
-                                            <Switch />
-                                        </Form.Item>
-                                    </div>
-                                </Col>
-                                <Col xs={24} md={12}>
-                                    <Form.Item
-                                        noStyle
-                                        shouldUpdate={(p, c) =>
-                                            p.hasSubInterventions !== c.hasSubInterventions
-                                        }
-                                    >
-                                        {({ getFieldValue }) =>
-                                            getFieldValue("hasSubInterventions") ? (
-                                                <div data-guide="intervention-rotation-mode">
-                                                    <Form.Item
-                                                        label="Substep path each cycle"
-                                                        name="subInterventionRotationMode"
-                                                        initialValue="rotate"
-                                                        tooltip="Choose whether each new cycle advances through the ordered substep list, or keeps using the same selected substep."
-                                                    >
-                                                        <Select style={{ width: "100%" }}>
-                                                            <Select.Option value="rotate">
-                                                                Progress to the next substep in order
-                                                            </Select.Option>
-                                                            <Select.Option value="repeat">
-                                                                Reuse the same selected substep each cycle
-                                                            </Select.Option>
-                                                        </Select>
-                                                    </Form.Item>
-                                                </div>
-                                            ) : null
-                                        }
-                                    </Form.Item>
-                                </Col>
-                            </Row>
-
-                            <Form.Item
-                                noStyle
-                                shouldUpdate={(p, c) =>
-                                    p.hasSubInterventions !== c.hasSubInterventions
-                                }
-                            >
-                                {({ getFieldValue }) => {
-                                    const on = !!getFieldValue("hasSubInterventions");
-                                    if (!on) {
-                                        return (
-                                            <Form.Item
-                                                label="Typical sessions"
-                                                name="defaultPlannedSessions"
-                                                initialValue={1}
-                                                tooltip="How many sessions this intervention normally takes - pre-fills at assignment time, still editable per assignment."
-                                            >
-                                                <InputNumber min={1} style={{ width: "100%" }} />
-                                            </Form.Item>
-                                        );
-                                    }
-
-                                    return (
-                                        <>
-                                            <Text
-                                                type="secondary"
-                                                style={{ display: "block", marginBottom: 12 }}
-                                            >
-                                                Add the work items in delivery order. Removing one
-                                                archives it for future assignments without changing
-                                                completed history.
-                                            </Text>
-
-                                            <div data-guide="sub-intervention-list">
-                                                <Form.List name="subInterventions">
-                                                    {(fields, { add, remove, move }) => {
-                                                        const onDragEnd = (result: DropResult) => {
-                                                            if (!result.destination) return;
-                                                            if (
-                                                                result.destination.index === result.source.index
-                                                            )
-                                                                return;
-                                                            move(result.source.index, result.destination.index);
-                                                        };
-
-                                                        return (
-                                                            <>
-                                                                <DragDropContext onDragEnd={onDragEnd}>
-                                                                    <Droppable droppableId="subInterventions">
-                                                                        {(provided) => (
-                                                                            <div
-                                                                                ref={provided.innerRef}
-                                                                                {...provided.droppableProps}
-                                                                            >
-                                                                                {fields.map((field, index) => (
-                                                                                    <Draggable
-                                                                                        key={field.key}
-                                                                                        draggableId={String(field.key)}
-                                                                                        index={index}
-                                                                                    >
-                                                                                        {(dragProvided) => (
-                                                                                            <Card
-                                                                                                ref={dragProvided.innerRef}
-                                                                                                {...dragProvided.draggableProps}
-                                                                                                size="small"
-                                                                                                style={{
-                                                                                                    marginBottom: 10,
-                                                                                                    background: "#fbfdff",
-                                                                                                }}
-                                                                                            >
-                                                                                                <Row
-                                                                                                    gutter={[12, 8]}
-                                                                                                    align="middle"
-                                                                                                >
-                                                                                                    <Col
-                                                                                                        flex="0 0 32px"
-                                                                                                        {...dragProvided.dragHandleProps}
-                                                                                                        style={{
-                                                                                                            cursor: "grab",
-                                                                                                            textAlign: "center",
-                                                                                                            color: "#8c8c8c",
-                                                                                                        }}
-                                                                                                    >
-                                                                                                        <HolderOutlined />
-                                                                                                    </Col>
-
-                                                                                                    <Col xs={24} md={14}>
-                                                                                                        <Form.Item
-                                                                                                            {...field}
-                                                                                                            label="Sub-intervention title"
-                                                                                                            name={[field.name, "title"]}
-                                                                                                            rules={[
-                                                                                                                {
-                                                                                                                    required: true,
-                                                                                                                    message:
-                                                                                                                        "Enter sub-intervention title",
-                                                                                                                },
-                                                                                                            ]}
-                                                                                                        >
-                                                                                                            <Input placeholder="Sub-Intervention A" />
-                                                                                                        </Form.Item>
-                                                                                                    </Col>
-
-                                                                                                    <Col xs={24} md={6}>
-                                                                                                        <Form.Item
-                                                                                                            {...field}
-                                                                                                            label="Typical sessions"
-                                                                                                            name={[
-                                                                                                                field.name,
-                                                                                                                "defaultPlannedSessions",
-                                                                                                            ]}
-                                                                                                            initialValue={1}
-                                                                                                            tooltip="How many sessions this sub-intervention normally takes - pre-fills at assignment time, still editable per assignment."
-                                                                                                        >
-                                                                                                            <InputNumber
-                                                                                                                min={1}
-                                                                                                                style={{ width: "100%" }}
-                                                                                                            />
-                                                                                                        </Form.Item>
-                                                                                                    </Col>
-
-                                                                                                    <Col
-                                                                                                        xs={24}
-                                                                                                        md={2}
-                                                                                                        style={{
-                                                                                                            display: "flex",
-                                                                                                            justifyContent: "flex-end",
-                                                                                                        }}
-                                                                                                    >
-                                                                                                        <Button
-                                                                                                            shape="round"
-                                                                                                            danger
-                                                                                                            style={{
-                                                                                                                border: "1px solid red",
-                                                                                                            }}
-                                                                                                            onClick={() =>
-                                                                                                                remove(field.name)
-                                                                                                            }
-                                                                                                            icon={<DeleteOutlined />}
-                                                                                                        />
-                                                                                                    </Col>
-
-                                                                                                    <Form.Item
-                                                                                                        {...field}
-                                                                                                        name={[field.name, "subId"]}
-                                                                                                        hidden
-                                                                                                    >
-                                                                                                        <Input />
-                                                                                                    </Form.Item>
-                                                                                                </Row>
-                                                                                            </Card>
-                                                                                        )}
-                                                                                    </Draggable>
-                                                                                ))}
-                                                                                {provided.placeholder}
-                                                                            </div>
-                                                                        )}
-                                                                    </Droppable>
-                                                                </DragDropContext>
-
-                                                                <Button
-                                                                    data-guide="add-sub-intervention-action"
-                                                                    type="dashed"
-                                                                    onClick={() =>
-                                                                        add({ subId: makeSubId(), title: "" })
-                                                                    }
-                                                                    icon={<PlusCircleOutlined />}
-                                                                    block
-                                                                >
-                                                                    Add Sub-intervention
-                                                                </Button>
-                                                            </>
-                                                        );
-                                                    }}
-                                                </Form.List>
-                                            </div>
-                                        </>
-                                    );
-                                }}
-                            </Form.Item>
-                        </Form>
+                        />
                     </Modal>
                 </>
             )}

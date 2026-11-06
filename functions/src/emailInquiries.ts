@@ -1,6 +1,9 @@
 import * as logger from "firebase-functions/logger";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { admin, db, getTransporter, APP_BASE_URL } from "./emailShared";
+import { suppressRecordNotifications } from "./syntheticData";
+import { notifyInApp } from "./inAppNotifications";
+import { uidsForEmails } from "./movRecipients";
 
 type InquiryDoc = {
   branchId?: string;
@@ -105,6 +108,7 @@ export const onInquiryCreatedNotifyStaff = onDocumentWritten(
       const before = event.data?.before?.data() as InquiryDoc | undefined;
       const after = event.data?.after?.data() as InquiryDoc | undefined;
       if (!after || before) return; // Only newly-created inquiries
+      if (suppressRecordNotifications(after, event.params.inquiryId)) return;
       if (after.source !== "SME") return; // Only SME self-submitted inquiries
 
       const branchId = String(after.branchId || "").trim();
@@ -149,6 +153,26 @@ export const onInquiryCreatedNotifyStaff = onDocumentWritten(
       }
 
       await Promise.all(sends);
+
+      const contact = after.contactInfo || {};
+      const submitter = `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "An SME";
+      const inquiryId = event.params.inquiryId;
+      await Promise.all([
+        notifyInApp({
+          type: "inquiry_received",
+          message: `New inquiry from ${submitter} at ${branchName}.`,
+          recipientIds: await uidsForEmails(receptionistEmails),
+          inquiryId,
+          link: `/receptionist/inquiries/${inquiryId}`,
+        }),
+        notifyInApp({
+          type: "inquiry_received",
+          message: `New inquiry from ${submitter} at ${branchName}.`,
+          recipientIds: await uidsForEmails(projectAdminEmails),
+          inquiryId,
+          link: `/projectadmin/inquiries/${inquiryId}`,
+        }),
+      ]);
 
       logger.info("inquiry_notify.sent", {
         inquiryId: event.params.inquiryId,

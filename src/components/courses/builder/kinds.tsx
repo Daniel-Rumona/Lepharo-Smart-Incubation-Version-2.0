@@ -1,5 +1,4 @@
 import React from "react";
-import { theme } from "antd";
 import {
   FormOutlined,
   QuestionCircleOutlined,
@@ -7,7 +6,6 @@ import {
   RobotOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
-import { useColorMode } from "@/contexts/ThemeContext";
 import type { Item, Kind, Question } from "../courseStorage";
 
 export const uid = () => crypto.randomUUID();
@@ -67,7 +65,8 @@ export function newItem(kind: Kind, moduleId: string, title?: string): Item {
     kind,
     title: title || `New ${kindOf(kind).label.toLowerCase()}`,
     objective: "",
-    content: "",
+    // Quizzes and tests start with the standard instructions; authors change them if they need to.
+    content: kind === "quiz" || kind === "test" ? STANDARD_INSTRUCTIONS : "",
     minutes: kind === "assignment" ? 45 : kind === "test" ? 20 : 10,
     required: true,
     passMark: 70,
@@ -94,43 +93,3 @@ export const newQuestion = (): Question => ({
   materials: [],
 });
 
-/**
- * The builder's CSS reads these variables, so every colour comes from the
- * app's antd theme (src/config/antdTheme.ts) and follows light/dark mode.
- */
-export function useBuilderVars(): React.CSSProperties {
-  const { token } = theme.useToken();
-  const { isDark } = useColorMode();
-  const ai = isDark ? "#b37feb" : "#722ed1";
-  return {
-    "--cb-bg": token.colorBgLayout,
-    "--cb-surface": token.colorBgContainer,
-    "--cb-elevated": token.colorBgElevated,
-    "--cb-line": token.colorBorderSecondary,
-    "--cb-line-strong": token.colorBorder,
-    "--cb-fill": token.colorFillTertiary,
-    "--cb-ink": token.colorText,
-    "--cb-ink-2": token.colorTextSecondary,
-    "--cb-muted": token.colorTextTertiary,
-    "--cb-primary": token.colorPrimary,
-    "--cb-primary-soft": token.colorPrimaryBg,
-    "--cb-primary-line": token.colorPrimaryBorder,
-    "--cb-ok": token.colorSuccess,
-    "--cb-ok-soft": token.colorSuccessBg,
-    "--cb-warn": token.colorWarning,
-    "--cb-warn-ink": isDark ? token.colorWarning : token.colorWarningText,
-    "--cb-warn-soft": token.colorWarningBg,
-    "--cb-error": token.colorError,
-    "--cb-ai": ai,
-    "--cb-ai-soft": `color-mix(in srgb, ${ai} ${isDark ? 16 : 8}%, ${token.colorBgContainer})`,
-    "--cb-ai-line": `color-mix(in srgb, ${ai} ${isDark ? 40 : 35}%, ${token.colorBgContainer})`,
-    "--cb-lesson": token.colorPrimary,
-    "--cb-assignment": isDark ? "#ffa940" : "#fa8c16",
-    "--cb-quiz": ai,
-    "--cb-test": isDark ? "#ff7875" : "#f5222d",
-    "--cb-interactive": isDark ? "#36cfc9" : "#13c2c2",
-    "--cb-radius": `${token.borderRadius}px`,
-    "--cb-radius-lg": `${token.borderRadiusLG}px`,
-    "--cb-shadow": token.boxShadowTertiary,
-  } as React.CSSProperties;
-}

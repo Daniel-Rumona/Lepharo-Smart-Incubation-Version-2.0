@@ -11,7 +11,7 @@ export function portalLink(path: string, params: Record<string, string | number 
 /** Canonical destinations used by email templates */
 export const Links = {
   incubatee: () => portalLink("/incubatee"),
-  signedDocs: () => portalLink("/incubatee/documents/compliance"),
+  signedDocs: () => portalLink("/incubatee/compliance"),
   docsHub: () => portalLink("/incubatee/documents/hub"),
   interventions: () => portalLink("/consultant/allocated"),
 };

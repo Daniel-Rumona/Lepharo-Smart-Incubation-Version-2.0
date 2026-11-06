@@ -30,7 +30,7 @@ type Props = {
     periodLabel?: string
 }
 
-const displayValue = (value: number, loading?: boolean) => loading ? '...' : value
+const displayValue = (value: number, _loading?: boolean) => value
 
 export const buildInterventionDashboardMetrics = (
     metrics: InterventionMetricSummary,
@@ -45,18 +45,20 @@ export const buildInterventionDashboardMetrics = (
     return [
         {
             key: 'required',
+            loading,
             important: true,
-            icon: <FileDoneOutlined style={{ fontSize: 20, color: '#1677ff' }} />,
-            iconBg: 'transparent',
+            icon: <FileDoneOutlined style={{ fontSize: 20 }} />,
+            tone: 'accent',
             title: 'Required',
             value: displayValue(metrics.totalRequired, loading),
             subtitle: 'Standing program target'
         },
         {
             key: 'assigned',
+            loading,
             important: true,
-            icon: <ClockCircleOutlined style={{ fontSize: 20, color: '#d97706' }} />,
-            iconBg: 'transparent',
+            icon: <ClockCircleOutlined style={{ fontSize: 20 }} />,
+            tone: 'warning',
             title: 'Assigned',
             value: displayValue(metrics.assigned, loading),
             subtitle: inPeriod ? `Assigned ${inPeriod}` : undefined,
@@ -64,8 +66,9 @@ export const buildInterventionDashboardMetrics = (
         },
         {
             key: 'in-progress',
-            icon: <SyncOutlined style={{ fontSize: 20, color: '#722ed1' }} />,
-            iconBg: 'transparent',
+            loading,
+            icon: <SyncOutlined style={{ fontSize: 20 }} />,
+            tone: 'info',
             title: 'In Progress',
             value: displayValue(metrics.inProgress, loading),
             subtitle: inPeriod ? `In progress ${inPeriod}` : undefined,
@@ -73,8 +76,9 @@ export const buildInterventionDashboardMetrics = (
         },
         {
             key: 'completed',
-            icon: <CheckCircleOutlined style={{ fontSize: 20, color: '#16a34a' }} />,
-            iconBg: 'transparent',
+            loading,
+            icon: <CheckCircleOutlined style={{ fontSize: 20 }} />,
+            tone: 'success',
             title: 'Completed',
             value: displayValue(metrics.completed, loading),
             subtitle: inPeriod ? `Completed ${inPeriod}` : undefined,

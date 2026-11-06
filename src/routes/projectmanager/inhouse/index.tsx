@@ -18,6 +18,7 @@ import {
   Empty
 } from 'antd';
 import { db } from '@/firebase';
+import { isSmeRequest } from '@/lib/resourceRequests';
 import {
   collection,
   query,
@@ -90,7 +91,12 @@ const PurchaseDashboard: React.FC = () => {
       where('createdAt', '<=', Timestamp.fromDate(end.toDate()))
     );
     const unsubReq = onSnapshot(qReq, snap => {
-      setRequests(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // In-house purchases only; SME booking requests share the collection
+      setRequests(
+        snap.docs
+          .filter(d => !isSmeRequest(d.data()))
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+      );
     });
 
     const qInt = completedAssignedInterventionsQuery();

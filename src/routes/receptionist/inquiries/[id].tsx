@@ -10,15 +10,18 @@ import {
 } from '@ant-design/icons'
 import InquiryDetail, { type InquiryStatusAction } from '@/components/receptionist/InquiryDetail'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import RecordUnavailable from '@/components/shared/RecordUnavailable'
 
 const InquiryDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [statusAction, setStatusAction] = useState<InquiryStatusAction | null>(null)
+  // A missing or unreadable inquiry gets no Back/Edit header: the unavailable card has its own way out.
+  const [unavailable, setUnavailable] = useState(false)
   const isMobile = !Grid.useBreakpoint().md
 
   if (!id) {
-    return <div>Invalid inquiry ID</div>
+    return <RecordUnavailable noun='inquiry' reason='missing-id' back={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }} />
   }
 
   const handleEdit = () => {
@@ -31,6 +34,7 @@ const InquiryDetailPage: React.FC = () => {
 
   return (
     <div>
+      {!unavailable && (
       <MotionCard
         style={{ margin: '16px 24px 0' }}
         styles={{ body: { padding: isMobile ? 12 : '12px 20px' } }}
@@ -87,10 +91,17 @@ const InquiryDetailPage: React.FC = () => {
           </div>
         </div>
       </MotionCard>
+      )}
 
       {/* The app layout scrolls and clears the mobile bottom nav, so this just flows. */}
       <div style={{ padding: '24px' }}>
-        <InquiryDetail inquiryId={id} onEdit={handleEdit} onStatusAction={setStatusAction} />
+        <InquiryDetail
+        inquiryId={id}
+        onEdit={handleEdit}
+        onStatusAction={setStatusAction}
+        listPath={{ label: 'Back to inquiries', to: '/receptionist/inquiries' }}
+        onUnavailable={setUnavailable}
+      />
       </div>
     </div>
   )

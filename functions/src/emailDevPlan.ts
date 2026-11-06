@@ -2,15 +2,20 @@ import * as logger from "firebase-functions/logger";
 import { onRequest } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { suppressRecordNotifications } from "./syntheticData";
 import { buildSmmeDpReminderEmail } from "./emailHelpers";
 import { admin, db, getTransporter, getProgramName, getParticipantName, APP_BASE_URL, safeStr, getMERecipients, DevPlanEditRequestDoc } from "./emailShared";
 import { logBrevoSend, sendViaBrevo } from "./brevoClient";
+import { notifyInApp, uidForParticipant } from "./inAppNotifications";
+import { uidsForEmails } from "./movRecipients";
+import { BREVO_EGRESS } from "./config";
+import { departmentHasRole, loadDepartmentRoles, type DepartmentRoleKey } from "./departmentRoles";
 
 const normalizeEmail = (v: any) => (typeof v === "string" ? v.trim().toLowerCase() : "");
 const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
 
 export const remindSmmeDpConfirmation = onRequest(
-  { region: "us-central1", cors: true },
+  { ...BREVO_EGRESS, region: "us-central1", cors: true },
   (req, res) => {
     (async () => {
       let programId: string | undefined;
@@ -42,6 +47,9 @@ export const remindSmmeDpConfirmation = onRequest(
           .limit(1)
           .get();
         const appDoc = !q1.empty ? q1.docs[0].data() as any : null;
+        if (suppressRecordNotifications(appDoc) || suppressRecordNotifications({ programId, participantId })) {
+          return res.status(200).json({ ok: true, suppressed: true });
+        }
         const rawEmail = appDoc?.email || appDoc?.applicantEmail || appDoc?.participantEmail || "";
         email = normalizeEmail(rawEmail);
 
@@ -71,6 +79,14 @@ export const remindSmmeDpConfirmation = onRequest(
         });
 
         const { messageId } = await sendViaBrevo({ to: email, subject, html, text, tags: ["dev-plan-sme-reminder"] });
+        await notifyInApp({
+          type: "dev_plan_confirmation_reminder",
+          message: `${reminderFromDeptName} is waiting for you to confirm your development plan (${submittedCount}/${totalCount} departments confirmed).`,
+          recipientIds: [await uidForParticipant(participantId, email)],
+          participantId,
+          programId,
+          link: confirmUrl.slice(APP_BASE_URL.length),
+        });
         await logBrevoSend({
           type: "DEV_PLAN_SME_REMINDER",
           to: email,
@@ -120,25 +136,10 @@ export const remindSmmeDpConfirmation = onRequest(
   }
 );
 
-const SKIP_DEPTS = [
-  'M&E (Monitoring and Evaluation)',
-  'IHF (InHouse Finance)',
-  'ROM (Recruitment, Onboarding and Maintenance)',
-  'HRM (Human Resources Management)',
-  'HRM (Human Resources Management',
-  'Stakeholder Engagement',
-];
-
-interface DepartmentDoc {
-  name?: string;
-  departmentName?: string;
-  email?: string;
-  primaryEmail?: string;
-  secondaryEmail?: string;
-  [key: string]: unknown;
-}
+const SKIP_DEPT_ROLES: DepartmentRoleKey[] = ['monitoring', 'inhouseFinance', 'rom', 'hr', 'stakeholder'];
 
 interface DepartmentInfo {
+  id: string;
   name: string;
   emails: string[];
 }
@@ -153,39 +154,25 @@ interface PlanDocData {
   participantId?: string;
   programId?: string | null;
   finalConfirmation?: boolean;
-  confirmed?: Record<string, boolean>;
+  confirmedByDeptId?: Record<string, boolean>;
   [key: string]: unknown;
 }
 
-function normalizeDeptName(s: unknown): string {
-  return String(s ?? '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-}
-
-function isSkippedDepartment(name: string): boolean {
-  const norm = normalizeDeptName(name);
-  return SKIP_DEPTS.some((d) => normalizeDeptName(d) === norm);
-}
-
 async function loadAllDepartments(): Promise<DepartmentInfo[]> {
-  let q: FirebaseFirestore.Query = db.collection('departments');
-  const snap = await q.get();
+  const { roles, departments } = await loadDepartmentRoles();
   const out: DepartmentInfo[] = [];
-  snap.forEach((docSnap) => {
-    const data = docSnap.data() as DepartmentDoc;
-    const rawName = (data.departmentName || data.name || '').toString().trim();
-    if (!rawName) return;
-    if (isSkippedDepartment(rawName)) return;
+  for (const data of departments) {
+    const name = String(data.name || '').trim();
+    if (!name) continue;
+    if (SKIP_DEPT_ROLES.some((role) => departmentHasRole(data.id, role, roles, departments))) continue;
     const emailsSet = new Set<string>();
     const candidates = [data.email, data.primaryEmail, data.secondaryEmail].filter((v) => typeof v === 'string') as string[];
     candidates.forEach((e) => {
       const trimmed = e.trim();
       if (trimmed.includes('@')) emailsSet.add(trimmed);
     });
-    out.push({ name: rawName, emails: Array.from(emailsSet) });
-  });
+    out.push({ id: data.id, name, emails: Array.from(emailsSet) });
+  }
   return out;
 }
 
@@ -203,31 +190,9 @@ async function getParticipantMetaCached(participantId: string, cache: Map<string
   return meta;
 }
 
-function getPendingDepartmentsForPlan(plan: PlanDocData, departments: DepartmentInfo[]): string[] {
-  const confirmedMap = plan.confirmed || {};
-  const confirmedKeys = Object.keys(confirmedMap);
-  const pending: string[] = [];
-  for (const dept of departments) {
-    const deptNorm = normalizeDeptName(dept.name);
-    const isConfirmed = confirmedKeys.some(k => normalizeDeptName(k) === deptNorm);
-    if (!isConfirmed) pending.push(dept.name);
-  }
-  return pending;
-}
-
-function getDeptInfoLookup(departments: DepartmentInfo[]): Map<string, DepartmentInfo> {
-  const map = new Map<string, DepartmentInfo>();
-  departments.forEach(d => map.set(normalizeDeptName(d.name), d));
-  return map;
-}
-
-function buildDeptRecipients(deptName: string, info: DepartmentInfo | undefined): { email: string; name?: string }[] {
-  const recipientsSet = new Set<string>();
-  (info?.emails || []).forEach(e => recipientsSet.add(e));
-  const norm = normalizeDeptName(deptName);
-  if (norm.includes('monitoring') || norm.includes('m e')) recipientsSet.add('egar@lepharo.co.za');
-  if (norm.includes('rom') || norm.includes('recruitment')) recipientsSet.add('mel@lepharo.co.za');
-  return Array.from(recipientsSet).map(email => ({ email }));
+function getPendingDepartmentsForPlan(plan: PlanDocData, departments: DepartmentInfo[]): DepartmentInfo[] {
+  const confirmedMap = plan.confirmedByDeptId || {};
+  return departments.filter((dept) => !confirmedMap[dept.id]);
 }
 
 async function runDevPlanReminderOnce(triggerLabel: string, opts: { programId?: string | null }) {
@@ -238,24 +203,24 @@ async function runDevPlanReminderOnce(triggerLabel: string, opts: { programId?: 
   const departments = await loadAllDepartments();
   if (!departments.length) return { departmentsWithPending: 0, totalDeptEmails: 0, totalPendingAssignments: 0 };
 
-  const deptLookup = getDeptInfoLookup(departments);
   let plansQuery: FirebaseFirestore.Query = db.collection('diagnosticPlans');
   if (programId) plansQuery = plansQuery.where('programId', '==', programId);
   const plansSnap = await plansQuery.get();
   if (plansSnap.empty) return { departmentsWithPending: 0, totalDeptEmails: 0, totalPendingAssignments: 0 };
 
   const participantCache = new Map<string, ParticipantMeta>();
-  const pendingByDept = new Map<string, { participantId: string; beneficiaryName: string; programName: string }[]>();
+  const pendingByDept = new Map<string, { dept: DepartmentInfo; items: { participantId: string; beneficiaryName: string; programName: string }[] }>();
 
   for (const planDoc of plansSnap.docs) {
     const data = planDoc.data() as PlanDocData;
+    if (suppressRecordNotifications(data, planDoc.id)) continue;
     const participantId = String(data.participantId || planDoc.id);
     const meta = await getParticipantMetaCached(participantId, participantCache);
     const pendingDepartments = getPendingDepartmentsForPlan(data, departments);
     if (!pendingDepartments.length) continue;
-    for (const deptName of pendingDepartments) {
-      if (!pendingByDept.has(deptName)) pendingByDept.set(deptName, []);
-      pendingByDept.get(deptName)!.push({ participantId, beneficiaryName: meta.beneficiaryName, programName: meta.programName });
+    for (const dept of pendingDepartments) {
+      if (!pendingByDept.has(dept.id)) pendingByDept.set(dept.id, { dept, items: [] });
+      pendingByDept.get(dept.id)!.items.push({ participantId, beneficiaryName: meta.beneficiaryName, programName: meta.programName });
     }
   }
 
@@ -265,10 +230,10 @@ async function runDevPlanReminderOnce(triggerLabel: string, opts: { programId?: 
   let totalDeptEmails = 0;
   let totalPendingAssignments = 0;
 
-  for (const [deptName, items] of pendingByDept.entries()) {
+  for (const { dept, items } of pendingByDept.values()) {
+    const deptName = dept.name;
     totalPendingAssignments += items.length;
-    const info = deptLookup.get(normalizeDeptName(deptName));
-    const recipients = buildDeptRecipients(deptName, info);
+    const recipients = dept.emails.map(email => ({ email }));
     if (!recipients.length) continue;
 
     const subject = `Pending Developmental Plan confirmations – ${deptName}`;
@@ -302,7 +267,7 @@ async function runDevPlanReminderOnce(triggerLabel: string, opts: { programId?: 
     }
   }
 
-  const summaryRowsHtml = [...pendingByDept.entries()].map(([deptName, items]) => `
+  const summaryRowsHtml = [...pendingByDept.values()].map(({ dept: { name: deptName }, items }) => `
 <tr>
 <td style="padding:4px 8px;border-bottom:1px solid #eee">${deptName}</td>
 <td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${items.length}</td>
@@ -324,7 +289,7 @@ async function runDevPlanReminderOnce(triggerLabel: string, opts: { programId?: 
 </div>
 `;
   const summaryText = 'Pending Developmental Plan confirmations by department:\n' +
-    [...pendingByDept.entries()].map(([deptName, items]) => `- ${deptName}: ${items.length}`).join('\n') +
+    [...pendingByDept.values()].map(({ dept: { name: deptName }, items }) => `- ${deptName}: ${items.length}`).join('\n') +
     `\nTotal SME–department assignments pending: ${totalPendingAssignments}\nRegards,\nLepharo Smart Inc AI`;
 
   const summaryRecipients = ['mel@lepharo.co.za', 'daniel@quantilytix.co.za', 'egar@lepharo.co.za'];
@@ -395,6 +360,15 @@ export const onDevPlanEditRequestEmail = onDocumentWritten(
               { merge: true }
             );
             logger.info("onDevPlanEditRequestEmail.created_sent", { reqId, sentTo: meRecipients.length });
+            await notifyInApp({
+              type: "dev_plan_edit_requested",
+              message: `${safeStr(after.requesterName, "A department")} requested to edit the development plan for ${safeStr(participantName, "an SME")}.`,
+              recipientIds: await uidsForEmails(meRecipients),
+              devPlanEditRequestId: reqId,
+              participantId: after.participantId,
+              programId: after.programId,
+              link: "/operations/inquiries",
+            });
           }
         }
       }
@@ -425,6 +399,14 @@ export const onDevPlanEditRequestEmail = onDocumentWritten(
           requestId: reqId,
         });
         await transporter.sendMail({ from, to, subject: email.subject, html: email.html, text: email.text });
+        await notifyInApp({
+          type: `dev_plan_edit_${decision}`,
+          message: `Your development plan edit request for ${safeStr(participantName, "the SME")} was ${decision}.`,
+          recipientIds: [after.requesterUid || await uidsForEmails([to]).then((u) => u[0])],
+          devPlanEditRequestId: reqId,
+          participantId: after.participantId,
+          programId: after.programId,
+        });
         await event.data!.after!.ref.set(
           {
             notifications: {

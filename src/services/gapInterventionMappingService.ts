@@ -1,5 +1,5 @@
 import { getAuth } from 'firebase/auth'
-import { SECTION_ADAPTERS, SectionKey } from '@/routes/gap/sections'
+import { NOT_SCORED, SECTION_ADAPTERS, SectionKey, YES_IS_GAP } from '@/routes/gap/sections'
 
 const AI_BACKEND_URL = String(
     import.meta.env.VITE_AI_BACKEND_URL ||
@@ -23,7 +23,7 @@ export type GapMappingGap = {
 export type GapMappingIntervention = {
     id: string
     title: string
-    areaOfSupport: string
+    departmentId: string
 }
 
 export type GapMappingSection = {
@@ -72,7 +72,9 @@ export async function mapGapToInterventions(
             regenerate: !!options.regenerate,
             sections: sections.map(section => ({
                 section,
-                questions: SECTION_ADAPTERS[section]?.qText ?? []
+                questions: SECTION_ADAPTERS[section]?.qText ?? [],
+                yesIsGap: YES_IS_GAP[section] ?? [],
+                notScored: NOT_SCORED[section] ?? []
             }))
         })
     })

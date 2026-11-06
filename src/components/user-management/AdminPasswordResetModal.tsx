@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Modal, Form, Input, message } from 'antd'
 import { auth } from '@/firebase'
+import { functionsBaseUrl } from '@/firebaseConfig'
 
 interface AdminPasswordResetModalProps {
     visible: boolean
@@ -9,7 +10,7 @@ interface AdminPasswordResetModalProps {
 }
 
 
-const FUNCTIONS_BASE = `https://us-central1-lph-smart-inc.cloudfunctions.net`
+const FUNCTIONS_BASE = functionsBaseUrl
 const ENDPOINT = `${FUNCTIONS_BASE}/adminResetUserPassword`
 
 const AdminPasswordResetModal: React.FC<AdminPasswordResetModalProps> = ({

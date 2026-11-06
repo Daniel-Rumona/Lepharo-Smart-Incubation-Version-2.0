@@ -23,13 +23,16 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.complianceExpiryReminderCron = void 0;
+exports.complianceExpiryReminderCron = exports.loadComplianceContext = exports.assessComplianceDocuments = exports.outstandingComplianceForParticipant = void 0;
 const crypto = __importStar(require("crypto"));
 const logger = __importStar(require("firebase-functions/logger"));
 const scheduler_1 = require("firebase-functions/v2/scheduler");
+const syntheticData_1 = require("./syntheticData");
 const emailShared_1 = require("./emailShared");
 const brevoClient_1 = require("./brevoClient");
 const complianceExpiryInApp_1 = require("./complianceExpiryInApp");
+const config_1 = require("./config");
+const departmentRoles_1 = require("./departmentRoles");
 const EXPIRING_SOON_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const clean = (value) => String(value ?? "").trim();
@@ -72,11 +75,6 @@ function reminderPhase(daysUntilExpiry) {
         return "expiring-14-days";
     return "expiring-30-days";
 }
-function isRomDepartment(value) {
-    const department = lower(value).replace(/\s+/g, " ");
-    return department === "rom" || department.startsWith("rom ") ||
-        department.includes("recruitment, onboarding and maintenance");
-}
 function isActiveUser(user) {
     return !["inactive", "disabled", "deleted"].includes(lower(user?.status));
 }
@@ -97,13 +95,11 @@ function emailAddress(value) {
     return email.includes("@") ? email : "";
 }
 async function loadRecipientDirectory() {
-    const [departmentSnapshot, userSnapshot] = await Promise.all([
-        emailShared_1.db.collection("departments").get(),
+    const [romIds, userSnapshot] = await Promise.all([
+        (0, departmentRoles_1.departmentIdsForRole)("rom"),
         emailShared_1.db.collection("users").get(),
     ]);
-    const romDepartmentIds = new Set(departmentSnapshot.docs
-        .filter(item => isRomDepartment(item.data().name || item.data().departmentName))
-        .map(item => item.id));
+    const romDepartmentIds = new Set(romIds);
     return {
         romDepartmentIds,
         users: userSnapshot.docs,
@@ -121,9 +117,7 @@ function resolveRecipients(application, program, directory) {
         const user = snapshot.data();
         if (!isActiveUser(user))
             return;
-        const inRom = romDepartmentIds.has(clean(user.departmentId)) ||
-            isRomDepartment(user.departmentName || user.department);
-        if (!inRom)
+        if (!romDepartmentIds.has(clean(user.departmentId)))
             return;
         const role = lower(user.role);
         const isHod = role === "operations";
@@ -151,39 +145,62 @@ function resolveRecipients(application, program, directory) {
     // -- it does not change who gets emailed or when.
     return { staff: Array.from(recipients), staffUids: Array.from(recipientUids), smeEmail };
 }
-function configuredExpiry(document, program) {
-    const direct = asDate(document.expiryDate);
-    if (direct)
-        return direct;
-    const issueDate = asDate(document.issueDate);
-    if (!issueDate)
-        return null;
-    const key = documentKey(document);
-    const requirements = Array.isArray(program?.programRequirements)
-        ? program.programRequirements
-        : [];
-    const requirement = requirements.find((item) => {
-        const requirementKey = normalizeKey(item?.presetId || item?.preset || item?.key || item?.id || item?.title || item?.name);
-        return requirementKey === key;
-    });
-    const months = Number(requirement?.expiryMonths ?? requirement?.expiryRule?.months);
-    if (!requirement?.hasExpiry && !requirement?.expiryRule)
-        return null;
-    if (!Number.isFinite(months) || months <= 0)
-        return null;
-    const calculated = new Date(issueDate);
-    calculated.setMonth(calculated.getMonth() + months);
-    return calculated;
+// The programme's upload requirements, keyed like normalizeComplianceRequirement
+// in src/services/complianceResolver.ts. Department setups are subsets of this
+// list, so the programme list is what the SME is held to.
+function uploadRequirements(rows) {
+    return rows
+        .filter(row => lower(row?.kind || row?.type) !== "agreement" && !row?.agreementId)
+        .map(row => {
+        const hasExpiry = Boolean(row?.hasExpiry || row?.expiryRule);
+        const months = Number(row?.expiryMonths ?? row?.expiryRule?.months);
+        return {
+            key: normalizeKey(row?.presetId || row?.key || row?.preset || row?.id || row?.title || row?.name),
+            title: clean(row?.title || row?.name),
+            expiryMonths: hasExpiry && Number.isFinite(months) && months > 0 ? months : 0,
+        };
+    })
+        .filter(requirement => requirement.key);
 }
-function findDueDocuments(documents, now, program) {
-    const byKey = new Map();
-    documents.forEach(document => {
-        const key = documentKey(document);
-        if (key)
-            byKey.set(key, document);
-    });
-    return Array.from(byKey.entries()).flatMap(([key, document]) => {
-        const expiryDate = configuredExpiry(document, program);
+// Mirrors complianceEffectiveExpiry in the app: the validity period from the
+// issue date wins, otherwise the stored expiryDate. Months clamp to the last
+// day (31 Jan + 1 month = 28/29 Feb), as dayjs does on the staff page.
+function effectiveExpiry(document, requirement) {
+    const issueDate = asDate(document.issueDate);
+    if (requirement.expiryMonths > 0 && issueDate) {
+        const expiry = new Date(issueDate);
+        expiry.setDate(1);
+        expiry.setMonth(expiry.getMonth() + requirement.expiryMonths);
+        const lastDay = new Date(expiry.getFullYear(), expiry.getMonth() + 1, 0).getDate();
+        expiry.setDate(Math.min(issueDate.getDate(), lastDay));
+        return expiry;
+    }
+    return asDate(document.expiryDate);
+}
+function documentTime(document) {
+    return asDate(document?.updatedAt)?.getTime() ??
+        asDate(document?.createdAt)?.getTime() ??
+        asDate(document?.uploadedAt)?.getTime() ??
+        0;
+}
+// Documents that need replacing for another reason are handled by review, not
+// by expiry reminders.
+const NOT_REMINDED_STATUSES = ["missing", "invalid", "rejected", "queried"];
+function findDueDocuments(documents, now, requirements) {
+    return requirements.flatMap(requirement => {
+        // The newest upload for this requirement, matched on its key or its title;
+        // on a tie the subcollection copy beats the embedded one.
+        const document = documents
+            .filter(item => !item?.agreementId && (documentKey(item) === requirement.key ||
+            (requirement.title && normalizeKey(item?.type || item?.documentName || item?.title) === normalizeKey(requirement.title))))
+            .sort((a, b) => documentTime(b) - documentTime(a) ||
+            (b._subcollection ? 1 : 0) - (a._subcollection ? 1 : 0))[0];
+        if (!document)
+            return [];
+        if (NOT_REMINDED_STATUSES.includes(lower(document.status)))
+            return [];
+        const key = requirement.key;
+        const expiryDate = effectiveExpiry(document, requirement);
         if (!expiryDate)
             return [];
         const daysUntilExpiry = Math.ceil((startOfDay(expiryDate).getTime() - startOfDay(now).getTime()) / DAY_MS);
@@ -192,7 +209,7 @@ function findDueDocuments(documents, now, program) {
         const status = daysUntilExpiry < 0 ? "expired" : "expiring-soon";
         return [{
                 key,
-                title: documentTitle(document),
+                title: requirement.title || documentTitle(document),
                 expiryDate,
                 daysUntilExpiry,
                 status,
@@ -201,6 +218,135 @@ function findDueDocuments(documents, now, program) {
             }];
     });
 }
+/**
+ * Everything one SME still owes on compliance, as short lines for a reminder:
+ * requirements with no upload, uploads sent back for replacing, and documents
+ * that have expired or expire within 30 days. Used by the assistant's
+ * "send compliance reminder" action.
+ */
+async function outstandingComplianceForParticipant(participantId, now = new Date()) {
+    const [participantSnapshot, applicationsSnapshot] = await Promise.all([
+        emailShared_1.db.collection("participants").doc(participantId).get(),
+        emailShared_1.db.collection("applications").where("participantId", "==", participantId).get(),
+    ]);
+    const participant = participantSnapshot.exists ? participantSnapshot.data() : {};
+    const application = applicationsSnapshot.docs
+        .find(item => lower(item.data().applicationStatus) === "accepted");
+    if (!application)
+        return { participant, application: null, programId: null, programName: "", items: [] };
+    const data = application.data();
+    const programId = clean(data.programId);
+    const [programSnapshot, legacySnapshot, subcollection] = await Promise.all([
+        programId ? emailShared_1.db.collection("programs").doc(programId).get() : Promise.resolve(null),
+        programId ? emailShared_1.db.collection("programs").doc(programId).collection("requiredDocs").get() : Promise.resolve(null),
+        application.ref.collection("complianceDocuments").get(),
+    ]);
+    const program = programSnapshot?.exists ? programSnapshot.data() : {};
+    const rows = Array.isArray(program?.programRequirements) && program.programRequirements.length
+        ? program.programRequirements
+        : (legacySnapshot?.docs || []).map(item => {
+            const row = item.data();
+            return {
+                key: item.id,
+                title: row.title || item.id,
+                kind: row.type === "agreement" ? "agreement" : "upload",
+                hasExpiry: Boolean(row.expiryRule),
+                expiryMonths: row.expiryRule?.months ?? null,
+            };
+        });
+    const requirements = uploadRequirements(rows);
+    const embedded = Array.isArray(participant.complianceDocuments) && participant.complianceDocuments.length
+        ? participant.complianceDocuments
+        : Array.isArray(data.complianceDocuments) ? data.complianceDocuments : [];
+    const documents = [
+        ...embedded,
+        ...subcollection.docs.map(item => ({ id: item.id, ...item.data(), _subcollection: true })),
+    ];
+    const { items } = assessComplianceDocuments(documents, requirements, now);
+    return { participant, application: { id: application.id, ...data }, programId, programName: clean(program?.name || program?.title), items };
+}
+exports.outstandingComplianceForParticipant = outstandingComplianceForParticipant;
+/** Counts and reminder lines for one SME's documents against its programme's requirements. */
+function assessComplianceDocuments(documents, requirements, now) {
+    const counts = { missing: 0, queried: 0, rejected: 0, expired: 0 };
+    const items = [];
+    for (const requirement of requirements) {
+        const latest = documents
+            .filter(item => !item?.agreementId && (documentKey(item) === requirement.key ||
+            (requirement.title && normalizeKey(item?.type || item?.documentName || item?.title) === normalizeKey(requirement.title))))
+            .sort((a, b) => documentTime(b) - documentTime(a))[0];
+        const title = requirement.title || (latest ? documentTitle(latest) : requirement.key);
+        const status = lower(latest?.status);
+        if (!latest || status === "missing") {
+            counts.missing += 1;
+            items.push(`${title}: not uploaded yet`);
+            continue;
+        }
+        if (NOT_REMINDED_STATUSES.includes(status)) {
+            if (status === "queried")
+                counts.queried += 1;
+            else
+                counts.rejected += 1;
+            items.push(`${title}: needs to be uploaded again (${status})`);
+        }
+    }
+    for (const due of findDueDocuments(documents, now, requirements)) {
+        if (due.status === "expired")
+            counts.expired += 1;
+        items.push(due.status === "expired"
+            ? `${due.title}: expired on ${due.expiryDate.toISOString().slice(0, 10)}`
+            : `${due.title}: expires on ${due.expiryDate.toISOString().slice(0, 10)}`);
+    }
+    return { counts, items };
+}
+exports.assessComplianceDocuments = assessComplianceDocuments;
+/**
+ * Everything needed to assess every SME's compliance in one pass: programme
+ * requirements (with the legacy requiredDocs fallback) and the subcollection
+ * documents per application. Used by the nightly SME risk job.
+ */
+async function loadComplianceContext() {
+    const [complianceSnapshot, programSnapshot, legacyRequirementSnapshot] = await Promise.all([
+        emailShared_1.db.collectionGroup("complianceDocuments").get(),
+        emailShared_1.db.collection("programs").get(),
+        emailShared_1.db.collectionGroup("requiredDocs").get(),
+    ]);
+    const programs = new Map(programSnapshot.docs.map(item => [item.id, item.data()]));
+    const subcollectionDocuments = new Map();
+    complianceSnapshot.docs.forEach(snapshot => {
+        const applicationRef = snapshot.ref.parent.parent;
+        if (!applicationRef || applicationRef.parent.id !== "applications")
+            return;
+        const existing = subcollectionDocuments.get(applicationRef.id) || [];
+        existing.push({ id: snapshot.id, ...snapshot.data(), _subcollection: true });
+        subcollectionDocuments.set(applicationRef.id, existing);
+    });
+    const legacyRequirements = new Map();
+    legacyRequirementSnapshot.docs.forEach(snapshot => {
+        const programRef = snapshot.ref.parent.parent;
+        if (!programRef || programRef.parent.id !== "programs")
+            return;
+        const row = snapshot.data();
+        const existing = legacyRequirements.get(programRef.id) || [];
+        existing.push({
+            key: snapshot.id,
+            title: row.title || snapshot.id,
+            kind: row.type === "agreement" ? "agreement" : "upload",
+            hasExpiry: Boolean(row.expiryRule),
+            expiryMonths: row.expiryRule?.months ?? null,
+        });
+        legacyRequirements.set(programRef.id, existing);
+    });
+    const requirementsFor = (programId) => {
+        const program = programs.get(programId);
+        const rows = Array.isArray(program?.programRequirements) && program.programRequirements.length
+            ? program.programRequirements
+            : legacyRequirements.get(programId) || [];
+        return uploadRequirements(rows);
+    };
+    return { programs, subcollectionDocuments, requirementsFor };
+}
+exports.loadComplianceContext = loadComplianceContext;
 function notificationId(applicationId, document) {
     return crypto.createHash("sha256")
         .update([
@@ -228,7 +374,7 @@ function buildReminderContent(application, due) {
         return `${item.title} — ${label} (${date})`;
     });
     const staffUrl = `${emailShared_1.APP_BASE_URL.replace(/\/$/, "")}/compliance`;
-    const smeUrl = `${emailShared_1.APP_BASE_URL.replace(/\/$/, "")}/incubatee/documents/compliance`;
+    const smeUrl = `${emailShared_1.APP_BASE_URL.replace(/\/$/, "")}/incubatee/compliance`;
     const intro = [
         expired ? `${expired} document${expired === 1 ? " has" : "s have"} expired.` : "",
         expiring ? `${expiring} document${expiring === 1 ? " is" : "s are"} expiring within ${EXPIRING_SOON_DAYS} days.` : "",
@@ -259,6 +405,7 @@ function buildReminderContent(application, due) {
     };
 }
 exports.complianceExpiryReminderCron = (0, scheduler_1.onSchedule)({
+    ...config_1.BREVO_EGRESS,
     region: "us-central1",
     schedule: "0 7 * * *",
     timeZone: "Africa/Johannesburg",
@@ -266,10 +413,11 @@ exports.complianceExpiryReminderCron = (0, scheduler_1.onSchedule)({
     maxInstances: 1,
 }, async () => {
     const now = new Date();
-    const [applicationsSnapshot, complianceSnapshot, programSnapshot, participantSnapshot, recipientDirectory,] = await Promise.all([
+    const [applicationsSnapshot, complianceSnapshot, programSnapshot, legacyRequirementSnapshot, participantSnapshot, recipientDirectory,] = await Promise.all([
         emailShared_1.db.collection("applications").where("applicationStatus", "in", ["accepted", "Accepted"]).get(),
         emailShared_1.db.collectionGroup("complianceDocuments").get(),
         emailShared_1.db.collection("programs").get(),
+        emailShared_1.db.collectionGroup("requiredDocs").get(),
         emailShared_1.db.collection("participants").get(),
         loadRecipientDirectory(),
     ]);
@@ -281,21 +429,53 @@ exports.complianceExpiryReminderCron = (0, scheduler_1.onSchedule)({
         if (!applicationRef || applicationRef.parent.id !== "applications")
             return;
         const existing = subcollectionDocuments.get(applicationRef.id) || [];
-        existing.push({ id: snapshot.id, ...snapshot.data() });
+        existing.push({ id: snapshot.id, ...snapshot.data(), _subcollection: true });
         subcollectionDocuments.set(applicationRef.id, existing);
     });
+    // Older programmes only have the requiredDocs mirror, as the app's resolver
+    // falls back to.
+    const legacyRequirements = new Map();
+    legacyRequirementSnapshot.docs.forEach(snapshot => {
+        const programRef = snapshot.ref.parent.parent;
+        if (!programRef || programRef.parent.id !== "programs")
+            return;
+        const row = snapshot.data();
+        const existing = legacyRequirements.get(programRef.id) || [];
+        existing.push({
+            key: snapshot.id,
+            title: row.title || snapshot.id,
+            kind: row.type === "agreement" ? "agreement" : "upload",
+            hasExpiry: Boolean(row.expiryRule),
+            expiryMonths: row.expiryRule?.months ?? null,
+        });
+        legacyRequirements.set(programRef.id, existing);
+    });
+    const requirementsFor = (programId) => {
+        const program = programs.get(programId);
+        const rows = Array.isArray(program?.programRequirements) && program.programRequirements.length
+            ? program.programRequirements
+            : legacyRequirements.get(programId) || [];
+        return uploadRequirements(rows);
+    };
     let applicationsNotified = 0;
     let documentsNotified = 0;
     for (const applicationSnapshot of applicationsSnapshot.docs) {
         const application = applicationSnapshot.data();
-        const embedded = Array.isArray(application.complianceDocuments)
-            ? application.complianceDocuments
-            : [];
+        if ((0, syntheticData_1.suppressRecordNotifications)(application, applicationSnapshot.id))
+            continue;
+        // Embedded documents come from where the app reads them: the
+        // participant's array when it has entries, else the application's.
+        const participant = participants.get(clean(application.participantId)) || {};
+        const embedded = Array.isArray(participant.complianceDocuments) && participant.complianceDocuments.length
+            ? participant.complianceDocuments
+            : Array.isArray(application.complianceDocuments)
+                ? application.complianceDocuments
+                : [];
         const program = programs.get(clean(application.programId)) || {};
         const due = findDueDocuments([
             ...embedded,
             ...(subcollectionDocuments.get(applicationSnapshot.id) || []),
-        ], now, program);
+        ], now, requirementsFor(clean(application.programId)));
         if (!due.length)
             continue;
         const unsent = [];
@@ -308,7 +488,6 @@ exports.complianceExpiryReminderCron = (0, scheduler_1.onSchedule)({
         }
         if (!unsent.length)
             continue;
-        const participant = participants.get(clean(application.participantId)) || {};
         const recipientApplication = {
             ...application,
             email: application.email ||

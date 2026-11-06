@@ -167,7 +167,7 @@ const OperationsInquiriesPage: React.FC = () => {
     const myUid = (user as any)?.uid || null
 
     const isOps = role === 'operations'
-    const canSeeAll = new Set(['director', 'admin', 'superadmin', 'projectadmin']).has(role)
+    const canSeeAll = new Set(['director', 'system_admin', 'superadmin', 'projectadmin']).has(role)
 
     // filters
     const [statusFilter, setStatusFilter] = useState<ReqStatus | 'all'>('all')

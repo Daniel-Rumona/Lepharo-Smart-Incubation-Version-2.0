@@ -22,11 +22,13 @@ import isoWeek from 'dayjs/plugin/isoWeek'
 import { Helmet } from 'react-helmet'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import HighchartsMore from 'highcharts/highcharts-more'
-import HighchartsFunnel from 'highcharts/modules/funnel'
+import 'highcharts/highcharts-more'
+import 'highcharts/modules/funnel'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import {
     collection,
+    documentId,
     onSnapshot,
     query,
     where,
@@ -37,10 +39,9 @@ import { db } from '@/firebase'
 import { DashboardHeaderCard } from '@/components/dashboards/metrics/Header'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { filterReportRecords, loadReportVisibilityContext } from '@/utils/reportVisibility'
+import { formatterPoint } from '@/lib/highchartsTypes'
 
 dayjs.extend(isoWeek)
-if (typeof HighchartsMore === 'function') HighchartsMore(Highcharts)
-if (typeof HighchartsFunnel === 'function') HighchartsFunnel(Highcharts)
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -85,7 +86,7 @@ function getRange(tp: TimePeriod, custom?: [dayjs.Dayjs, dayjs.Dayjs] | null) {
 
 // ---------------- Types ----------------
 type ApplicationIntervention = {
-    area?: string
+    departmentId?: string
     status?: 'required' | 'assigned' | 'in_progress' | 'completed'
 }
 
@@ -129,7 +130,7 @@ type Participant = {
 type BucketItem = {
     id?: string
     title?: string
-    area?: string
+    departmentId?: string
 }
 
 type InterventionsBuckets = {
@@ -289,6 +290,7 @@ type CohortMode = 'accepted' | 'applied'
 
 const OperationsReports: React.FC = () => {
     const { user } = useFullIdentity()
+    const { nameOf } = useDepartmentRoles()
     const { activeProgramId } = useActiveProgramId()
 
     // Filters
@@ -570,13 +572,23 @@ const OperationsReports: React.FC = () => {
     const outstandingPieHasData = outstandingPieData.some(p => p.y > 0)
 
 
-    // Subscribe to participants by email (batched 'in' queries)
+    // Subscribe to participants by the apps' participantId (batched 'in' queries);
+    // apps without one are matched by email (email fallback until Phase 4,
+    // docs/sme-identity-migration-plan.md)
     useEffect(() => {
         const sourceApps =
             cohortMode === 'accepted' ? acceptedApps : timeFilteredApps
 
+        const ids = Array.from(
+            new Set(
+                sourceApps
+                    .map(a => String(a.participantId || '').trim())
+                    .filter(Boolean)
+            )
+        )
         const emailSet = new Set(
             sourceApps
+                .filter(a => !a.participantId)
                 .map(a =>
                     String((a as any).email || '')
                         .trim()
@@ -586,32 +598,34 @@ const OperationsReports: React.FC = () => {
         )
         const emails = Array.from(emailSet)
 
-        if (emails.length === 0) {
+        if (ids.length === 0 && emails.length === 0) {
             setParticipants([])
             return
         }
 
-        const batches: string[][] = []
+        const batches: { byId: boolean; values: string[] }[] = []
+        for (let i = 0; i < ids.length; i += 10) {
+            batches.push({ byId: true, values: ids.slice(i, i + 10) })
+        }
         for (let i = 0; i < emails.length; i += 10) {
-            batches.push(emails.slice(i, i + 10))
+            batches.push({ byId: false, values: emails.slice(i, i + 10) })
         }
 
         setParticipants([])
-        const accByEmail = new Map<string, any>()
+        const accById = new Map<string, any>()
         const unsubs = batches.map(batch => {
             const qy = query(
                 collection(db, 'participants'),
-                where('email', 'in', batch)
+                where(batch.byId ? documentId() : 'email', 'in', batch.values)
             )
             return onSnapshot(qy, snap => {
                 snap.docs.forEach(d => {
                     const data = d.data() as any
-                    const e = String(data.email || '').toLowerCase()
-                    if (e && filterReportRecords([{ id: d.id, ...data }], user?.email).length) {
-                        accByEmail.set(e, { id: d.id, ...data })
+                    if (filterReportRecords([{ id: d.id, ...data }], user?.email).length) {
+                        accById.set(d.id, { id: d.id, ...data })
                     }
                 })
-                setParticipants(Array.from(accByEmail.values()))
+                setParticipants(Array.from(accById.values()))
             })
         })
 
@@ -868,11 +882,7 @@ const OperationsReports: React.FC = () => {
         acceptedAppsFiltered.forEach(a => {
             const items = flattenBuckets(a.interventions as any)
             items.forEach(iv => {
-                const area = iv.area || iv.areaOfSupport || 'Unspecified'
-                if (iv.area) { }
-                else {
-                    console.log('No area:', iv)
-                }
+                const area = iv.departmentId || ''
                 if (!byArea[area]) {
                     byArea[area] = { required: 0, assigned: 0, completed: 0 }
                 }
@@ -888,15 +898,14 @@ const OperationsReports: React.FC = () => {
                 byArea[k].assigned > 0 ||
                 byArea[k].completed > 0
         )
-        console.log('Areas', areas)
 
         return {
-            areas,
+            areas: areas.map(k => nameOf(k, 'Unspecified')),
             required: areas.map(k => byArea[k].required),
             assigned: areas.map(k => byArea[k].assigned),
             completed: areas.map(k => byArea[k].completed)
         }
-    }, [acceptedAppsFiltered])
+    }, [acceptedAppsFiltered, nameOf])
 
     const funnelSeries = useMemo(() => {
         const submitted = timeFilteredApps.length
@@ -913,12 +922,12 @@ const OperationsReports: React.FC = () => {
             completedCount += toArray(b?.completed).length
         })
 
-        return [
+        return ([
             ['Applications Submitted', submitted],
             ['Accepted', Math.min(accepted, submitted)],
             ['Interventions Assigned', Math.min(assignedCount, accepted)],
             ['Interventions Completed', Math.min(completedCount, assignedCount)]
-        ].filter(([_, v]) => v > 0) as [string, number][]
+        ] as [string, number][]).filter(([, v]) => v > 0)
     }, [timeFilteredApps, acceptedAppsFiltered])
 
     // Ownership (participants cohort)
@@ -1019,7 +1028,7 @@ const OperationsReports: React.FC = () => {
                         formatter: function () {
                             // @ts-ignore
                             return this.point.y > 0
-                                ? `${this.point.name}: ${this.point.y}`
+                                ? `${formatterPoint(this).name}: ${formatterPoint(this).y}`
                                 : ''
                         }
                     }
@@ -1049,7 +1058,7 @@ const OperationsReports: React.FC = () => {
             }
         ],
         yAxis: {
-            title: { text: null },
+            title: { text: '' },
             labels: {
                 formatter() {
                     return Math.abs(Number(this.value)).toString()
@@ -1078,7 +1087,7 @@ const OperationsReports: React.FC = () => {
                         formatter: function () {
                             // @ts-ignore
                             return this.point.y > 0
-                                ? `${this.point.name}: ${this.point.y}`
+                                ? `${formatterPoint(this).name}: ${formatterPoint(this).y}`
                                 : ''
                         }
                     }
@@ -1106,7 +1115,7 @@ const OperationsReports: React.FC = () => {
                         formatter: function () {
                             // @ts-ignore
                             return this.point.y > 0
-                                ? `${this.point.name}: ${this.point.y}`
+                                ? `${formatterPoint(this).name}: ${formatterPoint(this).y}`
                                 : ''
                         }
                     }
@@ -1134,7 +1143,7 @@ const OperationsReports: React.FC = () => {
                         formatter: function () {
                             // @ts-ignore
                             return this.point.y > 0
-                                ? `${this.point.name}: ${this.point.y}`
+                                ? `${formatterPoint(this).name}: ${formatterPoint(this).y}`
                                 : ''
                         }
                     }
@@ -1154,7 +1163,7 @@ const OperationsReports: React.FC = () => {
             legend: { enabled: false },
             xAxis: {
                 categories: gapAnalysis.areas,
-                title: { text: 'Area of Support' }
+                title: { text: 'Department' }
             },
             yAxis: { min: 0, title: { text: 'Interventions' } },
             tooltip: { shared: true },
@@ -1165,7 +1174,7 @@ const OperationsReports: React.FC = () => {
                     dataLabels: {
                         enabled: true,
                         crop: false,
-                        overflow: 'none',
+                        overflow: 'allow',
                         style: { textOutline: 'none', fontWeight: '700' }
                     }
                 }

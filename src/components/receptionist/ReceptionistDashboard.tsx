@@ -232,8 +232,7 @@ const ReceptionistDashboard: React.FC = () => {
                             clean(
                                 data.interventionTitle ||
                                 data.sessionTitle ||
-                                data.title ||
-                                data.areaOfSupport
+                                data.title
                             ) || 'Appointment',
                         date,
                         startTime: clean(data.startTime || data.time) || undefined,

@@ -5,10 +5,11 @@ import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
 import { REPORT_CHART_COLORS, REPORT_CHART_PALETTE } from "./reportChartTheme";
 import { buildReachMonthlyDrilldownOptions } from "./reachDrilldownOptions";
+import { useDepartmentRoles } from "@/services/departmentRoles";
 
 export type ReachIntervention = {
     participantId?: string | null;
-    areaOfSupport?: string | null;
+    departmentId?: string | null;
     interventionTitle?: string | null;
     createdAt?: unknown;
     updatedAt?: unknown;
@@ -145,22 +146,23 @@ export const ReachReportsPanel: React.FC<Props> = ({
     participants,
     emptyDescription = "No reach data in selected range",
 }) => {
+    const { nameOf } = useDepartmentRoles();
     const [department, setDepartment] = useState("all");
     const [intervention, setIntervention] = useState("all");
 
     const departments = useMemo(
         () =>
-            Array.from(
-                new Set(interventions.map((row) => label(row.areaOfSupport, "Other")))
-            ).sort(),
-        [interventions]
+            Array.from(new Set(interventions.map((row) => row.departmentId || "")))
+                .map((value) => ({ value, label: nameOf(value, "Other") }))
+                .sort((a, b) => a.label.localeCompare(b.label)),
+        [interventions, nameOf]
     );
     const departmentRows = useMemo(
         () =>
             department === "all"
                 ? interventions
                 : interventions.filter(
-                    (row) => label(row.areaOfSupport, "Other") === department
+                    (row) => (row.departmentId || "") === department
                 ),
         [department, interventions]
     );
@@ -325,7 +327,7 @@ export const ReachReportsPanel: React.FC<Props> = ({
             },
         ],
         yAxis: {
-            title: { text: null },
+            title: { text: '' },
             labels: {
                 formatter: function () {
                     return Math.abs(Number(this.value)).toString();
@@ -380,7 +382,7 @@ export const ReachReportsPanel: React.FC<Props> = ({
         intervention !== "all"
             ? intervention
             : department !== "all"
-                ? department
+                ? nameOf(department, "Other")
                 : "All interventions";
 
     return (
@@ -396,7 +398,7 @@ export const ReachReportsPanel: React.FC<Props> = ({
                         }}
                         options={[
                             { label: "All departments", value: "all" },
-                            ...departments.map((value) => ({ label: value, value })),
+                            ...departments,
                         ]}
                     />
                     <Select

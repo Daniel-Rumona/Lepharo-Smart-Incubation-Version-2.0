@@ -74,7 +74,7 @@
   border-bottom: 1px solid var(--course-border);
 }
 .course-extract-preview {
-  border: 1px solid var(--course-border, #f0f0f0);
+  border: 1px solid var(--course-border, var(--app-border));
   border-radius: 10px;
   overflow: hidden;
 }
@@ -83,7 +83,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--course-border, #f0f0f0);
+  border-bottom: 1px solid var(--course-border, var(--app-border));
 }
 .course-extract-preview-body {
   max-height: 180px;
@@ -103,7 +103,7 @@
   align-items: flex-start;
   gap: 10px;
   padding: 8px 10px;
-  border: 1px solid var(--course-border, #f0f0f0);
+  border: 1px solid var(--course-border, var(--app-border));
   border-radius: 8px;
   cursor: pointer;
 }
@@ -303,7 +303,9 @@
 }
 .course-repository-row-details {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
   min-height: 40px;
   padding-left: 18px;
   border-left: 0;
@@ -311,21 +313,18 @@
   font-size: 13px;
 }
 .course-repository-row-details .ant-space {
-  width: 100%;
-  justify-content: space-between;
-  gap: 8px !important;
+  flex-shrink: 0;
+  gap: 6px !important;
 }
 .course-repository-row-details .ant-space-item {
-  flex: 1;
-  padding: 7px 12px;
+  padding: 3px 9px;
   border: 1px solid var(--repo-border);
   border-radius: 9px;
-  background: var(--repo-subtle);
-  text-align: center;
+  background: transparent;
 }
-.course-repository-row-details .ant-space-item:first-child {
-  padding-left: 12px;
-  border-left: 1px solid var(--repo-border);
+.course-repository-row-recovery {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .course-repository-row-details .anticon {
   color: var(--repo-accent);
@@ -337,14 +336,6 @@
   justify-content: flex-end;
   gap: 8px;
   white-space: nowrap;
-}
-.course-repository-row-actions .ant-btn {
-  height: 34px;
-  padding-inline: 13px;
-}
-.course-repository-row-actions .ant-btn-circle {
-  width: 34px;
-  padding-inline: 0;
 }
 @media (max-width: 1100px) {
   .course-repository-row-content {

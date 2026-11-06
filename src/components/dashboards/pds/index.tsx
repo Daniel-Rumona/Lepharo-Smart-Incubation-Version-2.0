@@ -52,6 +52,7 @@ import {
     assignmentAssignedDate
 } from '@/services/assignmentLifecycleService'
 import { loadInterventionMetrics, type InterventionMetricSummary } from '@/services/interventionMetricsService'
+import { formatterPoint } from '@/lib/highchartsTypes'
 
 if (!(dayjs as any).prototype.isBetween) dayjs.extend(isBetween)
 
@@ -232,10 +233,7 @@ const PDSDashboard: React.FC = () => {
                 const metrics = await loadInterventionMetrics({
                     programId: activeProgramId,
                     assignedFilters: { departmentId: user.departmentId },
-                    requiredMatches: entry =>
-                        String(entry.departmentId || '') === String(user.departmentId) ||
-                        String(entry.areaOfSupport || entry.area || '').trim().toLowerCase() ===
-                        String(user.departmentName || '').trim().toLowerCase()
+                    requiredMatches: entry => String(entry.departmentId || '') === String(user.departmentId)
                 })
                 setInterventionMetrics(metrics)
             } catch (error) {
@@ -251,7 +249,7 @@ const PDSDashboard: React.FC = () => {
         }
 
         run()
-    }, [user?.departmentId, user?.departmentName, activeProgramId])
+    }, [user?.departmentId, activeProgramId])
 
     // ---------- Appointments (feeds the upcoming-appointments card + calendar) ----------
     useEffect(() => {
@@ -384,7 +382,7 @@ const PDSDashboard: React.FC = () => {
 
     const labelStyle = {
         color: '#111111',
-        fontWeight: 600 as const,
+        fontWeight: '600',
         textOutline: 'none' as const
     }
 
@@ -461,13 +459,14 @@ const PDSDashboard: React.FC = () => {
                     enabled: true,
                     distance: 12,
                     style: labelStyle,
+                    // Label connector lines are a data-label option now.
+                    connectorColor: '#999',
                     formatter: function () {
-                        const p = this.point as Highcharts.Point
+                        const p = formatterPoint(this)
                         return `${p.name}: ${p.y}`
                     }
                 },
-                showInLegend: true,
-                connectorColor: '#999'
+                showInLegend: true
             }
         },
         series: [

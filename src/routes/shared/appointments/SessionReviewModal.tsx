@@ -19,7 +19,7 @@ import isBetween from 'dayjs/plugin/isBetween'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 
-import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import SessionReviewStory from './SessionReviewStory'
 import { getCoverageReviewPhotos } from '@/lib/coveragePhotos'
 import CoveragePhotoGallery from '@/components/appointments/CoveragePhotoGallery'
@@ -142,12 +142,16 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
 
     const rangeLabel = `${dateRange[0].format('MMM D, YYYY')} — ${dateRange[1].format('MMM D, YYYY')}`
 
-    const rows = useMemo(() => {
+    const inRange = useMemo(() => {
         return groupedDisplayAppointments.filter(row => {
             const d = dayjs(row.date, 'YYYY-MM-DD')
             return d.isValid() && d.isBetween(activeRange.start, activeRange.end, 'day', '[]')
         })
     }, [groupedDisplayAppointments, activeRange])
+    const isCalledOff = (row: any) => ['cancelled', 'postponed'].includes(derivedStatus(row))
+    // The report is about sessions that took place, or should have.
+    const rows = useMemo(() => inRange.filter(row => !isCalledOff(row)), [inRange]) // eslint-disable-line react-hooks/exhaustive-deps
+    const cancelledCount = inRange.length - rows.length
 
     const upcoming = useMemo(() => {
         return groupedDisplayAppointments
@@ -209,6 +213,8 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
             .sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic))
 
         const attendanceRate = invited ? Math.round((attended / invited) * 100) : 0
+        // Ended, but nobody has recorded what happened.
+        const needsCoverage = rows.filter(row => derivedStatus(row) === 'awaiting_coverage').length
 
         return {
             rows,
@@ -219,6 +225,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
             invitedInstances,
             attendedInstances,
             attendanceRate,
+            needsCoverage,
             deliveryCounts,
             coveredItems,
             photos: getCoverageReviewPhotos(rows)
@@ -307,9 +314,10 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
 
     return (
         <Modal
+ wrapClassName="mobile-sheet"
             className='guide-session-review-modal'
             centered
-            title='Session Review'
+            title='Session review'
             open={open}
             onCancel={onClose}
             width={isFullscreen ? '96vw' : 900}
@@ -389,6 +397,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                             </Space.Compact>
                             <Button
                                 icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                                aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
                                 onClick={() => setIsFullscreen(v => !v)}
                             />
                         </Space>
@@ -406,38 +415,46 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                     <>
                         <Row data-guide='session-review-metrics' gutter={[8, 8]}>
                             <Col xs={12} md={6}>
-                                <MotionCard.Metric
-                                    title='Sessions Held'
-                                    value={`${reviewData.held}/${reviewData.sessions}`}
-                                    icon={<CheckCircleOutlined style={{ color: '#1677ff' }} />}
-                                    iconBg='rgba(22,119,255,.1)'
+                                <MetricTile
+                                    title='Sessions held'
+                                    value={`${reviewData.held} of ${reviewData.sessions}`}
+                                    icon={<CheckCircleOutlined />}
+                                    tone='info'
                                 />
                             </Col>
                             <Col xs={12} md={6}>
-                                <MotionCard.Metric
-                                    title='SMEs Invited'
-                                    value={`${reviewData.invited}/${reviewData.invitedInstances}`}
-                                    icon={<TeamOutlined style={{ color: '#722ed1' }} />}
-                                    iconBg='rgba(114,46,209,.1)'
+                                <MetricTile
+                                    title='SMEs invited'
+                                    value={reviewData.invited}
+                                    icon={<TeamOutlined />}
+                                    tone='info'
                                 />
                             </Col>
                             <Col xs={12} md={6}>
-                                <MotionCard.Metric
-                                    title='SMEs Attended'
-                                    value={`${reviewData.attended}/${reviewData.attendedInstances}`}
-                                    icon={<UserOutlined style={{ color: '#16a34a' }} />}
-                                    iconBg='rgba(22,163,74,.1)'
+                                <MetricTile
+                                    title='SMEs who attended'
+                                    value={reviewData.attended}
+                                    icon={<UserOutlined />}
+                                    tone='success'
                                 />
                             </Col>
                             <Col xs={12} md={6}>
-                                <MotionCard.Metric
-                                    title='Attendance Rate'
+                                <MetricTile
+                                    title='Attendance rate'
                                     value={`${reviewData.attendanceRate}%`}
-                                    icon={<PercentageOutlined style={{ color: '#d97706' }} />}
-                                    iconBg='rgba(217,119,6,.1)'
+                                    icon={<PercentageOutlined />}
+                                    tone='warning'
                                 />
                             </Col>
                         </Row>
+                        {(reviewData.needsCoverage > 0 || cancelledCount > 0) && (
+                            <Text type='secondary' className='ap-review-note'>
+                                {[
+                                    reviewData.needsCoverage ? `${reviewData.needsCoverage} ended session${reviewData.needsCoverage === 1 ? '' : 's'} still need${reviewData.needsCoverage === 1 ? 's' : ''} coverage.` : null,
+                                    cancelledCount ? `${cancelledCount} cancelled or postponed session${cancelledCount === 1 ? ' is' : 's are'} left out.` : null
+                                ].filter(Boolean).join(' ')}
+                            </Text>
+                        )}
 
                         <Row data-guide='session-review-insights' gutter={[12, 12]}>
                             <Col xs={24} lg={12}>
@@ -488,7 +505,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                                 <Card
                                                     key={row.id}
                                                     size='small'
-                                                    style={{ borderRadius: 12, background: '#fafafa' }}
+                                                    style={{ borderRadius: 12, background: 'var(--app-surface-sunken)' }}
                                                 >
                                                     <Space direction='vertical' size={10} style={{ width: '100%' }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
@@ -505,6 +522,8 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                                                     {dayjs(row.date).format('YYYY-MM-DD')}
                                                                 </Tag>
                                                                 <Tag>{meta?.label || row.deliveryMethod}</Tag>
+                                                                {derivedStatus(row) === 'awaiting_coverage' ? <Tag color='gold'>Needs coverage</Tag> : null}
+                                                                {latest?.held === false ? <Tag color='red'>Not held</Tag> : null}
                                                             </Space>
                                                         </div>
 
@@ -522,8 +541,8 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
 
                                                         <Text style={{ fontSize: 13 }}>
                                                             {latest?.held === false
-                                                                ? 'Session not held: ' + (latest.reasonNotHeld || 'No reason recorded.')
-                                                                : latest?.notes || points.join('; ') || 'No coverage summary captured.'}
+                                                                ? 'Not held: ' + (latest.reasonNotHeld || 'no reason recorded.')
+                                                                : latest?.notes || points.join('; ') || (derivedStatus(row) === 'awaiting_coverage' ? 'Ended — coverage not recorded yet.' : 'Not held yet.')}
                                                         </Text>
                                                         {latest?.notes && points.length ? (
                                                             <Space wrap>
@@ -540,7 +559,7 @@ const SessionReviewModal: React.FC<SessionReviewModalProps> = ({
                                         })}
                                     </Space>
                                 ) : (
-                                    <Empty description='No sessions were recorded in this period.' />
+                                    <Empty description='No sessions in this period.' />
                                 )}
                             </Card>
                         </div>

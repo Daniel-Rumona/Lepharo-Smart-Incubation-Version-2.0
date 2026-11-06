@@ -1,14 +1,14 @@
 /* ============================================================================
    Accent themes
    ----------------------------------------------------------------------------
-   The app ships three accent palettes — Blue (the default), Ocean (teal) and
-   Violet (purple) — each with its own light and dark variant, selected
-   independently of light/dark mode via html[data-accent="…"].
+   The app ships four accent palettes — Crimson (the Lepharo brand red, and
+   the default), Blue, Ocean (teal) and Violet (purple) — each with its own
+   light and dark variant, selected independently of light/dark mode via
+   html[data-accent="…"].
 
    Blue is not defined here: its values are the baseline tokens already set in
-   styles/dark-mode.css (:root for light, html[data-theme="dark"] for dark), so
-   an unthemed accent renders exactly as the app always has. This file only
-   supplies the deltas for Ocean and Violet.
+   styles/dark-mode.css (:root for light, html[data-theme="dark"] for dark).
+   This file supplies the deltas for Crimson, Ocean and Violet.
 
    Loaded after dark-mode.css. Each rule below pairs a data-theme selector with
    a data-accent selector, so specificity (two attributes vs. one) wins over the
@@ -79,5 +79,38 @@ html[data-theme="dark"][data-accent="violet"] {
     --app-accent-active-bg: rgba(167, 139, 250, 0.22);
     --app-accent-glow: rgba(167, 139, 250, 0.18);
     --app-accent-glow-strong: rgba(167, 139, 250, 0.22);
+    /* --app-accent-contrast stays #ffffff — see the Ocean block above. */
+}
+
+/* ---------------------------------------------------------------------------
+   Crimson — the Lepharo brand red, and the default accent. Matches the
+   landing page and the sign-in screens.
+   ------------------------------------------------------------------------- */
+
+html[data-accent="crimson"] {
+    --app-accent: #c8102e;
+    --app-accent-strong: #a60d26;
+    --app-accent-deep: #9e0c24;
+    --app-accent-wash: #fff3f4;
+    --app-accent-soft: #fde8ea;
+    --app-accent-border: #f5c4ca;
+    --app-accent-border-strong: #ec8b97;
+    --app-accent-active-bg: #ffffff;
+    --app-accent-glow: rgba(200, 16, 46, 0.08);
+    --app-accent-glow-strong: rgba(200, 16, 46, 0.1);
+    --app-accent-contrast: #ffffff;
+}
+
+html[data-theme="dark"][data-accent="crimson"] {
+    --app-accent: #f0475a;
+    --app-accent-strong: #ff7a86;
+    --app-accent-deep: #c8102e;
+    --app-accent-wash: rgba(240, 71, 90, 0.1);
+    --app-accent-soft: rgba(240, 71, 90, 0.14);
+    --app-accent-border: rgba(240, 71, 90, 0.35);
+    --app-accent-border-strong: rgba(240, 71, 90, 0.55);
+    --app-accent-active-bg: rgba(240, 71, 90, 0.22);
+    --app-accent-glow: rgba(240, 71, 90, 0.18);
+    --app-accent-glow-strong: rgba(240, 71, 90, 0.22);
     /* --app-accent-contrast stays #ffffff — see the Ocean block above. */
 }

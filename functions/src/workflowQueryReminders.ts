@@ -1,5 +1,6 @@
 import * as logger from "firebase-functions/logger";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { suppressRecordNotifications } from "./syntheticData";
 import { admin, db } from "./emailShared";
 import { moderateCadencePhase } from "./reminderCadence";
 
@@ -37,6 +38,7 @@ export const workflowQueryReminderCron = onSchedule(
 
     for (const querySnap of snapshot.docs) {
       const query = querySnap.data() as any;
+      if (suppressRecordNotifications(query, querySnap.id)) continue;
       const anchor = asDate(query.lastReminderAt) || asDate(query.createdAt);
       if (!anchor) continue;
 
@@ -53,8 +55,8 @@ export const workflowQueryReminderCron = onSchedule(
 
       await db.collection("notifications").add({
         type: "workflow-query-reminder",
-        message: { [resolverRole]: "Reminder: an open query needs your response." },
-        recipientRoles: [resolverRole],
+        message: "Reminder: an open query needs your response.",
+        resolverRole,
         recipientIds: [resolverId],
         workflowQueryId: querySnap.id,
         programId: query.programId || null,

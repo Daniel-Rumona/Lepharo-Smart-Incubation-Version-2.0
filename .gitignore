@@ -43,3 +43,4 @@ src/serviceAccountKey.json
 *.zip
 smart-inc-whatsapp-work/
 outputs/
+scripts/oldServiceAccountKey.json

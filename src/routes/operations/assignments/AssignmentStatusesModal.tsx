@@ -332,6 +332,7 @@ export const AssignmentStatusesModal: React.FC<
 
         return (
             <Modal
+ wrapClassName="mobile-sheet"
                 title="Assignment Statuses"
                 open={open}
                 onCancel={onClose}

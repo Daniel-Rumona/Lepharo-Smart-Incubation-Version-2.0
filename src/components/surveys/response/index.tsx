@@ -48,7 +48,7 @@ import {
 import SurveyQuestionFrame, {
     findSectionLabel
 } from '@/components/surveys/shared/SurveyQuestionFrame'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { roundBtn } from '@/components/shared/StyledButton'
 import { Helmet } from 'react-helmet'
@@ -687,7 +687,7 @@ const RespondSurvey: React.FC = () => {
     // Render
     // ─────────────────────────────────────────────────────────────
     if (loading) {
-        return <LoadingOverlay tip='Loading questions' />
+        return <PageSkeleton variant='single' />
     }
 
     if (!sentSurvey && !template) {

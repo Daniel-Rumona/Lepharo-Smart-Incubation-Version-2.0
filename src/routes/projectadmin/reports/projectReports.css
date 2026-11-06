@@ -1,0 +1,132 @@
+/* Project admin reports: the bar under the title (tabs, period, Filters, Play). */
+
+.pr-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    min-width: 0;
+}
+
+.pr-tabs {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+/* Above phone width everything stays on one line: the tabs scroll and the
+   scope stacks before anything wraps to a second row. */
+@media (min-width: 641px) {
+    .pr-bar {
+        flex-wrap: nowrap;
+    }
+
+    .pr-bar > * {
+        flex-shrink: 0;
+    }
+
+    .pr-bar > .pr-tabs,
+    .pr-bar > .pr-scope {
+        flex-shrink: 1;
+        min-width: 0;
+    }
+
+    .pr-bar > .pr-scope {
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 2px;
+    }
+}
+
+@media (min-width: 1600px) {
+    .pr-bar > .pr-scope {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px 16px;
+    }
+}
+
+/* Laptop widths: tighter tabs, icons dropped, so the bar fits on one line. */
+@media (min-width: 641px) and (max-width: 1500px) {
+    .pr-tabs .ant-segmented-item-label {
+        padding: 0 8px;
+    }
+
+    .pr-tabs .ant-segmented-item-icon {
+        display: none;
+    }
+
+    .pr-tabs .ant-segmented-item-icon + * {
+        margin-inline-start: 0;
+    }
+}
+
+/* What the open tab shows: the period (set in the topbar) and its filters. */
+.pr-scope {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px 16px;
+    margin-left: auto;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--app-text);
+}
+
+.pr-scope-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.pr-scope-label {
+    color: var(--app-text-muted);
+}
+
+/* A filter in use: highlighted, with a clear button. */
+.pr-scope-item.is-active {
+    padding: 2px 4px 2px 10px;
+    font-weight: 600;
+    color: var(--app-accent);
+    background: var(--app-accent-wash);
+    border: 1px solid var(--app-accent-border);
+    border-radius: 999px;
+}
+
+.pr-scope-item.is-active .pr-scope-label {
+    font-weight: 400;
+}
+
+.pr-scope-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    font-size: 10px;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.pr-scope-clear:hover {
+    background: var(--app-accent-border);
+}
+
+.pr-scope-clear:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 1px;
+}
+
+@media (max-width: 640px) {
+    .pr-bar > .pr-scope {
+        flex-basis: 100%;
+        justify-content: flex-start;
+        margin-left: 0;
+        order: -1;
+    }
+}

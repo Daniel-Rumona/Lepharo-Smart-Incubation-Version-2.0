@@ -76,6 +76,8 @@ export type SMERow = {
     programId?: string
 
     smeName: string
+    /** The SME's profile photo or logo, when one is stored. */
+    photoUrl?: string
     ownerName?: string
     currentGroup?: string
     status?: string
@@ -95,6 +97,8 @@ export type SMERow = {
     expectedDepartmentsCount: number
     servicedDepartmentsCount: number
     missingDepartmentsCount: number
+    /** Departments (in view) that haven't confirmed the plan or assigned anything: staff delays, not SME risk. */
+    staffDelayDepartments: string[]
     deptConfirmedCount: number
     smmeConfirmedCount: number
     fullyConfirmedDepartmentsCount: number
@@ -110,28 +114,29 @@ export type SMERow = {
 
     lastInterventionDate: Date | null
     daysSinceLastService: number | null
+    /** Days between services the SME's recurring support expects; null without recurring support. */
+    expectedServiceIntervalDays: number | null
     inactivityBucket: InactivityBucket
 
     riskScore: number
     riskLevel: RiskLevel
-    riskBreakdown: { label: string; delta: number }[]
+    riskBreakdown: { label: string; delta: number; key?: RiskDriverKey }[]
+    /** What the score was worked out from (smeRiskLogic RiskScoreInputs), for the simulation. */
+    riskInputs: RiskScoreInputs
+    /** When the nightly snapshot that supplied the non-live signals was made; null without one. */
+    snapshotComputedAt: Date | null
+    /** Daily scores from the nightly snapshot, oldest first (up to 12). */
+    scoreHistory: { date: string; score: number; level: RiskLevel }[]
     notes: string[]
     noServiceReasons: string[]
     hasAccessedSystem: boolean
     lastSystemAccessDate: Date | null
 }
 
-export type RiskScoreInputs = {
-    daysSinceLastService: number | null
-    hasNeverReceivedService: boolean
-    docsMissing: number
-    docsQueried: number
-    docsRejected: number
-    missingDepartmentsCount: number
-    smePendingAcceptanceCount: number
-    smePendingConfirmationCount: number
-    declinedTouches: number
-}
+// The shared inputs, so the register and the nightly early-warning job score the same way.
+export type { RiskScoreInputs } from '../../../../../../functions/src/smeRiskLogic'
+import type { RiskDriverKey, RiskScoreInputs } from '../../../../../../functions/src/smeRiskLogic'
+export type { RiskDriverKey }
 
 export type RiskScoreResult = {
     score: number

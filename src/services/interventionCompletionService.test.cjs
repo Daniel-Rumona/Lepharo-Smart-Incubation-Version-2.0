@@ -12,12 +12,13 @@ function compile(name, overrides = {}) {
     const original = compiled.require.bind(compiled)
     compiled.require = id => Object.hasOwn(overrides, id) ? overrides[id] : original(id)
     compiled._compile(ts.transpileModule(readFileSync(path, 'utf8'), {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true }
     }).outputText, path)
     return compiled.exports
 }
 const lifecycle = compile('assignmentLifecycleService')
-const recurrence = compile('interventionRecurrenceService')
+const schedule = compile('../lib/recurrence')
+const recurrence = compile('interventionRecurrenceService', { '@/lib/recurrence': schedule })
 const base = (id = 'one', patch = {}) => ({
     id, participantId: `sme-${id}`, interventionId: 'definition', programId: 'program',
     departmentId: 'department', assigneeId: 'coordinator', assigneeRole: 'coordinator',
@@ -45,6 +46,7 @@ function fixture(rows = [base()], options = {}) {
         doc, getDoc: async reference => snapshot(reference),
         Timestamp: { now: () => new Date('2026-08-28T12:00:00Z') },
         arrayUnion: (...values) => ({ _arrayUnion: values }),
+        deleteField: () => ({ _delete: true }),
         runTransaction: async (_, operation) => {
             transactionCount++
             if (transactionCount === 1 && options.beforeSave) options.beforeSave(documents)
@@ -58,7 +60,8 @@ function fixture(rows = [base()], options = {}) {
                 if (update) assert.ok(documents.has(reference.path), `update target exists: ${reference.path}`)
                 const previous = documents.get(reference.path) || {}, next = { ...previous }
                 for (const [key, value] of Object.entries(patch)) {
-                    if (value?._arrayUnion) {
+                    if (value?._delete) delete next[key]
+                    else if (value?._arrayUnion) {
                         next[key] = [...new Map([...(previous[key] || []), ...value._arrayUnion].map(item => [JSON.stringify(item), item])).values()]
                     } else next[key] = value
                 }
@@ -78,6 +81,7 @@ function fixture(rows = [base()], options = {}) {
         '@/config/evidencePolicy': { USE_SENSITIVE_DEPARTMENT_SUMMARY_INSTEAD_OF_POE: !!options.summaryPolicy },
         './assignmentLifecycleService': lifecycle,
         './interventionRecurrenceService': recurrence,
+        '@/lib/recurrence': schedule,
         './groupInterventionDeliveryService': { groupDeliveryRef: (_, key) => doc(db, 'groupInterventionDeliveries', encodeURIComponent(key)) },
         './movService': {
             createMovDraftFromAssignment: async input => {
@@ -270,7 +274,46 @@ test('frequency is resolved for every member and an explicit choice updates the 
     assert.equal(f.uploads.length, 0)
     await f.complete({ files: [new File(['proof'], 'poe.pdf')], recurrencePreset: 'weekly' })
     assert.equal(f.commits[0].filter(write => write.reference.path === 'interventions/definition').length, 1)
-    assert.equal(f.documents.get('assignedInterventions/two').recurrenceFrequency, 'weekly')
+    assert.deepEqual(f.documents.get('assignedInterventions/two').recurrence, { every: 1, unit: 'week', strict: true })
+    assert.equal(f.documents.get('assignedInterventions/two').scheduleMode, 'recurring')
+    assert.equal(f.documents.get('assignedInterventions/two').recurrenceFrequency, null)
+})
+
+test('a chosen frequency is saved on the definition in the new shape only', async () => {
+    const f = fixture([base('one', { recurrenceFrequency: null })], {
+        definition: { recurrenceFrequency: 'other', recurrenceStrict: false, recurring: false, frequency: 'unknown' }
+    })
+    await f.complete({ files: [new File(['proof'], 'poe.pdf')], recurrencePreset: 'monthly' })
+    const definition = f.documents.get('interventions/definition')
+    assert.equal(definition.scheduleMode, 'recurring')
+    assert.deepEqual(definition.recurrence, { every: 1, unit: 'month', strict: false })
+    for (const field of ['recurring', 'assignmentMode', 'recurrencePreset', 'recurrenceStrict', 'frequency', 'recurrenceFrequency']) {
+        assert.equal(Object.hasOwn(definition, field), false, field)
+    }
+})
+
+test('as-needed definitions saved with recurrenceFrequency other do not ask for a frequency', async () => {
+    const f = fixture([base('one', { recurrenceFrequency: null })], {
+        definition: { recurrencePreset: null, recurrence: null, recurrenceFrequency: 'other', frequency: 'as-needed' }
+    })
+    assert.equal((await f.context()).needsRecurrence, false)
+})
+
+test('completing without choosing a frequency leaves the stored recurrence and its strictness alone', async () => {
+    const recurrence = { every: 2, unit: 'week', strict: false }
+    const f = fixture([base('one', { recurrenceFrequency: null, recurrence, resources: [resource('existing')] })])
+    await f.complete()
+    const stored = f.documents.get('assignedInterventions/one')
+    assert.deepEqual(stored.recurrence, recurrence)
+    for (const field of ['recurrencePreset', 'frequency', 'recurring', 'assignmentMode', 'recurrenceStrict']) {
+        assert.equal(stored[field], undefined, field)
+    }
+})
+
+test('choosing a frequency keeps the strictness already on the assignment', async () => {
+    const f = fixture([base('one', { recurrenceFrequency: null, recurrence: { every: 1, unit: 'month', strict: false } })])
+    await f.complete({ files: [new File(['proof'], 'poe.pdf')], recurrencePreset: 'weekly' })
+    assert.deepEqual(f.documents.get('assignedInterventions/one').recurrence, { every: 1, unit: 'week', strict: false })
 })
 
 test('invalid files, too many files and unauthenticated completion fail before writes', async () => {

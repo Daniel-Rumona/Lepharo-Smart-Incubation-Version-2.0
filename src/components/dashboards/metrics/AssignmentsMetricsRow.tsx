@@ -224,8 +224,7 @@ const AppointmentsDistributionCard: React.FC<Props> = ({ dateRange, departmentId
             extra={
                 <Button
                     variant='filled'
-                    color='geekblue'
-                    style={{ border: '1px solid dodgerblue' }}
+                    color='primary'
                     shape='round'
                     icon={<ArrowRightOutlined />}
                     onClick={() => navigate('/consultants/appointments')}
@@ -249,32 +248,32 @@ const AppointmentsDistributionCard: React.FC<Props> = ({ dateRange, departmentId
                                 {
                                     title: 'Appointments',
                                     value: stats.total,
-                                    icon: <CalendarOutlined style={{ color: '#1677ff' }} />,
-                                    iconBg: 'rgba(22,119,255,0.12)',
+                                    icon: <CalendarOutlined />,
+                                    tone: 'info' as const,
                                     border: '#dbeafe',
                                     bg: 'linear-gradient(135deg,#eff6ff 0%,#ffffff 100%)'
                                 },
                                 {
                                     title: 'Completed',
                                     value: stats.completed,
-                                    icon: <CheckCircleOutlined style={{ color: '#16a34a' }} />,
-                                    iconBg: 'rgba(22,163,74,0.12)',
+                                    icon: <CheckCircleOutlined />,
+                                    tone: 'success' as const,
                                     border: '#dcfce7',
                                     bg: 'linear-gradient(135deg,#f0fdf4 0%,#ffffff 100%)'
                                 },
                                 {
                                     title: 'Scheduled',
                                     value: stats.scheduled,
-                                    icon: <ClockCircleOutlined style={{ color: '#d97706' }} />,
-                                    iconBg: 'rgba(217,119,6,0.12)',
+                                    icon: <ClockCircleOutlined />,
+                                    tone: 'warning' as const,
                                     border: '#fef3c7',
                                     bg: 'linear-gradient(135deg,#fffbeb 0%,#ffffff 100%)'
                                 },
                                 {
                                     title: 'Cancelled',
                                     value: stats.cancelled,
-                                    icon: <CloseCircleOutlined style={{ color: '#dc2626' }} />,
-                                    iconBg: 'rgba(220,38,38,0.12)',
+                                    icon: <CloseCircleOutlined />,
+                                    tone: 'danger' as const,
                                     border: '#fecaca',
                                     bg: 'linear-gradient(135deg,#fef2f2 0%,#ffffff 100%)'
                                 }
@@ -292,7 +291,7 @@ const AppointmentsDistributionCard: React.FC<Props> = ({ dateRange, departmentId
                                     <Space align='center' size={12} style={{ width: '100%' }}>
                                         <MotionCard.IconChip
                                             icon={item.icon}
-                                            bg={item.iconBg}
+                                            tone={item.tone}
                                             size={44}
                                             radius={14}
                                         />

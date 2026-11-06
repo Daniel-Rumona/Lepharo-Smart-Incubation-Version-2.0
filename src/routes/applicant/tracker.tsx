@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
     Button,
-    Card,
     Col,
     Grid,
     List,
     message,
     Pagination,
+    Progress,
     Result,
     Row,
     Skeleton,
     Space,
     Table,
     Tag,
+    theme,
     Typography
 } from 'antd'
 import {
@@ -35,12 +36,14 @@ import { auth, db } from '@/firebase'
 import { Helmet } from 'react-helmet'
 import { useNavigate } from 'react-router-dom'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import {
     guideTarget,
     usePageGuides,
     type PageGuideRegistration
 } from '@/components/guide-me'
 import { hasSmeGapSubmission } from '@/utils/agreementStatus'
+import { getSmeApplications } from '@/lib/acceptedApplication'
 
 const { Text } = Typography
 const { useBreakpoint } = Grid
@@ -117,6 +120,7 @@ const needsGapCompletion = (application: ApplicationRecord) =>
 const ApplicationTracker = () => {
     const screens = useBreakpoint()
     const isMobile = !screens.md
+    const { token } = theme.useToken()
 
     const navigate = useNavigate()
 
@@ -174,7 +178,7 @@ const ApplicationTracker = () => {
         const fetchApplications = async () => {
             const currentUser = auth.currentUser
 
-            if (!currentUser?.email) {
+            if (!currentUser) {
                 setLoading(false)
                 return
             }
@@ -182,20 +186,17 @@ const ApplicationTracker = () => {
             try {
                 setLoading(true)
 
-                const appsSnap = await getDocs(
-                    query(
-                        collection(db, 'applications'),
-                        where(
-                            'email',
-                            '==',
-                            currentUser.email
-                        )
-                    )
-                )
+                // The SME's linked participant; email only until it is linked.
+                const userSnap = await getDoc(doc(db, 'users', currentUser.uid))
+                const smeApplications = await getSmeApplications({
+                    uid: currentUser.uid,
+                    participantId: userSnap.data()?.participantId,
+                    email: currentUser.email
+                })
 
                 const apps: ApplicationRecord[] = await Promise.all(
-                    appsSnap.docs.map(async applicationDoc => {
-                        const data = applicationDoc.data() as any
+                    smeApplications.map(async applicationDoc => {
+                        const data = applicationDoc as any
                         let participant: any = null
 
                         if (data.participantId) {
@@ -279,7 +280,7 @@ const ApplicationTracker = () => {
             title: 'All Applications',
             value: statusCounts.Total,
             icon: <AppstoreOutlined />,
-            iconBg: 'rgba(22, 119, 255, 0.12)'
+            tone: 'accent' as const
         }
 
         const pendingMetric = {
@@ -287,7 +288,7 @@ const ApplicationTracker = () => {
             title: 'Pending',
             value: statusCounts.Pending,
             icon: <ClockCircleOutlined />,
-            iconBg: 'rgba(250, 173, 20, 0.14)'
+            tone: 'warning' as const
         }
 
         const rejectedMetric = {
@@ -295,7 +296,7 @@ const ApplicationTracker = () => {
             title: 'Rejected',
             value: statusCounts.Rejected,
             icon: <CloseCircleOutlined />,
-            iconBg: 'rgba(255, 77, 79, 0.12)'
+            tone: 'danger' as const
         }
 
         if (!isMobile) {
@@ -456,28 +457,26 @@ const ApplicationTracker = () => {
             Boolean(application.growthPlanDocUrl)
 
         const showGapCta = needsGapCompletion(application)
+        const complianceScore = Math.min(100, Math.max(0, Number(application.complianceScore || 0)))
 
         return (
             <List.Item
                 key={application.id}
                 style={{
                     padding: 0,
-                    border: 0
+                    border: 0,
+                    marginBottom: 10
                 }}
             >
-                <Card
-                    variant="outlined"
-                    styles={{
-                        body: {
-                            padding: 16
-                        }
-                    }}
+                {/* Phones only: a soft tinted block per application, with no
+                    border or shadow, so each one reads as one item with its
+                    own action. */}
+                <div
                     style={{
                         width: '100%',
+                        padding: 14,
                         borderRadius: 14,
-                        borderColor: '#e6efff',
-                        boxShadow:
-                            '0 6px 20px rgba(0, 0, 0, 0.05)'
+                        background: token.colorFillQuaternary
                     }}
                 >
                     <Space
@@ -541,29 +540,31 @@ const ApplicationTracker = () => {
                             </Tag>
                         </div>
 
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent:
-                                    'space-between',
-                                gap: 12,
-                                paddingTop: 12,
-                                borderTop:
-                                    '1px solid #f0f0f0'
-                            }}
-                        >
-                            <Text type="secondary">
-                                Compliance
-                            </Text>
-
-                            <Text strong>
-                                {Number(
-                                    application.complianceScore ||
-                                    0
-                                )}
-                                %
-                            </Text>
+                        {/* A detail of this application, not a section of its own. */}
+                        <div>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: 12
+                                }}
+                            >
+                                <Text type="secondary" style={{ fontSize: 13 }}>
+                                    Compliance
+                                </Text>
+                                <Text strong style={{ fontSize: 13 }}>
+                                    {complianceScore}%
+                                </Text>
+                            </div>
+                            <Progress
+                                percent={complianceScore}
+                                showInfo={false}
+                                size="small"
+                                strokeColor={complianceScore >= 100 ? token.colorSuccess : token.colorPrimary}
+                                trailColor={token.colorBorderSecondary}
+                                style={{ margin: 0 }}
+                            />
                         </div>
 
                         {showGapCta && (
@@ -603,7 +604,7 @@ const ApplicationTracker = () => {
                             </Button>
                         )}
                     </Space>
-                </Card>
+                </div>
             </List.Item>
         )
     }
@@ -622,16 +623,12 @@ const ApplicationTracker = () => {
                         {Array.from({
                             length: 3
                         }).map((_, index) => (
-                            <Card
+                            <div
                                 key={index}
-                                variant="outlined"
-                                styles={{
-                                    body: {
-                                        padding: 16
-                                    }
-                                }}
                                 style={{
-                                    borderRadius: 14
+                                    padding: 14,
+                                    borderRadius: 14,
+                                    background: token.colorFillQuaternary
                                 }}
                             >
                                 <Skeleton
@@ -641,7 +638,7 @@ const ApplicationTracker = () => {
                                         rows: 2
                                     }}
                                 />
-                            </Card>
+                            </div>
                         ))}
                     </Space>
                 )
@@ -749,7 +746,7 @@ const ApplicationTracker = () => {
         <div
             style={{
                 padding: isMobile
-                    ? '12px'
+                    ? '12px 16px'
                     : '10px 24px'
             }}
         >
@@ -798,12 +795,12 @@ const ApplicationTracker = () => {
                                     }}
                                 />
                             ) : (
-                                <MotionCard.Metric
+                                <MetricTile
                                     title={metric.title}
                                     value={metric.value}
                                     icon={metric.icon}
-                                    iconBg={
-                                        metric.iconBg
+                                    tone={
+                                        metric.tone
                                     }
                                     wrapperStyle={{
                                         minHeight:
@@ -817,20 +814,31 @@ const ApplicationTracker = () => {
                     ))}
                 </Row>
 
-                <MotionCard
-                    title="My Applications"
-                    styles={{
-                        body: {
-                            padding: isMobile
-                                ? 12
-                                : 16
-                        }
-                    }}
-                >
-                    <div data-guide="applications-results">
-                        {renderApplicationsContent()}
-                    </div>
-                </MotionCard>
+                {/* On phones the list sits straight on the page under a heading;
+                    wider screens keep the table in its card. */}
+                {isMobile ? (
+                    <section>
+                        <Text strong style={{ display: 'block', fontSize: 16, marginBottom: 10 }}>
+                            My Applications
+                        </Text>
+                        <div data-guide="applications-results">
+                            {renderApplicationsContent()}
+                        </div>
+                    </section>
+                ) : (
+                    <MotionCard
+                        title="My Applications"
+                        styles={{
+                            body: {
+                                padding: 16
+                            }
+                        }}
+                    >
+                        <div data-guide="applications-results">
+                            {renderApplicationsContent()}
+                        </div>
+                    </MotionCard>
+                )}
             </Space>
         </div>
     )

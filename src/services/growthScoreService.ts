@@ -1,5 +1,7 @@
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { getSmeParticipant, type SmeRef } from '@/services/smeIdentity'
+import { getSmeAcceptedApplication } from '@/lib/acceptedApplication'
 
 export type GrowthScoreComponentKey =
     | 'compliance'
@@ -49,21 +51,12 @@ const bandFor = (score: number): GrowthScore['band'] => {
  * the platform. It is intentionally read-only: it does not persist or alter
  * any SME, programme, intervention, or compliance data.
  */
-export async function loadGrowthScore(email: string): Promise<GrowthScore | null> {
-    const normalizedEmail = String(email || '').trim()
-    if (!normalizedEmail) return null
-
-    const [participantSnapshot, applicationsSnapshot] = await Promise.all([
-        getDocs(query(collection(db, 'participants'), where('email', '==', normalizedEmail))),
-        getDocs(query(collection(db, 'applications'), where('email', '==', normalizedEmail)))
-    ])
-
-    const participant = participantSnapshot.docs[0]
+export async function loadGrowthScore(sme: SmeRef): Promise<GrowthScore | null> {
+    // The SME's linked participant; email only until it is linked.
+    const participant = await getSmeParticipant(sme)
     if (!participant) return null
 
-    const acceptedApplication = applicationsSnapshot.docs
-        .map(item => ({ id: item.id, ...item.data() } as any))
-        .find(item => String(item.applicationStatus || '').toLowerCase() === 'accepted')
+    const acceptedApplication = await getSmeAcceptedApplication({ ...sme, participantId: participant.id })
 
     const participantId = participant.id
     const [interventionsSnapshot, plansSnapshot] = await Promise.all([
@@ -95,8 +88,7 @@ export async function loadGrowthScore(email: string): Promise<GrowthScore | null
     const departmentIds: string[] = Array.from(new Set<string>(planInterventions
         .map((item: any) => String(item?.departmentId || item?.addedByDeptId || '').trim())
         .filter((id: string) => Boolean(id))))
-    const participantConfirmations = latestPlan?.incubateeDepartmentConfirmationsByDeptId ||
-        latestPlan?.incubateeDepartmentConfirmations || {}
+    const participantConfirmations = latestPlan?.incubateeDepartmentConfirmationsByDeptId || {}
     const confirmedDepartments = departmentIds.filter(id => isConfirmed(participantConfirmations[id]))
     const roadmapScore = latestPlan?.finalConfirmation
         ? 20

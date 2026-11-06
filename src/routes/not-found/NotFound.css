@@ -1,0 +1,258 @@
+/* 404 page. Builds on LandingPage.css: the wrapper also carries `landing-page`,
+   so the gradient background, accent variables, orbit animation and
+   html[data-theme="dark"] rules all apply unchanged. */
+
+.landing-page.nf-page {
+    --nf-text: #1c2541;
+    --nf-muted: #5a6178;
+    --nf-glass: rgba(255, 255, 255, 0.72);
+    --nf-glass-border: rgba(255, 255, 255, 0.7);
+    --nf-ring: rgba(124, 58, 237, 0.2);
+    --nf-chip: rgba(28, 37, 65, 0.06);
+
+    overflow-x: hidden;
+    overflow-y: auto;
+    align-items: center;
+    justify-content: center;
+}
+html[data-theme="dark"] .landing-page.nf-page {
+    --nf-text: rgba(255, 255, 255, 0.94);
+    --nf-muted: rgba(255, 255, 255, 0.62);
+    --nf-glass: rgba(28, 22, 20, 0.72);
+    --nf-glass-border: rgba(255, 255, 255, 0.1);
+    --nf-ring: rgba(167, 139, 250, 0.24);
+    --nf-chip: rgba(255, 255, 255, 0.07);
+}
+
+.nf-theme {
+    position: absolute;
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    right: 18px;
+    z-index: 5;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid var(--nf-glass-border);
+    background: var(--nf-glass);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    color: var(--nf-text);
+}
+
+.nf-main {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 24px clamp(22px, 5vw, 56px) 72px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(24px, 6vw, 80px);
+}
+
+/* Animation left, message right. */
+.nf-left,
+.nf-right {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+.nf-right {
+    max-width: 460px;
+}
+
+/* --- Orbit --------------------------------------------------------------- */
+
+.nf-stage {
+    --nf-size: clamp(150px, min(26vw, 36vh), 290px);
+
+    position: relative;
+    width: var(--nf-size);
+    height: var(--nf-size);
+    display: grid;
+    place-items: center;
+}
+.nf-stage .orbit-field {
+    --orbit-size: var(--nf-size);
+}
+.nf-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    border-radius: 50%;
+    border: 1px solid var(--nf-ring);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+.nf-ring-1 {
+    width: calc(var(--nf-size) * 1.45);
+    height: calc(var(--nf-size) * 1.45);
+}
+.nf-ring-2 {
+    width: calc(var(--nf-size) * 2);
+    height: calc(var(--nf-size) * 2);
+    border-style: dashed;
+    opacity: 0.7;
+}
+
+/* --- Copy ---------------------------------------------------------------- */
+
+.nf-code {
+    margin: 0 0 4px;
+    font-size: clamp(72px, 18vw, 132px);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+html[data-theme="dark"] .nf-code {
+    background: linear-gradient(120deg, #ff8a65 0%, #ffb37a 45%, #c9a6ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+.nf-code.is-floating {
+    animation: nf-float 5s ease-in-out infinite;
+}
+@keyframes nf-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+
+.nf-title {
+    margin: 0 0 8px;
+    font-size: clamp(20px, 3.2vw, 26px);
+    font-weight: 700;
+    color: var(--nf-text);
+}
+.nf-text {
+    margin: 0 auto 14px;
+    max-width: 360px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--nf-muted);
+}
+.nf-path {
+    display: inline-block;
+    max-width: 100%;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: var(--nf-chip);
+    color: var(--nf-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Actions ------------------------------------------------------------- */
+
+.nf-actions {
+    margin-top: 26px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+}
+.nf-btn {
+    min-width: 150px;
+    height: 48px;
+    padding: 0 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 999px;
+    border: 1px solid var(--nf-glass-border);
+    background: var(--nf-glass);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    color: var(--nf-text);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.nf-btn:hover {
+    transform: translateY(-2px);
+}
+.nf-btn:active {
+    transform: scale(0.985);
+}
+.nf-btn.is-primary {
+    border: none;
+    background: var(--accent-gradient);
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(124, 58, 237, 0.32);
+}
+.nf-btn.is-primary:hover {
+    box-shadow: 0 14px 28px rgba(124, 58, 237, 0.42);
+}
+.nf-btn:focus-visible {
+    outline: 2px solid var(--accent-red);
+    outline-offset: 3px;
+}
+
+/* --- Brand --------------------------------------------------------------- */
+
+.nf-brand {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    z-index: 3;
+    transform: translateX(-50%);
+    height: 34px;
+    padding: 4px 10px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.7);
+}
+.nf-brand img {
+    height: 100%;
+    width: auto;
+    object-fit: contain;
+}
+
+/* Phones and narrow windows: animation on top, message beneath. */
+@media (max-width: 767px) {
+    .nf-main {
+        flex-direction: column;
+        gap: clamp(20px, 4vh, 36px);
+        padding-top: 64px;
+    }
+    .nf-left,
+    .nf-right {
+        flex: 0 0 auto;
+        width: 100%;
+    }
+    .nf-stage {
+        --nf-size: clamp(130px, min(40vw, 22vh), 220px);
+    }
+}
+
+@media (max-width: 480px) {
+    .nf-btn {
+        flex: 1 1 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nf-code.is-floating {
+        animation: none;
+    }
+}

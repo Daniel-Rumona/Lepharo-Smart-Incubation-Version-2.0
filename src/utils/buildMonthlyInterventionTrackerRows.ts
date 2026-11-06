@@ -7,7 +7,7 @@ export type AssignedLite = {
   participantId?: string
   beneficiaryName?: string
   participantEmail?: string
-  areaOfSupport?: string
+  departmentId?: string
   interventionTitle?: string
   status?: string
   createdAt?: any
@@ -73,7 +73,7 @@ async function fetchParticipantsByIds(participantIds: string[]) {
 
 export async function buildMonthlyInterventionTrackerRows(params: {
   assigned: AssignedLite[]
-  deptKeyFromArea: (area?: string) => string
+  deptNameFromId: (departmentId?: string) => string
 
   // you already fetch applications in the report builder
   applicationsByParticipantId: Map<string, ApplicationLite>
@@ -81,7 +81,7 @@ export async function buildMonthlyInterventionTrackerRows(params: {
   // optional override if you already have them
   participantsByParticipantId?: Map<string, ParticipantLite>
 }): Promise<InterventionRow[]> {
-  const { assigned, deptKeyFromArea, applicationsByParticipantId } = params
+  const { assigned, deptNameFromId, applicationsByParticipantId } = params
 
   // Build participant lookup (prefer supplied map, else fetch by doc id)
   const participantIds = Array.from(
@@ -140,7 +140,7 @@ export async function buildMonthlyInterventionTrackerRows(params: {
     const contact = contactFromParticipant(p, first.participantEmail)
 
     items.forEach((ai, idx) => {
-      const dept = deptKeyFromArea(ai.areaOfSupport)
+      const dept = deptNameFromId(ai.departmentId)
       const title = norm(ai.interventionTitle) || "Unknown Intervention"
 
       rows.push({

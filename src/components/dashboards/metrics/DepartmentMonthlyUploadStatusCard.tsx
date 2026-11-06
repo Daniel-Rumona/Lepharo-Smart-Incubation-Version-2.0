@@ -23,47 +23,50 @@ const { useToken } = theme
 
 type SubmissionRecord = {
     month?: string
-    department?: string
-    departmentName?: string
+    departmentId?: string
     interventions?: Array<{
-        department?: string
-        departmentName?: string
+        departmentId?: string
     }>
     [key: string]: any
 }
 
 type DepartmentMonthlyUploadStatusCardProps = {
-    departments: string[]
+    departments: Array<{ id: string; name?: string }>
     submissions: SubmissionRecord[]
     loading?: boolean
     title?: React.ReactNode
     /** Reporting window supplied by the dashboard topbar. */
     dateRange?: [Dayjs, Dayjs] | null
+    /**
+     * Assigned-intervention records used to tell whether a department had any
+     * work in a month. When supplied, months without activity are shown as
+     * "no activity" instead of overdue/pending. When omitted, every month is
+     * treated as requiring an upload.
+     */
+    activity?: any[]
 }
 
 type MonthState = {
     key: string
     label: string
-    state: 'uploaded' | 'overdue' | 'pending' | 'upcoming'
+    state: 'uploaded' | 'overdue' | 'pending' | 'upcoming' | 'none'
     days?: number
 }
 
 type DepartmentStatus = {
+    departmentId: string
     department: string
     months: MonthState[]
     uploaded: number
     overdue: number
     pending: number
     upcoming: number
+    /** Months that actually need an upload (excludes no-activity months). */
     required: number
+    /** All months shown in the window. */
+    total: number
     maxOverdueDays: number
 }
-
-const normalizeText = (value?: string) =>
-    String(value || '')
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
 
 const normalizeMonth = (value?: string) => {
     const raw = String(value || '').trim()
@@ -77,20 +80,38 @@ const normalizeMonth = (value?: string) => {
 }
 
 const getSubmissionDepartments = (record: SubmissionRecord) => {
-    const names = [
-        record.department,
-        record.departmentName,
+    const ids = [
+        record.departmentId,
         ...(Array.isArray(record.interventions)
-            ? record.interventions.flatMap(intervention => [
-                intervention?.department,
-                intervention?.departmentName
-            ])
+            ? record.interventions.map(intervention => intervention?.departmentId)
             : [])
     ]
         .map(value => String(value || '').trim())
         .filter(Boolean)
 
-    return Array.from(new Set(names))
+    return Array.from(new Set(ids))
+}
+
+const ACTIVITY_DATE_FIELDS = [
+    'createdAt',
+    'updatedAt',
+    'assignedAt',
+    'startDate',
+    'dueDate',
+    'interventionDate',
+    'completedAt',
+    'assigneeCompletedAt',
+    'date'
+]
+
+const toActivityMonth = (value: any) => {
+    if (!value) return ''
+    const parsed = value?.toDate
+        ? dayjs(value.toDate())
+        : value?.seconds
+            ? dayjs(value.seconds * 1000)
+            : dayjs(value)
+    return parsed.isValid() ? parsed.format('YYYY-MM') : ''
 }
 
 const getMonthsInRange = (start: Dayjs, end: Dayjs) => {
@@ -118,7 +139,8 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
             <span>Department Monthly Upload Status</span>
         </Space>
     ),
-    dateRange
+    dateRange,
+    activity
 }) => {
         const { token } = useToken()
 
@@ -150,26 +172,50 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                 const month = normalizeMonth(submission.month)
                 if (!month) return
 
-                getSubmissionDepartments(submission).forEach(department => {
-                    keys.add(`${normalizeText(department)}::${month}`)
+                getSubmissionDepartments(submission).forEach(departmentId => {
+                    keys.add(`${departmentId}::${month}`)
                 })
             })
 
             return keys
         }, [submissions])
 
+        // `${department}::${YYYY-MM}` for every month a department had work.
+        const activityKeys = useMemo(() => {
+            if (!activity) return null
+
+            const keys = new Set<string>()
+
+            activity.forEach(row => {
+                const departmentId = String(row?.departmentId || '').trim()
+                if (!departmentId) return
+
+                ACTIVITY_DATE_FIELDS.map(field => toActivityMonth(row?.[field]))
+                    .filter(Boolean)
+                    .forEach(month => keys.add(`${departmentId}::${month}`))
+            })
+
+            return keys
+        }, [activity])
+
         const departmentStatuses = useMemo<DepartmentStatus[]>(() => {
             const now = dayjs().startOf('day')
 
-            return [...new Set(departments.map(name => String(name || '').trim()).filter(Boolean))]
-                .map(department => {
-                    const normalizedDepartment = normalizeText(department)
+            const byId = new Map(
+                departments
+                    .map(item => [String(item?.id || '').trim(), String(item?.name || '').trim()] as const)
+                    .filter(([id]) => !!id)
+            )
+
+            return [...byId.entries()]
+                .map(([departmentId, name]) => {
+                    const department = name || 'Department'
 
                     const monthStates: MonthState[] = months.map(month => {
                         const key = month.format('YYYY-MM')
                         const label = month.format('MMM YYYY')
                         const uploaded = uploadedKeys.has(
-                            `${normalizedDepartment}::${key}`
+                            `${departmentId}::${key}`
                         )
 
                         if (uploaded) {
@@ -177,6 +223,17 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                                 key,
                                 label,
                                 state: 'uploaded' as const
+                            }
+                        }
+
+                        if (
+                            activityKeys &&
+                            !activityKeys.has(`${departmentId}::${key}`)
+                        ) {
+                            return {
+                                key,
+                                label,
+                                state: 'none' as const
                             }
                         }
 
@@ -232,13 +289,17 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                     ).length
 
                     return {
+                        departmentId,
                         department,
                         months: monthStates,
                         uploaded,
                         overdue: overdueMonths.length,
                         pending,
                         upcoming,
-                        required: monthStates.length,
+                        required: monthStates.filter(
+                            month => month.state !== 'none'
+                        ).length,
+                        total: monthStates.length,
                         maxOverdueDays: overdueMonths.reduce(
                             (max, month) => Math.max(max, month.days || 0),
                             0
@@ -254,7 +315,7 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                         { sensitivity: 'base' }
                     )
                 })
-        }, [departments, months, uploadedKeys])
+        }, [departments, months, uploadedKeys, activityKeys])
 
         const pagedDepartmentStatuses = useMemo(() => {
             const start = (page - 1) * PAGE_SIZE
@@ -311,6 +372,14 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                 }
             }
 
+            if (month.state === 'none') {
+                return {
+                    background: token.colorFillTertiary,
+                    label: 'No activity',
+                    detail: 'Nothing to submit • no work recorded'
+                }
+            }
+
             return {
                 background: token.colorFillSecondary,
                 label: 'Upcoming',
@@ -319,8 +388,29 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
         }
 
         const renderSummary = (status: DepartmentStatus) => {
-            if (status.required === 1) {
+            if (status.total > 1 && status.required === 0) {
+                return (
+                    <Text
+                        type='secondary'
+                        style={{ display: 'block', textAlign: 'right', fontSize: 12 }}
+                    >
+                        No activity
+                    </Text>
+                )
+            }
+
+            if (status.total === 1) {
                 const month = status.months[0]
+
+                if (month.state === 'none') {
+                    return (
+                        <div style={{ textAlign: 'right' }}>
+                            <Tag style={{ marginInlineEnd: 0, borderRadius: 999 }}>
+                                Nothing to submit
+                            </Tag>
+                        </div>
+                    )
+                }
 
                 if (month.state === 'uploaded') {
                     return (
@@ -535,7 +625,7 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                     >
                         {pagedDepartmentStatuses.map(status => (
                             <div
-                                key={status.department}
+                                key={status.departmentId}
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
@@ -574,7 +664,7 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                                     </Text>
                                 </div>
 
-                                {status.required > 1 && (
+                                {status.total > 1 && (
                                     <div
                                         style={{
                                             display: 'flex',
@@ -601,7 +691,8 @@ const DepartmentMonthlyUploadStatusCard: React.FC<
                                                             borderRadius: 999,
                                                             background: visual.background,
                                                             border:
-                                                                month.state === 'upcoming'
+                                                                month.state === 'upcoming' ||
+                                                                month.state === 'none'
                                                                     ? `1px solid ${token.colorBorderSecondary}`
                                                                     : 'none'
                                                         }}

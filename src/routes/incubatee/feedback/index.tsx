@@ -39,6 +39,9 @@ import { Helmet } from 'react-helmet'
 import dayjs from 'dayjs'
 import { db, storage } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { getSmeParticipant } from '@/services/smeIdentity'
+import { getEffectiveAppStatus, getSmeApplications } from '@/lib/acceptedApplication'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { MetricsGrid, type DashboardMetric } from '@/components/dashboards/metrics/MetricsGrid'
 import {
@@ -52,6 +55,7 @@ import {
     where
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner, type UploadOwner } from '@/lib/storageOwner'
 
 const { useBreakpoint } = Grid
 
@@ -184,13 +188,13 @@ const formatDate = (value: any) => {
     return date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'
 }
 
-const uploadFiles = async (files: any[], folder: string): Promise<Attachment[]> => {
+const uploadFiles = async (files: any[], folder: string, owner?: UploadOwner): Promise<Attachment[]> => {
     const list = files.map(item => item?.originFileObj || item).filter(Boolean) as File[]
     return Promise.all(list.map(async file => {
         const safeName = file.name.replace(/[^\w.\-]+/g, '_')
         const path = `${folder}/${Date.now()}_${safeName}`
         const storageRef = ref(storage, path)
-        await uploadBytes(storageRef, file)
+        await uploadBytes(storageRef, file, withOwner({}, owner))
         return {
             name: file.name,
             url: await getDownloadURL(storageRef),
@@ -222,7 +226,15 @@ const SmeFeedbackPage: React.FC = () => {
     const [companyName, setCompanyName] = useState('')
     const [participantProfile, setParticipantProfile] = useState<any>(null)
     const [applicationProfile, setApplicationProfile] = useState<any>(null)
-    const [interventions, setInterventions] = useState<AssignedIntervention[]>([])
+    const { nameOf } = useDepartmentRoles()
+    const [assignedRows, setInterventions] = useState<AssignedIntervention[]>([])
+    const interventions = useMemo(
+        () => assignedRows.map(row => ({
+            ...row,
+            departmentName: row.departmentId ? nameOf(row.departmentId, 'Unassigned department') : 'Unassigned department'
+        })),
+        [assignedRows, nameOf]
+    )
     const [feedbackRecords, setFeedbackRecords] = useState<FeedbackRecord[]>([])
     const [inquiries, setInquiries] = useState<InquiryRecord[]>([])
     const [loading, setLoading] = useState(false)
@@ -243,26 +255,26 @@ const SmeFeedbackPage: React.FC = () => {
 
     useEffect(() => {
         const run = async () => {
-            if (!user?.email) return
+            if (!user) return
             setLoading(true)
             try {
-                const appSnap = await getDocs(query(collection(db, 'applications'), where('email', '==', user.email)))
-                const appDoc = appSnap.docs[0]
-                if (!appDoc) {
+                // The SME's linked participant; email only until it is linked.
+                const sme = { uid: user.id, participantId: user.participantId, email: user.email }
+                const apps = await getSmeApplications(sme)
+                const app = apps.find(a => getEffectiveAppStatus(a) === 'accepted') || apps[0]
+                if (!app) {
                     setLoading(false)
                     return
                 }
 
-                const app = { id: appDoc.id, ...(appDoc.data() as any) }
                 setApplicationProfile(app)
                 const resolvedParticipantId = clean(app.participantId || app.id)
                 setApplicationId(app.id)
                 setParticipantId(resolvedParticipantId)
                 setCompanyName(clean(app.companyName || app.registeredName || app.businessName || app.beneficiaryName))
 
-                const participantSnap = await getDocs(query(collection(db, 'participants'), where('email', '==', user.email)))
-                const participant = participantSnap.docs[0]?.data() || {}
-                setParticipantProfile(participant)
+                const participant = await getSmeParticipant({ ...sme, participantId: sme.participantId || app.participantId })
+                setParticipantProfile(participant || {})
 
                 const interventionSnap = await getDocs(
                     query(collection(db, 'assignedInterventions'), where('participantId', '==', resolvedParticipantId))
@@ -273,8 +285,7 @@ const SmeFeedbackPage: React.FC = () => {
                         .map(row => ({
                             ...row,
                             interventionTitle: clean(row.interventionTitle || row.title || row.name || 'Untitled intervention'),
-                            departmentName: clean(row.departmentName || row.department || row.areaOfSupport || 'Unassigned department'),
-                            departmentId: clean(row.departmentId || row.departmentName || row.department || row.areaOfSupport || 'unassigned'),
+                            departmentId: clean(row.departmentId),
                             consultantName: clean(row.assigneeName || 'Unassigned coordinator')
                         }))
                         .sort((a, b) => a.interventionTitle.localeCompare(b.interventionTitle))
@@ -307,12 +318,12 @@ const SmeFeedbackPage: React.FC = () => {
             }
         }
         run()
-    }, [user?.email, user?.id])
+    }, [user?.email, user?.id, user?.participantId])
 
     const departmentOptions = useMemo(() => {
         const map = new Map<string, string>()
         interventions.forEach(item => {
-            const id = clean(item.departmentId || item.departmentName || 'unassigned')
+            const id = clean(item.departmentId || 'unassigned')
             if (!map.has(id)) map.set(id, item.departmentName || id)
         })
         return Array.from(map.entries()).map(([value, label]) => ({ value, label }))
@@ -389,32 +400,32 @@ const SmeFeedbackPage: React.FC = () => {
         {
             key: 'complaints',
             important: true,
-            icon: <ExclamationCircleOutlined style={{ color: '#f5222d' }} />,
-            iconBg: 'rgba(245,34,45,0.12)',
+            icon: <ExclamationCircleOutlined />,
+            tone: 'danger' as const,
             title: 'Complaints',
             value: metrics.complaints
         },
         {
             key: 'inquiries',
             important: true,
-            icon: <FileSearchOutlined style={{ color: '#722ed1' }} />,
-            iconBg: 'rgba(114,46,209,0.12)',
+            icon: <FileSearchOutlined />,
+            tone: 'info' as const,
             title: 'Inquiries',
             value: metrics.inquiries
         },
         {
             key: 'praise',
             important: false,
-            icon: <LikeOutlined style={{ color: '#52c41a' }} />,
-            iconBg: 'rgba(82,196,26,0.14)',
+            icon: <LikeOutlined />,
+            tone: 'success' as const,
             title: 'Praises',
             value: metrics.praise
         },
         {
             key: 'success',
             important: false,
-            icon: <CheckCircleOutlined style={{ color: '#1677ff' }} />,
-            iconBg: 'rgba(22,119,255,0.12)',
+            icon: <CheckCircleOutlined />,
+            tone: 'info' as const,
             title: 'Success Stories',
             mobileTitle: 'Success',
             value: metrics.success
@@ -466,7 +477,7 @@ const SmeFeedbackPage: React.FC = () => {
     }
 
     const handleFeedbackSubmit = async (values: any) => {
-        if (!participantId || !user?.email) {
+        if (!participantId || !user) {
             message.warning('Your SME profile could not be resolved.')
             return
         }
@@ -520,10 +531,10 @@ const SmeFeedbackPage: React.FC = () => {
 
             const docRef = await addDoc(collection(db, 'smeFeedback'), payload)
             const coverAttachments = isSuccessStory
-                ? await uploadFiles(values.coverImage || [], `success-stories/sme-${docRef.id}/cover`)
+                ? await uploadFiles(values.coverImage || [], `success-stories/sme-${docRef.id}/cover`, { participantId })
                 : []
             const evidenceAttachments = isSuccessStory
-                ? await uploadFiles(values.documents || [], `success-stories/sme-${docRef.id}/evidence`)
+                ? await uploadFiles(values.documents || [], `success-stories/sme-${docRef.id}/evidence`, { participantId })
                 : []
             const attachments = [...coverAttachments, ...evidenceAttachments]
             const coverImageUrl = coverAttachments[0]?.url || ''
@@ -542,7 +553,7 @@ const SmeFeedbackPage: React.FC = () => {
     }
 
     const handleInquirySubmit = async (values: any) => {
-        if (!user?.email || !user?.id) {
+        if (!user?.id) {
             message.warning('Your SME profile could not be resolved.')
             return
         }

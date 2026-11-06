@@ -1,0 +1,177 @@
+/* KPI register (kpr-): the page-specific parts on top of the shared ws- workspace. */
+
+/* The KPI's measure as a rounded tile, in place of an avatar. */
+.kpr-row-icon,
+.kpr-detail-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 16px;
+    color: var(--app-accent);
+    background: color-mix(in srgb, var(--app-accent) 14%, var(--app-surface));
+    border: 1px solid color-mix(in srgb, var(--app-accent) 22%, transparent);
+}
+
+.kpr-detail-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    font-size: 22px;
+}
+
+.ws-row.is-selected .kpr-row-icon {
+    color: var(--app-accent-contrast);
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+}
+
+.kpr-row-target {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--app-text);
+    white-space: nowrap;
+}
+
+.kpr-row-target.is-missing {
+    font-size: 12px;
+    font-weight: 600;
+    color: #d97706;
+}
+
+html[data-theme="dark"] .kpr-row-target.is-missing {
+    color: #fbbf24;
+}
+
+.kpr-tag.ant-tag.is-live {
+    color: #16a34a;
+    background: rgba(22, 163, 74, 0.14);
+}
+
+.kpr-tag.ant-tag.is-manual {
+    color: #d97706;
+    background: rgba(217, 119, 6, 0.14);
+}
+
+html[data-theme="dark"] .kpr-tag.ant-tag.is-live {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.13);
+}
+
+html[data-theme="dark"] .kpr-tag.ant-tag.is-manual {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.13);
+}
+
+.kpr-detail-body {
+    display: grid;
+    gap: 22px;
+    padding: 18px 20px 22px;
+}
+
+/* Current target: the one number people come here for, with its action. */
+.kpr-target {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--app-accent) 8%, var(--app-surface));
+    border: 1px solid color-mix(in srgb, var(--app-accent) 22%, transparent);
+}
+
+.kpr-target.is-missing {
+    background: color-mix(in srgb, #d97706 8%, var(--app-surface));
+    border-color: color-mix(in srgb, #d97706 28%, transparent);
+}
+
+.kpr-target-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    font-size: 18px;
+    color: var(--app-accent);
+    background: color-mix(in srgb, var(--app-accent) 16%, transparent);
+}
+
+.kpr-target.is-missing .kpr-target-icon {
+    color: #d97706;
+    background: rgba(217, 119, 6, 0.16);
+}
+
+.kpr-target-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.kpr-target-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.kpr-target-value {
+    margin-top: 2px;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--app-text);
+}
+
+.kpr-target.is-missing .kpr-target-value {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.kpr-target .ant-btn {
+    flex: 0 0 auto;
+}
+
+.kpr-conditions {
+    margin: 12px 0 0;
+    padding: 9px 12px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+    background: var(--app-surface-sunken);
+    border-radius: 10px;
+}
+
+.kpr-contributors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.kpr-contributor {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 3px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--app-text);
+    background: var(--app-surface-sunken);
+    border-radius: 999px;
+}
+
+@media (max-width: 575px) {
+    .kpr-target {
+        flex-wrap: wrap;
+    }
+
+    .kpr-target .ant-btn {
+        width: 100%;
+    }
+}
+
+/* auto-fit: a section with one or two facts lets them take the full width, so
+   a department name like "Monitoring and Evaluation" stays on one line. */
+.kpr-detail-body .ws-facts {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}

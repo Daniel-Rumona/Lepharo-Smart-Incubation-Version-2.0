@@ -13,7 +13,8 @@ import {
     Skeleton,
     Space,
     Tag,
-    Typography
+    Typography,
+    theme
 } from 'antd'
 import {
     CalendarOutlined,
@@ -31,7 +32,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
-import { type LeaveRequest, typeLabel } from './types'
+import { countLeaveDays, type LeaveRequest, typeLabel } from './types'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -240,19 +241,27 @@ const WEEKDAY_LABELS = [
 
 // Small, scoped styles for interactions that are awkward to express as
 // inline styles (hover states, focus rings, the blackout stripe texture).
-const CALENDAR_STYLES = `
+// Colours come from the theme so the calendar reads in light and dark mode;
+// chips are a translucent tint of their leave-type colour, not a white card.
+const calendarStyles = (token: ReturnType<typeof theme.useToken>['token']) => `
 .lc-cell { transition: background-color .15s ease; }
-.lc-cell:hover { background-color: rgba(15, 23, 42, 0.025); }
-.lc-blackout { background-image: repeating-linear-gradient(45deg, rgba(229,72,77,0.08) 0, rgba(229,72,77,0.08) 6px, transparent 6px, transparent 13px); }
-.lc-chip { display:flex; align-items:center; gap:6px; padding:3px 7px 3px 6px; border-radius:6px; border-left:3px solid; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,0.08); cursor:pointer; transition: transform .12s ease, box-shadow .12s ease; }
-.lc-chip:hover { transform: translateY(-1px); box-shadow:0 3px 9px rgba(15,23,42,0.14); }
-.lc-chip:focus-visible { outline:2px solid #2f6fed; outline-offset:2px; }
-.lc-today-dot { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 4px; border-radius:11px; background:#2f6fed; color:#fff; font-weight:600; font-size:12px; }
-.lc-agenda-row:hover { background-color: rgba(15,23,42,0.02); }
+.lc-cell:hover { background-color: ${token.colorFillTertiary}; }
+.lc-blackout { background-image: repeating-linear-gradient(45deg, rgba(229,72,77,0.12) 0, rgba(229,72,77,0.12) 6px, transparent 6px, transparent 13px); }
+.lc-chip { display:flex; align-items:center; gap:6px; padding:3px 8px 3px 5px; border-radius:6px; border-left:3px solid; background:var(--lc-chip-bg); color:${token.colorText}; cursor:pointer; transition: background-color .12s ease, transform .12s ease; }
+.lc-chip:hover { background:var(--lc-chip-bg-hover); transform: translateY(-1px); }
+.lc-chip:focus-visible { outline:2px solid ${token.colorPrimary}; outline-offset:2px; }
+.lc-today-dot { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 4px; border-radius:11px; background:${token.colorPrimary}; color:${token.colorTextLightSolid}; font-weight:600; font-size:12px; }
+.lc-agenda-row:hover { background-color: ${token.colorFillQuaternary}; }
 `
+
+/** Appends a hex alpha to a #rrggbb colour (all type colours are 6-digit hex). */
+const withAlpha = (hex: string, alpha: number) =>
+    `${hex}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`
 
 export const LeaveCalendar: React.FC = () => {
     const { message } = App.useApp()
+    const { token } = theme.useToken()
+    const gridLine = `1px solid ${token.colorBorderSecondary}`
 
     const {
         user,
@@ -585,7 +594,11 @@ export const LeaveCalendar: React.FC = () => {
                     }
                 }}
                 className='lc-chip'
-                style={{ borderLeftColor: typeColor }}
+                style={{
+                    borderLeftColor: typeColor,
+                    ['--lc-chip-bg' as string]: withAlpha(typeColor, 0.16),
+                    ['--lc-chip-bg-hover' as string]: withAlpha(typeColor, 0.28)
+                }}
             >
                 <Avatar
                     size={16}
@@ -606,7 +619,8 @@ export const LeaveCalendar: React.FC = () => {
                     style={{
                         display: 'block',
                         fontSize: 12,
-                        lineHeight: '16px'
+                        lineHeight: '16px',
+                        color: 'inherit'
                     }}
                 >
                     {request.employeeName}
@@ -616,8 +630,8 @@ export const LeaveCalendar: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: 24 }}>
-            <style>{CALENDAR_STYLES}</style>
+        <div>
+            <style>{calendarStyles(token)}</style>
 
             <Card
                 styles={{
@@ -631,10 +645,9 @@ export const LeaveCalendar: React.FC = () => {
                         display: 'flex',
                         alignItems: 'center',
                         flexWrap: 'wrap',
-                        padding: 12,
+                        padding: '10px 12px',
                         gap: 12,
-                        borderBottom:
-                            '1px solid #f0f0f0'
+                        borderBottom: gridLine
                     }}
                 >
                     <Button
@@ -698,8 +711,8 @@ export const LeaveCalendar: React.FC = () => {
                             flexWrap: 'wrap',
                             gap: 14,
                             padding: '8px 12px',
-                            borderBottom: '1px solid #f0f0f0',
-                            background: '#fbfbfc'
+                            borderBottom: gridLine,
+                            background: token.colorFillQuaternary
                         }}
                     >
                         {visibleTypes.map(([key, label]) => (
@@ -710,7 +723,7 @@ export const LeaveCalendar: React.FC = () => {
                                     alignItems: 'center',
                                     gap: 6,
                                     fontSize: 12,
-                                    color: 'rgba(0,0,0,0.65)'
+                                    color: token.colorTextSecondary
                                 }}
                             >
                                 <span
@@ -732,7 +745,7 @@ export const LeaveCalendar: React.FC = () => {
                                 alignItems: 'center',
                                 gap: 6,
                                 fontSize: 12,
-                                color: 'rgba(0,0,0,0.65)'
+                                color: token.colorTextSecondary
                             }}
                         >
                             <span
@@ -778,8 +791,8 @@ export const LeaveCalendar: React.FC = () => {
                                 <Space direction='vertical' size={2}>
                                     <Text strong>No leave scheduled</Text>
                                     <Text type='secondary'>
-                                        Approved and pending requests for this
-                                        period will show up here.
+                                        Approved leave for this period will
+                                        show up here.
                                     </Text>
                                 </Space>
                             }
@@ -852,8 +865,8 @@ export const LeaveCalendar: React.FC = () => {
                             style={{
                                 display: 'grid',
                                 gridTemplateColumns:
-                                    'repeat(7, minmax(125px, 1fr))',
-                                minWidth: 875
+                                    'repeat(7, minmax(110px, 1fr))',
+                                minWidth: 770
                             }}
                         >
                             {WEEKDAY_LABELS.map(day => (
@@ -866,13 +879,10 @@ export const LeaveCalendar: React.FC = () => {
                                         fontSize: 12,
                                         letterSpacing: 0.3,
                                         textTransform: 'uppercase',
-                                        color: 'rgba(0,0,0,0.45)',
-                                        background:
-                                            '#fafafa',
-                                        borderRight:
-                                            '1px solid #f0f0f0',
-                                        borderBottom:
-                                            '1px solid #f0f0f0'
+                                        color: token.colorTextTertiary,
+                                        background: token.colorFillQuaternary,
+                                        borderRight: gridLine,
+                                        borderBottom: gridLine
                                     }}
                                 >
                                     {day}
@@ -909,21 +919,24 @@ export const LeaveCalendar: React.FC = () => {
                                         'YYYY-MM-DD'
                                     )
 
+                                const isWeekend = date.day() === 0 || date.day() === 6
+
                                 return (
                                     <div
                                         key={dateKey}
                                         className={`lc-cell${isBlackout ? ' lc-blackout' : ''}`}
                                         style={{
-                                            minHeight: 118,
-                                            padding: 8,
-                                            borderRight:
-                                                '1px solid #f0f0f0',
-                                            borderBottom:
-                                                '1px solid #f0f0f0',
-                                            background:
-                                                !isBlackout && isToday
-                                                    ? 'rgba(47,111,237,0.04)'
-                                                    : undefined,
+                                            minHeight: 108,
+                                            padding: 6,
+                                            borderRight: gridLine,
+                                            borderBottom: gridLine,
+                                            // Weekends get a faint wash so working days stand out.
+                                            backgroundColor:
+                                                isToday
+                                                    ? token.colorPrimaryBg
+                                                    : isWeekend
+                                                        ? token.colorFillQuaternary
+                                                        : undefined,
                                             opacity:
                                                 isOtherMonth
                                                     ? 0.45
@@ -939,7 +952,7 @@ export const LeaveCalendar: React.FC = () => {
                                                 justifyContent:
                                                     'space-between',
                                                 gap: 6,
-                                                marginBottom: 8
+                                                marginBottom: 6
                                             }}
                                         >
                                             {isToday ? (
@@ -947,7 +960,7 @@ export const LeaveCalendar: React.FC = () => {
                                                     {date.date()}
                                                 </span>
                                             ) : (
-                                                <Text>
+                                                <Text type={isWeekend ? 'secondary' : undefined}>
                                                     {date.date()}
                                                 </Text>
                                             )}
@@ -1086,15 +1099,7 @@ export const LeaveCalendar: React.FC = () => {
                             </Descriptions.Item>
 
                             <Descriptions.Item label='Duration'>
-                                {selectedRequest.days ??
-                                    Math.max(
-                                        dayjs(selectedRequest.to).diff(
-                                            dayjs(selectedRequest.from),
-                                            'day'
-                                        ) + 1,
-                                        1
-                                    )}{' '}
-                                day(s)
+                                {countLeaveDays(selectedRequest.from, selectedRequest.to)} working day(s)
                             </Descriptions.Item>
 
                             {selectedRequest.reason && (

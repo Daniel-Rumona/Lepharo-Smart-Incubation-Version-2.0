@@ -1,5 +1,6 @@
 import * as logger from "firebase-functions/logger";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { isSyntheticData } from "./syntheticData";
 import { admin, db } from "./firebase";
 
 const branchIdOf = (data: any): string =>
@@ -13,6 +14,8 @@ export const syncProgramToBranchCoordinators = onDocumentWritten(
 
     const programId = String(event.params.programId);
     const data = after.data();
+    // Demo programmes must not silently change real staff programme access.
+    if (isSyntheticData(data, programId)) return;
 
     const branchId = branchIdOf(data);
     if (!branchId) return;

@@ -11,19 +11,29 @@ const blockText = (block: ReportBlock) => {
   return String(block.content || '')
 }
 
+/**
+ * Writes text into a paragraph or cell, keeping the first run's formatting. Each line
+ * becomes its own text with a Word line break between (a newline inside one w:t is
+ * ignored by Word, so multi-line answers used to run together).
+ */
 const setText = (node: Element, value: string) => {
+  const docNode = node.ownerDocument!
+  const lines = String(value ?? '').split(/\r?\n/)
   const texts = elements(node, 't')
-  if (texts.length) {
-    texts[0].textContent = value
-    texts.slice(1).forEach(item => { item.textContent = '' })
-    return
-  }
-  const run = node.ownerDocument!.createElementNS(WORD_NS, 'w:r')
-  const text = node.ownerDocument!.createElementNS(WORD_NS, 'w:t')
-  text.setAttribute('xml:space', 'preserve')
-  text.textContent = value
-  run.appendChild(text)
-  node.appendChild(run)
+  const firstRun = texts[0]?.parentElement && texts[0].parentElement.localName === 'r' ? texts[0].parentElement : null
+  // Clear what was there, keeping the first run (and its formatting) to write into.
+  texts.slice(1).forEach(item => { item.textContent = '' })
+  const run = firstRun || node.appendChild(docNode.createElementNS(WORD_NS, 'w:r'))
+  Array.from(run.childNodes)
+    .filter(child => (child as Element).localName === 't' || (child as Element).localName === 'br')
+    .forEach(child => run.removeChild(child))
+  lines.forEach((line, i) => {
+    if (i > 0) run.appendChild(docNode.createElementNS(WORD_NS, 'w:br'))
+    const text = docNode.createElementNS(WORD_NS, 'w:t')
+    text.setAttribute('xml:space', 'preserve')
+    text.textContent = line
+    run.appendChild(text)
+  })
 }
 
 const tableRows = (block: ReportBlock) => Array.isArray(block.content?.rows) ? block.content.rows : []
@@ -58,6 +68,12 @@ const sourceNodeMap = (document: XMLDocument) => {
   })
   return map
 }
+
+/** What a download would leave out or include unfinished, so people are told before they export. */
+export const summarizeExport = (blocks: ReportBlock[]) => ({
+  unmapped: blocks.filter(block => block.contentType !== 'static' && !block.sourceDocumentNodeIds?.length).map(block => block.title),
+  unfinished: blocks.filter(block => block.status !== 'approved').map(block => block.title)
+})
 
 export const generateReportDocx = async ({
   template,
@@ -99,5 +115,6 @@ export const downloadDocx = (blob: Blob, fileName: string) => {
   link.href = url
   link.download = fileName.replace(/[^a-zA-Z0-9._-]+/g, '-') || 'report.docx'
   link.click()
-  URL.revokeObjectURL(url)
+  // Some browsers start the download after click() returns; release the link a little later.
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }

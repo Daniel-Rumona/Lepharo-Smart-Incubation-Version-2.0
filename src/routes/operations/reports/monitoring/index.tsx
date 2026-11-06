@@ -36,6 +36,7 @@ import {
     PlayCircleOutlined
 } from '@ant-design/icons'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 
 // charts
 import InterventionsDeptDrilldownChart from './DepartmentInterventionsDrilldown'
@@ -45,8 +46,7 @@ import IncubateesInsights from './IncubateesInsights'
 import FacilitatorsTab from './FacilitatorsTab'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
-import '@/styles/nav-segmented.css'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { assignedInterventionService } from '@/services/assignedInterventionService'
 import { filterReportRecords } from '@/utils/reportVisibility'
 
@@ -96,7 +96,6 @@ const exportSpanLabel = (spanMonths: number): string => {
 type Intervention = {
     id: string
     programId?: string
-    areaOfSupport?: string
     departmentId?: string
     departmentName?: string
     branchName?: string
@@ -117,6 +116,7 @@ const CARD_STYLE: React.CSSProperties = {
 
 const MonitoringReports: React.FC = () => {
     const { user } = useFullIdentity() as any
+    const { nameOf, idForRole } = useDepartmentRoles()
     const { isDark } = useColorMode()
 
     // use the hook properly
@@ -181,7 +181,6 @@ const MonitoringReports: React.FC = () => {
                         return {
                             id: raw.id,
                             programId: raw.programId,
-                            areaOfSupport: raw.areaOfSupport,
                             departmentId: raw.departmentId ?? undefined,
                             departmentName: raw.departmentName ?? undefined,
                             branchName: raw.branchName ?? raw.branch ?? undefined,
@@ -365,7 +364,7 @@ const MonitoringReports: React.FC = () => {
 
         const reportData = await buildConsolidatedMeProgramReport({
             programId: isAllPrograms ? undefined : activeProgramId,
-            reportTitleDepartmentName: 'M&E (Consolidated)',
+            reportTitleDepartmentName: `${nameOf(idForRole('monitoring'), 'Monitoring & Evaluation')} (Consolidated)`,
             period: {
                 month: start.month() + 1,
                 year: start.year(),
@@ -481,9 +480,9 @@ const MonitoringReports: React.FC = () => {
 
     return (
         <div style={{ padding: '5px 24px' }}>
-            {initialLoading && (
-                <LoadingOverlay tip='Loading Departmental Analytics' />
-            )}
+            {initialLoading ? (
+                <PageSkeleton variant='analytics' />
+            ) : (
             <>
                 <DashboardFilterBar>
                     <div
@@ -536,7 +535,6 @@ const MonitoringReports: React.FC = () => {
 
                         <div style={{ flex: '0 0 auto' }}>
                             <Segmented
-                                className='nav-pill-segmented'
                                 value={view}
                                 onChange={v => setView(v as any)}
                                 options={[
@@ -787,6 +785,7 @@ const MonitoringReports: React.FC = () => {
                     rangeLabel={`${range[0].format('D MMM YYYY')} – ${range[1].format('D MMM YYYY')}`}
                 />
             </>
+            )}
         </div>
     )
 }

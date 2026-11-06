@@ -4,9 +4,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
-  EyeOutlined,
   FileTextOutlined,
-  InfoCircleOutlined,
   MoreOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
@@ -41,7 +39,6 @@ export type EditorProps = {
   onQuestion: (id?: string) => void;
   onMarkReviewed: () => void;
   onExtract: () => void;
-  onPreview: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
 };
@@ -53,14 +50,15 @@ export default function ItemEditor(props: EditorProps) {
   const tabs: [EditorTab, string, React.ReactNode][] = assess
     ? [
         ["questions", `Questions (${item.questions.length})`, <QuestionCircleOutlined />],
-        ["instructions", "Instructions", <InfoCircleOutlined />],
-        ["settings", "Settings", <SettingOutlined />],
+        ["settings", "Instructions & settings", <SettingOutlined />],
       ]
     : [
         ["content", "Content", <EditOutlined />],
         ["settings", "Settings", <SettingOutlined />],
       ];
-  const active = tabs.some(([key]) => key === tab) ? tab : tabs[0][0];
+  // Assessment instructions live with their settings now (they start filled in).
+  const wanted = tab === "instructions" ? "settings" : tab;
+  const active = tabs.some(([key]) => key === wanted) ? wanted : tabs[0][0];
 
   return (
     <section className="cb-panel cb-editor" aria-label={`Edit ${item.title}`}>
@@ -91,9 +89,6 @@ export default function ItemEditor(props: EditorProps) {
             <Tag color="warning">{state.note}</Tag>
           )}
         </span>
-        <Button size="small" shape="round" icon={<EyeOutlined />} onClick={props.onPreview}>
-          <span className="cb-hide-xs">Preview</span>
-        </Button>
         <Dropdown
           trigger={["click"]}
           menu={{
@@ -116,7 +111,14 @@ export default function ItemEditor(props: EditorProps) {
       />
       <div className="cb-editor-body">
         {active === "settings" ? (
-          <SettingsTab {...props} patch={patch} />
+          assess ? (
+            <>
+              <InstructionsTab {...props} patch={patch} />
+              <SettingsTab {...props} patch={patch} />
+            </>
+          ) : (
+            <SettingsTab {...props} patch={patch} />
+          )
         ) : active === "questions" ? (
           <QuestionsTab
             key={item.id}
@@ -129,8 +131,6 @@ export default function ItemEditor(props: EditorProps) {
             onQuestion={props.onQuestion}
             onExtract={props.onExtract}
           />
-        ) : active === "instructions" ? (
-          <InstructionsTab {...props} patch={patch} />
         ) : (
           <ContentTab {...props} patch={patch} />
         )}

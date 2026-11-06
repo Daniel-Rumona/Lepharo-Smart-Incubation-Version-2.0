@@ -1,4 +1,4 @@
-import { collection, getDocs, limit, query, type Firestore } from 'firebase/firestore'
+import { collection, getDocs, query, where, type Firestore } from 'firebase/firestore'
 import type {
   ReportDirectoryDepartment,
   ReportDirectoryProgram,
@@ -33,8 +33,12 @@ const resolveDepartmentId = (data: any): string | undefined =>
   data?.department?.id ||
   undefined
 
-export const loadReportUsers = async (db: Firestore): Promise<ReportDirectoryUser[]> => {
-  const snap = await getDocs(query(collection(db, 'users'), limit(400)))
+/**
+ * Users who can be handed report sections. By role (it used to read the first 400 users
+ * and filter, so coordinators past that were missing, and every user was downloaded).
+ */
+export const loadReportUsers = async (db: Firestore, roles: string[] = ['coordinator', 'Coordinator']): Promise<ReportDirectoryUser[]> => {
+  const snap = await getDocs(query(collection(db, 'users'), where('role', 'in', roles.slice(0, 10))))
   return snap.docs
     .map(d => {
       const data = d.data()

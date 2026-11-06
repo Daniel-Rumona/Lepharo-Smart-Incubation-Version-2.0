@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "timesheets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "inquiries",
       "queryScope": "COLLECTION",
       "fields": [
@@ -199,6 +213,10 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "audience",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "recipientRoles",
           "arrayConfig": "CONTAINS"
         },
@@ -227,5 +245,16 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "responses",
+      "fieldPath": "participantId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
 }

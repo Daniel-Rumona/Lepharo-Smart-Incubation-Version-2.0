@@ -1,4 +1,5 @@
 import { getDownloadURL, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { REPORT_STORAGE_ROOT } from '../reportConfig'
 
 const safeName = (value: string) => value.replace(/[^a-zA-Z0-9._-]+/g, '-')
@@ -10,9 +11,9 @@ export const uploadReportTemplateSource = async (
 ) => {
   const path = `${REPORT_STORAGE_ROOT}/templates/${templateId}/source/${Date.now()}-${safeName(file.name)}`
   const storageRef = ref(storage, path)
-  await uploadBytes(storageRef, file, {
+  await uploadBytes(storageRef, file, withOwner({
     contentType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  })
+  }))
   const url = await getDownloadURL(storageRef)
   return { name: file.name, path, url, size: file.size }
 }
@@ -25,7 +26,7 @@ export const uploadReportBlockAttachment = async (
 ) => {
   const path = `${REPORT_STORAGE_ROOT}/reports/${reportId}/blocks/${blockId}/${Date.now()}-${safeName(file.name)}`
   const storageRef = ref(storage, path)
-  await uploadBytes(storageRef, file, { contentType: file.type || undefined })
+  await uploadBytes(storageRef, file, withOwner({ contentType: file.type || undefined }))
   const url = await getDownloadURL(storageRef)
   return { name: file.name, path, url, size: file.size }
 }

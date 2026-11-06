@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Badge, Button, DatePicker, Dropdown, Modal, Space, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
-import { CalendarOutlined, CheckOutlined, DownOutlined, FilterOutlined } from '@ant-design/icons'
+import { CalendarOutlined, CheckOutlined, DownOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
 import {
@@ -13,7 +13,13 @@ import {
 const { Text } = Typography
 const { RangePicker } = DatePicker
 
-type PresetKey = 'this-week' | 'this-month' | 'this-quarter' | 'ytd' | 'custom'
+type PresetKey = 'this-week' | 'this-month' | 'this-quarter' | 'ytd' | 'fy-ytd' | 'custom'
+
+/**
+ * The financial year starts in April. Its quarters (Apr–Jun, …) are the calendar
+ * quarters, so only the year-to-date preset differs.
+ */
+const FY_START_MONTH = 3
 
 /**
  * Quick ranges. Built per call so a session left open overnight does not keep
@@ -45,6 +51,12 @@ const presetRange = (key: PresetKey): DashboardDateRange => {
             ]
         case 'ytd':
             return [now.startOf('year'), now.endOf('day')]
+        case 'fy-ytd': {
+            const yearStart = now.month() >= FY_START_MONTH
+                ? now.month(FY_START_MONTH).startOf('month')
+                : now.subtract(1, 'year').month(FY_START_MONTH).startOf('month')
+            return [yearStart, now.endOf('day')]
+        }
         default:
             return null
     }
@@ -54,7 +66,8 @@ const PRESET_OPTIONS: { label: string; value: Exclude<PresetKey, 'custom'> }[] =
     { label: 'This Week', value: 'this-week' },
     { label: 'This Month', value: 'this-month' },
     { label: 'This Quarter', value: 'this-quarter' },
-    { label: 'Year To Date', value: 'ytd' }
+    { label: 'Year To Date', value: 'ytd' },
+    { label: 'Financial Year To Date', value: 'fy-ytd' }
 ]
 
 /** Work out which preset (if any) the active range corresponds to. */
@@ -119,38 +132,49 @@ export const DashboardFilterControl: React.FC<{ compact?: boolean }> = ({ compac
                   <Dropdown menu={menu} trigger={['click']} placement="bottomRight">
                     <Button
                         type="text"
-                        shape="round"
-                        icon={<FilterOutlined />}
-                        className="workspace-dashboard-filter"
-                        style={{
-                            height: 32,
-                            paddingInline: compact ? 10 : 14,
-                            // A custom range label ("01 Jan 2025 – 15 Sep 2026") runs far
-                            // longer than a preset like "This month" — let the button shrink
-                            // and cap it instead of forcing the topbar's segmented nav to
-                            // overflow its pill.
-                            flex: compact ? '0 0 auto' : '0 1 auto',
-                            minWidth: 0,
-                            maxWidth: compact ? undefined : 200,
-                        }}
+                        // Compact (the top bar) is an icon-only circle matching the
+                        // bell and the other top bar icon buttons.
+                        shape={compact ? 'circle' : 'round'}
+                        icon={<CalendarOutlined />}
+                        className={compact ? 'workspace-dashboard-filter workspace-icon-button' : 'workspace-dashboard-filter'}
+                        style={
+                            compact
+                                ? { flex: '0 0 auto' }
+                                : {
+                                    height: 32,
+                                    paddingInline: 14,
+                                    // A custom range label ("01 Jan 2025 – 15 Sep 2026") runs far
+                                    // longer than a preset like "This month" — let the button
+                                    // shrink and cap it instead of forcing the topbar's
+                                    // segmented nav to overflow its pill.
+                                    flex: '0 1 auto',
+                                    minWidth: 0,
+                                    maxWidth: 200,
+                                }
+                        }
                         aria-label={`Change reporting period. Currently ${label}`}
                     >
-                        {compact ? '' : (
-                            <span
-                                style={{
-                                    display: 'inline-block',
-                                    minWidth: 0,
-                                    maxWidth: '100%',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                    verticalAlign: 'bottom',
-                                }}
-                            >
-                                {label}
-                            </span>
+                        {/* No children at all when compact: even an empty label
+                            makes antd treat it as a text button and push the
+                            icon off-centre. */}
+                        {compact ? undefined : (
+                            <>
+                                <span
+                                    style={{
+                                        display: 'inline-block',
+                                        minWidth: 0,
+                                        maxWidth: '100%',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        verticalAlign: 'bottom',
+                                    }}
+                                >
+                                    {label}
+                                </span>
+                                <DownOutlined style={{ fontSize: 10, marginInlineStart: 6 }} />
+                            </>
                         )}
-                        {compact ? null : <DownOutlined style={{ fontSize: 10, marginInlineStart: 6 }} />}
                     </Button>
                   </Dropdown>
                 </Badge>

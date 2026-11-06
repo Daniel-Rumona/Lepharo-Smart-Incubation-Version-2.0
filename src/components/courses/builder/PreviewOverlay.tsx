@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Segmented, Tooltip } from "antd";
-import { ArrowLeftOutlined, DesktopOutlined, EditOutlined, MobileOutlined } from "@ant-design/icons";
+import { Button, Segmented, Switch, Tooltip } from "antd";
+import { ArrowLeftOutlined, DesktopOutlined, EditOutlined, MobileOutlined, ReloadOutlined } from "@ant-design/icons";
 import { CoursePlayer } from "../CoursePlayer";
 import type { SavedCourse } from "../courseStorage";
-import { useBuilderVars } from "./kinds";
 import { Crumbs, TopBar } from "./parts";
 
 /** Full-screen learner preview. Progress is simulated and never saved. */
@@ -18,7 +17,6 @@ export default function PreviewOverlay({
   onClose: () => void;
   onEdit: (itemId: string) => void;
 }) {
-  const vars = useBuilderVars();
   const [device, setDevice] = useState<"desktop" | "phone">("desktop");
   const [run, setRun] = useState(0);
   const [unlocked, setUnlocked] = useState(false);
@@ -37,46 +35,49 @@ export default function PreviewOverlay({
   }, [onClose]);
 
   return (
-    <div className="cb-preview" style={vars} role="dialog" aria-modal="true" aria-label="Learner preview">
+    <div className="cb-preview" role="dialog" aria-modal="true" aria-label="Learner preview">
       <TopBar>
         <Button type="text" shape="round" icon={<ArrowLeftOutlined />} aria-label="Back to builder" onClick={onClose} />
         <Crumbs trail={[course.title]} current="Learner preview" meta={<span className="cb-hide-sm">Progress here is simulated</span>} />
-        <Segmented
-          className="cb-hide-md"
-          value={device}
-          onChange={(value) => setDevice(value as "desktop" | "phone")}
-          options={[
-            { value: "desktop", icon: <DesktopOutlined />, title: "Desktop" },
-            { value: "phone", icon: <MobileOutlined />, title: "Phone" },
-          ]}
-        />
-        <Button
-          type="text"
-          shape="round"
-          className="cb-hide-md"
-          onClick={() => {
-            setStartAt(undefined);
-            setUnlocked(false);
-            setRun(run + 1);
-          }}
-        >
-          Reset progress
-        </Button>
-        <Tooltip title="Open any item without completing the ones before it">
+        <div className="cb-preview-sim cb-hide-md">
+          <Segmented
+            size="small"
+            value={device}
+            onChange={(value) => setDevice(value as "desktop" | "phone")}
+            options={[
+              { value: "desktop", icon: <DesktopOutlined />, title: "Desktop" },
+              { value: "phone", icon: <MobileOutlined />, title: "Phone" },
+            ]}
+          />
+          <Tooltip title="Open any item without completing the ones before it">
+            <label>
+              <Switch
+                size="small"
+                checked={unlocked}
+                onChange={(next) => {
+                  setStartAt(current.current);
+                  setUnlocked(next);
+                  setRun(run + 1);
+                }}
+              />
+              Unlock all
+            </label>
+          </Tooltip>
+        </div>
+        <Tooltip title="Start over with no progress">
           <Button
-            type={unlocked ? "default" : "text"}
-            shape="round"
+            shape="circle"
             className="cb-hide-md"
+            icon={<ReloadOutlined />}
+            aria-label="Reset progress"
             onClick={() => {
-              setStartAt(current.current);
-              setUnlocked(!unlocked);
+              setStartAt(undefined);
+              setUnlocked(false);
               setRun(run + 1);
             }}
-          >
-            {unlocked ? "Lock again" : "Unlock all"}
-          </Button>
+          />
         </Tooltip>
-        <Button shape="round" icon={<EditOutlined />} onClick={() => current.current && onEdit(current.current)}>
+        <Button type="primary" shape="round" icon={<EditOutlined />} onClick={() => current.current && onEdit(current.current)}>
           <span className="cb-hide-xs">Edit this item</span>
         </Button>
       </TopBar>

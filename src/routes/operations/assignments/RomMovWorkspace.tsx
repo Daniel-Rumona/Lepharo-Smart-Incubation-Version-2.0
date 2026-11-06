@@ -30,6 +30,7 @@ import {
     where
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import dayjs from 'dayjs'
 import { db, storage } from '@/firebase'
 import { PreIncubationContractModal } from '@/components/modals/Contracts/PreIncubationContract'
@@ -161,19 +162,12 @@ export default function RomMovWorkspace({ user, department, activeProgramId }: P
             )
             const deptInterventions = interventionsSnap.docs
                 .map(item => ({ id: item.id, ...(item.data() as any) }))
-                .filter((item: any) => {
-                    const sameDepartment = departmentId && String(item.departmentId || '') === departmentId
-                    const area = normalize(item.areaOfSupport || item.area || item.departmentName)
-                    return sameDepartment || (!!area && area === normalize(departmentName))
-                })
+                .filter((item: any) => !!departmentId && String(item.departmentId || '') === departmentId)
                 .sort((a: any, b: any) => interventionTitle(a).localeCompare(interventionTitle(b)))
 
             const peopleByKey = new Map<string, any>()
             const addPerson = (id: string, data: any) => {
-                const personDept = normalize(data.departmentName || data.department)
-                const belongsToRom =
-                    String(data.departmentId || '') === departmentId ||
-                    (!!personDept && personDept === normalize(departmentName))
+                const belongsToRom = !!departmentId && String(data.departmentId || '') === departmentId
                 if (!belongsToRom && id !== String(user?.uid || user?.id || '')) return
                 const key = String(data.uid || data.userId || id || data.email || '')
                 if (!key) return
@@ -328,7 +322,7 @@ export default function RomMovWorkspace({ user, department, activeProgramId }: P
                     storage,
                     `intervention-evidence/${cleanIdPart(selected.programId || 'no-program')}/${cleanIdPart(selected.participantId)}/${cleanIdPart(selected.id)}/${Date.now()}_${safeName}`
                 )
-                await uploadBytes(storageRef, raw)
+                await uploadBytes(storageRef, raw, withOwner({}, { participantId: selected.participantId }))
                 uploadedUrls.push(await getDownloadURL(storageRef))
             }
 
@@ -359,7 +353,6 @@ export default function RomMovWorkspace({ user, department, activeProgramId }: P
                 programName: selected.programName || '',
                 departmentId: departmentId || null,
                 departmentName,
-                areaOfSupport: departmentName,
                 interventionId: intervention.id,
                 interventionTitle: interventionTitle(intervention) || 'ROM intervention',
                 deliveryMethod: values.deliveryMethod,

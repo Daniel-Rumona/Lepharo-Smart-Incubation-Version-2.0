@@ -32,6 +32,7 @@ const admin = __importStar(require("firebase-admin"));
 exports.admin = admin;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const emailDelivery_1 = require("./emailDelivery");
+const departmentRoles_1 = require("./departmentRoles");
 if (!admin.apps.length) {
     admin.initializeApp();
 }
@@ -73,38 +74,14 @@ async function getMERecipients() {
     const recipients = new Set();
     recipients.add("egar@lepharo.co.za");
     try {
-        let meDeptId = null;
-        {
-            let q = exports.db.collection("departments");
-            const snap = await q.get();
-            for (const d of snap.docs) {
-                const data = d.data();
-                const name = String(data.departmentName || data.name || "").toLowerCase();
-                const isME = name.includes("monitoring") ||
-                    name.includes("m&e") ||
-                    name.includes("m & e") ||
-                    name.replace(/\s+/g, "").includes("m&e");
-                if (isME) {
-                    meDeptId = d.id;
-                    break;
-                }
-            }
-        }
-        let uq = exports.db.collection("users").where("role", "==", "operations");
-        if (meDeptId)
-            uq = uq.where("departmentId", "==", meDeptId);
-        const usersSnap = await uq.get();
+        const meDeptIds = new Set(await (0, departmentRoles_1.departmentIdsForRole)("monitoring"));
+        if (!meDeptIds.size)
+            return Array.from(recipients);
+        const usersSnap = await exports.db.collection("users").where("role", "==", "operations").get();
         usersSnap.docs.forEach((u) => {
             const data = u.data();
-            if (!meDeptId) {
-                const dn = String(data.departmentName || "").toLowerCase();
-                const ok = dn.includes("monitoring") ||
-                    dn.includes("m&e") ||
-                    dn.includes("m & e") ||
-                    dn.replace(/\s+/g, "").includes("m&e");
-                if (!ok)
-                    return;
-            }
+            if (!meDeptIds.has(String(data.departmentId || "")))
+                return;
             const email = String(data.email || "").trim().toLowerCase();
             if (email.includes("@"))
                 recipients.add(email);
@@ -188,10 +165,20 @@ function getTransporter() {
     const secure = process.env.SMTP_SECURE == null
         ? port === 465
         : process.env.SMTP_SECURE.trim().toLowerCase() === "true";
+    // One pooled connection, reused across sends and throttled, so crons that
+    // email many people don't open a burst of parallel SMTP sessions.
     _tx = (0, emailDelivery_1.withEmailDeliveryLogging)(nodemailer_1.default.createTransport({
         host: requireEnv("SMTP_HOST"),
         port,
         secure,
+        pool: true,
+        maxConnections: 2,
+        maxMessages: 50,
+        rateDelta: 1000,
+        rateLimit: 3,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 30000,
         auth: {
             user: requireEnv("SMTP_USER"),
             pass: requireEnv("SMTP_PASS"),
@@ -219,12 +206,35 @@ async function getConsultantMapByIds(ids) {
     return out;
 }
 exports.getConsultantMapByIds = getConsultantMapByIds;
+/**
+ * Sends one message per recipient rather than one BCC to everyone: a single
+ * dead mailbox in a shared BCC made the server drop the whole SMTP session
+ * ("Connection closed unexpectedly"), so nobody got the reminder. Failures are
+ * per recipient now (each logged in emailLogs); this only throws when every
+ * recipient failed, so callers' existing error handling still fires.
+ */
 async function sendStatusChangeNotification(recipients, subject, html, text) {
-    if (!recipients.length)
+    const unique = [...new Set(recipients.map((r) => String(r || "").trim().toLowerCase()).filter((r) => r.includes("@")))];
+    if (!unique.length)
         return;
     const transporter = getTransporter();
     const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-    await transporter.sendMail({ from, to: from, bcc: recipients, subject, html, text });
+    let failed = 0;
+    let lastError = null;
+    for (const to of unique) {
+        try {
+            await transporter.sendMail({ from, to, subject, html, text });
+        }
+        catch (error) {
+            failed++;
+            lastError = error;
+        }
+    }
+    if (failed) {
+        logger.warn("sendStatusChangeNotification.partialFailure", { subject, total: unique.length, failed });
+    }
+    if (failed === unique.length)
+        throw lastError;
 }
 exports.sendStatusChangeNotification = sendStatusChangeNotification;
 function buildMovNotificationContent(opts) {

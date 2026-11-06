@@ -6,6 +6,8 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase";
 import { useFullIdentity } from "@/hooks/useFullIdentity";
 import { type Training, type TrainingEnrollment, listAllEnrollments, listTrainings } from "./trainingStorage";
+import { TrainingCourseProgressCell, useTrainingCourseProgress } from "./TrainingCourseProgress";
+import { EnrollmentDocumentsCell } from "./EnrollmentDocuments";
 
 const STATUS_META = {
   unassigned: { color: "gold", label: "Awaiting training" },
@@ -24,7 +26,7 @@ const STATUS_META = {
 export default function TrainingSmesRepository({ onBack }: { onBack: () => void }) {
   const { user } = useFullIdentity();
   const userRecord = user as Record<string, unknown> | null;
-  const department = String(userRecord?.departmentName || "").trim();
+  const departmentId = String(userRecord?.departmentId || "").trim();
   const isCenterCoordinator = userRecord?.role === "projectadmin";
   const assignedBranch = String(userRecord?.assignedBranch || "").trim();
 
@@ -64,11 +66,11 @@ export default function TrainingSmesRepository({ onBack }: { onBack: () => void 
   const accessibleTrainings = useMemo(
     () =>
       trainings.filter((t) => {
-        const departmentGranted = t.access?.some((a) => a.department === department && a.capabilities.includes("repository"));
+        const departmentGranted = t.access?.some((a) => a.departmentId === departmentId && a.capabilities.includes("repository"));
         const coordinatorGranted = isCenterCoordinator && t.centerCoordinatorAccess && !!assignedBranch && t.centers.some((c) => c.id === assignedBranch);
         return departmentGranted || coordinatorGranted;
       }),
-    [trainings, department, isCenterCoordinator, assignedBranch]
+    [trainings, departmentId, isCenterCoordinator, assignedBranch]
   );
   const accessibleIds = useMemo(() => new Set(accessibleTrainings.map((t) => t.id)), [accessibleTrainings]);
   const trainingById = useMemo(() => new Map(accessibleTrainings.map((t) => [t.id, t])), [accessibleTrainings]);
@@ -83,11 +85,22 @@ export default function TrainingSmesRepository({ onBack }: { onBack: () => void 
     return Array.from(set);
   };
 
-  const showsProgress = accessibleTrainings.some(
-    (t) =>
-      t.access.some((a) => a.department === department && a.capabilities.includes("progress")) ||
-      (isCenterCoordinator && t.centerCoordinatorAccess)
+  const progressTrainings = useMemo(
+    () =>
+      accessibleTrainings.filter(
+        (t) =>
+          t.access.some((a) => a.departmentId === departmentId && a.capabilities.includes("progress")) ||
+          (isCenterCoordinator && t.centerCoordinatorAccess)
+      ),
+    [accessibleTrainings, departmentId, isCenterCoordinator]
   );
+  const progressTrainingIds = useMemo(() => new Set(progressTrainings.map((t) => t.id)), [progressTrainings]);
+  const showsProgress = progressTrainings.length > 0;
+  const progressEnrollments = useMemo(
+    () => enrollments.filter((e) => progressTrainingIds.has(e.trainingId)),
+    [enrollments, progressTrainingIds]
+  );
+  const courseProgress = useTrainingCourseProgress(progressEnrollments, progressTrainings, showsProgress);
 
   const regionOptions = useMemo(() => {
     const set = new Set<string>();
@@ -129,34 +142,20 @@ export default function TrainingSmesRepository({ onBack }: { onBack: () => void 
     {
       title: "Documents",
       key: "documents",
-      render: (_, r) => (
-        <Space direction="vertical" size={0}>
-          {r.idDocument && (
-            <a href={r.idDocument.url} target="_blank" rel="noreferrer">
-              ID copy
-            </a>
-          )}
-          {r.qualificationDocument && (
-            <a href={r.qualificationDocument.url} target="_blank" rel="noreferrer">
-              Report / qualification
-            </a>
-          )}
-          {r.cvDocument && (
-            <a href={r.cvDocument.url} target="_blank" rel="noreferrer">
-              CV
-            </a>
-          )}
-          {r.registrationFormDocument && (
-            <a href={r.registrationFormDocument.url} target="_blank" rel="noreferrer">
-              Registration form
-            </a>
-          )}
-        </Space>
-      ),
+      render: (_, r) => <EnrollmentDocumentsCell enrollment={r} training={trainingById.get(r.trainingId)} />,
     },
   ];
   if (showsProgress) {
-    columns.push({ title: "Progress", key: "progress", render: () => <Tag>Tracking coming soon</Tag> });
+    columns.push({
+      title: "Course progress",
+      key: "progress",
+      render: (_, r) =>
+        progressTrainingIds.has(r.trainingId) ? (
+          <TrainingCourseProgressCell enrollment={r} training={trainingById.get(r.trainingId)} state={courseProgress} />
+        ) : (
+          "—"
+        ),
+    });
   }
 
   if (loading) return <Spin style={{ margin: 40 }} />;

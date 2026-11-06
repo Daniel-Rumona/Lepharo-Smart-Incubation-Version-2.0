@@ -1,5 +1,6 @@
 import * as logger from "firebase-functions/logger";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { isSyntheticData } from "./syntheticData";
 import { admin, db } from "./firebase";
 
 async function getApplicationForParticipant(participantId: string) {
@@ -147,6 +148,9 @@ export const syncAssignedInterventionsDenorm = onDocumentWritten(
     }
 
     const a = afterSnap.data() as any;
+    // Bulk fixture imports include a complete denormalisation. Avoid racing 300
+    // creation events over arrays. Subsequent real workflow edits still sync.
+    if (!beforeSnap?.exists && isSyntheticData(a, assignedInterventionId) && a.seedHydration === true) return;
 
     if (!beforeSnap?.exists) {
       await repairLinksAfterAssignmentCreation(assignedInterventionId, a);
@@ -191,7 +195,7 @@ export const syncAssignedInterventionsDenorm = onDocumentWritten(
       interventionId: a.interventionId || "",
       databaseInterventionId: a.databaseInterventionId || "",
       title: a.interventionTitle || "",
-      areaOfSupport: a.areaOfSupport || "",
+      departmentId: a.departmentId || "",
       dueDate: a.dueDate ?? null,
     };
 

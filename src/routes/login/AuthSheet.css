@@ -1,0 +1,296 @@
+/* Shared styles for the login screen's dialogs (AuthSheet.tsx): a bottom
+   drawer on phones, a centred modal on desktop. Colours come from the --app-*
+   tokens in styles/dark-mode.css and styles/accent-themes.css, so light, dark
+   and every accent follow without per-theme rules, apart from the warning
+   badge whose hue is not part of the token set. */
+
+/* --- Containers ---------------------------------------------------------- */
+
+.auth-sheet-wrapper.ant-drawer-content-wrapper {
+    max-height: 92dvh;
+    border-radius: 24px 24px 0 0;
+    overflow: hidden;
+    box-shadow: 0 -12px 40px rgba(16, 24, 40, 0.18);
+}
+html[data-theme="dark"] .auth-sheet-wrapper.ant-drawer-content-wrapper {
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.6);
+}
+.auth-sheet-body.ant-drawer-body {
+    padding: 0;
+}
+
+.auth-modal .ant-modal-content {
+    padding: 0;
+    border-radius: 24px;
+    overflow: hidden;
+}
+
+/* --- Sheet --------------------------------------------------------------- */
+
+.auth-sheet {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    color: var(--app-text);
+}
+.auth-sheet.is-drawer {
+    padding: 10px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+.auth-sheet.is-modal {
+    padding: 32px 28px 24px;
+}
+
+.auth-sheet-handle {
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--app-border-strong);
+    margin-bottom: 18px;
+}
+
+.auth-sheet-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 50%;
+    background: var(--app-surface-sunken);
+    color: var(--app-text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.auth-sheet.is-modal .auth-sheet-close {
+    top: 16px;
+    right: 16px;
+}
+.auth-sheet-close:hover {
+    color: var(--app-text);
+    background: var(--app-border);
+}
+
+.auth-sheet-badge {
+    width: 56px;
+    height: 56px;
+    display: grid;
+    place-items: center;
+    border-radius: 18px;
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 14px;
+}
+.auth-sheet-badge.is-warn {
+    background: var(--app-wash-warning);
+    color: #d48806;
+}
+html[data-theme="dark"] .auth-sheet-badge.is-warn {
+    color: #f5b942;
+}
+.auth-sheet-badge.is-info {
+    background: var(--app-wash-info);
+    color: var(--app-accent);
+}
+.auth-sheet-badge.is-accent {
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+}
+
+.auth-sheet-title {
+    margin: 0 0 6px;
+    font-size: 20px;
+    line-height: 1.3;
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+.auth-sheet-lead {
+    margin: 0 0 14px;
+    max-width: 380px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--app-text-muted);
+}
+
+.auth-sheet-email {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    margin-bottom: 18px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    color: var(--app-text);
+    font-size: 13px;
+}
+.auth-sheet-email .anticon {
+    color: var(--app-text-subtle);
+}
+.auth-sheet-email span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.auth-sheet-options {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.auth-sheet-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 4px;
+}
+.auth-sheet-form .ant-input-affix-wrapper {
+    border-radius: 12px;
+}
+.auth-sheet-form .ant-input-prefix {
+    margin-inline-end: 10px;
+    color: var(--app-text-subtle);
+}
+.auth-sheet-form .ant-btn {
+    height: 48px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.auth-sheet-actions {
+    display: flex;
+    gap: 10px;
+}
+.auth-sheet-actions .ant-btn {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.auth-sheet-link {
+    margin-top: 6px;
+    padding: 12px 16px;
+    border: none;
+    border-radius: 12px;
+    background: none;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+.auth-sheet-link:hover:not(:disabled) {
+    color: var(--app-text);
+}
+.auth-sheet-link:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* --- Option rows --------------------------------------------------------- */
+
+.auth-option {
+    width: 100%;
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    text-align: left;
+    font: inherit;
+    color: var(--app-text);
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 16px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.auth-option:hover:not(:disabled) {
+    border-color: var(--app-accent-border-strong);
+}
+.auth-option:active:not(:disabled) {
+    transform: scale(0.99);
+}
+.auth-option:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+.auth-option.is-recommended {
+    background: var(--app-accent-wash);
+    border-color: var(--app-accent-border);
+}
+
+.auth-option:focus-visible,
+.auth-sheet-close:focus-visible,
+.auth-sheet-link:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.auth-option-icon {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    color: var(--app-accent);
+    font-size: 18px;
+}
+
+.auth-option-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.auth-option-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.auth-option-hint {
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--app-text-muted);
+}
+
+.auth-tag {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.auth-option-chevron {
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--app-text-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .auth-option,
+    .auth-sheet-close,
+    .auth-sheet-link {
+        transition: none;
+    }
+}

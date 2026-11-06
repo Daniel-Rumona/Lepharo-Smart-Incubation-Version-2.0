@@ -1,0 +1,249 @@
+/* Development plan builder: sources on the left, the plan on the right. */
+
+.dpb-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.dpb-head-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.dpb-head-name {
+    overflow: hidden;
+    font-size: 17px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.dpb-head-sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.dpb-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    gap: 12px;
+    align-items: start;
+}
+
+.dpb-sources {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+.dpb-plan {
+    position: sticky;
+    top: 12px;
+    min-width: 0;
+}
+
+.dpb .ws-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.dpb-count {
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--app-text-muted);
+    background: var(--app-surface-sunken);
+    border-radius: 999px;
+}
+
+.dpb-muted {
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.dpb-note {
+    margin-top: 10px;
+}
+
+.dpb-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+}
+
+.dpb-item-title {
+    min-width: 0;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+/* GAP suggestion: the gap it answers, the intervention, then Add. */
+.dpb-suggestion {
+    display: flex;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+}
+
+.dpb-suggestion-main {
+    display: grid;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.dpb-gap-q {
+    font-size: 12.5px;
+    color: var(--app-text-muted);
+}
+
+.dpb-suggestion-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.dpb-match {
+    font-size: 12px;
+    color: var(--app-text-subtle);
+    white-space: nowrap;
+}
+
+.dpb-added {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: #16a34a;
+    white-space: nowrap;
+}
+
+/* Catalogue: one toggle per intervention. */
+.dpb-choice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    font: inherit;
+    text-align: start;
+    color: var(--app-text);
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease;
+}
+
+.dpb-choice:hover {
+    border-color: var(--app-border-strong);
+    background: var(--app-surface-sunken);
+}
+
+.dpb-choice:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.dpb-choice.is-added {
+    border-color: var(--app-accent-border);
+    background: var(--app-accent-wash);
+}
+
+.dpb-choice-mark {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
+    color: var(--app-text-muted);
+    border: 1px solid var(--app-border-strong);
+    border-radius: 50%;
+}
+
+.dpb-choice.is-added .dpb-choice-mark {
+    color: #fff;
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+}
+
+/* The plan. */
+.dpb-plan-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 24px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px 8px 10px;
+    border-bottom: 1px solid var(--app-border);
+}
+
+.dpb-plan-row:last-child {
+    border-bottom: 0;
+}
+
+.dpb-row-spacer {
+    width: 24px;
+}
+
+.dpb-confirm {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--app-border);
+}
+
+.dpb-mobile-bar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--app-surface-raised);
+    border-top: 1px solid var(--app-border);
+    box-shadow: var(--app-shadow);
+}
+
+@media (max-width: 991px) {
+    .dpb-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dpb-plan {
+        position: static;
+    }
+}
+
+@media (max-width: 767px) {
+    /* Room for the fixed confirm bar. */
+    .dpb {
+        padding-bottom: 72px;
+    }
+}
+
+@media (max-width: 420px) {
+    .dpb-hide-xs {
+        display: none;
+    }
+}

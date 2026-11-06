@@ -42,15 +42,15 @@ import {
 import { Helmet } from 'react-helmet'
 import { db } from '@/firebase'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import {
     buildGroupRequirements,
     evaluateGroupEligibility,
     groupLabel,
+    isAgreementCountersigned,
     confirmSmeGroupMovement,
-    isMonitoringAndEvaluationDepartment,
-    isRomDepartment,
     notifyMeGroupMovementBatch,
     notifyRomSmeReady,
     requestSmeGroupMovement,
@@ -66,9 +66,11 @@ import {
     type IncubationGroup,
     type PendingGroupMovement
 } from '@/services/groupLifecycleService'
+import { departmentNameOf, loadDepartmentRoles, useDepartmentRoles } from '@/services/departmentRoles'
 import {
     canonicalAgreementId,
-    complianceStatusLabel
+    complianceStatusLabel,
+    resolveComplianceRequirements
 } from '@/services/complianceResolver'
 
 const { Text } = Typography
@@ -148,6 +150,17 @@ async function resolveParticipant(application: any) {
     return snapshot.empty ? null : { id: snapshot.docs[0].id, data: snapshot.docs[0].data() }
 }
 
+// Re-reads an SME's documents and agreements just before M&E confirms a move,
+// so anything rejected, replaced or countersign-revoked since the page loaded
+// is caught rather than confirmed on the strength of a stale copy.
+async function withFreshEvidence(row: SmeGroupRow): Promise<SmeGroupRow> {
+    const snapshot = await getDoc(doc(db, 'applications', row.applicationId))
+    if (!snapshot.exists()) throw new Error('The accepted application no longer exists.')
+    const application = { id: snapshot.id, ...(snapshot.data() as any) }
+    const participant = await resolveParticipant(application)
+    return { ...row, evidence: await loadEvidence(application, participant?.data || {}) }
+}
+
 const evidenceSlug = (item: any, fallback = '') =>
     String(item?.slug || item?.presetId || item?.preset || item?.key || item?.type || item?.documentName || item?.title || fallback)
         .trim()
@@ -165,10 +178,11 @@ const looksLikeAgreementEvidence = (item: any) => {
 }
 
 async function loadEvidence(application: any, participant: any = {}): Promise<GroupEvidence[]> {
-    const flatSources = [
-        ...(Array.isArray(participant.complianceDocuments) ? participant.complianceDocuments : []),
-        ...(Array.isArray(application.complianceDocuments) ? application.complianceDocuments : [])
-    ]
+    // Same source the Compliance page reads: the participant's array when it
+    // has entries, otherwise the application's.
+    const flatSources: any[] = Array.isArray(participant.complianceDocuments) && participant.complianceDocuments.length
+        ? participant.complianceDocuments
+        : Array.isArray(application.complianceDocuments) ? application.complianceDocuments : []
     const flat = flatSources.map((item: any, index: number): GroupEvidence => {
         const agreement = looksLikeAgreementEvidence(item)
         const slug = evidenceSlug(item, `flat-${index}`)
@@ -179,7 +193,8 @@ async function loadEvidence(application: any, participant: any = {}): Promise<Gr
             presetId: item.presetId || item.preset,
             documentName: item.documentName || item.title || item.type,
             kind: agreement ? 'agreement' : 'upload',
-            status: item.verificationStatus ?? item.status ?? item.verified ?? item.approved ?? (agreement ? 'valid' : undefined),
+            status: item.verificationStatus ?? item.status ?? item.verified ?? item.approved ??
+                (agreement ? (isAgreementCountersigned(item) ? 'valid' : 'pending') : undefined),
             signed: item.signed === true || item.participantSigned === true || item.smmeSigned === true,
             expiryDate: item.expiryDate,
             raw: item
@@ -212,7 +227,7 @@ async function loadEvidence(application: any, participant: any = {}): Promise<Gr
             title: item.title || snapshot.id,
             documentName: item.title || snapshot.id,
             kind: 'agreement',
-            status: 'valid',
+            status: isAgreementCountersigned(item) ? 'valid' : 'pending',
             signed: item.signed === true || item.smmeSigned === true || item.participantSigned === true,
             raw: { ...item, slug: snapshot.id }
         }
@@ -224,7 +239,7 @@ async function loadEvidence(application: any, participant: any = {}): Promise<Gr
             title: raw?.title || slug,
             documentName: raw?.title || slug,
             kind: 'agreement',
-            status: 'valid',
+            status: isAgreementCountersigned(raw) ? 'valid' : 'pending',
             signed: raw === true || raw?.signed === true || raw?.smmeSigned === true || raw?.participantSigned === true,
             raw: raw === true ? { slug, signed: true } : { ...(raw || {}), slug }
         })
@@ -261,6 +276,7 @@ async function loadInterventions(participantId: string | undefined, applicationI
         collection(db, 'assignedInterventions'),
         where(lookupField, '==', lookupValue)
     ))
+    const { departments } = await loadDepartmentRoles()
     return snapshot.docs
         .map(item => ({ id: item.id, ...(item.data() as any) }))
         .filter((item: any) => !item.programId || item.programId === programId)
@@ -270,7 +286,7 @@ async function loadInterventions(participantId: string | undefined, applicationI
             status: item.assignmentStatus,
             smeName: item.beneficiaryName || item.participantName || item.smeName || item.smmeName,
             facilitatorName: item.assigneeName || item.facilitatorName || item.assignedToName,
-            departmentName: item.departmentName || item.areaOfSupport,
+            departmentName: departmentNameOf(item.departmentId, departments, ''),
             participantAcceptanceStatus: item.participantAcceptanceStatus,
             assigneeAcceptanceStatus: item.assigneeAcceptanceStatus,
             participantCompletionStatus: item.participantCompletionStatus,
@@ -301,10 +317,16 @@ export default function GroupMovementTimeline() {
         setLoading(true)
 
         let disposed = false
-        getDoc(doc(db, 'programs', activeProgramId)).then(snapshot => {
+        // Requirements come from the shared resolver (the programme's master list,
+        // including older programmes that only have the requiredDocs mirror), the
+        // same source the incubatee's group page uses.
+        Promise.all([
+            getDoc(doc(db, 'programs', activeProgramId)),
+            resolveComplianceRequirements(activeProgramId || '')
+        ]).then(([snapshot, resolved]) => {
             if (disposed || !snapshot.exists()) return
             const program = snapshot.data() as any
-            setRequirements(buildGroupRequirements(program.programRequirements || []))
+            setRequirements(buildGroupRequirements(resolved.requirements))
             setRules(program.groupProgressionRules || {})
         }).catch(error => console.error('Unable to load group progression rules', error))
 
@@ -369,9 +391,11 @@ export default function GroupMovementTimeline() {
             graduationApproved: row.graduationApproved
         }), [requirements, rules])
 
-    const departmentName = String((user as any)?.departmentName || (user as any)?.department || '')
-    const isROM = isRomDepartment(departmentName)
-    const isME = isMonitoringAndEvaluationDepartment(departmentName)
+    const { hasRole, nameOf } = useDepartmentRoles()
+    const departmentId = String((user as any)?.departmentId || '').trim()
+    const departmentName = departmentId ? nameOf(departmentId, String((user as any)?.departmentName || '')) : ''
+    const isROM = hasRole(departmentId, 'rom')
+    const isME = hasRole(departmentId, 'monitoring')
 
     useEffect(() => {
         if (loading) return
@@ -459,6 +483,7 @@ export default function GroupMovementTimeline() {
                     id: (user as any)?.uid || (user as any)?.id,
                     name: (user as any)?.name || user?.displayName || user?.email || 'Operations',
                     email: user?.email,
+                    departmentId,
                     departmentName
                 },
                 reason: eligibility.summary,
@@ -476,20 +501,21 @@ export default function GroupMovementTimeline() {
         } finally {
             setBusyKey(null)
         }
-    }, [departmentName, eligibilityFor, user])
+    }, [departmentId, departmentName, eligibilityFor, user])
 
     const confirmMovement = useCallback(async (row: SmeGroupRow) => {
         if (!row.pendingMovement) return
-        if (!eligibilityFor(row).eligible) {
-            message.error('This SME no longer meets the progression requirements. Return the request to ROM for review.')
-            return
-        }
         setBusyKey(`confirm:${row.key}`)
         try {
+            const fresh = await withFreshEvidence(row)
+            if (!eligibilityFor(fresh).eligible) {
+                message.error('This SME no longer meets the progression requirements. Return the request to ROM for review.')
+                return
+            }
             const nextEligibility = evaluateGroupEligibility({
                 current: row.pendingMovement.to,
                 requirements,
-                evidence: row.evidence,
+                evidence: fresh.evidence,
                 interventions: row.interventions,
                 rules,
                 graduationApproved: false
@@ -502,6 +528,7 @@ export default function GroupMovementTimeline() {
                     id: (user as any)?.uid || (user as any)?.id,
                     name: (user as any)?.name || user?.email || 'M&E',
                     email: user?.email,
+                    departmentId,
                     departmentName
                 },
                 smeName: row.name,
@@ -521,7 +548,7 @@ export default function GroupMovementTimeline() {
         } finally {
             setBusyKey(null)
         }
-    }, [departmentName, eligibilityFor, requirements, rules, user])
+    }, [departmentId, departmentName, eligibilityFor, requirements, rules, user])
 
     const returnMovement = useCallback(async (row: SmeGroupRow) => {
         if (!row.pendingMovement) return
@@ -534,6 +561,7 @@ export default function GroupMovementTimeline() {
                     id: (user as any)?.uid || (user as any)?.id,
                     name: (user as any)?.name || user?.email || 'M&E',
                     email: user?.email,
+                    departmentId,
                     departmentName
                 }
             })
@@ -543,7 +571,7 @@ export default function GroupMovementTimeline() {
         } finally {
             setBusyKey(null)
         }
-    }, [departmentName, user])
+    }, [departmentId, departmentName, user])
 
     const remindAll = async () => {
         const targets = filteredRows.filter(row => {
@@ -617,6 +645,7 @@ export default function GroupMovementTimeline() {
                         id: (user as any)?.uid || (user as any)?.id,
                         name: (user as any)?.name || user?.displayName || user?.email || 'Operations',
                         email: user?.email,
+                        departmentId,
                         departmentName
                     },
                     reason: eligibility.summary,
@@ -675,14 +704,15 @@ export default function GroupMovementTimeline() {
         const failed: string[] = []
         for (const row of targets) {
             try {
-                const eligibility = eligibilityFor(row)
+                const fresh = await withFreshEvidence(row)
+                const eligibility = eligibilityFor(fresh)
                 if (!eligibility.eligible) {
                     throw new Error('progression requirements are no longer met')
                 }
                 const nextEligibility = evaluateGroupEligibility({
                     current: row.pendingMovement!.to,
                     requirements,
-                    evidence: row.evidence,
+                    evidence: fresh.evidence,
                     interventions: row.interventions,
                     rules,
                     graduationApproved: false
@@ -695,6 +725,7 @@ export default function GroupMovementTimeline() {
                         id: (user as any)?.uid || (user as any)?.id,
                         name: (user as any)?.name || user?.email || 'M&E',
                         email: user?.email,
+                        departmentId,
                         departmentName
                     },
                     smeName: row.name,
@@ -817,36 +848,36 @@ export default function GroupMovementTimeline() {
         </MotionCard> : <>
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<TeamOutlined style={{ color: '#1677ff' }} />}
-                        iconBg='rgba(22,119,255,0.12)'
+                    <MetricTile
+                        icon={<TeamOutlined />}
+                        tone='accent'
                         title='Total SMEs'
                         value={metrics.total}
                         subtitle={`${filteredRows.length} in current view`}
                     />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                        iconBg='rgba(82,196,26,0.14)'
+                    <MetricTile
+                        icon={<CheckCircleOutlined />}
+                        tone='success'
                         title='Ready for ROM'
                         value={metrics.eligible}
                         subtitle='Eligible, not yet submitted'
                     />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<ClockCircleOutlined style={{ color: '#faad14' }} />}
-                        iconBg='rgba(250,173,20,0.16)'
+                    <MetricTile
+                        icon={<ClockCircleOutlined />}
+                        tone='warning'
                         title='Pending M&E'
                         value={metrics.pending}
                         subtitle='Submitted by ROM'
                     />
                 </Col>
                 <Col xs={24} sm={12} xl={6}>
-                    <MotionCard.Metric
-                        icon={<TrophyOutlined style={{ color: '#13c2c2' }} />}
-                        iconBg='rgba(19,194,194,0.14)'
+                    <MetricTile
+                        icon={<TrophyOutlined />}
+                        tone='info'
                         title='Graduated'
                         value={metrics.graduated}
                         subtitle='Completed incubation'

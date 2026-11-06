@@ -10,7 +10,7 @@ const { Text } = Typography
 const roleHome = (role: string) => {
     const normalized = String(role || '').toLowerCase().replace(/\s+/g, '_')
     const homes: Record<string, string> = {
-        admin: '/admin', system_admin: '/admin', coordinator: '/coordinator', operations: '/operations',
+        system_admin: '/system_admin', coordinator: '/coordinator', operations: '/operations',
         director: '/director', projectadmin: '/projectadmin', funder: '/funder', incubatee: '/incubatee',
         receptionist: '/receptionist', employee: '/auxiliary', auxiliary: '/auxiliary',
         projectmanager: '/projectmanager', consultant: '/coordinator'
@@ -55,7 +55,7 @@ export const ViewAsControls: React.FC<{ compact?: boolean }> = ({ compact }) => 
     }, [search, users])
 
     if (!canViewAs) return null
-    const exit = () => { stopViewingAs(); navigate('/admin') }
+    const exit = () => { stopViewingAs(); navigate('/system_admin') }
     return (
         <div data-view-as-control='true'>
             {contextHolder}
@@ -101,7 +101,7 @@ export const ViewAsBanner: React.FC = () => {
         <div data-view-as-control='true' style={{ background: '#fff1f0', border: '1px solid #ffccc7', color: '#820014',
             padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
             <EyeOutlined /><Text strong>READ-ONLY VIEW:</Text><Text>{viewedUser.name} ({viewedUser.role})</Text>
-            <Button size='small' danger onClick={() => { stopViewingAs(); navigate('/admin') }}>Exit view</Button>
+            <Button size='small' danger onClick={() => { stopViewingAs(); navigate('/system_admin') }}>Exit view</Button>
         </div>
     )
 }

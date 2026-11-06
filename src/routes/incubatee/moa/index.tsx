@@ -1,5 +1,5 @@
 // src/pages/incubatee/MOAForm.tsx
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import {
     Alert,
     Button,
@@ -24,6 +24,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
+import { getSmeApplications } from '@/lib/acceptedApplication'
 import dayjs from 'dayjs'
 import {
     MoaVars,
@@ -32,6 +33,8 @@ import {
 } from '@/components/modals/Contracts/moa.pages'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
 import { DownloadOutlined } from '@ant-design/icons'
+import { SignatureAnimation } from '@/components/shared/SignatureAnimation'
+import { prefersReducedMotion } from '@/utils/signatureReplay'
 import '@/styles/contract-paper.css'
 
 const { Title, Text } = Typography
@@ -56,6 +59,9 @@ export default function MOAForm() {
     const [vars, setVars] = useState<MoaVars | null>(null)
     const [loadingVars, setLoadingVars] = useState<boolean>(true)
     const [signedAgreementMeta, setSignedAgreementMeta] = useState<any>(null)
+    // Set for the signature placed by this visit's Sign click, which is animated.
+    const [justSigned, setJustSigned] = useState(false)
+    const signatureBlockRef = useRef<HTMLElement | null>(null)
 
     // Load "signed" status
     useEffect(() => {
@@ -97,17 +103,15 @@ export default function MOAForm() {
 
     // Build MoaVars from: participant → application (+ overrides from state), program dates
     const loadVars = useCallback(async (): Promise<MoaVars> => {
-        // ── 1) Resolve application (by state.appId, else by user.email)
+        // ── 1) Resolve application (by state.appId, else the SME's own applications)
         let appDocId = state?.appId as string | null
         let appData: any = null
 
         if (!appDocId) {
-            if (!user?.email)
-                throw new Error('Missing user email to resolve application.')
-            const appsSnap = await getDocs(
-                query(collection(db, 'applications'), where('email', '==', user.email))
-            )
-            const apps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+            if (!user)
+                throw new Error('Missing user to resolve application.')
+            // The SME's linked participant; email only until it is linked.
+            const apps = await getSmeApplications({ uid: user.id, participantId: user.participantId, email: user.email })
             appData = apps.find(
                 a => (a.applicationStatus || '').toLowerCase() === 'accepted'
             )
@@ -124,11 +128,11 @@ export default function MOAForm() {
 
         // ── 2) Resolve participant
         let participantId: string | null =
-            state?.participantId ?? appData?.participantId ?? null
+            state?.participantId ?? appData?.participantId ?? user?.participantId ?? null
         let participant: any = null
 
         if (!participantId) {
-            // Fallback by email
+            // Email fallback until Phase 4, for logins not linked yet.
             const emailToFind = state?.email ?? appData?.email ?? user?.email
             if (emailToFind) {
                 const ps = await getDocs(
@@ -335,6 +339,14 @@ export default function MOAForm() {
         })
         setAlreadySigned(true)
         setMoaStatus(current => ({ ...current, incubateeSigned: true }))
+        setJustSigned(true)
+        // The signature page is at the end of the agreement: bring it into view to watch it being signed.
+        requestAnimationFrame(() =>
+            signatureBlockRef.current?.scrollIntoView({
+                behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+                block: 'center'
+            })
+        )
         try {
             setSigning(true)
             const payload = {
@@ -365,6 +377,7 @@ export default function MOAForm() {
         } catch (e) {
             console.error(e)
             setSignedAgreementMeta(previousMeta)
+            setJustSigned(false)
             setAlreadySigned(false)
             setMoaStatus(current => ({ ...current, incubateeSigned: false }))
             message.error('Could not sign the MOA. Please try again.')
@@ -498,10 +511,15 @@ export default function MOAForm() {
                                 <Title level={4}>Execution of the Agreement</Title>
                                 <Text>This page records the signatures held against this Memorandum of Agreement.</Text>
                                 <div className='contract-paper__signature-grid'>
-                                    <section className='contract-paper__signature-block'>
+                                    <section ref={signatureBlockRef} className='contract-paper__signature-block'>
                                         <h3>For the Incubatee</h3>
                                         {signedAgreementMeta?.signatureURL ? (
-                                            <img className='contract-paper__signature-image' src={signedAgreementMeta.signatureURL} alt='Incubatee signature' />
+                                            <SignatureAnimation
+                                                className='contract-paper__signature-image'
+                                                src={signedAgreementMeta.signatureURL}
+                                                alt='Incubatee signature'
+                                                animate={justSigned}
+                                            />
                                         ) : <div className='contract-paper__signature-line' />}
                                         <p className='contract-paper__signature-name'>
                                             {signedAgreementMeta?.signerName || vars?.participantName || 'Name not recorded'}

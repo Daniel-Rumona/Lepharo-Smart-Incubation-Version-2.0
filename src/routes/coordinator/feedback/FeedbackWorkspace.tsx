@@ -43,6 +43,7 @@ import {
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 
 const { Text, Paragraph } = Typography
@@ -782,9 +783,9 @@ export const FeedbackWorkspace: React.FC = () => {
                 <Row gutter={[16, 16]}>
                     <Col xs={24} sm={12} lg={6}>
                         <MotionCard>
-                            <MotionCard.Metric
-                                icon={<MessageOutlined style={{ color: '#1677ff', fontSize: 18 }} />}
-                                iconBg="rgba(22,119,255,0.12)"
+                            <MetricTile
+                                icon={<MessageOutlined style={{ fontSize: 18 }} />}
+                                tone='accent'
                                 title="Total Feedback"
                                 value={metrics.total}
                                 subtitle="All submitted feedback"
@@ -794,9 +795,9 @@ export const FeedbackWorkspace: React.FC = () => {
 
                     <Col xs={24} sm={12} lg={6}>
                         <MotionCard>
-                            <MotionCard.Metric
-                                icon={<StarOutlined style={{ color: '#faad14', fontSize: 18 }} />}
-                                iconBg="rgba(250,173,20,0.14)"
+                            <MetricTile
+                                icon={<StarOutlined style={{ fontSize: 18 }} />}
+                                tone='warning'
                                 title="Average Rating"
                                 value={`${metrics.avgRating.toFixed(1)} / 5`}
                                 subtitle="Across all responses"
@@ -806,9 +807,9 @@ export const FeedbackWorkspace: React.FC = () => {
 
                     <Col xs={24} sm={12} lg={6}>
                         <MotionCard>
-                            <MotionCard.Metric
-                                icon={<WarningOutlined style={{ color: '#ff4d4f', fontSize: 18 }} />}
-                                iconBg="rgba(255,77,79,0.12)"
+                            <MetricTile
+                                icon={<WarningOutlined style={{ fontSize: 18 }} />}
+                                tone='danger'
                                 title="Low Ratings"
                                 value={metrics.lowRated}
                                 subtitle="Ratings below threshold"
@@ -818,7 +819,7 @@ export const FeedbackWorkspace: React.FC = () => {
 
                     <Col xs={24} sm={12} lg={6}>
                         <MotionCard>
-                            <MotionCard.Metric
+                            <MetricTile
                                 icon={
                                     <SmileOutlined
                                         style={{
@@ -829,7 +830,7 @@ export const FeedbackWorkspace: React.FC = () => {
                                         }}
                                     />
                                 }
-                                iconBg="rgba(114,46,209,0.12)"
+                                tone='info'
                                 title="Dominant Sentiment"
                                 value={
                                     <span

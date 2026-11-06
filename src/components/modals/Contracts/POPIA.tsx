@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { DownloadOutlined } from '@ant-design/icons'
-import { Button, message } from 'antd'
+import { DownloadOutlined, EditOutlined } from '@ant-design/icons'
+import { Button, Checkbox, message } from 'antd'
 import {
+  type DocumentReference,
   collection,
+  doc,
+  getDoc,
   getDocs,
   limit,
   query,
@@ -12,6 +15,7 @@ import {
 import { getAuth } from 'firebase/auth'
 import { db } from '@/firebase'
 import { ScrollableContractModal } from './ScrollableContractModal'
+import { SignatureAnimation, useSignaturePlayback } from '@/components/shared/SignatureAnimation'
 import {
   downloadContractPDF,
   generateAndUploadContractPDF
@@ -23,6 +27,7 @@ const POPIA_EFFECTIVE_DATE = '14 August 2026'
 
 type PopiaContractModalProps = {
   open: boolean
+  /** The SME's participant id. Empty for staff and anyone without an application yet. */
   participantId: string
   onClose: () => void
   onSigned: (meta: {
@@ -33,6 +38,13 @@ type PopiaContractModalProps = {
   }) => void
   readOnly?: boolean
   signedMeta?: any
+  /** Called once the signed PDF, made after signing, has been uploaded. */
+  onPdfReady?: (pdfUrl: string) => void
+  /**
+   * Show the notice in the page (the welcome wizard) rather than in a modal:
+   * the document, then the agreement box and a full-width Confirm & Sign.
+   */
+  inline?: boolean
 }
 
 async function fetchUserSignatureUrl(uid: string, email?: string | null) {
@@ -54,6 +66,7 @@ async function fetchUserSignatureUrl(uid: string, email?: string | null) {
 }
 
 async function fetchParticipantDigitalSignature(participantId: string) {
+  if (!participantId) return ''
   const snapshot = await getDocs(
     query(
       collection(db, 'applications'),
@@ -63,6 +76,56 @@ async function fetchParticipantDigitalSignature(participantId: string) {
   )
   if (!snapshot.empty) return (snapshot.docs[0].data() as any)?.digitalSignature || ''
   return ''
+}
+
+/**
+ * Makes the signed PDF from a copy of the signed pages, off-screen, uploads it
+ * and adds its link to the signing records. Runs after the signing is saved, so
+ * a slow phone or connection only delays the PDF, never the signing.
+ */
+async function attachSignedPdf(args: {
+  pagesCopy: HTMLElement
+  owner: string
+  signerName: string
+  signatureURL: string
+  digitalSignature: string
+  appRef: DocumentReference | null
+  uid: string
+}): Promise<string> {
+  const holder = document.createElement('div')
+  Object.assign(holder.style, { position: 'fixed', left: '-100000px', top: '0', width: '900px', background: '#fff' })
+  holder.appendChild(args.pagesCopy)
+  document.body.appendChild(holder)
+  try {
+    const output = await generateAndUploadContractPDF({
+      // Staff have no participant id; their copy is filed under their user id.
+      participantId: args.owner,
+      slug: 'popia-act',
+      title: 'POPIA Notice & Data Processing Consent',
+      contentEl: args.pagesCopy,
+      signerName: args.signerName,
+      signatureUrl: args.signatureURL,
+      digitalSignature: args.digitalSignature
+    })
+    await Promise.all([
+      args.appRef
+        ? updateDoc(args.appRef, {
+          ['signedAgreements.popia-act.pdfUrl']: output.url,
+          ['signedAgreements.popia-act.pdfPath']: output.path
+        })
+        : Promise.resolve(),
+      updateDoc(doc(db, 'users', args.uid), {
+        'popiaConsent.pdfUrl': output.url,
+        'popiaConsent.pdfPath': output.path
+      })
+    ])
+    return output.url
+  } catch (error) {
+    console.warn('The signed POPIA PDF could not be made; the signing itself is saved.', error)
+    return ''
+  } finally {
+    holder.remove()
+  }
 }
 
 const PopiaDocumentHeader = () => (
@@ -113,9 +176,13 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
   onClose,
   onSigned,
   readOnly,
-  signedMeta
+  signedMeta,
+  inline,
+  onPdfReady
 }) => {
   const [signing, setSigning] = useState(false)
+  // Inline only: the agreement box sits after the document, so reaching it means scrolling past it.
+  const [agreed, setAgreed] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [profileSignatureURL, setProfileSignatureURL] = useState('')
   const [previewSigned, setPreviewSigned] = useState(false)
@@ -125,6 +192,7 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
     businessName: ''
   })
   const contentRef = useRef<HTMLDivElement>(null)
+  const signaturePlayback = useSignaturePlayback()
 
   useEffect(() => {
     if (!open) return
@@ -136,6 +204,23 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
       setProfileSignatureURL('')
     }
 
+    // Without an application (staff, or an SME not yet registered) the signer is described
+    // from their own profile.
+    const loadProfileDetails = async () => {
+      if (!currentUser) return
+      const profile = (await getDoc(doc(db, 'users', currentUser.uid))).data() as any
+      setParticipantDetails({
+        name: profile?.name || profile?.fullName || currentUser.displayName || '',
+        email: profile?.email || currentUser.email || '',
+        businessName: ''
+      })
+    }
+
+    if (!participantId) {
+      if (!readOnly) void loadProfileDetails().catch(error => console.error('Could not load POPIA signer details.', error))
+      return
+    }
+
     void getDocs(
       query(
         collection(db, 'applications'),
@@ -143,7 +228,7 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
         limit(1)
       )
     ).then(snapshot => {
-      if (snapshot.empty) return
+      if (snapshot.empty) return loadProfileDetails()
       const application = snapshot.docs[0].data() as any
       setParticipantDetails({
         name:
@@ -192,39 +277,41 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
 
   const handleSign = async () => {
     try {
+      signaturePlayback.start()
       setPreviewSigned(true)
       setSigning(true)
 
-      const appSnapshot = await getDocs(
-        query(
-          collection(db, 'applications'),
-          where('participantId', '==', participantId),
-          limit(1)
+      // An SME's signing is kept on their application too; anyone else's only on their profile.
+      const appSnapshot = participantId
+        ? await getDocs(
+          query(
+            collection(db, 'applications'),
+            where('participantId', '==', participantId),
+            limit(1)
+          )
         )
-      )
-      if (appSnapshot.empty) {
-        setPreviewSigned(false)
-        message.error('Application record not found.')
-        return
-      }
-      const appRef = appSnapshot.docs[0].ref
-      const application = appSnapshot.docs[0].data() as any
+        : null
+      const appRef = appSnapshot && !appSnapshot.empty ? appSnapshot.docs[0].ref : null
+      const application = appSnapshot && !appSnapshot.empty ? (appSnapshot.docs[0].data() as any) : null
 
       const currentUser = getAuth().currentUser
       const uid = currentUser?.uid || ''
       const email = currentUser?.email || ''
+      if (!uid) throw new Error('Not signed in.')
       const signerName =
-        (currentUser as any)?.displayName || (currentUser as any)?.name || email || 'User'
+        participantDetails.name || (currentUser as any)?.displayName || email || 'User'
 
-      setParticipantDetails({
-        name:
-          application.participantName || application.applicantName ||
-          application.contactPerson || signerName,
-        email: application.email || application.contactEmail || email,
-        businessName:
-          application.beneficiaryName || application.companyName ||
-          application.businessName || ''
-      })
+      if (application) {
+        setParticipantDetails({
+          name:
+            application.participantName || application.applicantName ||
+            application.contactPerson || signerName,
+          email: application.email || application.contactEmail || email,
+          businessName:
+            application.beneficiaryName || application.companyName ||
+            application.businessName || ''
+        })
+      }
 
       const [signatureURL, digitalSignature] = await Promise.all([
         profileSignatureURL || fetchUserSignatureUrl(uid, email),
@@ -235,22 +322,12 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
 
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      // The PDF is a snapshot of the page, so let the signature finish drawing first.
+      await signaturePlayback.finished()
 
-      let pdfUrl = ''
-      let pdfPath = ''
-      if (contentRef.current) {
-        const output = await generateAndUploadContractPDF({
-          participantId,
-          slug: 'popia-act',
-          title: 'POPIA Notice & Data Processing Consent',
-          contentEl: contentRef.current,
-          signerName,
-          signatureUrl: signatureURL,
-          digitalSignature
-        })
-        pdfUrl = output.url
-        pdfPath = output.path
-      }
+      // The signed pages, copied now: the window may close (or the wizard move on)
+      // before the PDF is made from them in the background.
+      const pagesCopy = contentRef.current?.cloneNode(true) as HTMLElement | undefined
 
       const meta = {
         acceptedAt: new Date().toISOString(),
@@ -264,22 +341,38 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
           signatureURL
         },
         participantDigitalSignature: digitalSignature || '',
-        pdfUrl,
-        pdfPath
+        pdfUrl: '',
+        pdfPath: ''
       }
 
-      await updateDoc(appRef, {
-        ['signedAgreements.popia-act']: meta
-      })
+      // The signing is saved first, so it never waits on making and uploading the PDF.
+      // The profile record is what sign-in checks for every user.
+      await Promise.all([
+        appRef ? updateDoc(appRef, { ['signedAgreements.popia-act']: meta }) : Promise.resolve(),
+        updateDoc(doc(db, 'users', uid), { popiaConsent: meta })
+      ])
 
       message.success('POPIA notice signed.')
       onSigned({
         acceptedAt: meta.acceptedAt,
         version: meta.version,
-        textHash: meta.textHash,
-        pdfUrl
+        textHash: meta.textHash
       })
-      onClose()
+      if (!inline) onClose()
+
+      if (pagesCopy) {
+        void attachSignedPdf({
+          pagesCopy,
+          owner: participantId || `user-${uid}`,
+          signerName,
+          signatureURL,
+          digitalSignature,
+          appRef,
+          uid
+        }).then(pdfUrl => {
+          if (pdfUrl) onPdfReady?.(pdfUrl)
+        })
+      }
     } catch (error) {
       console.error(error)
       setPreviewSigned(false)
@@ -289,24 +382,7 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
     }
   }
 
-  return (
-    <ScrollableContractModal
-      open={open}
-      title='POPIA Notice & Data Processing Consent'
-      loading={signing}
-      onCancel={onClose}
-      onConfirm={handleSign}
-      readOnly={readOnly}
-      requireScroll={!readOnly}
-      signedMeta={effectiveSignedMeta}
-      showSignatureSummary={false}
-      rawDocument
-      footerActions={(
-        <Button icon={<DownloadOutlined />} loading={downloading} onClick={handleDownload}>
-          Download PDF
-        </Button>
-      )}
-    >
+  const documentPages = (
       <div ref={contentRef} className='popia-document-pages'>
         <article className='contract-paper contract-paper--page popia-paper' data-contract-page='1'>
           <PopiaDocumentHeader />
@@ -321,8 +397,10 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
           </section>
 
           <div className='popia-subject-card'>
-            <div><span>Participant</span><strong>{displayedSignerName}</strong></div>
-            <div><span>Business</span><strong>{participantDetails.businessName || 'Not recorded'}</strong></div>
+            <div><span>{participantId ? 'Participant' : 'Signer'}</span><strong>{displayedSignerName}</strong></div>
+            {participantId ? (
+              <div><span>Business</span><strong>{participantDetails.businessName || 'Not recorded'}</strong></div>
+            ) : null}
             <div><span>Email</span><strong>{displayedSignerEmail || 'Not recorded'}</strong></div>
           </div>
 
@@ -446,12 +524,17 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
             <div className='popia-signature-block__details'>
               <span>Signed by</span>
               <strong>{displayedSignerName}</strong>
-              <small>{displayedSignerEmail || 'Participant email not recorded'}</small>
+              <small>{displayedSignerEmail || 'Email not recorded'}</small>
               <small>{formatSignedDate(displayedSignedAt)}</small>
             </div>
             <div className='popia-signature-block__mark'>
               {displayedSignatureURL ? (
-                <img src={displayedSignatureURL} alt='Participant signature' />
+                <SignatureAnimation
+                  src={displayedSignatureURL}
+                  alt='Participant signature'
+                  animate={!readOnly && previewSigned}
+                  onComplete={signaturePlayback.complete}
+                />
               ) : (
                 <div className='popia-signature-block__pending'>Signature appears here after signing</div>
               )}
@@ -461,12 +544,66 @@ export const PopiaContractModal: React.FC<PopiaContractModalProps> = ({
 
           <div className='popia-document-record'>
             <span><strong>Consent version:</strong> {effectiveSignedMeta?.version || POPIA_VERSION}.0</span>
-            <span><strong>Record ID:</strong> {participantId || 'Not recorded'}</span>
+            <span><strong>Record ID:</strong> {participantId || getAuth().currentUser?.uid || 'Not recorded'}</span>
           </div>
 
           <PopiaDocumentFooter page={2} />
         </article>
       </div>
+  )
+
+  if (inline) {
+    if (!open) return null
+    return (
+      <div>
+        <div className='contract-document-stage' style={{ borderRadius: 10 }}>
+          {documentPages}
+        </div>
+        <Checkbox
+          checked={agreed}
+          disabled={signing}
+          onChange={event => setAgreed(event.target.checked)}
+          style={{ marginTop: 16 }}
+        >
+          I have read and agree to the contents.
+        </Checkbox>
+        <Button
+          size='large'
+          block
+          type='primary'
+          icon={<EditOutlined />}
+          loading={signing}
+          disabled={!agreed}
+          onClick={handleSign}
+          style={{ marginTop: 12 }}
+        >
+          Confirm &amp; Sign
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <ScrollableContractModal
+      open={open}
+      title='POPIA Notice & Data Processing Consent'
+      loading={signing}
+      onCancel={onClose}
+      onConfirm={handleSign}
+      readOnly={readOnly}
+      requireScroll={!readOnly}
+      signedMeta={effectiveSignedMeta}
+      showSignatureSummary={false}
+      rawDocument
+      // A copy before signing would only show "Pending signature", so the
+      // download is offered for a signed notice.
+      footerActions={readOnly ? (
+        <Button icon={<DownloadOutlined />} loading={downloading} onClick={handleDownload}>
+          Download PDF
+        </Button>
+      ) : undefined}
+    >
+      {documentPages}
     </ScrollableContractModal>
   )
 }

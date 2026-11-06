@@ -1,0 +1,286 @@
+/* Choice cards (qc-): options as one-tap cards, used in the query and dispute dialogs. */
+
+.qc-cards {
+    display: grid;
+    grid-template-columns: repeat(var(--qc-cols, 3), minmax(0, 1fr));
+    gap: 8px;
+}
+
+.qc-card {
+    display: grid;
+    justify-items: start;
+    align-content: start;
+    gap: 4px;
+    padding: 12px;
+    font: inherit;
+    text-align: start;
+    color: var(--app-text);
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease;
+}
+
+.qc-card:hover {
+    border-color: var(--app-border-strong);
+    background: var(--app-surface-sunken);
+}
+
+.qc-card:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.qc-card.is-selected {
+    border-color: var(--app-accent-border-strong);
+    background: var(--app-accent-wash);
+    box-shadow: inset 0 0 0 1px var(--app-accent-border-strong);
+}
+
+.qc-icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-bottom: 4px;
+    border-radius: 9px;
+    font-size: 15px;
+    color: var(--app-accent);
+    background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+}
+
+.qc-card.is-selected .qc-icon {
+    color: var(--app-accent-contrast);
+    background: var(--app-accent);
+}
+
+.qc-label {
+    font-weight: 700;
+}
+
+.qc-detail {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--app-text-muted);
+}
+
+/* Query / dispute dialogs: the item being answered, shown as a quote. */
+.qc-quote {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--app-surface-sunken);
+}
+
+.qc-quote-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+.qc-quote-who {
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+.qc-quote-text {
+    margin: 6px 0 0;
+    color: var(--app-text);
+    white-space: pre-line;
+}
+
+.qc-sentback {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, #d97706 35%, var(--app-border));
+    background: color-mix(in srgb, #d97706 8%, var(--app-surface));
+    font-size: 13px;
+    color: var(--app-text);
+}
+
+.qc-sentback strong {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 12px;
+}
+
+.qc-section {
+    margin-top: 16px;
+}
+
+.qc-section-title {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--app-text-muted);
+}
+
+.qc-evidence {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.qc-hint {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+
+@media (max-width: 575px) {
+    .qc-cards {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .qc-card {
+        grid-template-columns: auto minmax(0, 1fr);
+        column-gap: 10px;
+    }
+
+    .qc-icon {
+        grid-row: span 2;
+        margin-bottom: 0;
+    }
+}
+
+/* Compact cards: icon beside the label and detail. */
+.qc-cards.is-compact .qc-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 10px;
+    row-gap: 2px;
+    align-items: start;
+    padding: 9px 11px;
+}
+.qc-cards.is-compact .qc-icon {
+    grid-row: span 2;
+    width: 26px;
+    height: 26px;
+    margin: 1px 0 0;
+    font-size: 13px;
+    border-radius: 8px;
+}
+.qc-cards.is-compact .qc-detail {
+    font-size: 11.5px;
+    line-height: 1.35;
+}
+
+/* A one-line drop zone for evidence. */
+.qc-drop.ant-upload-wrapper .ant-upload-drag .ant-upload-btn {
+    padding: 10px 12px;
+}
+.qc-drop-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 0;
+    color: var(--app-text);
+}
+.qc-drop-line .anticon {
+    font-size: 20px;
+    color: var(--app-accent);
+}
+.qc-drop-line small {
+    color: var(--app-text-muted);
+}
+
+/* The dialog's footer: what happens next, then the one button. */
+.qc-footer {
+    display: grid;
+    gap: 8px;
+}
+.qc-footer-note {
+    margin: 0;
+    font-size: 12px;
+    text-align: center;
+    color: var(--app-text-muted);
+}
+
+/* Query inbox (qi-): queries waiting for an answer, one card each. */
+.qi-list {
+    display: grid;
+    gap: 8px;
+    max-height: min(62vh, 560px);
+    margin: 0;
+    padding: 0 2px 0 0;
+    overflow-y: auto;
+    list-style: none;
+}
+.qi-item {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    background: var(--app-surface);
+}
+.qi-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: 12px;
+    color: var(--app-text-muted);
+}
+.qi-who {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--app-text);
+}
+.qi-role {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--app-surface-sunken);
+}
+.qi-type {
+    padding: 1px 8px;
+    border-radius: 999px;
+    color: #b45309;
+    background: color-mix(in srgb, #d97706 14%, transparent);
+}
+.qi-type.is-dispute {
+    color: #dc2626;
+    background: color-mix(in srgb, #dc2626 14%, transparent);
+}
+.qi-type.is-back {
+    color: var(--app-accent);
+    background: var(--app-accent-wash);
+}
+html[data-theme="dark"] .qi-type { color: #fbbf24; }
+html[data-theme="dark"] .qi-type.is-dispute { color: #f87171; }
+.qi-when {
+    margin-left: auto;
+}
+.qi-text {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    color: var(--app-text);
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+.qi-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.qi-about {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12px;
+    color: var(--app-text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* The app styles modal footers as a row of buttons; this one stacks. */
+.ant-modal .ant-modal-footer > div.qc-footer.qc-footer {
+    display: grid;
+    width: 100%;
+}

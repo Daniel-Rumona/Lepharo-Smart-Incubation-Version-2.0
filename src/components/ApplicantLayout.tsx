@@ -1,22 +1,18 @@
-import React, { useEffect, useState, Suspense } from 'react'
+import React, { Suspense } from 'react'
 import { useColorMode } from '@/contexts/ThemeContext'
-import { Layout, Avatar, message, Button, Tooltip, theme } from 'antd'
+import { Layout, theme } from 'antd'
 import {
     AppstoreOutlined,
     BarChartOutlined,
     UserOutlined,
-    FileTextOutlined,
-    LogoutOutlined
+    FileTextOutlined
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useWindowSize } from 'react-use'
-import { db } from '@/firebase'
-import { collection, query, where, onSnapshot } from 'firebase/firestore'
-import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { HelpAssistant } from './shared/HelpAssistant'
 import { ViewAsControls } from '@/components/view-as/ViewAsControls'
-import { ThemeToggle } from '@/components/layout/theme-toggle'
-import { GuideLauncher } from '@/components/guide-me'
+import { CurrentUser } from '@/components/layout/current-user'
+import { NotificationBell } from '@/components/layout/notifications/NotificationBell'
 import { signOutApp } from '@/lib/firestoreCache'
 
 // The applicant portal shares the workspace shell styling with
@@ -65,8 +61,6 @@ const APPLICANT_DESTINATIONS: ApplicantDestination[] = [
     }
 ]
 
-const PROFILE_ROUTE = '/applicant/profile'
-
 const ApplicantLayout: React.FC = () => {
     const navigate = useNavigate()
     const location = useLocation()
@@ -75,10 +69,6 @@ const ApplicantLayout: React.FC = () => {
     const { width } = useWindowSize()
     const isMobile = width < 768
     const isCompactHeader = width < 1180
-
-    const [logoUrl, setLogoUrl] = useState<string | null>(null)
-    const [displayName, setDisplayName] = useState<string>('')
-    const { user, loading: identityLoading } = useFullIdentity()
 
     // The inquiry wizard runs as its own full-bleed page on mobile (not a
     // modal) — it owns its own back button, title and step progress, so the
@@ -97,45 +87,6 @@ const ApplicantLayout: React.FC = () => {
 
     const activeSegment =
         APPLICANT_DESTINATIONS.find(d => d.key === selectedKey)?.route || '/applicant'
-
-    // --------- participant subscription (guarded by identityLoading) ----------
-    // Only reads what the header shows: the participant photo and their name.
-    // Editing both lives on the profile page — this listens so a photo uploaded
-    // there appears in the header without a reload.
-    useEffect(() => {
-        if (identityLoading) return
-        if (!user?.email) return // not signed in
-
-        const q = query(
-            collection(db, 'participants'),
-            where('email', '==', user.email)
-        )
-
-        const unsubscribe = onSnapshot(
-            q,
-            snapshot => {
-                if (!snapshot.empty) {
-                    const data = snapshot.docs[0].data() as any
-                    setLogoUrl((data.logoUrl as string) || (user as any).photoURL || null)
-                    setDisplayName(
-                        (data.name as string) ||
-                        (data.participantName as string) ||
-                        (user as any).displayName ||
-                        ''
-                    )
-                } else {
-                    setLogoUrl((user as any).photoURL || null)
-                    setDisplayName((user as any).displayName || '')
-                }
-            },
-            err => {
-                console.error(err)
-                message.error('Failed to load profile.')
-            }
-        )
-
-        return () => unsubscribe()
-    }, [identityLoading, user?.email])
 
     const handleLogout = async () => {
         // Clears the cached Firestore documents too, and hard-navigates, so nothing
@@ -203,44 +154,11 @@ const ApplicantLayout: React.FC = () => {
                         )}
 
                         <div className='workspace-topbar-actions'>
-                            <GuideLauncher
-                                label={isCompactHeader ? '' : 'Guide'}
-                                buttonProps={{
-                                    type: 'text',
-                                    shape: 'round',
-                                    style: {
-                                        height: 32,
-                                        paddingInline: isCompactHeader ? 10 : 14,
-                                        flex: '0 0 auto'
-                                    },
-                                    'aria-label': 'Guide'
-                                }}
-                            />
+                            {/* Same actions as the workspace top bar: the guide,
+                                appearance and log out live in the account menu. */}
                             <ViewAsControls compact={isCompactHeader} />
-                            <ThemeToggle compact={isCompactHeader} />
-
-                            <Tooltip title={displayName ? `${displayName} — my profile` : 'My profile'}>
-                                <Avatar
-                                    className='workspace-current-user-avatar'
-                                    size='default'
-                                    src={logoUrl || undefined}
-                                    icon={!logoUrl ? <UserOutlined /> : undefined}
-                                    onClick={() => navigate(PROFILE_ROUTE)}
-                                    style={{ cursor: 'pointer', fontWeight: 700, flex: '0 0 auto' }}
-                                />
-                            </Tooltip>
-
-                            <Tooltip title='Log out'>
-                                <Button
-                                    type='text'
-                                    danger
-                                    shape='circle'
-                                    className='workspace-logout-button'
-                                    icon={<LogoutOutlined />}
-                                    onClick={handleLogout}
-                                    aria-label='Log out'
-                                />
-                            </Tooltip>
+                            <NotificationBell />
+                            <CurrentUser onLogout={handleLogout} />
                         </div>
                     </header>
                 </div>

@@ -22,6 +22,7 @@ import {
     updateProposal, uploadProposalDocument
 } from '@/services/proposalService'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
 import {
     PROPOSAL_CATEGORIES, PROPOSAL_OWNER_TYPES, PROPOSAL_SCOPES, PROPOSAL_STAGE_GROUPS, PROPOSAL_STATUSES
 } from '@/types/proposal'
@@ -808,27 +809,27 @@ export default function ProposalPipeline() {
 
                 <Row gutter={[16, 16]} className='proposal-stat-row'>
                     <Col xs={24} sm={12} xl={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title='Active pipeline' value={money(metrics.value)}
-                            subtitle='All non-archived proposals' icon={<GlobalOutlined style={{ color: '#4f46e5' }} />}
-                            iconBg='rgba(79,70,229,.12)' />
+                            subtitle='All non-archived proposals' icon={<GlobalOutlined />}
+                            tone='accent' />
                     </Col>
                     <Col xs={24} sm={12} xl={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title='Open proposals' value={metrics.open}
-                            subtitle='Requiring pipeline management' icon={<FileTextOutlined style={{ color: '#2563eb' }} />}
-                            iconBg='rgba(37,99,235,.12)' />
+                            subtitle='Requiring pipeline management' icon={<FileTextOutlined />}
+                            tone='info' />
                     </Col>
                     <Col xs={24} sm={12} xl={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title='Conversion rate' value={`${metrics.conversion}%`}
-                            subtitle='Accepted versus submitted' icon={<CheckCircleFilled style={{ color: '#059669' }} />}
-                            iconBg='rgba(5,150,105,.12)' /></Col>
+                            subtitle='Accepted versus submitted' icon={<CheckCircleFilled />}
+                            tone='success' /></Col>
                     <Col xs={24} sm={12} xl={6}>
-                        <MotionCard.Metric
+                        <MetricTile
                             title='Awaiting activation' value={metrics.activation}
-                            subtitle='Accepted but not yet active' icon={<ClockCircleOutlined style={{ color: '#d97706' }} />}
-                            iconBg='rgba(217,119,6,.12)' /></Col>
+                            subtitle='Accepted but not yet active' icon={<ClockCircleOutlined />}
+                            tone='warning' /></Col>
                 </Row>
 
                 <div className='proposal-stage-grid'>

@@ -61,6 +61,11 @@ export interface FeatureGovernanceRecord {
   programId?: string | null;
   appliesToAllPrograms?: boolean;
   type: FeatureRecordType;
+  /** Pipeline features: asked for by someone, or an internal improvement. */
+  category?: "requested" | "improvement";
+  /** Who asked, for "requested" pipeline features (free text, may match a user). */
+  requestedByName?: string;
+  requestedById?: string | null;
   title: string;
   description: string;
   status: FeatureStatus;

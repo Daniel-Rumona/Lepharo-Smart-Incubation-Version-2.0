@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script&family=Great+Vibes&family=Satisfy&family=Pacifico&family=Roboto&family=Caveat&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script&family=Great+Vibes&family=Satisfy&family=Pacifico&family=Roboto&family=Caveat&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Open+Sans:wght@700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Incubation, compliance and reporting platform for Lepharo participants and coordinators." />
     <!-- Installed-app chrome. theme_color in the web manifest covers Android; iOS reads these. -->
@@ -37,11 +37,11 @@
           var accent = window.localStorage.getItem("lph-accent-theme");
           document.documentElement.setAttribute(
             "data-accent",
-            accent === "ocean" || accent === "violet" ? accent : "blue"
+            accent === "blue" || accent === "ocean" || accent === "violet" ? accent : "crimson"
           );
         } catch (e) {
           document.documentElement.setAttribute("data-theme", "light");
-          document.documentElement.setAttribute("data-accent", "blue");
+          document.documentElement.setAttribute("data-accent", "crimson");
         }
       })();
     </script>

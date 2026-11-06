@@ -14,7 +14,7 @@ const NarrativeBlockEditor: React.FC<Props> = ({ value, onChange, readOnly }) =>
       onChange={e => onChange(e.target.value)}
       readOnly={readOnly}
       autoSize={{ minRows: 14 }}
-      placeholder="Enter the report narrative for this block..."
+      placeholder="Write this section here…"
     />
   </div>
 )

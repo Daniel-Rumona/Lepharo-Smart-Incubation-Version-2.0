@@ -23,10 +23,10 @@ import {
 import { db } from '@/firebase'
 import Highcharts from 'highcharts'
 import HighchartsReact from 'highcharts-react-official'
-import drilldown from 'highcharts/modules/drilldown'
+import 'highcharts/modules/drilldown'
 import dayjs, { Dayjs } from 'dayjs'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import { useFullIdentity } from '@/hooks/useFullIdentity'
 import {
@@ -39,9 +39,6 @@ import {
     type PageGuideRegistration
 } from '@/components/guide-me'
 
-if (typeof drilldown === 'function') {
-    drilldown(Highcharts)
-}
 
 const { Option } = Select
 const { RangePicker } = DatePicker
@@ -1933,16 +1930,7 @@ export const CoordinatorAnalytics: React.FC = () => {
             </Helmet>
 
             {loading ? (
-                <div
-                    style={{
-                        display: 'flex',
-                        height: '100vh',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}
-                >
-                    <LoadingOverlay tip="Loading analytics..." />
-                </div>
+                <PageSkeleton variant='analytics' />
             ) : (
                 <>
                     <MotionCard filterBar={<Row

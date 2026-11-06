@@ -1,0 +1,111 @@
+/* "Waiting for you" prompt. Theme tokens, so it reads in light and dark mode. */
+
+.wfy-head {
+    display: grid;
+    gap: 2px;
+    padding-right: 24px;
+}
+
+.wfy-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.wfy-subtitle {
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.wfy-body {
+    display: grid;
+    gap: 20px;
+}
+
+.wfy-section {
+    display: grid;
+    gap: 10px;
+}
+
+.wfy-section + .wfy-section {
+    padding-top: 16px;
+    border-top: 1px solid var(--app-border);
+}
+
+.wfy-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--app-text);
+}
+
+.wfy-count {
+    min-width: 20px;
+    padding: 0 6px;
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+    color: var(--app-accent);
+    background: var(--app-accent-wash);
+    border-radius: 999px;
+}
+
+.wfy-list {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.wfy-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    padding: 10px 12px;
+    background: var(--app-surface-sunken);
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+}
+
+.wfy-row-text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.wfy-row-count {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--app-text-muted);
+}
+
+.wfy-row-sub {
+    font-size: 12.5px;
+}
+
+.wfy-plan-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.wfy-footer {
+    display: flex;
+    justify-content: flex-start;
+}
+
+@media (max-width: 640px) {
+    .wfy-row-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}

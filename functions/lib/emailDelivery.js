@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.withEmailDeliveryLogging = void 0;
+exports.withEmailDeliveryLogging = exports.isTransientSmtpError = void 0;
 const admin = __importStar(require("firebase-admin"));
 const logger = __importStar(require("firebase-functions/logger"));
 if (!admin.apps.length) {
@@ -85,14 +85,51 @@ async function writeDeliveryLogs(options, status, details = {}) {
         });
     }
 }
+const TRANSIENT_CODES = new Set(["ECONNECTION", "ETIMEDOUT", "ESOCKET", "ECONNRESET"]);
+const SEND_ATTEMPTS = 3;
 /**
- * Adds Firestore delivery-attempt logging to a Nodemailer transport.
+ * True for failures worth another attempt: a dropped or timed-out connection
+ * (pooled sockets the server closed while idle) or a 4xx temporary reply.
+ * Auth failures (535) and permanent rejections (550 no such recipient) are not.
+ */
+function isTransientSmtpError(error) {
+    const code = Number(error?.responseCode);
+    if (code >= 400 && code < 500)
+        return true;
+    if (code >= 500)
+        return false;
+    if (TRANSIENT_CODES.has(String(error?.code || "")))
+        return true;
+    return /connection closed|timed? ?out|ECONNRESET/i.test(String(error?.message || ""));
+}
+exports.isTransientSmtpError = isTransientSmtpError;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Adds Firestore delivery-attempt logging to a Nodemailer transport, retrying
+ * transient connection errors with backoff (only the final outcome is logged).
  *
  * "sent" means the configured SMTP server accepted the message. Final inbox
  * delivery or a later bounce requires provider webhooks and is not asserted here.
  */
 function withEmailDeliveryLogging(transport) {
-    const sendMail = transport.sendMail.bind(transport);
+    const rawSendMail = transport.sendMail.bind(transport);
+    const sendMail = async (options) => {
+        for (let attempt = 1;; attempt++) {
+            try {
+                return await rawSendMail(options);
+            }
+            catch (error) {
+                if (attempt >= SEND_ATTEMPTS || !isTransientSmtpError(error))
+                    throw error;
+                logger.warn("email_delivery.retry", {
+                    subject: String(options.subject || ""),
+                    attempt,
+                    error: String(error?.message || error),
+                });
+                await sleep(1000 * 2 ** (attempt - 1));
+            }
+        }
+    };
     transport.sendMail = (async (options, callback) => {
         try {
             const info = await sendMail(options);

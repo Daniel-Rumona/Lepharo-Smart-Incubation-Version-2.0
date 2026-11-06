@@ -1,3 +1,4 @@
+import { MotionCard } from '@/components/dashboards/metrics/Header'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     Empty,
@@ -50,7 +51,6 @@ import { useFullIdentity } from '@/hooks/useFullIdentity'
 import { useActiveProgramId } from '@/lib/useActiveProgramId'
 import dayjs from 'dayjs'
 import '@/styles/calender.css'
-import { LoadingOverlay } from '@/components/shared/LoadingOverlay'
 import AppointmentDetailsModal, {
     type AppointmentDetailsV2Record
 } from '@/components/modals/AppointmentDetails'
@@ -522,7 +522,7 @@ const MyCalendarPage: React.FC = () => {
             String((user as any)?.applicationId || '').trim()
         ].filter(Boolean)
 
-        if (!isIncubatee || !myEmail) {
+        if (!isIncubatee) {
             setParticipantIdentityIds(Array.from(new Set(baseIds)))
             return
         }
@@ -530,15 +530,21 @@ const MyCalendarPage: React.FC = () => {
         let cancelled = false
         const run = async () => {
             try {
+                // The SME's applications by its linked participant; the email
+                // queries are a fallback until Phase 4 (docs/sme-identity-migration-plan.md).
+                const linkedParticipantId = String((user as any)?.participantId || '').trim()
                 const emailCandidates = Array.from(
                     new Set([String(user?.email || '').trim(), myEmail].filter(Boolean))
                 )
-                const snapshots = await Promise.all(
-                    emailCandidates.flatMap(email => [
+                const snapshots = await Promise.all([
+                    ...(linkedParticipantId
+                        ? [getDocs(query(collection(db, 'applications'), where('participantId', '==', linkedParticipantId)))]
+                        : []),
+                    ...emailCandidates.flatMap(email => [
                         getDocs(query(collection(db, 'participants'), where('email', '==', email))),
                         getDocs(query(collection(db, 'applications'), where('email', '==', email)))
                     ])
-                )
+                ])
                 const resolvedIds = [...baseIds]
                 snapshots.forEach(snapshot => {
                     snapshot.docs.forEach(item => {
@@ -798,7 +804,7 @@ const MyCalendarPage: React.FC = () => {
                             allow =
                                 participantMatch ||
                                 participantIdsOnEvent.some((id: string) => participantIds.has(id)) ||
-                                participantEmailsOnEvent.includes(myEmail)
+                                (!!myEmail && participantEmailsOnEvent.includes(myEmail))
                         }
 
                         if (!allow) return
@@ -819,27 +825,27 @@ const MyCalendarPage: React.FC = () => {
             )
         )
 
-        unsubscribers.push(
-            onSnapshot(
-                // Calendar appointments are the v5 invitation/session model.
-                // Querying only these records prevents retained legacy
-                // appointments without a session link from poisoning the
-                // session hydration used to derive today's date and time.
-                query(collection(db, 'appointments'), where('schemaVersion', '==', 5)),
-                async (snap) => {
+        let appointmentsReported = false
+        const finishAppointments = () => {
+            if (appointmentsReported) return
+            appointmentsReported = true
+            finish()
+        }
+
+        const handleAppointmentDocs = async (appointmentDocs: Array<{ id: string; data: () => any }>) => {
                     const individualRows: CalendarRow[] = []
                     const groupedBuckets = new Map<string, Array<{ id: string; data: any }>>()
 
                     let canonicalViews: Record<string, any>[]
                     try {
                         canonicalViews = await hydrateAppointmentViews(
-                            snap.docs.map(docSnap => ({ id: docSnap.id, data: docSnap.data() as any }))
+                            appointmentDocs.map(docSnap => ({ id: docSnap.id, data: docSnap.data() as any }))
                         )
                     } catch (error) {
                         console.error('Failed to hydrate calendar appointment sessions:', error)
                         message.error('Failed to load appointments.')
                         setAppointmentRows([])
-                        finish()
+                        finishAppointments()
                         return
                     }
                     canonicalViews.forEach(view => {
@@ -847,9 +853,8 @@ const MyCalendarPage: React.FC = () => {
                         const docId = view.id
                         const participantEmail = data?.participantEmail || data?.smeEmail
 
-                        // Internal dummy SMEs are useful for workflow testing,
-                        // but must not appear in the operational calendar.
-                        if (isInternalDummyEmail(participantEmail)) return
+                        // Internal test appointments are visible only to internal users.
+                        if (isInternalDummyEmail(participantEmail) && !isInternalDummyEmail(myEmail)) return
 
                         const programMatch = matchesProgram(data?.programId)
 
@@ -921,18 +926,69 @@ const MyCalendarPage: React.FC = () => {
                     const nextRows = [...individualRows, ...groupedRows]
 
                     setAppointmentRows(nextRows)
-                    finish()
-                },
-                (error) => {
-                    console.error('appointments snapshot error:', error)
-                    message.error('Failed to load appointments.')
-                    setAppointmentRows([])
-                    finish()
-                }
-            )
-        )
+                    finishAppointments()
+        }
 
-        unsubscribers.push(
+        if (isIncubatee) {
+            // An SME may read only their own invitations, so listen per
+            // identity id and merge. Ids that aren't a participant of theirs
+            // are denied and contribute nothing.
+            const ids = Array.from(participantIds)
+            const docsById = new Map<string, Array<{ id: string; data: () => any }>>()
+            const mergeAndHandle = () => {
+                if (docsById.size < ids.length) return
+                const merged = new Map<string, { id: string; data: () => any }>()
+                docsById.forEach(list => list.forEach(item => merged.set(item.id, item)))
+                void handleAppointmentDocs(Array.from(merged.values()))
+            }
+            if (!ids.length) {
+                setAppointmentRows([])
+                finishAppointments()
+            }
+            ids.forEach(id => {
+                unsubscribers.push(
+                    onSnapshot(
+                        query(
+                            collection(db, 'appointments'),
+                            where('schemaVersion', '==', 5),
+                            where('smeId', '==', id)
+                        ),
+                        (snap) => {
+                            docsById.set(id, snap.docs)
+                            mergeAndHandle()
+                        },
+                        () => {
+                            docsById.set(id, [])
+                            mergeAndHandle()
+                        }
+                    )
+                )
+            })
+        } else {
+            unsubscribers.push(
+                onSnapshot(
+                    // Calendar appointments are the v5 invitation/session model.
+                    // Querying only these records prevents retained legacy
+                    // appointments without a session link from poisoning the
+                    // session hydration used to derive today's date and time.
+                    query(collection(db, 'appointments'), where('schemaVersion', '==', 5)),
+                    (snap) => { void handleAppointmentDocs(snap.docs) },
+                    (error) => {
+                        console.error('appointments snapshot error:', error)
+                        message.error('Failed to load appointments.')
+                        setAppointmentRows([])
+                        finishAppointments()
+                    }
+                )
+            )
+        }
+
+        // SMEs never see tasks here (the view filter drops them) and may not
+        // read the tasks collection.
+        if (isIncubatee) {
+            setTaskRows([])
+            finish()
+        } else unsubscribers.push(
             onSnapshot(
                 query(collection(db, 'tasks'), ...baseConstraints),
                 (snap) => {
@@ -1226,7 +1282,9 @@ const MyCalendarPage: React.FC = () => {
     return (
         <div className="smart-calendar-workspace">
             <Helmet>
-                <title>Calendar & Notices | Smart Incubation</title>
+                <title>
+                    {canSeeNoticeBoard ? 'Calendar & Notices' : 'Calendar'} | Smart Incubation
+                </title>
             </Helmet>
 
             <div className="smart-calendar-page">
@@ -1392,9 +1450,7 @@ const MyCalendarPage: React.FC = () => {
                         isAllPrograms={isAllPrograms}
                     />
                 ) : loading ? (
-                    <div className="smart-calendar-loading">
-                        <LoadingOverlay tip="Getting calendar ready" />
-                    </div>
+                    <MotionCard loading skeleton='chart' skeletonRows={7} />
                 ) : calendarEvents.length === 0 ? (
                     <div className="smart-calendar-empty-wrap">
                         <Empty

@@ -13,8 +13,8 @@ import {
 } from "antd";
 import Highcharts from "highcharts";
 import HighchartsReact from "highcharts-react-official";
-import HighchartsMore from "highcharts/highcharts-more";
-import HeatmapModule from "highcharts/modules/heatmap";
+import "highcharts/highcharts-more";
+import "highcharts/modules/heatmap";
 import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import {
@@ -35,8 +35,6 @@ import { MetricsGrid, type DashboardMetric } from "@/components/dashboards/metri
 const { Text } = Typography;
 
 // Init Highcharts modules once
-if (typeof HighchartsMore === "function") HighchartsMore(Highcharts);
-if (typeof HeatmapModule === "function") HeatmapModule(Highcharts);
 
 
 const cardStyle: React.CSSProperties = {
@@ -422,9 +420,9 @@ const FacilitatorsTab: React.FC<Props> = ({
         }
         : null;
     const facilitatorMetrics: DashboardMetric[] = selected ? [
-        { key: "assigned", title: "Assigned", value: selectedStats?.assigned ?? 0, subtitle: `vs previous period ${facilitatorDeltas[selected.id]?.assigned >= 0 ? "+" : ""}${facilitatorDeltas[selected.id]?.assigned ?? 0}`, icon: <LinkOutlined />, iconBg: "rgba(22,119,255,.14)", important: true },
-        { key: "active", title: "Active", value: selectedStats?.active ?? 0, subtitle: `vs previous period ${facilitatorDeltas[selected.id]?.active >= 0 ? "+" : ""}${facilitatorDeltas[selected.id]?.active ?? 0}`, icon: <ThunderboltOutlined />, iconBg: "rgba(250,173,20,.18)", important: true },
-        { key: "completed", title: "Completed", value: selectedStats?.completed ?? 0, subtitle: `vs previous period ${facilitatorDeltas[selected.id]?.completed >= 0 ? "+" : ""}${facilitatorDeltas[selected.id]?.completed ?? 0}`, icon: <CheckCircleOutlined />, iconBg: "rgba(82,196,26,.16)", important: true },
+        { key: "assigned", title: "Assigned", value: selectedStats?.assigned ?? 0, subtitle: `vs previous period ${facilitatorDeltas[selected.id]?.assigned >= 0 ? "+" : ""}${facilitatorDeltas[selected.id]?.assigned ?? 0}`, icon: <LinkOutlined />, tone: 'info' as const, important: true },
+        { key: "active", title: "Active", value: selectedStats?.active ?? 0, subtitle: `vs previous period ${facilitatorDeltas[selected.id]?.active >= 0 ? "+" : ""}${facilitatorDeltas[selected.id]?.active ?? 0}`, icon: <ThunderboltOutlined />, tone: 'warning' as const, important: true },
+        { key: "completed", title: "Completed", value: selectedStats?.completed ?? 0, subtitle: `vs previous period ${facilitatorDeltas[selected.id]?.completed >= 0 ? "+" : ""}${facilitatorDeltas[selected.id]?.completed ?? 0}`, icon: <CheckCircleOutlined />, tone: 'success' as const, important: true },
     ] : [];
 
     // Portfolio averages (for bubble chart)
@@ -483,7 +481,7 @@ const FacilitatorsTab: React.FC<Props> = ({
                     dataLabels: {
                         enabled: true,
                         crop: false,
-                        overflow: "none",
+                        overflow: "allow",
                         style: { textOutline: "none", fontWeight: "600" },
                     },
                 },
@@ -492,7 +490,7 @@ const FacilitatorsTab: React.FC<Props> = ({
                     dataLabels: {
                         enabled: true,
                         crop: false,
-                        overflow: "none",
+                        overflow: "allow",
                         style: { textOutline: "none", fontWeight: "600" },
                     },
                 },

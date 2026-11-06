@@ -1,9 +1,30 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { suppressRecordNotifications } from "./syntheticData";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { buildAcceptanceEmail, buildRejectionEmail } from "./emailHelpers";
 import { admin, db, getTransporter, getConsultantMapByIds, REMINDER_STATUSES, fmtDate, TaskDoc } from "./emailShared";
+import { notifyInApp, uidForParticipant } from "./inAppNotifications";
+import { uidsForEmails } from "./movRecipients";
+import { NOTIFICATION_REGISTRY } from "./notificationEmailRegistry";
+
+type InAppRequest = { type?: unknown; message?: unknown; link?: unknown };
+
+/**
+ * Optional in-app copy for a relayed email: the caller already chose these
+ * recipients for the email, so this only mirrors it into the bell for those
+ * of them who have an account. Registry types are refused -- they would make
+ * onNotificationCreatedEmail send a second email (or mint action links).
+ */
+async function mirrorRelayedEmailInApp(request: InAppRequest | undefined, emails: string[], subject: string, senderUid: string) {
+  if (!request || typeof request !== "object") return;
+  const type = String(request.type || "").trim();
+  if (!/^[a-z0-9_-]{1,60}$/i.test(type) || NOTIFICATION_REGISTRY[type]) return;
+  const message = String(request.message || subject).trim().slice(0, 300);
+  const link = typeof request.link === "string" && request.link.startsWith("/") && !request.link.startsWith("//") ? request.link.slice(0, 300) : null;
+  await notifyInApp({ type, message, link, recipientIds: await uidsForEmails(emails), sentBy: senderUid });
+}
 
 function buildAssignmentEmailHTML(opts: {
   task: TaskDoc;
@@ -86,7 +107,7 @@ export const sendEmail = onRequest({ region: "us-central1", invoker: "public" },
 
   type Personalized = { to: string; subject: string; html?: string; text?: string };
   const body = (req.body || {}) as
-    | { to?: string | string[]; subject?: string; text?: string; html?: string }
+    | { to?: string | string[]; subject?: string; text?: string; html?: string; inApp?: InAppRequest }
     | { messages?: Personalized[] };
 
   try {
@@ -107,7 +128,7 @@ export const sendEmail = onRequest({ region: "us-central1", invoker: "public" },
       res.status(200).json({ ok: true, mode: "personalized", sent }); return;
     }
 
-    const { to, subject, text, html } = body as { to?: string | string[]; subject?: string; text?: string; html?: string };
+    const { to, subject, text, html, inApp } = body as { to?: string | string[]; subject?: string; text?: string; html?: string; inApp?: InAppRequest };
     if (!subject || typeof subject !== "string" || subject.length > 200) {
       res.status(400).json({ ok: false, error: "invalid_subject" }); return;
     }
@@ -119,6 +140,7 @@ export const sendEmail = onRequest({ region: "us-central1", invoker: "public" },
       if (!to || !emailRx.test(to)) { res.status(400).json({ ok: false, error: "invalid_to" }); return; }
       const info = await transporter.sendMail({ from, to, subject, text, html });
       logger.info("email_sent_single", { uid, to, subject, messageId: info.messageId });
+      await mirrorRelayedEmailInApp(inApp, [to], subject, uid);
       res.status(200).json({ ok: true, mode: "single", messageId: info.messageId }); return;
     }
 
@@ -135,6 +157,7 @@ export const sendEmail = onRequest({ region: "us-central1", invoker: "public" },
         html,
       });
       logger.info("email_sent_bcc", { uid, count: bccList.length, subject, messageId: info.messageId });
+      await mirrorRelayedEmailInApp(inApp, bccList, subject, uid);
       res.status(200).json({ ok: true, mode: "bcc", sent: bccList.length, messageId: info.messageId }); return;
     }
 
@@ -154,6 +177,7 @@ export const onApplicationDecisionEmail = onDocumentWritten(
       if (!after) return;
       const prev = String(before?.applicationStatus || "").toLowerCase();
       const next = String(after?.applicationStatus || "").toLowerCase();
+      if (suppressRecordNotifications(after, event.params.appId)) return;
       if (prev === next) return;
       if (next !== "accepted" && next !== "rejected") return;
 
@@ -174,6 +198,17 @@ export const onApplicationDecisionEmail = onDocumentWritten(
         const { subject, html, text } = buildRejectionEmail({ name, programName });
         await transporter.sendMail({ from, to, subject, html, text });
       }
+
+      await notifyInApp({
+        type: next === "accepted" ? "application_accepted" : "application_rejected",
+        message: next === "accepted"
+          ? `Your application${programName ? ` to ${programName}` : ""} has been accepted.`
+          : `Your application${programName ? ` to ${programName}` : ""} was not successful this time.`,
+        recipientIds: [await uidForParticipant(after?.participantId, to)],
+        applicationId: event.params.appId,
+        participantId: after?.participantId,
+        programId: after?.programId,
+      });
 
       await event.data!.after!.ref.set(
         {
@@ -228,10 +263,24 @@ export const onTaskWriteSendEmails = onDocumentWritten(
           sent++;
         }
         if (sent) logger.info("onTaskWriteSendEmails.assignment_sent", { taskId, sent });
+        await notifyInApp({
+          type: "task_assigned",
+          message: `You've been assigned a task: ${after.title}`,
+          recipientIds: added,
+          taskId,
+          programId: after.programId,
+        });
       }
 
       const becameDone = before?.status !== "done" && after.status === "done";
       if (becameDone && after.createdBy) {
+        await notifyInApp({
+          type: "task_completed",
+          message: `The task "${after.title}" has been marked done.`,
+          recipientIds: [after.createdBy],
+          taskId,
+          programId: after.programId,
+        });
         const creatorSnap = await db.collection("users").doc(after.createdBy).get().catch(() => null);
         const creatorEmail = creatorSnap?.data()?.email;
         const creatorName = creatorSnap?.data()?.name || null;
@@ -305,6 +354,13 @@ export const taskDeadlineNotifier = onSchedule(
         sentAny = true;
       }
       if (sentAny) {
+        await notifyInApp({
+          type: "task_overdue",
+          message: `The task "${task.title}" is overdue.`,
+          recipientIds: assigneeIds,
+          taskId,
+          programId: task.programId,
+        });
         await d.ref.set({
           reminderFlags: {
             ...(task.reminderFlags || {}),

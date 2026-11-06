@@ -1,10 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
     Button,
+    Col,
     Form,
+    Grid,
     Input,
     InputNumber,
     Modal,
+    Row,
     Select,
     Space,
     Switch,
@@ -13,7 +16,15 @@ import {
     Typography,
     message
 } from 'antd'
-import { EditOutlined, PlusOutlined } from '@ant-design/icons'
+import {
+    CloseOutlined,
+    EditOutlined,
+    FileTextOutlined,
+    KeyOutlined,
+    LinkOutlined,
+    PlusOutlined,
+    SaveOutlined
+} from '@ant-design/icons'
 import {
     collection,
     deleteField,
@@ -24,11 +35,22 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { normalizeComplianceId } from '@/services/complianceResolver'
+import { REGISTERED_SIGNING_ROUTES } from '@/services/signingRoutes'
+import { MobileCardList } from '@/components/shared/MobileCardList'
 
-const { Paragraph, Text } = Typography
+const { Text } = Typography
+
+/** Agreements whose signing form is built into the app and chosen by ID, not by route. */
+const BUILT_IN_AGREEMENT_IDS = new Set(['pre-incubation-contract', 'moa', 'gap-analysis'])
 
 type Props = {
     canManage?: boolean
+    /** Filters the table by agreement title, ID or form number. */
+    search?: string
+    /** Bump this number to open the "add agreement" dialog from outside. */
+    addSignal?: number
+    /** Called after a template is saved, so parent counts can refresh. */
+    onChanged?: () => void
 }
 
 type AgreementRow = {
@@ -46,7 +68,10 @@ type AgreementRow = {
 }
 
 export const AgreementTemplatesManager: React.FC<Props> = ({
-    canManage = false
+    canManage = false,
+    search = '',
+    addSignal = 0,
+    onChanged
 }) => {
     const [rows, setRows] = useState<AgreementRow[]>([])
     const [loading, setLoading] = useState(false)
@@ -54,6 +79,21 @@ export const AgreementTemplatesManager: React.FC<Props> = ({
     const [open, setOpen] = useState(false)
     const [editingId, setEditingId] = useState<string | null>(null)
     const [form] = Form.useForm()
+    const screens = Grid.useBreakpoint()
+    const isMobile = !screens.md
+    const watchedAgreementId = Form.useWatch('agreementId', form)
+    const watchedSigningRoute = Form.useWatch('signingRoute', form)
+    // Registered pages, plus the saved route if it is no longer registered so an
+    // existing template does not silently lose its value.
+    const signingRouteOptions = useMemo(() => {
+        const options = REGISTERED_SIGNING_ROUTES.map(item => ({ value: item.value, label: item.label }))
+        const current = String(watchedSigningRoute || '').trim()
+        if (current && !options.some(item => item.value === current)) {
+            options.push({ value: current, label: `${current} (not registered)` })
+        }
+        return options
+    }, [watchedSigningRoute])
+    const isBuiltIn = BUILT_IN_AGREEMENT_IDS.has(normalizeComplianceId(watchedAgreementId || ''))
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -81,9 +121,24 @@ export const AgreementTemplatesManager: React.FC<Props> = ({
     const startCreate = () => {
         setEditingId(null)
         form.resetFields()
-        form.setFieldsValue({ active: true, renderer: 'generic' })
+        form.setFieldsValue({ active: true })
         setOpen(true)
     }
+
+    useEffect(() => {
+        if (addSignal > 0 && canManage) startCreate()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [addSignal])
+
+    const visibleRows = useMemo(() => {
+        const needle = search.trim().toLowerCase()
+        if (!needle) return rows
+        return rows.filter(row =>
+            [row.title, row.agreementId, row.formNo, row.revisionNo]
+                .filter(Boolean)
+                .some(value => String(value).toLowerCase().includes(needle))
+        )
+    }, [rows, search])
 
     const startEdit = (row: AgreementRow) => {
         setEditingId(row.id)
@@ -102,7 +157,6 @@ export const AgreementTemplatesManager: React.FC<Props> = ({
             await setDoc(doc(db, 'agreementTemplates', recordId), {
                 agreementId,
                 title: String(values.title).trim(),
-                renderer: values.renderer || 'generic',
                 signingRoute: String(values.signingRoute || '').trim(),
                 availabilityDelayMonths: values.availabilityDelayMonths ?? null,
                 version: String(values.version || '').trim(),
@@ -116,6 +170,7 @@ export const AgreementTemplatesManager: React.FC<Props> = ({
             message.success('Agreement template saved.')
             setOpen(false)
             await load()
+            onChanged?.()
         } catch (error) {
             console.error(error)
             message.error('Could not save the agreement template.')
@@ -127,25 +182,41 @@ export const AgreementTemplatesManager: React.FC<Props> = ({
     return (
         <>
             <Space direction='vertical' size={12} style={{ width: '100%' }}>
-                <Space align='start' style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <div>
-                        <Text strong>Agreement templates</Text>
-                        <Paragraph type='secondary' style={{ marginBottom: 0 }}>
-                            Canonical IDs are stored on requirements and signed records. Every agreement uses one ID everywhere.
-                        </Paragraph>
-                    </div>
-                    {canManage && (
-                        <Button type='primary' icon={<PlusOutlined />} onClick={startCreate}>
-                            Add agreement
-                        </Button>
-                    )}
-                </Space>
 
+                {isMobile ? (
+                    <MobileCardList
+                        data={visibleRows}
+                        loading={loading}
+                        getKey={(row: AgreementRow) => row.id}
+                        pageSize={8}
+                        emptyText='No agreement templates'
+                        renderCard={(row: AgreementRow) => ({
+                            title: row.title,
+                            subtitle: row.agreementId,
+                            badge: <Tag color={row.active ? 'green' : 'default'}>{row.active ? 'Active' : 'Inactive'}</Tag>,
+                            fields: [
+                                { label: 'Form No.', value: row.formNo || '\u2014' },
+                                { label: 'Revision No.', value: row.revisionNo || '\u2014' }
+                            ],
+                            actions: canManage
+                                ? [
+                                    <Button key='edit' icon={<EditOutlined />} onClick={() => startEdit(row)}>
+                                        Edit
+                                    </Button>
+                                ]
+                                : undefined
+                        })}
+                    />
+                ) : (
                 <Table
                     rowKey='id'
                     loading={loading}
-                    dataSource={rows}
-                    pagination={false}
+                    dataSource={visibleRows}
+                    pagination={{
+                        pageSize: 8,
+                        showSizeChanger: false,
+                        position: ['bottomCenter']
+                    }}
                     columns={[
                         { title: 'Agreement', dataIndex: 'title', key: 'title' },
                         {
@@ -172,62 +243,132 @@ export const AgreementTemplatesManager: React.FC<Props> = ({
                         }] : [])
                     ]}
                 />
+                )}
             </Space>
 
             <Modal
-                title={editingId ? 'Edit agreement template' : 'Add agreement template'}
+                title={editingId ? 'Edit Agreement Template' : 'Add Agreement Template'}
                 open={open}
-                onCancel={() => setOpen(false)}
-                onOk={save}
-                confirmLoading={saving}
+                onCancel={saving ? undefined : () => setOpen(false)}
+                closable={!saving}
+                footer={null}
+                centered
+                maskClosable={false}
                 width={760}
+                destroyOnClose
             >
-                <Form form={form} layout='vertical'>
-                    <Form.Item
-                        name='agreementId'
-                        label='Agreement ID'
-                        rules={[{ required: true, message: 'Enter a canonical ID.' }]}
-                        extra='Use one stable lowercase ID, for example pre-incubation-contract.'
-                    >
-                        <Input disabled={Boolean(editingId)} />
-                    </Form.Item>
-                    <Form.Item name='title' label='Display title' rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-                    <Space wrap align='start'>
-                        <Form.Item name='renderer' label='Signing renderer'>
-                            <Select style={{ width: 210 }} options={[
-                                { value: 'generic', label: 'Configured signing route' },
-                                { value: 'pre-incubation', label: 'Pre-Incubation workflow' },
-                                { value: 'moa', label: 'MOA workflow' },
-                                { value: 'gap-analysis', label: 'GAP Analysis workflow' },
-                                { value: 'mov', label: 'MOV workflow' }
-                            ]} />
-                        </Form.Item>
-                        <Form.Item name='availabilityDelayMonths' label='Available after (months)'>
-                            <InputNumber min={0} precision={0} />
-                        </Form.Item>
-                        <Form.Item name='version' label='Version'>
-                            <Input style={{ width: 150 }} placeholder='2026-01' />
-                        </Form.Item>
-                        <Form.Item name='active' label='Active' valuePropName='checked'>
-                            <Switch />
-                        </Form.Item>
-                    </Space>
-                    <Form.Item name='signingRoute' label='Signing route'>
-                        <Input placeholder='/incubatee/moa' />
-                    </Form.Item>
-                    <Space wrap align='start'>
-                        <Form.Item name='formNo' label='Form No.'>
-                            <Input style={{ width: 250 }} placeholder='LEP-SIB QMS 057.1 F' />
-                        </Form.Item>
-                        <Form.Item name='revisionNo' label='Revision No.'>
-                            <Input style={{ width: 150 }} placeholder='05' />
-                        </Form.Item>
-                        <Form.Item name='effectiveDate' label='Effective Date'>
-                            <Input style={{ width: 210 }} placeholder='April 2026' />
-                        </Form.Item>
-                    </Space>
+                <Form form={form} layout='vertical' requiredMark disabled={saving}>
+                    <Row gutter={16}>
+                        <Col xs={24} md={12}>
+                            <Form.Item
+                                name='agreementId'
+                                label='Agreement ID'
+                                tooltip='A stable lowercase ID, e.g. pre-incubation-contract. It cannot be changed after saving.'
+                                rules={[{ required: true, message: 'Enter an agreement ID' }]}
+                            >
+                                <Input
+                                    prefix={<KeyOutlined />}
+                                    placeholder='pre-incubation-contract'
+                                    disabled={Boolean(editingId)}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} md={12}>
+                            <Form.Item
+                                name='title'
+                                label='Display Title'
+                                rules={[{ required: true, message: 'Enter a display title' }]}
+                            >
+                                <Input prefix={<FileTextOutlined />} placeholder='Pre-Incubation Contract' />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                        <Col xs={24} md={10}>
+                            <Form.Item
+                                name='signingRoute'
+                                label='Signing Page'
+                                tooltip={
+                                    isBuiltIn
+                                        ? 'This agreement uses a form built into the system, so no page is needed.'
+                                        : 'The page the SME is sent to when they press Sign. Pages are registered by the development team.'
+                                }
+                            >
+                                <Select
+                                    allowClear
+                                    showSearch
+                                    optionFilterProp='label'
+                                    suffixIcon={<LinkOutlined />}
+                                    disabled={isBuiltIn || signingRouteOptions.length === 0}
+                                    placeholder={
+                                        isBuiltIn
+                                            ? 'Built-in form'
+                                            : signingRouteOptions.length === 0
+                                                ? 'No signing pages registered'
+                                                : 'Select a signing page'
+                                    }
+                                    options={signingRouteOptions}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={12} md={8}>
+                            <Form.Item
+                                name='availabilityDelayMonths'
+                                label='Available After'
+                                tooltip='Hide this agreement from the SME until this many months after acceptance. Leave empty for immediately.'
+                            >
+                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder='Immediately' addonAfter='months' />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <Form.Item name='active' label='Status' valuePropName='checked'>
+                                <Switch checkedChildren='Active' unCheckedChildren='Inactive' />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                        <Col xs={12} md={6}>
+                            <Form.Item name='formNo' label='Form No.'>
+                                <Input placeholder='LEP-SIB QMS 057.1 F' />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <Form.Item name='version' label='Version'>
+                                <Input placeholder='2026-01' />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <Form.Item name='revisionNo' label='Revision No.'>
+                                <Input placeholder='05' />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={12} md={6}>
+                            <Form.Item name='effectiveDate' label='Effective Date'>
+                                <Input placeholder='April 2026' />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={12}>
+                        <Col span={12}>
+                            <Button block icon={<CloseOutlined />} onClick={() => setOpen(false)} disabled={saving}>
+                                Cancel
+                            </Button>
+                        </Col>
+                        <Col span={12}>
+                            <Button
+                                block
+                                type='primary'
+                                icon={editingId ? <SaveOutlined /> : <PlusOutlined />}
+                                loading={saving}
+                                onClick={save}
+                            >
+                                {editingId ? 'Save Changes' : 'Create Template'}
+                            </Button>
+                        </Col>
+                    </Row>
                 </Form>
             </Modal>
         </>

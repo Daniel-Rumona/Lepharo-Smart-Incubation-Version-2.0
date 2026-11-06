@@ -7,6 +7,7 @@ import {
   getTransporter,
   safeStr,
 } from "./emailShared";
+import { notifyInApp, uidForEmail } from "./inAppNotifications";
 
 const TIME_ZONE = "Africa/Johannesburg";
 const REMIND_AFTER_MINUTES = 30;
@@ -70,7 +71,7 @@ const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "
 const esc = (value: unknown) => String(value ?? "").replace(/[&<>"]/g, (c) => HTML_ESCAPES[c]);
 
 function buildEmail(schedule: Schedule, meetingId: string, date: string, isFollowUp: boolean) {
-  const base = `${APP_BASE_URL}/admin/features?confirmMeeting=${encodeURIComponent(meetingId)}`;
+  const base = `${APP_BASE_URL}/system_admin/features?confirmMeeting=${encodeURIComponent(meetingId)}`;
   const yes = `${base}&answer=yes`;
   const no = `${base}&answer=no`;
   const subject = `${isFollowUp ? "Reminder: " : ""}Did your meeting with ${safeStr(schedule.withName, "the requestee")} take place?`;
@@ -104,6 +105,16 @@ async function sendReminder(schedule: Schedule, meetingId: string, date: string,
     subject: content.subject,
     html: content.html,
     text: content.text,
+  });
+  const organiser = schedule.createdBy && schedule.createdBy !== "system"
+    ? schedule.createdBy
+    : await uidForEmail(schedule.reminderEmail);
+  await notifyInApp({
+    type: "governance_meeting_confirmation",
+    message: `${isFollowUp ? "Reminder: d" : "D"}id your meeting "${schedule.title}" with ${safeStr(schedule.withName, "the requestee")} on ${date} take place?`,
+    recipientIds: [organiser],
+    governanceMeetingId: meetingId,
+    link: `/system_admin/features?confirmMeeting=${encodeURIComponent(meetingId)}`,
   });
 }
 

@@ -1,0 +1,352 @@
+/* Collaborative reports: list, my sections, report page and the new-report form. Theme tokens only. */
+
+.cr-muted {
+    font-size: 12.5px;
+    color: var(--app-text-muted);
+}
+
+.cr-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.cr-hint {
+    font-size: 12.5px;
+    color: var(--app-text-muted);
+}
+
+/* Page header */
+.cr-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.cr-header-text {
+    flex: 1 1 260px;
+    min-width: 0;
+}
+
+.cr-header-title {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.cr-header-sub {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.cr-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* List rows */
+.cr-row-icon {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+    color: var(--app-accent);
+    background: var(--app-accent-wash);
+    border-radius: 10px;
+}
+
+/* Detail panel */
+.cr-detail {
+    display: grid;
+    gap: 12px;
+}
+
+.cr-detail-title {
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.cr-detail-sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--app-text-muted);
+}
+
+.cr-detail-progress {
+    display: grid;
+    gap: 2px;
+    font-size: 12.5px;
+    color: var(--app-text-muted);
+}
+
+.cr-detail-progress .ant-progress {
+    margin: 0;
+}
+
+.cr-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.cr-section-list {
+    display: grid;
+    gap: 10px;
+    max-height: 46vh;
+    overflow-y: auto;
+}
+
+.cr-section-group {
+    display: grid;
+    gap: 4px;
+}
+
+.cr-section-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--app-border);
+}
+
+.cr-section-row:last-child {
+    border-bottom: 0;
+}
+
+.cr-section-main {
+    min-width: 0;
+}
+
+.cr-section-name {
+    font-weight: 500;
+}
+
+/* Report page */
+.cr-workspace {
+    display: grid;
+    gap: 12px;
+}
+
+.cr-workspace-grid {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.cr-sections-card {
+    position: sticky;
+    top: 12px;
+}
+
+.cr-sections-head {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.cr-sections-head .ant-progress {
+    margin: 0;
+}
+
+.cr-sections-nav {
+    display: grid;
+    gap: 12px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.cr-nav-group {
+    display: grid;
+    gap: 2px;
+}
+
+.cr-nav-group-title {
+    padding: 0 8px 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--app-text-muted);
+}
+
+.cr-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    width: 100%;
+    padding: 8px 10px;
+    font: inherit;
+    text-align: start;
+    color: var(--app-text);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.cr-nav-item:hover {
+    background: var(--app-surface-sunken);
+}
+
+.cr-nav-item.is-active {
+    background: var(--app-accent-wash);
+    border-color: var(--app-accent-border);
+}
+
+.cr-nav-item:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+}
+
+.cr-nav-name {
+    font-weight: 500;
+    line-height: 1.35;
+}
+
+.cr-editor-col {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+.cr-editor {
+    display: grid;
+    gap: 12px;
+}
+
+.cr-editor-head {
+    display: grid;
+    gap: 6px;
+}
+
+.cr-editor-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.cr-editor-title h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.cr-static-text {
+    white-space: pre-wrap;
+}
+
+.cr-editor-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--app-border);
+}
+
+.cr-lower {
+    margin-top: 12px;
+}
+
+.cr-activity {
+    display: grid;
+    gap: 8px;
+}
+
+.cr-activity-item {
+    font-size: 13px;
+}
+
+.cr-confirm-list p {
+    margin: 0 0 6px;
+}
+
+/* New report form */
+.cr-form {
+    display: grid;
+    gap: 14px;
+}
+
+.cr-form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.cr-field {
+    min-width: 0;
+}
+
+.cr-static {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 11px;
+    color: var(--app-text-muted);
+    background: var(--app-surface-sunken);
+    border-radius: 6px;
+}
+
+.cr-copy {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    background: var(--app-surface-sunken);
+    border-radius: 10px;
+}
+
+.cr-link.ant-btn {
+    justify-self: start;
+    padding: 0;
+}
+
+.cr-copy-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 12px;
+}
+
+.cr-copy-options .ant-checkbox-wrapper {
+    margin: 0;
+}
+
+@media (max-width: 900px) {
+    .cr-workspace-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cr-sections-card {
+        position: static;
+    }
+
+    .cr-sections-nav {
+        max-height: 40vh;
+    }
+}
+
+@media (max-width: 640px) {
+    .cr-form-row,
+    .cr-copy-options {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cr-editor-foot > .ant-space {
+        width: 100%;
+    }
+}

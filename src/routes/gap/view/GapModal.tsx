@@ -1,5 +1,5 @@
 import React from 'react'
-import { Grid, Modal } from 'antd'
+import { Drawer, Grid, Modal } from 'antd'
 import GapDetail from './GapDetail'
 import type { SectionKey } from '../sections'
 
@@ -42,16 +42,16 @@ const GapAnalysisViewModal: React.FC<GapAnalysisViewModalProps> = ({
 }) => {
     const screens = useBreakpoint()
     const isMobile = !screens.md
+    const Surface: any = isMobile ? Drawer : Modal
 
     return (
-        <Modal
+        <Surface
             title={null}
             open={open}
-            onCancel={onClose}
-            footer={null}
-            width={isMobile ? '100%' : 1200}
-            style={isMobile ? { top: 8 } : undefined}
-            styles={{ body: { padding: isMobile ? 12 : 16, maxHeight: '78vh', overflowY: 'auto' } }}
+            {...(isMobile
+                ? { placement: 'bottom', height: '95vh', onClose }
+                : { onCancel: onClose, footer: null, width: 1200 })}
+            styles={{ body: { padding: isMobile ? 10 : 16, maxHeight: isMobile ? 'calc(95vh - 56px)' : '78vh', overflowY: 'auto' } }}
             destroyOnClose
         >
             {open && (
@@ -64,10 +64,9 @@ const GapAnalysisViewModal: React.FC<GapAnalysisViewModalProps> = ({
                     romName={romName}
                     romEmail={romEmail}
                     mode='embedded'
-                    onBack={onClose}
                 />
             )}
-        </Modal>
+        </Surface>
     )
 }
 

@@ -5,6 +5,7 @@ import {
     getDocs
 } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { departmentHasRole, loadDepartmentRoles } from './departmentRoles'
 
 export type ComplianceRequirementKind = 'upload' | 'agreement'
 
@@ -22,12 +23,9 @@ export type ComplianceRequirement = {
     departmentId?: string
 
     /**
-     * When true, the requirement is only visible to departments whose
-     * department document has `isOnboarding === true` or
-     * `isMonitoring === true`.
-     *
-     * Agreements are always treated as onboarding-only even when older data
-     * does not contain this field.
+     * Stored by /programs on every requirement, so it no longer decides who
+     * sees what: only agreements are limited to ROM and M&E (see
+     * isOnboardingComplianceRequirement).
      */
     isOnboarding?: boolean
 }
@@ -48,6 +46,10 @@ export type AgreementTemplate = {
 
 type ResolveOptions = {
     departmentId?: string
+    /**
+     * SME-facing views. Department setups are subsets of the programme list,
+     * so this resolves to the full programme list.
+     */
     includeAllDepartments?: boolean
 }
 
@@ -93,6 +95,34 @@ const complianceDate = (value: any): Date | null => {
 
     const parsed = new Date(value)
     return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+/**
+ * When an uploaded document expires. The requirement's validity period applied
+ * to the document's issue date wins; otherwise the stored expiryDate. This is
+ * the rule the staff Compliance page uses (computeExpiryDate), and the expiry
+ * reminder function in functions/src/complianceExpiry.ts mirrors it.
+ */
+export const complianceEffectiveExpiry = (
+    document: any,
+    requirement?: { hasExpiry?: boolean; expiryMonths?: number | null } | null
+): Date | null => {
+    const months = requirement?.hasExpiry
+        ? Number(requirement.expiryMonths) || 0
+        : 0
+    const issued = complianceDate(document?.issueDate)
+
+    if (months > 0 && issued) {
+        // Clamp to the month's last day (31 Jan + 1 month = 28/29 Feb), as dayjs does.
+        const expiry = new Date(issued)
+        expiry.setDate(1)
+        expiry.setMonth(expiry.getMonth() + months)
+        const lastDay = new Date(expiry.getFullYear(), expiry.getMonth() + 1, 0).getDate()
+        expiry.setDate(Math.min(issued.getDate(), lastDay))
+        return expiry
+    }
+
+    return complianceDate(document?.expiryDate)
 }
 
 export const resolveComplianceDocumentStatus = (
@@ -327,6 +357,19 @@ export const complianceDocumentKey = (
     }:${id}`
 }
 
+/**
+ * Loose title comparison for uploads saved with only a title (older SME
+ * uploads store "B-BBEE Certificate/Affidavit" where the requirement key is
+ * BEE_CERT). Used as a fallback after the key, by every compliance view.
+ */
+export const complianceTitleKey = (value: unknown) =>
+    String(value ?? '')
+        .toLowerCase()
+        .replace(/\(signed\)/g, '')
+        .replace(/\b(docs|documents)\b/g, 'document')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+
 export const normalizeComplianceRequirements = (
     rows: any[] = [],
     templates: AgreementTemplate[] = []
@@ -379,82 +422,121 @@ export const normalizeComplianceRequirements = (
 }
 
 /**
- * Program requirements are canonical. Department requirements may override
- * presentation/config fields, but they must not accidentally remove the
- * programme-level onboarding classification.
+ * The programme's list is the master list. A department's setup only selects
+ * which programme requirements that department tracks, and may set its own
+ * expiry for them. Everything else (title, kind, onboarding scope, required at
+ * application) comes from the programme, and a department row whose programme
+ * requirement was deleted is dropped rather than kept alive.
  */
-const mergeComplianceRequirementSets = (
+export const selectDepartmentRequirements = (
     programRequirements: ComplianceRequirement[],
     departmentRequirements: ComplianceRequirement[],
     templates: AgreementTemplate[] = []
 ) => {
-    const merged = new Map<
-        string,
-        ComplianceRequirement
-    >()
-
-    programRequirements.forEach(requirement => {
-        merged.set(
-            complianceRequirementKey(
-                requirement,
-                templates
-            ),
+    const programByKey = new Map(
+        programRequirements.map(requirement => [
+            complianceRequirementKey(requirement, templates),
             requirement
-        )
-    })
+        ])
+    )
 
+    const selected = new Map<string, ComplianceRequirement>()
     departmentRequirements.forEach(requirement => {
-        const key = complianceRequirementKey(
-            requirement,
-            templates
-        )
-        const canonical = merged.get(key)
+        const key = complianceRequirementKey(requirement, templates)
+        const canonical = programByKey.get(key)
+        if (!canonical) return
 
-        merged.set(key, {
+        selected.set(key, {
             ...canonical,
-            ...requirement,
-
-            // If the programme requirement already defines the scope,
-            // keep it. This fixes older deptRequirements copies that do
-            // not yet contain isOnboarding.
-            isOnboarding:
-                requirement.kind === 'agreement'
-                    ? true
-                    : canonical?.isOnboarding ??
-                      requirement.isOnboarding,
-
-            departmentId:
-                requirement.departmentId ??
-                canonical?.departmentId
+            hasExpiry: requirement.hasExpiry,
+            expiryMonths: requirement.hasExpiry
+                ? requirement.expiryMonths
+                : null,
+            departmentId: requirement.departmentId
         })
     })
 
-    return [...merged.values()]
+    return [...selected.values()]
 }
 
+/**
+ * Programme requirements live on programs/{id}.programRequirements. Older
+ * programmes only have the requiredDocs subcollection, which /programs still
+ * mirrors, so fall back to it when the array is empty.
+ */
+/**
+ * The shared requirement list for programmes that have none of their own, in
+ * the same shape as programs/{id}.programRequirements. Set from the Programs
+ * page ("Use as default requirements").
+ */
+export const DEFAULT_PROGRAM_REQUIREMENTS_DOC = doc(db, 'systemSettings', 'defaultProgramRequirements')
+
+export type RequirementsSource = 'programme' | 'default' | 'none'
+
+export const loadDefaultProgramRequirements = async (): Promise<any[]> => {
+    try {
+        const snapshot = await getDoc(DEFAULT_PROGRAM_REQUIREMENTS_DOC)
+        const rows = snapshot.exists() ? (snapshot.data() as any).requirements : null
+        return Array.isArray(rows) ? rows : []
+    } catch (error) {
+        console.error('Unable to load the default programme requirements', error)
+        return []
+    }
+}
+
+/** The programme's own list (or its legacy requiredDocs), else the shared default. */
+const loadProgramRequirementRows = async (
+    programId: string,
+    program: any
+): Promise<{ rows: any[]; source: RequirementsSource }> => {
+    if (
+        Array.isArray(program?.programRequirements) &&
+        program.programRequirements.length
+    ) {
+        return { rows: program.programRequirements, source: 'programme' }
+    }
+
+    const legacy = await getDocs(
+        collection(db, 'programs', programId, 'requiredDocs')
+    )
+
+    if (legacy.empty) {
+        const rows = await loadDefaultProgramRequirements()
+        return { rows, source: rows.length ? 'default' : 'none' }
+    }
+
+    return { source: 'programme', rows: legacy.docs.map(item => {
+        const row = item.data() as any
+        const isAgreement = row.type === 'agreement'
+        return {
+            key: item.id,
+            title: row.title || item.id,
+            kind: isAgreement ? 'agreement' : 'upload',
+            ...(isAgreement
+                ? { agreementId: row.agreementId || item.id }
+                : {}),
+            hasExpiry: Boolean(row.expiryRule),
+            expiryMonths: row.expiryRule?.months ?? null,
+            requiredAtApplication: Boolean(row.mandatory),
+            ...(typeof row.isOnboarding === 'boolean'
+                ? { isOnboarding: row.isOnboarding }
+                : {})
+        }
+    }) }
+}
+
+// ROM owns the agreements and M&E sees everything; both come from the
+// department roles (sub-departments inherit), never department flags.
 const getDepartmentComplianceScope = async (
     departmentId: string
 ): Promise<DepartmentComplianceScope> => {
-    const departmentSnapshot = await getDoc(
-        doc(db, 'departments', departmentId)
-    )
-
-    if (!departmentSnapshot.exists()) {
-        return {
-            id: departmentId,
-            isOnboarding: false,
-            isMonitoring: false,
-            canSeeOnboardingRequirements: false
-        }
-    }
-
-    const department = departmentSnapshot.data() as any
+    const { roles, departments } = await loadDepartmentRoles()
 
     const isOnboarding =
-        department?.isOnboarding === true
+        departmentHasRole(departmentId, 'rom', roles, departments)
 
     const isMonitoring =
-        department?.isMonitoring === true
+        departmentHasRole(departmentId, 'monitoring', roles, departments)
 
     return {
         id: departmentId,
@@ -465,12 +547,13 @@ const getDepartmentComplianceScope = async (
     }
 }
 
+// Only agreements are held back from ordinary departments. The isOnboarding
+// flag is not used: /programs sets it on every programme requirement.
 export const isOnboardingComplianceRequirement = (
     requirement: ComplianceRequirement
 ) =>
     requirement.kind === 'agreement' ||
-    requirement.type === 'agreement' ||
-    requirement.isOnboarding === true
+    requirement.type === 'agreement'
 
 export const filterComplianceRequirementsForDepartment = (
     requirements: ComplianceRequirement[],
@@ -540,7 +623,8 @@ export async function resolveComplianceRequirements(
         return {
             requirements: [],
             agreements: [],
-            departmentScope: null
+            departmentScope: null,
+            source: 'none' as RequirementsSource
         }
     }
 
@@ -552,7 +636,8 @@ export async function resolveComplianceRequirements(
         return {
             requirements: [],
             agreements: [],
-            departmentScope: null
+            departmentScope: null,
+            source: 'none' as RequirementsSource
         }
     }
 
@@ -562,9 +647,15 @@ export async function resolveComplianceRequirements(
     const agreements =
         await listAgreementTemplates()
 
+    const { rows, source } =
+        await loadProgramRequirementRows(
+            programId,
+            program
+        )
+
     const programRequirements =
         normalizeComplianceRequirements(
-            program.programRequirements || [],
+            rows,
             agreements
         )
 
@@ -601,8 +692,8 @@ export async function resolveComplianceRequirements(
                 }))
                 : []
 
-        const mergedRequirements =
-            mergeComplianceRequirementSets(
+        const selectedRequirements =
+            selectDepartmentRequirements(
                 programRequirements,
                 departmentRequirements,
                 agreements
@@ -610,7 +701,7 @@ export async function resolveComplianceRequirements(
 
         const visibleRequirements =
             filterComplianceRequirementsForDepartment(
-                mergedRequirements,
+                selectedRequirements,
                 departmentScope
             )
 
@@ -623,52 +714,15 @@ export async function resolveComplianceRequirements(
                     ? agreements
                     : [],
 
-            departmentScope
-        }
-    }
-
-    if (options.includeAllDepartments) {
-        const departmentsSnapshot =
-            await getDocs(
-                collection(
-                    db,
-                    'programs',
-                    programId,
-                    'deptRequirements'
-                )
-            )
-
-        const departmentRequirements =
-            departmentsSnapshot.docs.flatMap(
-                item =>
-                    normalizeComplianceRequirements(
-                        (
-                            item.data() as any
-                        ).requiredDocuments || [],
-                        agreements
-                    ).map(requirement => ({
-                        ...requirement,
-                        departmentId: item.id
-                    }))
-            )
-
-        return {
-            requirements:
-                normalizeComplianceRequirements(
-                    [
-                        ...programRequirements,
-                        ...departmentRequirements
-                    ],
-                    agreements
-                ),
-            agreements,
-            departmentScope: null
+            departmentScope,
+            source
         }
     }
 
     return {
         requirements: programRequirements,
         agreements,
-        departmentScope: null
+        departmentScope: null,
+        source
     }
 }

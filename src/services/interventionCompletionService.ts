@@ -1,5 +1,6 @@
 import {
     arrayUnion,
+    deleteField,
     doc,
     getDoc,
     runTransaction,
@@ -12,15 +13,16 @@ import {
     uploadBytes,
     type FirebaseStorage
 } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 import { USE_SENSITIVE_DEPARTMENT_SUMMARY_INSTEAD_OF_POE } from '@/config/evidencePolicy'
 import { resolveAssignmentLifecycle } from './assignmentLifecycleService'
 import { groupDeliveryRef } from './groupInterventionDeliveryService'
 import { createMovDraftFromAssignment, type MovUserContext } from './movService'
 import {
-    recurrencePatch,
-    supportedRecurrenceFrom,
+    assignmentRecurrencePatch,
     SUPPORTED_RECURRENCE_OPTIONS
 } from './interventionRecurrenceService'
+import { LEGACY_SCHEDULE_FIELDS, presetFrom, scheduleFields, storedStrict } from '@/lib/recurrence'
 
 type Row = Record<string, any> & { id: string }
 export type CompletionEvidence = {
@@ -318,10 +320,7 @@ export async function loadInterventionCompletionContext(
         summaryAssignmentIds,
         needsRecurrence: assignments.some(
             (row) =>
-                !supportedRecurrenceFrom(
-                    row,
-                    definitions.get(row.interventionId)
-                )
+                !presetFrom(row, definitions.get(row.interventionId))
         ),
         requiresFiles: fileAssignments.length > 0,
         requiresSummary: summaryAssignmentIds.length > 0,
@@ -351,6 +350,43 @@ export type ManualMovUpload = {
     uploadedMovSize?: number
 }
 
+/**
+ * Upload the signed MOV chosen for each assignment and return what
+ * completeIntervention expects in `manualMovs`. Files come straight from an
+ * Upload control (either the UploadFile or the File inside it).
+ */
+export async function uploadManualMovs(input: {
+    storage: FirebaseStorage
+    assignments: Array<Record<string, any>>
+    filesById: Record<string, any>
+}): Promise<ManualMovUpload[]> {
+    const safe = (value: unknown, fallback: string) =>
+        String(value || fallback).trim().replace(/[\\/#?%]+/g, '_') || fallback
+    return Promise.all(
+        input.assignments.map(async assignment => {
+            const chosen = input.filesById[assignment.id]
+            const file: File | undefined = chosen?.originFileObj || chosen
+            if (!file || typeof file.arrayBuffer !== 'function')
+                throw new CompletionValidationError('Upload the signed MOV before completing.')
+            if (file.size > COMPLETION_MAX_FILE_SIZE_BYTES)
+                throw new CompletionValidationError('Each MOV file must be 25 MB or smaller.')
+            const path = `mov-documents/${safe(assignment.programId, 'no-program')}/${safe(
+                assignment.participantId,
+                'unknown-participant'
+            )}/${safe(assignment.id, 'no-assignment')}/manual/${Date.now()}_${crypto.randomUUID()}_${safe(file.name, 'manual-mov')}`
+            const fileRef = ref(input.storage, path)
+            await uploadBytes(fileRef, file, withOwner({}, { participantId: assignment.participantId }))
+            return {
+                assignmentId: assignment.id,
+                uploadedMovUrl: await getDownloadURL(fileRef),
+                uploadedMovFileName: file.name,
+                uploadedMovContentType: file.type || null,
+                uploadedMovSize: file.size
+            }
+        })
+    )
+}
+
 export async function completeIntervention(input: {
     db: Firestore
     storage: FirebaseStorage
@@ -378,6 +414,12 @@ export async function completeIntervention(input: {
     manualMovs?: ManualMovUpload[]
     /** POE list mirrored onto each MOV, alongside the legacy resources field. */
     poeEvidence?: Array<Record<string, any>>
+    /**
+     * When true the intervention can be completed with no POE at all. The MOV
+     * is the compulsory proof of delivery; a POE (the named deliverable) is a
+     * bonus. Every other caller keeps today's "at least one POE" rule.
+     */
+    poeOptional?: boolean
 }) {
     const { db, storage, user } = input
     if (!user.uid)
@@ -421,7 +463,7 @@ export async function completeIntervention(input: {
             throw new CompletionValidationError(
                 'Each POE file must be 25 MB or smaller.'
             )
-        if (context.missingEvidenceCount && !files.length)
+        if (context.missingEvidenceCount && !files.length && !input.poeOptional)
             throw new CompletionValidationError(
                 'Attach at least one POE file. Some selected assignments have no saved evidence.'
             )
@@ -473,7 +515,7 @@ export async function completeIntervention(input: {
                                 'no-assignment'
                             )}/${uploadId}_${index}_${safeFileName}`
                         )
-                        await uploadBytes(fileRef, file)
+                        await uploadBytes(fileRef, file, withOwner({}, { participantId: context.assignments.length === 1 ? context.assignments[0].participantId : null }))
                         return {
                             link: await getDownloadURL(fileRef),
                             label: file.name,
@@ -567,6 +609,7 @@ export async function completeIntervention(input: {
                             : resource.type || 'poe'
                 }))
                 if (
+                    !input.poeOptional &&
                     !context.summaryAssignmentIds.includes(row.id) &&
                     !resources.length
                 ) {
@@ -574,32 +617,33 @@ export async function completeIntervention(input: {
                         'Saved evidence was removed. Attach a POE file before completing.'
                     )
                 }
-                const preset =
-                    selected ||
-                    supportedRecurrenceFrom(
-                        row,
-                        context.definitions.get(row.interventionId)
-                    )
+                const definition = context.definitions.get(row.interventionId)
+                const preset = selected || presetFrom(row, definition)
                 return {
                     ...row,
                     resources,
                     computedProgress: 100,
-                    ...(preset ? recurrencePatch(preset) : {}),
+                    ...(selected
+                        ? assignmentRecurrencePatch(selected, row, definition)
+                        : {}),
+                    // In memory only, so the MOV raised below shows the frequency.
+                    ...(preset ? { frequency: preset } : {}),
                     assigneeCompletedAt: row.assigneeCompletedAt || now,
                     progressUpdates: [...(row.progressUpdates || []), update]
                 }
             })
+            // The stored schedule changes only when the user picked a frequency;
+            // completing never rewrites an assignment's existing recurrence.
             nextRows.forEach((row, index) => {
-                const preset =
-                    selected ||
-                    supportedRecurrenceFrom(
-                        row,
-                        context.definitions.get(row.interventionId)
-                    )
                 transaction.update(assignmentRefs[index], {
                     resources: row.resources,
                     computedProgress: 100,
-                    ...(preset ? recurrencePatch(preset) : {}),
+                    ...(selected
+                        ? {
+                              scheduleMode: row.scheduleMode,
+                              recurrence: row.recurrence
+                          }
+                        : {}),
                     progressUpdates: arrayUnion(update),
                     updatedAt: now
                 })
@@ -613,7 +657,12 @@ export async function completeIntervention(input: {
                     )
                 ].forEach((id) => {
                     transaction.update(doc(db, 'interventions', id), {
-                        ...recurrencePatch(selected),
+                        ...scheduleFields(selected, {
+                            strict: storedStrict(context.definitions.get(id))
+                        }),
+                        ...Object.fromEntries(
+                            LEGACY_SCHEDULE_FIELDS.map((field) => [field, deleteField()])
+                        ),
                         updatedAt: now
                     })
                 })
@@ -782,6 +831,11 @@ export async function completeIntervention(input: {
 
                 transaction.update(assignmentRefs[index], {
                     ...(mov ? { movDocumentId: mov.movDocumentId } : {}),
+                    // A completion the SME rejected earlier is now resubmitted: ask them again.
+                    // Leaving it 'rejected' made confirming impossible (a dead end).
+                    ...(String(snapshot.data().participantCompletionStatus || '').toLowerCase() === 'rejected'
+                        ? { participantCompletionStatus: 'pending' }
+                        : {}),
                     computedProgress: 100,
                     assigneeCompletionStatus: 'completed',
                     assignmentStatus: 'in-progress',

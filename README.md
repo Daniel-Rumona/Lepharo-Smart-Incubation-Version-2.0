@@ -8,6 +8,8 @@ monitoring and evaluation reporting, and funder-facing analytics.
 The system is a React single-page application (installable as a PWA) on top of Firebase,
 with a Python AI service for document and language work.
 
+For the digital twin work, start with the [digital twins continuation guide](docs/digital-twins/README.md). It covers the seeded data, next implementation steps and validation gates.
+
 ---
 
 ## Table of contents
@@ -87,7 +89,7 @@ route tree, navigation and dashboard.
 
 | Role | Scope | Primary surface |
 | --- | --- | --- |
-| `admin` | Company-wide | User management, backend console, email monitor, feature governance |
+| `system_admin` | Company-wide | User management, backend console, email monitor, feature governance |
 | `director` | Company-wide | Strategic, operations and onboarding dashboards, executive reporting |
 | `operations` | Department-scoped | The largest surface: assignments, HR, finance, M&E, reporting |
 | `coordinator` | Global | Intervention delivery, feedback, MOVs, allocated participants |

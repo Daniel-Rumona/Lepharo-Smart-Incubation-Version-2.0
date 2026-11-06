@@ -1,7 +1,8 @@
 // src/utils/generateContractPdf.ts
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
-import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage'
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { withOwner } from '@/lib/storageOwner'
 
 type GenParams = {
   participantId: string
@@ -45,9 +46,10 @@ async function renderPagedContractPDF(contentEl: HTMLElement) {
     const scale = Math.min(pageWidth / canvas.width, pageHeight / canvas.height)
     const renderedWidth = canvas.width * scale
     const renderedHeight = canvas.height * scale
+    // JPEG, not PNG: a page photo is several times smaller and reads the same.
     pdf.addImage(
-      canvas.toDataURL('image/png'),
-      'PNG',
+      canvas.toDataURL('image/jpeg', 0.85),
+      'JPEG',
       (pageWidth - renderedWidth) / 2,
       0,
       renderedWidth,
@@ -161,7 +163,8 @@ export async function generateAndUploadContractPDF({
     const storage = getStorage()
     const path = `agreements/${participantId}/${slug}_${Date.now()}.pdf`
     const sref = ref(storage, path)
-    await uploadString(sref, pagedPdf.output('datauristring'), 'data_url')
+    // Uploaded as the file itself; base64 text would be a third bigger.
+    await uploadBytes(sref, pagedPdf.output('blob'), withOwner({ contentType: 'application/pdf' }, { participantId }))
     return { url: await getDownloadURL(sref), path }
   }
 
@@ -198,11 +201,11 @@ export async function generateAndUploadContractPDF({
       0, Math.floor(srcY), canvas.width, pageCanvas.height,
       0, 0, pageCanvas.width, pageCanvas.height
     )
-    const pageImg = pageCanvas.toDataURL('image/png')
+    const pageImg = pageCanvas.toDataURL('image/jpeg', 0.85)
     if (!firstPage) pdf.addPage()
     pdf.addImage(
       pageImg,
-      'PNG',
+      'JPEG',
       14,
       22,
       imgWidth,
@@ -254,8 +257,7 @@ export async function generateAndUploadContractPDF({
   const storage = getStorage()
   const path = `agreements/${participantId}/${slug}_${Date.now()}.pdf`
   const sref = ref(storage, path)
-  const pdfData = pdf.output('datauristring') // data:application/pdf;base64,...
-  await uploadString(sref, pdfData, 'data_url')
+  await uploadBytes(sref, pdf.output('blob'), withOwner({ contentType: 'application/pdf' }, { participantId }))
   const url = await getDownloadURL(sref)
 
   return { url, path }

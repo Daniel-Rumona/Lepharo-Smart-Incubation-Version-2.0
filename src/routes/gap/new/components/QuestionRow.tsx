@@ -1,5 +1,5 @@
 import React from 'react'
-import { Form, Input, Typography, theme } from 'antd'
+import { Form, Grid, Input, Typography, theme } from 'antd'
 import YesNoChoiceCard from './YesNoChoiceCard'
 
 const { Text } = Typography
@@ -14,8 +14,11 @@ const QuestionRow: React.FC<{
     label: string
     disabled?: boolean
     extra?: React.ReactNode
-}> = ({ namePath, label, disabled, extra }) => {
+    /** Shown under the answer, owning its own spacing (e.g. a YesFollowUp that may render nothing). */
+    followUp?: React.ReactNode
+}> = ({ namePath, label, disabled, extra, followUp }) => {
     const { token } = theme.useToken()
+    const isMobile = !Grid.useBreakpoint().md
 
     return (
         <div
@@ -29,7 +32,9 @@ const QuestionRow: React.FC<{
             </Text>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
+                {/* Capped beside the comment on wide screens; on phones, where
+                    the two stack, it spans the full width like the comment. */}
+                <div style={{ flex: '1 1 240px', maxWidth: isMobile ? undefined : 320 }}>
                     <Form.Item
                         name={[...namePath, 'answer']}
                         noStyle
@@ -45,6 +50,8 @@ const QuestionRow: React.FC<{
                     </Form.Item>
                 </div>
             </div>
+
+            {followUp}
 
             {extra && <div style={{ marginTop: 12 }}>{extra}</div>}
         </div>

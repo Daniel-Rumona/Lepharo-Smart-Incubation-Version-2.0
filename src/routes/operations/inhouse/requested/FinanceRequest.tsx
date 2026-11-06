@@ -1,74 +1,68 @@
-// FinanceRequests.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-    Table,
-    Tag,
     Button,
-    Modal,
-    Form,
-    Input,
-    message,
-    Space,
-    Typography,
-    Row,
-    Col,
-    Select,
     Card,
-    Statistic,
+    Col,
+    Descriptions,
+    Grid,
+    Input,
+    List,
+    Modal,
+    Result,
+    Row,
+    Segmented,
+    Select,
+    Space,
+    Tag,
+    Steps,
     Tooltip,
-    Empty,
-    Spin,
-    Upload
+    Typography,
+    message,
+    theme
 } from 'antd'
 import {
-    FileDoneOutlined,
-    CloseCircleOutlined,
-    CheckSquareOutlined,
+    CheckOutlined,
     ClockCircleOutlined,
+    CloseCircleOutlined,
+    CloseOutlined,
     DollarOutlined,
-    FileTextOutlined
+    EyeOutlined,
+    FileDoneOutlined,
+    FileTextOutlined,
+    SearchOutlined,
+    ShoppingOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import {
-    collection,
-    onSnapshot,
-    query,
-    where,
-    doc,
-    updateDoc,
-    Timestamp,
-    addDoc
-} from 'firebase/firestore'
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { db } from '@/firebase'
-import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { motion } from 'framer-motion'
-
-const { Title, Text } = Typography
-const { Option } = Select
-
-type StageKey =
-    | 'pending_purchase_approval'
-    | 'awaiting_purchase_approval'
-    | 'pending_quotation'
-    | 'quotation_submitted'
-    | 'quotation_approved'
-    | 'invoice_requested'
-    | 'invoice_uploaded'
-    | 'invoice_approved'
-    | 'ceo_approval'
-    | 'completed'
-    | 'rejected'
+import { collection, onSnapshot, query } from 'firebase/firestore'
+import { db } from '@/firebase'
+import { isSmeRequest } from '@/lib/resourceRequests'
+import { useBranchNames } from '@/lib/useBranchNames'
+import {
+    FINANCE_STEP_LABEL,
+    PAID_STAGES,
+    QUOTE_STAGES,
+    financeStepFor
+} from '@/lib/financeActions'
+import FinanceActionModal from '../FinanceActionModal'
+import { useFullIdentity } from '@/hooks/src/useFullIdentity'
+import { DashboardFilterBar } from '@/components/dashboards/metrics/Header'
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+const { Text } = Typography
 
 type StageEntry = { actor?: string; stage: string; timestamp?: any }
 
 type ResourceRow = {
     id: string
     branch?: string
+    department?: string
+    // Requesting branch id on internal requests
+    requestedFrom?: string
     requestType?: string
     resourceName?: string
     description?: string
     quantity?: number
+    amount?: number
     progress: StageEntry[]
     status: string
     createdAt?: any
@@ -115,70 +109,86 @@ const colorKey = (s?: string) =>
     s === 'pending_purchase_approval' ? 'awaiting_purchase_approval' : s || ''
 const statusColor = (s?: string) => STAGE_COLORS[colorKey(s)] || 'default'
 
+// What finance has to do at this stage, if anything (see lib/financeActions)
+const financeLabel = (status?: string) => {
+    const step = financeStepFor(status)
+    return step ? FINANCE_STEP_LABEL[step] : undefined
+}
+const needsAction = (row: ResourceRow) => Boolean(financeStepFor(row.status))
+
+type StatusFilter = 'all' | 'action' | 'paid' | 'rejected'
+const STATUS_OPTIONS = [
+    { value: 'all', label: 'All' },
+    { value: 'action', label: 'Needs action' },
+    { value: 'paid', label: 'Paid' },
+    { value: 'rejected', label: 'Rejected' }
+]
+
+const formatMoney = (value?: number) =>
+    typeof value === 'number'
+        ? `R ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+        : '—'
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+const toRow = (id: string, data: any): ResourceRow => {
+    const progress: StageEntry[] = Array.isArray(data.progress) ? data.progress : []
+    const last = progress.length ? progress[progress.length - 1] : null
+    return {
+        id,
+        // The requesting branch's id; its name is looked up when rows are built
+        requestedFrom: data.requestedFrom ?? '',
+        department: data.department ?? '',
+        requestType: data.requestType ?? '',
+        resourceName: data.resourceName ?? data.resource ?? '',
+        description: data.purpose ?? data.description ?? '',
+        quantity: data.quantity ?? 0,
+        amount: typeof data.amount === 'number' ? data.amount : undefined,
+        progress,
+        status: data.status ?? (last?.stage as string) ?? 'pending_purchase_approval',
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt ?? last?.timestamp ?? data.createdAt,
+        quotationUrl: data.quotationUrl ?? data.quotationFile ?? '',
+        invoiceUrl: data.invoiceUrl ?? data.invoiceFile ?? '',
+        popUrl: data.popUrl ?? data.popFile ?? ''
+    }
+}
+
 const FinanceRequests: React.FC = () => {
     const { user } = useFullIdentity() || {}
-    const [rows, setRows] = useState<ResourceRow[]>([])
+    const { token } = theme.useToken()
+    const screens = Grid.useBreakpoint()
+    const isDesktop = screens.sm !== false
+    // Below md, modals become bottom sheets (index.css) and the filter bar stacks
+    const isMobile = screens.md === false
+    const barCol = (flex: string) => (isMobile ? { span: 24 } : { flex })
+
+    const [liveRows, setRows] = useState<ResourceRow[]>([])
     const [loading, setLoading] = useState(true)
+    const [search, setSearch] = useState('')
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+    const [branchFilter, setBranchFilter] = useState<string | undefined>()
 
-    const [stageFilter, setStageFilter] = useState<string | undefined>()
-    const [form] = Form.useForm()
 
-    // Doc viewer
+    const [viewing, setViewing] = useState<ResourceRow | null>(null)
     const [docUrl, setDocUrl] = useState<string | null>(null)
 
-    // Approve / Reject modal
-    const [actionModalVisible, setActionModalVisible] = useState(false)
-    const [actionType, setActionType] = useState<'approve' | 'reject' | null>(
-        null
-    )
-    const [selected, setSelected] = useState<ResourceRow | null>(null)
-    const [popFile, setPopFile] = useState<File | null>(null)
-    const [submitting, setSubmitting] = useState(false)
+    // The request being approved or rejected in the quick modal
+    const [actionTarget, setActionTarget] = useState<{
+        row: ResourceRow
+        mode: 'approve' | 'reject'
+    } | null>(null)
 
     // ---- Firestore subscription
     useEffect(() => {
         setLoading(true)
-
-        const qBase = query(
-            collection(db, 'resourceRequests')
-        )
-
         const unsub = onSnapshot(
-            qBase,
+            query(collection(db, 'resourceRequests')),
             snap => {
-                const items: ResourceRow[] = snap.docs.map(d => {
-                    const data: any = d.data()
-                    const progress: StageEntry[] = Array.isArray(data.progress)
-                        ? data.progress
-                        : []
-                    const last = progress.length ? progress[progress.length - 1] : null
-                    return {
-                        id: d.id,
-                        branch: data.branch ?? '',
-                        requestType: data.requestType ?? '',
-                        resourceName: data.resourceName ?? data.resource ?? '',
-                        description: data.purpose ?? data.description ?? '',
-                        quantity: data.quantity ?? 0,
-                        progress,
-                        status:
-                            data.status ??
-                            (last?.stage as string) ??
-                            'pending_purchase_approval',
-                        createdAt: data.createdAt,
-                        updatedAt: data.updatedAt ?? last?.timestamp ?? data.createdAt,
-                        quotationUrl: data.quotationUrl ?? data.quotationFile ?? '',
-                        invoiceUrl: data.invoiceUrl ?? data.invoiceFile ?? '',
-                        popUrl: data.popUrl ?? data.popFile ?? ''
-                    }
-                })
-
-                items.sort((a, b) => {
-                    const am = a.updatedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0
-                    const bm = b.updatedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0
-                    return bm - am
-                })
-
-                setRows(items)
+                // SME booking requests share this collection but aren't purchases
+                setRows(
+                    snap.docs.filter(d => !isSmeRequest(d.data())).map(d => toRow(d.id, d.data()))
+                )
                 setLoading(false)
             },
             err => {
@@ -191,457 +201,495 @@ const FinanceRequests: React.FC = () => {
                 setLoading(false)
             }
         )
-
         return () => unsub()
     }, [])
 
-    // ---- Derived metrics
-    const metrics = useMemo(() => {
-        const awaitingFinance = rows.filter(r =>
-            ['quotation_submitted', 'invoice_uploaded'].includes(r.status)
-        )
-        const approvedByFinance = rows.filter(r =>
-            ['quotation_approved', 'invoice_approved'].includes(r.status)
-        )
-        const rejected = rows.filter(r => r.status === 'rejected')
+    const branchNames = useBranchNames()
 
+    const rows = useMemo(() => {
+        // Requests only store the branch id (requestedFrom); show its name
+        return liveRows.map(r => ({
+            ...r,
+            branch: (r.requestedFrom && branchNames[r.requestedFrom]) || ''
+        }))
+    }, [liveRows, branchNames])
+
+    // ---- Metrics (all requests)
+    const metrics = useMemo(() => {
+        const sum = (list: ResourceRow[]) => list.reduce((t, r) => t + (r.amount ?? 0), 0)
+        const paid = rows.filter(r => PAID_STAGES.includes(r.status))
+        const rejected = rows.filter(r => r.status === 'rejected')
+        const open = rows.filter(r => !PAID_STAGES.includes(r.status) && r.status !== 'rejected')
         return {
-            total: rows.length,
-            awaitingCount: awaitingFinance.length,
-            approvedCount: approvedByFinance.length,
-            rejectedCount: rejected.length
+            actionCount: rows.filter(needsAction).length,
+            quotations: rows.filter(r => QUOTE_STAGES.includes(r.status)).length,
+            invoices: rows.filter(r => r.status === 'invoice_uploaded').length,
+            paidAmount: sum(paid),
+            paidCount: paid.length,
+            openAmount: sum(open),
+            openCount: open.length,
+            rejectedCount: rejected.length,
+            rejectedAmount: sum(rejected)
         }
     }, [rows])
 
-    // ---- Actions
-    const openAction = (rec: ResourceRow, type: 'approve' | 'reject') => {
-        setSelected(rec)
-        setActionType(type)
-        setPopFile(null)
-        form.resetFields()
-        setActionModalVisible(true)
-    }
+    const branches = useMemo(
+        () => Array.from(new Set(rows.map(r => r.branch).filter(Boolean))).sort() as string[],
+        [rows]
+    )
 
-    const uploadPOPIfAny = async (file: File | null, pathBase: string) => {
-        if (!file) return null
-        const storage = getStorage()
-        const safe = file.name.replace(/\s+/g, '_')
-        const rf = ref(storage, `${pathBase}/${Date.now()}_${safe}`)
-        await uploadBytes(rf, file)
-        const url = await getDownloadURL(rf)
-        return { name: file.name, url, path: rf.fullPath }
-    }
-
-    const handleActionSubmit = async () => {
-        if (!selected || !actionType) return
-        setSubmitting(true)
-        try {
-            const id = selected.id
-            const now = Timestamp.now()
-
-            let nextStatus = selected.status
-            const approvingQuotation =
-                selected.status === 'quotation_submitted' && actionType === 'approve'
-            const approvingInvoice =
-                selected.status === 'invoice_uploaded' && actionType === 'approve'
-
-            // Validate / collect form values
-            let values: any = {}
-            if (actionType === 'reject') {
-                values = await form.validateFields()
-            } else if (approvingInvoice) {
-                // POP is required when approving an uploaded invoice
-                values = await form.validateFields()
-                if (!popFile && !selected.popUrl) {
-                    message.error('Please upload a Proof of Payment (POP).')
-                    setSubmitting(false)
-                    return
-                }
-            }
-
-            if (actionType === 'approve') {
-                if (approvingQuotation) nextStatus = 'quotation_approved'
-                else if (approvingInvoice) nextStatus = 'invoice_approved'
-            } else {
-                nextStatus = 'rejected'
-            }
-
-            // Upload POP if provided
-            let popUrl: string | null = selected.popUrl || null
-            if (approvingInvoice && popFile) {
-                const meta = await uploadPOPIfAny(
-                    popFile,
-                    `invoices/${selected.branch || 'branch'
-                    }/${dayjs().format('YYYY-MM')}`
-                )
-                popUrl = meta?.url || popUrl
-            }
-
-            // Build progress entry
-            const progressEntry: StageEntry = {
-                stage: nextStatus,
-                timestamp: now,
-                actor: (user as any)?.fullName || 'Finance'
-            }
-
-            // Update request
-            const payload: any = {
-                status: nextStatus,
-                updatedAt: now,
-                progress: [...(selected.progress || []), progressEntry]
-            }
-            if (actionType === 'reject') payload.rejectionReason = values.reason
-            if (popUrl && approvingInvoice) payload.popUrl = popUrl
-
-            await updateDoc(doc(db, 'resourceRequests', id), payload)
-
-            // If approving an invoice → create an `invoices` record
-            if (approvingInvoice) {
-                const invoiceRecord = {
-                    invoiceType: 'resource_request', // <-- type for later consolidated views
-                    branch: selected.branch || null,
-                    requestType: selected.requestType || null,
-                    resourceName: selected.resourceName || null,
-                    description: selected.description || null,
-                    quantity: selected.quantity ?? null,
-                    source: { collection: 'resourceRequests', id },
-                    invoiceUrl: selected.invoiceUrl || null,
-                    popUrl: popUrl || null,
-                    amount: values.amount || null, // optional free text/number
-                    notes: values.notes || null,
-                    status: 'approved',
-                    month: dayjs().format('YYYY-MM'),
-                    approvedAt: now,
-                    approvedBy: {
-                        uid: (user as any)?.uid || '',
-                        name: (user as any)?.fullName || (user as any)?.name || '',
-                        role: (user as any)?.role || '',
-                        email: (user as any)?.email || ''
-                    }
-                }
-                await addDoc(collection(db, 'invoices'), invoiceRecord)
-            }
-
-            message.success(
-                actionType === 'approve'
-                    ? 'Approved successfully'
-                    : 'Rejected successfully'
-            )
-            setActionModalVisible(false)
-            form.resetFields()
-        } catch (e: any) {
-            console.error(e)
-            message.error(e?.message || 'Action failed')
-        } finally {
-            setSubmitting(false)
-        }
-    }
-
-    // ---- Filters
+    // ---- Filters: finance's to-do first, then most recently updated
     const filtered = useMemo(() => {
-        if (!stageFilter) return rows
-        return rows.filter(r => r.status === stageFilter)
-    }, [rows, stageFilter])
+        const q = search.trim().toLowerCase()
+        const time = (r: ResourceRow) =>
+            r.updatedAt?.toMillis?.() ?? r.createdAt?.toMillis?.() ?? 0
+        return rows
+            .filter(r => {
+                const statusMatch =
+                    statusFilter === 'all' ||
+                    (statusFilter === 'action' && needsAction(r)) ||
+                    (statusFilter === 'paid' && PAID_STAGES.includes(r.status)) ||
+                    (statusFilter === 'rejected' && r.status === 'rejected')
+                const searchMatch =
+                    !q ||
+                    [r.resourceName, r.description, r.branch, r.department].some(v =>
+                        (v || '').toLowerCase().includes(q)
+                    )
+                return statusMatch && searchMatch && (!branchFilter || r.branch === branchFilter)
+            })
+            .sort((a, b) => Number(needsAction(b)) - Number(needsAction(a)) || time(b) - time(a))
+    }, [rows, search, statusFilter, branchFilter])
 
-    // ---- Columns
-    const columns = [
-        { title: 'Branch', dataIndex: 'branch', key: 'branch' },
-        { title: 'Resource', dataIndex: 'resourceName', key: 'resourceName' },
-        { title: 'Description', dataIndex: 'description', key: 'description' },
-        { title: 'Quantity', dataIndex: 'quantity', key: 'quantity' },
-        {
-            title: 'Stage',
-            key: 'stage',
-            render: (_: any, rec: ResourceRow) => (
-                <Tag color={statusColor(rec.status)} style={{ textTransform: 'none' }}>
-                    {formatStage(rec.status)}
-                </Tag>
-            )
-        },
-        {
-            title: 'Files',
-            key: 'files',
-            render: (_: any, rec: ResourceRow) => {
-                const files = [
-                    rec.quotationUrl && { label: 'Quotation', url: rec.quotationUrl },
-                    rec.invoiceUrl && { label: 'Invoice', url: rec.invoiceUrl },
-                    rec.popUrl && { label: 'POP', url: rec.popUrl }
-                ].filter(Boolean) as { label: string; url: string }[]
+    const hasFilters = !!search || statusFilter !== 'all' || !!branchFilter
 
-                return files.length ? (
-                    <Space size='small' wrap>
-                        {files.map((f, i) => (
-                            <Button
-                                key={i}
-                                size='small'
-                                icon={<FileTextOutlined />}
-                                onClick={() => setDocUrl(f.url)}
+    // ---- Actions: approving and rejecting happen in the shared quick modal
+    const openAction = (rec: ResourceRow, mode: 'approve' | 'reject') => {
+        setViewing(null)
+        setActionTarget({ row: rec, mode })
+    }
+
+    // ---- Cards
+    // Items waiting on finance get a warning-coloured edge and tinted background
+    const actionStyle = (on: boolean): React.CSSProperties =>
+        on
+            ? {
+                borderColor: token.colorWarningBorder,
+                borderLeft: `4px solid ${token.colorWarning}`,
+                background: token.colorWarningBg
+            }
+            : {}
+
+    const iconCircle = (on: boolean, size = 36) => (
+        <div
+            style={{
+                width: size,
+                height: size,
+                borderRadius: '50%',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: size / 2.2,
+                flexShrink: 0,
+                background: on ? token.colorWarningBgHover : token.colorPrimaryBg,
+                color: on ? token.colorWarning : token.colorPrimary
+            }}
+        >
+            <ShoppingOutlined />
+        </div>
+    )
+
+    const renderCard = (row: ResourceRow) => {
+        const action = financeLabel(row.status)
+        const requestedOn = row.createdAt?.toDate
+            ? dayjs(row.createdAt.toDate()).format('D MMM YYYY')
+            : undefined
+        const details = [
+            row.branch,
+            row.department,
+            row.quantity ? `×${row.quantity}` : undefined,
+            requestedOn && `Requested ${requestedOn}`
+        ].filter(Boolean)
+
+        return (
+            <Card
+                size='small'
+                hoverable
+                style={{ width: '100%', borderRadius: 12, ...actionStyle(!!action) }}
+                onClick={() => setViewing(row)}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {iconCircle(!!action)}
+                    {/* Two lines: what and where it's at, then who and when */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <Text strong ellipsis style={{ minWidth: 0 }}>
+                                {row.resourceName || 'Unnamed request'}
+                            </Text>
+                            <Tag
+                                color={action ? 'orange' : statusColor(row.status)}
+                                style={{ marginInlineEnd: 0, flexShrink: 0 }}
                             >
-                                {f.label}
-                            </Button>
-                        ))}
+                                {action || formatStage(row.status)}
+                            </Tag>
+                        </div>
+                        <Text type='secondary' ellipsis style={{ fontSize: 12, display: 'block' }}>
+                            {details.join(' · ') || row.description || '—'}
+                        </Text>
+                    </div>
+                    <Space
+                        size={8}
+                        style={{ flexShrink: 0 }}
+                        // The buttons mustn't also open the details
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {typeof row.amount === 'number' && isDesktop && (
+                            <Text strong>{formatMoney(row.amount)}</Text>
+                        )}
+                        {action && (
+                            <>
+                                <Tooltip title={action}>
+                                    <Button
+                                        shape='circle'
+                                        type='primary'
+                                        aria-label={action}
+                                        icon={<CheckOutlined />}
+                                        onClick={() => openAction(row, 'approve')}
+                                    />
+                                </Tooltip>
+                                <Tooltip title='Reject'>
+                                    <Button
+                                        shape='circle'
+                                        danger
+                                        aria-label='Reject'
+                                        icon={<CloseOutlined />}
+                                        onClick={() => openAction(row, 'reject')}
+                                    />
+                                </Tooltip>
+                            </>
+                        )}
                     </Space>
-                ) : (
-                    <Text type='secondary'>—</Text>
-                )
-            }
-        },
-        {
-            title: 'Actions',
-            key: 'actions',
-            render: (_: any, rec: ResourceRow) => {
-                const canApprove = ['quotation_submitted', 'invoice_uploaded'].includes(
-                    rec.status
-                )
-                return canApprove ? (
-                    <Space>
-                        <Button
-                            size='small'
-                            type='primary'
-                            icon={<CheckSquareOutlined />}
-                            onClick={() => openAction(rec, 'approve')}
-                        >
-                            Approve
-                        </Button>
-                        <Button
-                            size='small'
-                            danger
-                            icon={<CloseCircleOutlined />}
-                            onClick={() => openAction(rec, 'reject')}
-                        >
-                            Reject
-                        </Button>
-                    </Space>
-                ) : (
-                    '-'
-                )
-            }
-        }
-    ]
+                </div>
+            </Card>
+        )
+    }
+
+    const viewingAction = viewing ? financeLabel(viewing.status) : undefined
+
+    // The progress trail split into rows (4 per row, 2 on phones) so it reads
+    // left to right without scrolling sideways
+    const perRow = isMobile ? 2 : 4
+    const progressEntries = viewing?.progress || []
+    const progressCurrent = Math.max(0, progressEntries.length - 1)
+    const progressRows = Array.from(
+        { length: Math.ceil(progressEntries.length / perRow) },
+        (_, i) => ({
+            start: i * perRow,
+            entries: progressEntries.slice(i * perRow, (i + 1) * perRow)
+        })
+    )
+    const files = viewing
+        ? ([
+            viewing.quotationUrl && { label: 'Quotation', url: viewing.quotationUrl },
+            viewing.invoiceUrl && { label: 'Invoice', url: viewing.invoiceUrl },
+            viewing.popUrl && { label: 'Proof of payment', url: viewing.popUrl }
+        ].filter(Boolean) as { label: string; url: string }[])
+        : []
 
     return (
-        <div style={{ padding: 24, background: '#fff', minHeight: '100vh' }}>
-            {/* Metrics */}
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-                <Col xs={24} sm={12} md={6}>
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4 }}
-                    >
-                        <Card
-                            style={{
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                transition: 'all 0.3s ease',
-                                borderRadius: 12,
-                                border: '1px solid #d6e4ff'
-                            }}
-                        >
-                            <Statistic
-                                title='Total Requests'
-                                value={metrics.total}
-                                prefix={<FileDoneOutlined />}
-                            />
-                        </Card>
-                    </motion.div>
+        <div style={{ padding: isDesktop ? 24 : 12, minHeight: '100vh' }}>
+            {/* Metrics: two side by side on mobile */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                <Col xs={12} md={6}>
+                    <MetricTile
+                        icon={<ClockCircleOutlined />}
+                        tone='warning'
+                        title='Needs Finance Action'
+                        value={metrics.actionCount}
+                        subtitle={`${plural(metrics.quotations, 'quotation')} · ${plural(
+                            metrics.invoices,
+                            'invoice'
+                        )}`}
+                        loading={loading}
+                    />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4 }}
-                    >
-                        <Card
-                            style={{
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                transition: 'all 0.3s ease',
-                                borderRadius: 12,
-                                border: '1px solid #d6e4ff'
-                            }}
-                        >
-                            <Statistic
-                                title='Awaiting Finance Decision'
-                                value={metrics.awaitingCount}
-                                prefix={<ClockCircleOutlined />}
-                            />
-                        </Card>
-                    </motion.div>
+                <Col xs={12} md={6}>
+                    <MetricTile
+                        icon={<DollarOutlined />}
+                        tone='success'
+                        title='Paid'
+                        value={formatMoney(metrics.paidAmount)}
+                        subtitle={plural(metrics.paidCount, 'request')}
+                        loading={loading}
+                    />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4 }}
-                    >
-                        <Card
-                            style={{
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                transition: 'all 0.3s ease',
-                                borderRadius: 12,
-                                border: '1px solid #d6e4ff'
-                            }}
-                        >
-                            <Statistic
-                                title='Approved by Finance'
-                                value={metrics.approvedCount}
-                                prefix={<CheckSquareOutlined />}
-                            />
-                        </Card>
-                    </motion.div>
+                <Col xs={0} md={6}>
+                    <MetricTile
+                        icon={<FileDoneOutlined />}
+                        tone='info'
+                        title='In Pipeline'
+                        value={formatMoney(metrics.openAmount)}
+                        subtitle={`${plural(metrics.openCount, 'open request')}, not yet paid`}
+                        loading={loading}
+                    />
                 </Col>
-                <Col xs={24} sm={12} md={6}>
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4 }}
-                    >
-                        <Card
-                            style={{
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                                transition: 'all 0.3s ease',
-                                borderRadius: 12,
-                                border: '1px solid #d6e4ff'
-                            }}
-                        >
-                            <Statistic
-                                title='Rejected'
-                                value={metrics.rejectedCount}
-                                prefix={<CloseCircleOutlined />}
-                            />
-                        </Card>
-                    </motion.div>
+                <Col xs={0} md={6}>
+                    <MetricTile
+                        icon={<CloseCircleOutlined />}
+                        tone='danger'
+                        title='Rejected'
+                        value={metrics.rejectedCount}
+                        subtitle={`${formatMoney(metrics.rejectedAmount)} not spent`}
+                        loading={loading}
+                    />
                 </Col>
             </Row>
 
-            <Row justify='space-between' style={{ marginBottom: 16 }}>
-                <Col>
-                    <Select
-                        allowClear
-                        placeholder='Filter by stage'
-                        style={{ width: 240 }}
-                        value={stageFilter}
-                        onChange={v => setStageFilter(v)}
-                    >
-                        {[
-                            'quotation_submitted',
-                            'quotation_approved',
-                            'invoice_uploaded',
-                            'invoice_approved',
-                            'completed',
-                            'rejected'
-                        ].map(s => (
-                            <Option key={s} value={s}>
-                                {formatStage(s)}
-                            </Option>
-                        ))}
-                    </Select>
-                </Col>
-            </Row>
-
-            {loading ? (
-                <Spin />
-            ) : filtered.length ? (
-                <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4 }}
-                >
-                    <Card
-                        style={{
-                            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-                            transition: 'all 0.3s ease',
-                            borderRadius: 12,
-                            border: '1px solid #d6e4ff'
-                        }}
-                    >
-                        <Table
-                            columns={columns as any}
-                            dataSource={filtered}
-                            rowKey='id'
-                            pagination={{ pageSize: 10, showSizeChanger: true }}
+            <DashboardFilterBar>
+                <Row gutter={[12, 12]} align='middle'>
+                    <Col {...barCol('2 1 220px')}>
+                        <Input
+                            placeholder='Search resource, branch or purpose...'
+                            prefix={<SearchOutlined />}
+                            allowClear
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
                         />
-                    </Card>
-                </motion.div>
-            ) : (
-                <Empty description='No requests found' />
-            )}
+                    </Col>
+                    <Col {...barCol('2 1 360px')}>
+                        <Segmented
+                            block
+                            value={statusFilter}
+                            onChange={value => setStatusFilter(value as StatusFilter)}
+                            options={STATUS_OPTIONS}
+                        />
+                    </Col>
+                    <Col {...barCol('1 1 180px')}>
+                        <Select
+                            allowClear
+                            placeholder='All branches'
+                            value={branchFilter}
+                            onChange={setBranchFilter}
+                            options={branches.map(b => ({ value: b, label: b }))}
+                            style={{ width: '100%' }}
+                        />
+                    </Col>
+                </Row>
+            </DashboardFilterBar>
 
-            {/* Approve / Reject Modal */}
-            <Modal
-                title={actionType === 'approve' ? 'Approve Request' : 'Reject Request'}
-                open={actionModalVisible}
-                onCancel={() => {
-                    setActionModalVisible(false)
-                    form.resetFields()
-                    setPopFile(null)
-                }}
-                onOk={handleActionSubmit}
-                okText={actionType === 'approve' ? 'Approve' : 'Reject'}
-                confirmLoading={submitting}
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
             >
-                {actionType === 'approve' ? (
-                    <>
-                        {selected?.status === 'invoice_uploaded' ? (
-                            <Form form={form} layout='vertical'>
-                                <Form.Item name='amount' label='Amount (optional)'>
-                                    <Input
-                                        prefix={<DollarOutlined />}
-                                        placeholder='e.g. 12500.00'
-                                    />
-                                </Form.Item>
-                                <Form.Item name='notes' label='Notes (optional)'>
-                                    <Input.TextArea rows={3} placeholder='Any finance notes…' />
-                                </Form.Item>
-                                <Form.Item
-                                    label='Proof of Payment (POP) — required for invoice approval'
-                                    required
-                                    tooltip='PDF or image'
-                                >
-                                    <Upload
-                                        beforeUpload={file => {
-                                            setPopFile(file)
-                                            return false
+                <List
+                    dataSource={filtered}
+                    rowKey='id'
+                    loading={loading}
+                    split={false}
+                    pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }}
+                    locale={{
+                        emptyText: hasFilters ? (
+                            <Result
+                                icon={<SearchOutlined />}
+                                title='No requests found'
+                                subTitle='Nothing matches your search or filters.'
+                                extra={
+                                    <Button
+                                        onClick={() => {
+                                            setSearch('')
+                                            setStatusFilter('all')
+                                            setBranchFilter(undefined)
                                         }}
-                                        maxCount={1}
-                                        accept='.pdf,.png,.jpg,.jpeg,.webp'
                                     >
-                                        <Button>Select POP</Button>
-                                    </Upload>
-                                    {selected?.popUrl ? (
-                                        <div style={{ marginTop: 6 }}>
-                                            <Text type='secondary'>
-                                                Existing POP on record will be kept if you don’t upload
-                                                a new one.
-                                            </Text>
-                                        </div>
-                                    ) : null}
-                                </Form.Item>
-                            </Form>
+                                        Clear filters
+                                    </Button>
+                                }
+                            />
                         ) : (
-                            <p>Are you sure you want to approve this request?</p>
-                        )}
-                    </>
-                ) : (
-                    <Form form={form} layout='vertical'>
-                        <Form.Item
-                            name='reason'
-                            label='Rejection Reason'
-                            rules={[{ required: true, message: 'This field is required' }]}
-                        >
-                            <Input.TextArea rows={3} placeholder='Enter details…' />
-                        </Form.Item>
-                    </Form>
+                            <Result
+                                icon={<ShoppingOutlined />}
+                                title='No resource requests yet'
+                                subTitle='Requests from branches will appear here as they move through purchasing.'
+                            />
+                        )
+                    }}
+                    renderItem={row => (
+                        <List.Item style={{ padding: '6px 0' }}>{renderCard(row)}</List.Item>
+                    )}
+                />
+            </motion.div>
+
+            {/* Read-only details: files and the stage history */}
+            <Modal
+                open={!!viewing}
+                onCancel={() => setViewing(null)}
+                title='Request Details'
+                // Wide enough for four progress stages per row
+                width={760}
+                destroyOnClose
+                footer={
+                    viewing && viewingAction ? (
+                        <Row gutter={8}>
+                            <Col span={12}>
+                                <Button
+                                    block
+                                    type='primary'
+                                    icon={<CheckOutlined />}
+                                    onClick={() => openAction(viewing, 'approve')}
+                                >
+                                    {viewingAction}
+                                </Button>
+                            </Col>
+                            <Col span={12}>
+                                <Button
+                                    block
+                                    danger
+                                    icon={<CloseOutlined />}
+                                    onClick={() => openAction(viewing, 'reject')}
+                                >
+                                    Reject
+                                </Button>
+                            </Col>
+                        </Row>
+                    ) : null
+                }
+            >
+                {viewing && (
+                    <Space direction='vertical' size={16} style={{ width: '100%' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            {iconCircle(!!viewingAction, 44)}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <Text strong style={{ fontSize: 16, display: 'block' }} ellipsis>
+                                    {viewing.resourceName || 'Unnamed request'}
+                                </Text>
+                                <Text type='secondary'>
+                                    {[viewing.branch, viewing.department].filter(Boolean).join(' · ') ||
+                                        '—'}
+                                </Text>
+                            </div>
+                            <Tag
+                                color={statusColor(viewing.status)}
+                                style={{ marginInlineEnd: 0 }}
+                            >
+                                {formatStage(viewing.status)}
+                            </Tag>
+                        </div>
+
+                        {/* Amount and quantity share a row; one column on phones */}
+                        <Descriptions column={{ xs: 1, sm: 2 }} size='small' bordered>
+                            <Descriptions.Item label='Amount'>
+                                {formatMoney(viewing.amount)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label='Quantity'>
+                                {viewing.quantity || '—'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label='Purpose' span={2}>
+                                {viewing.description || '—'}
+                            </Descriptions.Item>
+                        </Descriptions>
+
+                        <div>
+                            <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                                Files
+                            </Text>
+                            {files.length ? (
+                                <Space direction='vertical' size={8} style={{ width: '100%' }}>
+                                    {files.map(file => (
+                                        <div
+                                            key={file.label}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 12,
+                                                padding: '8px 12px',
+                                                borderRadius: token.borderRadiusLG,
+                                                border: `1px solid ${token.colorBorderSecondary}`,
+                                                background: token.colorFillQuaternary
+                                            }}
+                                        >
+                                            <FileTextOutlined
+                                                style={{ fontSize: 16, color: token.colorTextSecondary }}
+                                            />
+                                            <Text style={{ flex: 1, minWidth: 0 }} ellipsis>
+                                                {file.label}
+                                            </Text>
+                                            <Tooltip title={`View ${file.label.toLowerCase()}`}>
+                                                <Button
+                                                    shape='circle'
+                                                    size='small'
+                                                    aria-label={`View ${file.label}`}
+                                                    icon={<EyeOutlined />}
+                                                    onClick={() => setDocUrl(file.url)}
+                                                />
+                                            </Tooltip>
+                                        </div>
+                                    ))}
+                                </Space>
+                            ) : (
+                                <Text type='secondary'>No files yet</Text>
+                            )}
+                        </div>
+
+                        <div>
+                            <Text strong style={{ display: 'block', marginBottom: 12 }}>
+                                Progress
+                            </Text>
+                            {/* Horizontal, wrapping onto further rows instead of scrolling */}
+                            <Space direction='vertical' size={16} style={{ width: '100%' }}>
+                                {progressRows.map(({ start, entries }) => (
+                                    <Steps
+                                        key={start}
+                                        size='small'
+                                        progressDot
+                                        responsive={false}
+                                        initial={start}
+                                        current={progressCurrent}
+                                        status={viewing.status === 'rejected' ? 'error' : 'process'}
+                                        items={entries.map(entry => ({
+                                            title: (
+                                                <Text style={{ fontSize: 12 }}>
+                                                    {formatStage(entry.stage)}
+                                                </Text>
+                                            ),
+                                            description: (
+                                                <Text type='secondary' style={{ fontSize: 11 }}>
+                                                    {entry.timestamp?.toDate
+                                                        ? dayjs(entry.timestamp.toDate()).format(
+                                                            'D MMM, HH:mm'
+                                                        )
+                                                        : '—'}
+                                                    {entry.actor && (
+                                                        <>
+                                                            <br />
+                                                            {entry.actor}
+                                                        </>
+                                                    )}
+                                                </Text>
+                                            )
+                                        }))}
+                                    />
+                                ))}
+                            </Space>
+                        </div>
+                    </Space>
                 )}
             </Modal>
 
-            {/* Supporting Doc Viewer */}
+            {/* Quick approve / reject, shared with the In-house Finance Dashboard */}
+            <FinanceActionModal
+                target={actionTarget ? { kind: 'request', request: actionTarget.row } : null}
+                initialMode={actionTarget?.mode}
+                user={user as any}
+                onClose={() => setActionTarget(null)}
+            />
+
+            {/* Supporting document viewer */}
             <Modal
                 title='Supporting Document'
                 open={!!docUrl}
                 onCancel={() => setDocUrl(null)}
                 footer={null}
                 width={900}
-                bodyStyle={{ height: '70vh', padding: 0 }}
+                styles={{ body: { height: '70vh', padding: 0 } }}
             >
                 {docUrl ? (
                     <iframe

@@ -65,6 +65,7 @@ import { Branch } from '@/types/types'
 import ApplicantInquirySubmission from '../submit-inquiry'
 import { useFullIdentity } from '@/hooks/src/useFullIdentity'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
+import { MetricTile, IconChip } from '@/components/dashboards/metrics/MetricTile'
 import {
     guideTarget,
     usePageGuides,
@@ -140,29 +141,9 @@ const compactTagStyle: React.CSSProperties = {
     borderRadius: 999
 }
 
-const metricIconBg = (hex: string) =>
-    `${hex}1F`
-
-const METRIC_ICON_STYLE: Record<
-    string,
-    React.CSSProperties
-> = {
-    '#1677ff': {
-        color: '#1677ff',
-        fontSize: 17
-    },
-    '#1890ff': {
-        color: '#1890ff',
-        fontSize: 17
-    },
-    '#faad14': {
-        color: '#faad14',
-        fontSize: 17
-    },
-    '#52c41a': {
-        color: '#52c41a',
-        fontSize: 17
-    }
+// Tone sets the icon colour; this only sizes the glyph.
+const METRIC_ICON_STYLE: React.CSSProperties = {
+    fontSize: 17
 }
 
 const ApplicantInquiries: React.FC = () => {
@@ -788,16 +769,11 @@ const ApplicantInquiries: React.FC = () => {
             icon: (
                 <FileTextOutlined
                     style={
-                        METRIC_ICON_STYLE[
-                        '#1677ff'
-                        ]
+                        METRIC_ICON_STYLE
                     }
                 />
             ),
-            iconBg:
-                metricIconBg(
-                    '#1677ff'
-                )
+            tone: 'accent' as const
         }
 
         const newMetric = {
@@ -807,16 +783,11 @@ const ApplicantInquiries: React.FC = () => {
             icon: (
                 <SlackOutlined
                     style={
-                        METRIC_ICON_STYLE[
-                        '#1890ff'
-                        ]
+                        METRIC_ICON_STYLE
                     }
                 />
             ),
-            iconBg:
-                metricIconBg(
-                    '#1890ff'
-                )
+            tone: 'info' as const
         }
 
         const inProgressMetric = {
@@ -828,16 +799,11 @@ const ApplicantInquiries: React.FC = () => {
             icon: (
                 <ClockCircleOutlined
                     style={
-                        METRIC_ICON_STYLE[
-                        '#faad14'
-                        ]
+                        METRIC_ICON_STYLE
                     }
                 />
             ),
-            iconBg:
-                metricIconBg(
-                    '#faad14'
-                )
+            tone: 'warning' as const
         }
 
         const monthMetric = {
@@ -848,16 +814,11 @@ const ApplicantInquiries: React.FC = () => {
             icon: (
                 <CalendarOutlined
                     style={
-                        METRIC_ICON_STYLE[
-                        '#52c41a'
-                        ]
+                        METRIC_ICON_STYLE
                     }
                 />
             ),
-            iconBg:
-                metricIconBg(
-                    '#52c41a'
-                )
+            tone: 'success' as const
         }
 
         if (isMobile) {
@@ -2473,7 +2434,7 @@ const ApplicantInquiries: React.FC = () => {
                                 <Space
                                     size={10}
                                 >
-                                    <MotionCard.IconChip
+                                    <IconChip
                                         size={
                                             34
                                         }
@@ -2894,7 +2855,7 @@ const ApplicantInquiries: React.FC = () => {
                                     }}
                                 />
                             ) : (
-                                <MotionCard.Metric
+                                <MetricTile
                                     title={
                                         metric.title
                                     }
@@ -2904,8 +2865,8 @@ const ApplicantInquiries: React.FC = () => {
                                     icon={
                                         metric.icon
                                     }
-                                    iconBg={
-                                        metric.iconBg
+                                    tone={
+                                        metric.tone
                                     }
                                 />
                             )}

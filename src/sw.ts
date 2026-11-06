@@ -159,13 +159,14 @@ self.addEventListener("message", event => {
 // ───────────────────────────────────────────────────────────
 // Push notifications
 // ───────────────────────────────────────────────────────────
-// Foreground pushes are still handled in-app by onMessage() in
-// src/hooks/usePushNotifications.ts; this only covers the backgrounded case.
+// onNotificationCreatedPush (functions/src/pushNotifications.ts) sends
+// data-only messages, so this is the one place a push is displayed. In the
+// foreground the app's live listener (useNotificationCenter) toasts instead.
 const messaging = getMessaging(initializeApp(firebaseConfig));
 
 onBackgroundMessage(messaging, payload => {
-    const title = payload.notification?.title || "Smart Incubation";
-    const body = payload.notification?.body || "You have a new notification.";
+    const title = payload.data?.title || payload.notification?.title || "Smart Incubation";
+    const body = payload.data?.body || payload.notification?.body || "You have a new notification.";
     const link = payload.fcmOptions?.link || payload.data?.link || "/";
 
     self.registration.showNotification(title, {

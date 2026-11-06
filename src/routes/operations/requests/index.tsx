@@ -41,7 +41,8 @@ import {
   getDoc
 } from 'firebase/firestore'
 import { MotionCard } from '@/components/dashboards/metrics/Header'
-
+import { MetricTile } from '@/components/dashboards/metrics/MetricTile'
+import { useDepartmentRoles } from '@/services/departmentRoles'
 const { Title, Text } = Typography
 const { Option } = Select
 
@@ -66,8 +67,8 @@ const InterventionsRequests: React.FC = () => {
   }>({ visible: false })
   const [rejectionReason, setRejectionReason] = useState('')
   const [viewModal, setViewModal] = useState(false)
-  const [userDepartment, setUserDepartment] = useState<string>('')
   const [userDepartmentId, setUserDepartmentId] = useState<string>('')
+  const { nameOf } = useDepartmentRoles()
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -77,16 +78,7 @@ const InterventionsRequests: React.FC = () => {
       const snap = await getDoc(doc(db, 'users', currentUser.uid))
       if (snap.exists()) {
         const profile = snap.data()
-        const departmentName = String(profile?.departmentName || '')
-        setUserDepartment(departmentName)
-        if (profile?.departmentId) {
-          setUserDepartmentId(String(profile.departmentId))
-        } else if (departmentName) {
-          const departmentSnap = await getDocs(
-            query(collection(db, 'departments'), where('name', '==', departmentName))
-          )
-          setUserDepartmentId(departmentSnap.docs[0]?.id || '')
-        }
+        setUserDepartmentId(String(profile?.departmentId || ''))
       }
     }
 
@@ -105,7 +97,9 @@ const InterventionsRequests: React.FC = () => {
         participantMap[doc.id] = data.beneficiaryName || '—'
       })
 
-      const intSnap = await getDocs(collection(db, 'interventionRequests'))
+      const intSnap = await getDocs(
+        query(collection(db, 'interventionRequests'), where('departmentId', '==', userDepartmentId))
+      )
       const interventions = intSnap.docs
         .map(doc => {
           const data = doc.data()
@@ -124,7 +118,6 @@ const InterventionsRequests: React.FC = () => {
             type: 'Intervention',
             beneficiaryName: participantMap[data.participantId] || '—',
             company: data.companyName || '—',
-            areaOfSupport: data.areaOfSupport || '—',
             interventionTitle: data.interventionTitle || '—',
             reaon: data.reason || '—',
             status: data.status || 'pending',
@@ -132,7 +125,6 @@ const InterventionsRequests: React.FC = () => {
             submittedAt
           }
         })
-        .filter(item => item.areaOfSupport === userDepartment)
 
       setInterventions(interventions)
     } catch (err) {
@@ -141,10 +133,10 @@ const InterventionsRequests: React.FC = () => {
     setLoading(false)
   }
   useEffect(() => {
-    if (!userDepartment) return // Wait until department is set
+    if (!userDepartmentId) return // Wait until department is set
 
     fetchData()
-  }, [userDepartment]) // 🔥 React will re-run this effect when department is set
+  }, [userDepartmentId])
 
   const handleAccept = async (item: any) => {
     try {
@@ -162,9 +154,9 @@ const InterventionsRequests: React.FC = () => {
         : snap.docs[0]
       const appData = appDoc.data()
       const existingRequired = appData.interventions?.required || []
-      const departmentId = String(item.departmentId || userDepartmentId || '')
+      const departmentId = String(item.departmentId || '')
       if (!departmentId) {
-        message.error('Your department could not be identified. The request was not accepted.')
+        message.error('This request has no department. It was not accepted.')
         return
       }
 
@@ -172,9 +164,7 @@ const InterventionsRequests: React.FC = () => {
         id: item.interventionId || item.id,
         requestId: item.id,
         title: item.interventionTitle || 'Untitled',
-        area: item.areaOfSupport || userDepartment || 'General',
-        departmentId,
-        departmentName: item.areaOfSupport || userDepartment
+        departmentId
       }
       const existingIndex = existingRequired.findIndex(
         (i: any) => i.requestId === item.id || i.id === requiredItem.id
@@ -315,24 +305,24 @@ const InterventionsRequests: React.FC = () => {
   return (
     <div style={{ padding: 24, background: '#fff', minHeight: '100vh' }}>
       <Helmet>
-        <title>Intervention Requests | Legal Department</title>
+        <title>Intervention Requests</title>
       </Helmet>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12} md={6}>
-          <MotionCard><MotionCard.Metric title='Total Requests' value={interventions.length} icon={<InboxOutlined style={{ color: '#1890ff' }} />} iconBg='#e6f7ff' /></MotionCard>
+          <MotionCard><MetricTile title='Total Requests' value={interventions.length} icon={<InboxOutlined />} tone='accent' /></MotionCard>
         </Col>
 
         <Col xs={24} sm={12} md={6}>
-          <MotionCard><MotionCard.Metric title='Pending' value={interventions.filter(item => item.status === 'pending').length} icon={<ClockCircleOutlined style={{ color: '#faad14' }} />} iconBg='#fff7e6' /></MotionCard>
+          <MotionCard><MetricTile title='Pending' value={interventions.filter(item => item.status === 'pending').length} icon={<ClockCircleOutlined />} tone='warning' /></MotionCard>
         </Col>
 
         <Col xs={24} sm={12} md={6}>
-          <MotionCard><MotionCard.Metric title='Accepted' value={interventions.filter(item => item.status === 'accepted').length} icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />} iconBg='#f6ffed' /></MotionCard>
+          <MotionCard><MetricTile title='Accepted' value={interventions.filter(item => item.status === 'accepted').length} icon={<CheckCircleOutlined />} tone='success' /></MotionCard>
         </Col>
 
         <Col xs={24} sm={12} md={6}>
-          <MotionCard><MotionCard.Metric title='Rejected' value={interventions.filter(item => item.status === 'rejected').length} icon={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />} iconBg='#fff2f0' /></MotionCard>
+          <MotionCard><MetricTile title='Rejected' value={interventions.filter(item => item.status === 'rejected').length} icon={<CloseCircleOutlined />} tone='danger' /></MotionCard>
         </Col>
       </Row>
       <MotionCard
@@ -419,8 +409,8 @@ const InterventionsRequests: React.FC = () => {
             <Descriptions.Item label='SME'>
               {selectedInquiry.beneficiaryName}
             </Descriptions.Item>
-            <Descriptions.Item label='Area of Support'>
-              {selectedInquiry.areaOfSupport}
+            <Descriptions.Item label='Department'>
+              {nameOf(selectedInquiry.departmentId, '—')}
             </Descriptions.Item>
             <Descriptions.Item label='Intervention'>
               {selectedInquiry.interventionTitle}

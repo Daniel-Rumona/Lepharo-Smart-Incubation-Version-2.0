@@ -12,6 +12,7 @@ import {
     type Firestore
 } from 'firebase/firestore'
 import dayjs from 'dayjs'
+import { readSchedule, schedulePreset } from '@/lib/recurrence'
 import { hydrateAppointmentViews } from '@/services/appointmentSessionService'
 
 export type MovSourceType = 'assignedIntervention' | 'diagnosticPlan' | 'custom'
@@ -35,6 +36,7 @@ export type MovUserContext = {
 
 export type MovAssignmentInput = {
     id: string
+    dueDate?: any
     participantId?: string | null
     beneficiaryName?: string
     smmeNo?: string
@@ -50,7 +52,6 @@ export type MovAssignmentInput = {
 
     departmentId?: string
     departmentName?: string
-    areaOfSupport?: string
 
     deliveryMethod?: string
     recurrencePreset?: string | null
@@ -89,6 +90,8 @@ const stripUndefined = <T extends Record<string, any>>(obj: T): Partial<T> =>
 // smmeSignedAt set, or participantCompletionStatus already confirmed) -
 // checking only the boolean flag silently drops those MOVs from a list.
 export const isSmeConfirmedMov = (mov: any): boolean =>
+    // An SME delivery dispute the HOD decided in the facilitator's favour.
+    !!mov?.confirmationOverride ||
     mov?.smmeAccepted === true ||
     ['confirmed', 'accepted', 'complete', 'completed'].includes(
         String(mov?.participantCompletionStatus || '').toLowerCase()
@@ -208,7 +211,7 @@ const normalizeMovDeliveryMethod = (value: any) => {
     if (!raw) return ''
     if (raw.includes('in person') || raw === 'inperson') return 'in-person'
     if (raw.includes('online') || raw.includes('virtual')) return 'online'
-    if (raw.includes('telephon')) return 'telephonic'
+    if (raw.includes('telephon') || raw === 'phone') return 'telephonic'
     return raw
 }
 
@@ -422,7 +425,8 @@ export const resolveMovAppointmentInterventions = async (
     }
 
     // Resolve the same participant email CoordinatorMOVs uses for historical
-    // group QR/check-in attendance matching.
+    // group QR/check-in attendance matching (email fallback until Phase 4,
+    // docs/sme-identity-migration-plan.md; participantId is matched first below).
     let participantEmail = cleanText(assignment.smmeEmail).toLowerCase()
 
     if (!participantEmail && participantId) {
@@ -560,15 +564,30 @@ export const resolveMovAppointmentInterventions = async (
                 return cleanText(recordedAttendance.outcome).toLowerCase() === 'attended'
             }
 
-            const checkedInEmails = [
-                ...(appointment?.attendanceSummary?.checkedInEmails || []),
-                ...(appointment?.attendance?.summary?.checkedInEmails || [])
-            ].map((email: any) => cleanText(email).toLowerCase())
+            const checkedInParticipantIds = [
+                ...(appointment?.attendanceSummary?.checkedInParticipantIds || []),
+                ...(appointment?.attendance?.summary?.checkedInParticipantIds || [])
+            ].map((id: any) => cleanText(id))
 
             const checkIns = [
                 ...(appointment?.attendance?.checkIns || []),
                 ...(appointment?.attendeeCheckIns || [])
             ]
+
+            if (
+                participantId && (
+                    checkedInParticipantIds.includes(participantId) ||
+                    checkIns.some((entry: any) => cleanText(entry?.participantId) === participantId)
+                )
+            ) {
+                return true
+            }
+
+            // email fallback until Phase 4 (docs/sme-identity-migration-plan.md)
+            const checkedInEmails = [
+                ...(appointment?.attendanceSummary?.checkedInEmails || []),
+                ...(appointment?.attendance?.summary?.checkedInEmails || [])
+            ].map((email: any) => cleanText(email).toLowerCase())
 
             return Boolean(
                 participantEmail && checkedInEmails.includes(participantEmail) ||
@@ -938,9 +957,7 @@ export const createMovDraftFromAssignment = async ({
         // ops/admin user on a facilitator's behalf (e.g. from the shared
         // Appointments department view), and their own departmentName is not
         // the right value for someone else's assignment.
-        departmentName:
-            assignment.departmentName || assignment.areaOfSupport || user.departmentName || '',
-        areaOfSupport: assignment.areaOfSupport || assignment.departmentName || '',
+        departmentName: assignment.departmentName || user.departmentName || '',
         kpiServiced,
 
         interventionId: assignment.interventionId || null,
@@ -951,14 +968,9 @@ export const createMovDraftFromAssignment = async ({
         deliveryMethod: deriveMovDeliveryMethod(appointmentInterventions, assignment.deliveryMethod),
         frequency:
             assignment.frequency ||
-            assignment.recurrencePreset ||
-            (assignment.recurrence?.unit === 'week' && assignment.recurrence?.every === 2
-                ? 'bi-weekly'
-                : assignment.recurrence?.unit === 'week'
-                    ? 'weekly'
-                    : assignment.recurrence?.unit === 'month'
-                        ? 'monthly'
-                        : null),
+            (readSchedule(assignment).scheduleMode === 'recurring'
+                ? schedulePreset(readSchedule(assignment))
+                : null),
 
         status: finalStatus,
         createdAt: now,
@@ -969,6 +981,8 @@ export const createMovDraftFromAssignment = async ({
         interventionDate: appointmentInterventionDate,
         periodStart: resolvedAssignment.createdAt || null,
         periodEnd: smmeConfirmedAt,
+        // The due date decides which monthly consolidated pack the MOV belongs to.
+        dueDate: resolvedAssignment.dueDate || assignment.dueDate || null,
         appointmentInterventions,
         progressUpdates: resolvedAssignment.progressUpdates || [],
         resources: Array.isArray(resolvedAssignment.resources)
@@ -1223,12 +1237,12 @@ export const createOrUpdateDiagnosticPlanMovDraft = async ({
 
         departmentId,
         departmentName,
-        areaOfSupport: departmentName,
 
         interventionId: null,
         interventionTitle: 'Developmental Plan',
 
-        deliveryMethod,
+        // Same words the MOV document reads (in-person / online / telephonic).
+        deliveryMethod: normalizeMovDeliveryMethod(deliveryMethod),
 
         status: finalStatus,
         smmeAccepted: smeAlreadyConfirmed,
