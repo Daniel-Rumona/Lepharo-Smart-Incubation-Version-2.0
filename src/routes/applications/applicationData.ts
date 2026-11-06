@@ -1,3 +1,4 @@
+import { applicationDecisionStatus, applicationProgramId } from '@/lib/applicationPopulation'
 import { collection, doc, getDoc, getDocs, query, where, type DocumentSnapshot } from 'firebase/firestore'
 import dayjs, { type Dayjs } from 'dayjs'
 import { db } from '@/firebase'
@@ -204,8 +205,8 @@ export const normalizeApplication = (snap: DocumentSnapshot): Application => {
             (d: any) => typeof d?.url === 'string' && d.url.trim() !== ''
         ),
         growthPlanDocUrl: data.growthPlanDocUrl || null,
-        applicationStatus: normaliseStatus(data.applicationStatus),
-        programId: data.programId || data.programID || data.program?.id || data.program || null,
+        applicationStatus: normaliseStatus(applicationDecisionStatus(data)),
+        programId: applicationProgramId(data) || null,
         decision: data.decision || null,
         submittedAt: toDayjs(data.submittedAt) || toDayjs(data.createdAt) || toDayjs(data.appliedAt),
         ...readAI(data.aiEvaluation),

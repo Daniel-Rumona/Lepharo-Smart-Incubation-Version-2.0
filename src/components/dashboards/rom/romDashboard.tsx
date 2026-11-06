@@ -1,3 +1,5 @@
+import { applicationProgramId, isAcceptedApplication } from "@/lib/applicationPopulation";
+import { isQuantilytixDomain } from "@/utils/quantilytixAccess";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Row,
@@ -731,7 +733,7 @@ const ROMDashboard: React.FC = () => {
       };
 
       const [appsSnap, movSnap, interventionsSnap] = await Promise.all([
-        getDocs(scopedQuery("applications")),
+        getDocs(collection(db, "applications")),
         getDocs(scopedQuery("consolidatedMOVs")),
         getDocs(scopedQuery("assignedInterventions")),
       ]);
@@ -748,7 +750,7 @@ const ROMDashboard: React.FC = () => {
         };
       }) as AppDoc[];
 
-      setApplications(apps);
+      setApplications(apps.filter(app => !programId || applicationProgramId(app) === programId));
       setMovPacks(
         movSnap.docs.map((d) => ({
           id: d.id,
@@ -775,31 +777,23 @@ const ROMDashboard: React.FC = () => {
     fetchData(activeProgramId, loadToken);
   }, [activeProgramId, isAllPrograms]);
 
-  const validApplications = applications.filter(
-    (app) => !(app.email || "").toLowerCase().endsWith("@quantilytix.co.za")
+  const acceptedApplications = useMemo(
+    () => applications.filter(app =>
+      isAcceptedApplication(app) &&
+      (!isQuantilytixDomain(app.email) || isQuantilytixDomain(user?.email))
+    ),
+    [applications, user?.email]
   );
-
-  const totalParticipants = validApplications.filter(
-    (app) => app.applicationStatus?.toLowerCase() === "accepted"
-  ).length;
-  const dropouts = validApplications.filter(
-    (app) => app.applicationStatus?.toLowerCase() === "withdrawn"
-  ).length;
+  const totalParticipants = acceptedApplications.length;
   const groupCounts = useMemo(() => {
     const counts: Record<"A" | "B" | "C", number> = { A: 0, B: 0, C: 0 };
-    applications.forEach((app) => {
-      const isInternal = (app.email || "")
-        .toLowerCase()
-        .endsWith("@quantilytix.co.za");
-      const isAccepted = app.applicationStatus?.toLowerCase() === "accepted";
-      if (isInternal || !isAccepted) return;
-
+    acceptedApplications.forEach((app) => {
       if (app.gapGroup && counts[app.gapGroup] !== undefined) {
         counts[app.gapGroup] += 1;
       }
     });
     return counts;
-  }, [applications]);
+  }, [acceptedApplications]);
 
   const groupTotal = groupCounts.A + groupCounts.B + groupCounts.C;
   const groupData = [
@@ -1252,9 +1246,9 @@ const ROMDashboard: React.FC = () => {
           <MetricTile
             icon={<TeamOutlined style={{ fontSize: 18 }} />}
             tone='info'
-            title="Active Participants"
-            value={Math.max(totalParticipants - dropouts, 0)}
-            subtitle="Accepted SMEs currently active"
+            title="Accepted SMEs"
+            value={totalParticipants}
+            subtitle="Matches Applications and SME Overview"
             loading={metricsLoading}
           />
         </Col>

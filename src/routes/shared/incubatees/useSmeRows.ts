@@ -1,10 +1,11 @@
+import { applicationProgramId, isAcceptedApplication } from '@/lib/applicationPopulation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { message } from 'antd'
 import { collection, getDocs, query, where, doc, getDoc, orderBy, documentId } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { isQuantilytixDomain } from '@/utils/quantilytixAccess'
 import { hasSmeGapSubmission } from '@/utils/agreementStatus'
-import { Application, MonthlyPerfRow, OwnershipSummary, Participant, ProgramDoc, SmeRow, buildUploadedByMonth, chunkArray, extractNearestHubFromProfile, getOnboardedAt, mergePrefUploaded, normalize, normalizeHeadcountMap, normalizeRevenueMap, resolveSmePhoto } from './participantsData'
+import { Application, MonthlyPerfRow, OwnershipSummary, Participant, ProgramDoc, SmeRow, buildUploadedByMonth, chunkArray, extractNearestHubFromProfile, getOnboardedAt, mergePrefUploaded, normalizeHeadcountMap, normalizeRevenueMap, resolveSmePhoto } from './participantsData'
 
 type UseSmeRowsArgs = {
     user: any
@@ -126,9 +127,7 @@ export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytix
             const applications = appsSnap.docs
                 .map(d => {
                     const data = d.data() as any
-                    const normalizedProgramId = String(
-                        data.programId || data.programID || data.program?.id || data.program || ''
-                    ).trim()
+                    const normalizedProgramId = applicationProgramId(data)
 
                     return {
                         id: d.id,
@@ -136,15 +135,7 @@ export const useSmeRows = ({ user, activeProgramId, isAllPrograms, isQuantilytix
                         programId: normalizedProgramId || undefined
                     } as Application
                 })
-                .filter(app => {
-                    const statuses = [
-                        app.applicationStatus,
-                        (app as any).status,
-                        (app as any).decision?.status
-                    ].map(normalize)
-
-                    return statuses.includes('accepted') || !!app.acceptedAt
-                })
+                .filter(isAcceptedApplication)
                 .filter(app => !activeProgramId || app.programId === activeProgramId)
                 .filter(app => (isQuantilytixDomain(app.email) ? isQuantilytixViewer : true))
 

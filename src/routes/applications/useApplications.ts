@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { collection, doc, getDoc, getDocs, query, where, type QueryConstraint } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query } from 'firebase/firestore'
 import { message } from 'antd'
 import { db } from '@/firebase'
 import {
@@ -78,12 +78,11 @@ export const useApplications = (scope: Scope) => {
         }
         setLoading(true)
         try {
-            const constraints: QueryConstraint[] = []
-            if ((isRestrictedRole || !isAllPrograms) && activeProgramId) {
-                constraints.push(where('programId', '==', activeProgramId))
-            }
-            const snap = await getDocs(query(collection(db, 'applications'), ...constraints))
+            const snap = await getDocs(query(collection(db, 'applications')))
             let apps = snap.docs.map(normalizeApplication)
+            if ((isRestrictedRole || !isAllPrograms) && activeProgramId) {
+                apps = apps.filter(a => a.programId === activeProgramId)
+            }
             if (!isControlAccount) apps = apps.filter(a => !isInternalEmail(a.email))
             setApplications(apps)
             void attachPhotos(apps)

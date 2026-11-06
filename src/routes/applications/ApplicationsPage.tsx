@@ -158,20 +158,18 @@ const ApplicationsPage: React.FC = () => {
             </Helmet>
 
             <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-                {STAT_TILES.map((t, i) => (
+                {STAT_TILES.map(t => (
                     // Read-only summaries; status is filtered from the toolbar.
                     <Col key={t.key} xs={12} lg={6}>
-                        <motion.div {...rise(i * 0.05)}>
-                            <MetricTile
-                                icon={t.icon}
-                                tone={t.tone}
-                                title={t.title}
-                                mobileTitle={t.key === 'all' ? 'Total' : undefined}
-                                value={counts[t.key]}
-                                loading={loading}
-                                compact={isMobile}
-                            />
-                        </motion.div>
+                        <MetricTile
+                            icon={t.icon}
+                            tone={t.tone}
+                            title={t.title}
+                            mobileTitle={t.key === 'all' ? 'Total' : undefined}
+                            value={counts[t.key]}
+                            loading={loading}
+                            compact={isMobile}
+                        />
                     </Col>
                 ))}
             </Row>
